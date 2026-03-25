@@ -4,6 +4,8 @@ import { agentResponseActions, nativeSensors } from "../shared/schema";
 import { eq, and, or, ilike, type SQL } from "drizzle-orm";
 import { logger } from "./routes/shared";
 import { validateWebhookUrl } from "./outbound-security";
+import { validateActionInput } from "./action-schemas";
+import { createAuditLog } from "./storage/audit";
 
 const log = logger.child("action-dispatcher");
 
@@ -92,6 +94,7 @@ export interface ActionContext {
   userName?: string;
   sensorId?: string;
   storage: IStorage;
+  dryRun?: boolean;
 }
 
 export interface ActionResult {
@@ -102,9 +105,103 @@ export interface ActionResult {
   executedAt: string;
 }
 
-export async function dispatchAction(actionType: string, config: Record<string, unknown>, context: ActionContext): Promise<ActionResult> {
+export async function dispatchAction(
+  actionType: string,
+  config: Record<string, unknown>,
+  context: ActionContext,
+): Promise<ActionResult> {
   const executedAt = new Date().toISOString();
+  const startMs = Date.now();
 
+  // Step 1: Validate inputs with Zod schema (per RESP-03)
+  const validation = validateActionInput(actionType, config);
+  if (!validation.valid) {
+    const failResult: ActionResult = {
+      actionType,
+      status: "failed",
+      message: `Validation failed: ${validation.errors.issues.map((i) => i.message).join(", ")}`,
+      details: { validationErrors: validation.errors.issues },
+      executedAt,
+    };
+    // Audit the validation failure
+    await safeCreateAuditLog(context, actionType, config, failResult, 0, false);
+    return failResult;
+  }
+
+  // Step 2: If dry-run, return simulated result without executing (per RESP-01)
+  if (context.dryRun) {
+    const dryResult: ActionResult = {
+      actionType,
+      status: "simulated",
+      message: `[Dry Run] Would execute: ${actionType}`,
+      details: { config, validationPassed: true, dryRun: true },
+      executedAt,
+    };
+    await safeCreateAuditLog(context, actionType, config, dryResult, 0, true);
+    return dryResult;
+  }
+
+  // Step 3: Execute action (existing switch statement)
+  const result = await executeActionSwitch(actionType, config, context, executedAt);
+  const durationMs = Date.now() - startMs;
+
+  // Step 4: Audit log every execution (per RESP-04)
+  // Only log for actions that actually executed (not pending_approval — those get audited when approved)
+  if (result.status !== "pending_approval") {
+    await safeCreateAuditLog(context, actionType, config, result, durationMs, false);
+  }
+
+  return result;
+}
+
+/**
+ * Wraps createAuditLog in try/catch so audit failures never break action dispatch.
+ */
+async function safeCreateAuditLog(
+  context: ActionContext,
+  actionType: string,
+  config: Record<string, unknown>,
+  result: ActionResult,
+  durationMs: number,
+  isDryRun: boolean,
+): Promise<void> {
+  try {
+    await createAuditLog({
+      orgId: context.orgId || null,
+      userId: context.userId || null,
+      userName: context.userName || null,
+      action: isDryRun ? "response_action_dry_run" : "response_action_executed",
+      resourceType: "response_action",
+      resourceId: context.incidentId || context.alertId || null,
+      details: {
+        actionType,
+        parameters: config,
+        result: result.status,
+        message: result.message,
+        durationMs,
+        dryRun: isDryRun,
+        incidentId: context.incidentId,
+        alertId: context.alertId,
+      },
+    });
+  } catch (err) {
+    log.warn("Failed to create audit log for response action", {
+      actionType,
+      error: String(err),
+    });
+  }
+}
+
+/**
+ * Internal switch statement extracted from dispatchAction for separation of concerns.
+ * Contains all existing action execution cases unchanged.
+ */
+async function executeActionSwitch(
+  actionType: string,
+  config: Record<string, unknown>,
+  context: ActionContext,
+  executedAt: string,
+): Promise<ActionResult> {
   switch (actionType) {
     case "create_jira_ticket":
       return executeTicketing("jira", config as TicketingConfig, context, executedAt);
