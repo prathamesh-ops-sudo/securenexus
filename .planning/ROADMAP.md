@@ -67,7 +67,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md -- Split storage.ts (6,243 lines) into ~18 domain modules with barrel index.ts
+- [x] 03-01-PLAN.md -- Split storage.ts (6,243 lines) into ~18 domain modules with barrel index.ts
 - [ ] 03-02-PLAN.md -- Split routes/ai.ts (3,544 lines) into ~12 domain modules
 - [ ] 03-03-PLAN.md -- Split routes/playbooks.ts (3,541 lines) into ~5 domain modules
 

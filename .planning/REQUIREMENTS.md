@@ -55,7 +55,7 @@ Requirements for production-hardening milestone. Each maps to roadmap phases.
 
 - [ ] **SPLIT-01**: Split server/routes/ai.ts (3,542 lines) into domain modules (triage, narrative, correlation, context-optimization, embeddings)
 - [ ] **SPLIT-02**: Split server/routes/playbooks.ts (3,541 lines) into domain modules (crud, execution, scheduling, templates)
-- [ ] **SPLIT-03**: Split server/storage.ts (6,222 lines) into domain modules (alerts, incidents, connectors, auth, etc.) with barrel export for backward compatibility
+- [x] **SPLIT-03**: Split server/storage.ts (6,222 lines) into domain modules (alerts, incidents, connectors, auth, etc.) with barrel export for backward compatibility
 
 ### Structured Logging & Observability
 
@@ -140,7 +140,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | SEC-05 | Phase 2 | Pending |
 | SPLIT-01 | Phase 3 | Pending |
 | SPLIT-02 | Phase 3 | Pending |
-| SPLIT-03 | Phase 3 | Pending |
+| SPLIT-03 | Phase 3 | Complete |
 | QUAL-02 | Phase 4 | Pending |
 | OBS-01 | Phase 4 | Pending |
 | OBS-02 | Phase 4 | Pending |
