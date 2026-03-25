@@ -2,6 +2,9 @@ import type { Express, Request, Response } from "express";
 import { getOrgId, logger, storage } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { resolveOrgContext } from "../../rbac";
+import { db } from "../../db";
+import { alerts, incidents, entities, iocEntries, endpointTelemetry } from "@shared/schema";
+import { count, eq } from "drizzle-orm";
 
 const log = logger.child("routes-ai-context");
 
@@ -33,6 +36,31 @@ export function registerAiContextRoutes(app: Express): void {
       const tokenBudget = Math.min(Math.max(maxTokens, 1024), 32768);
       const perSourceBudget = Math.floor(tokenBudget / selectedSources.length);
 
+      // Query real document counts per source from database
+      const [alertCount, incidentCount, entityCount, iocCount, telemetryCount] = await Promise.all([
+        db.select({ value: count() }).from(alerts).where(eq(alerts.orgId, orgId)).then((r) => r[0]?.value ?? 0),
+        db.select({ value: count() }).from(incidents).where(eq(incidents.orgId, orgId)).then((r) => r[0]?.value ?? 0),
+        db.select({ value: count() }).from(entities).where(eq(entities.orgId, orgId)).then((r) => r[0]?.value ?? 0),
+        db.select({ value: count() }).from(iocEntries).where(eq(iocEntries.orgId, orgId)).then((r) => r[0]?.value ?? 0),
+        db
+          .select({ value: count() })
+          .from(endpointTelemetry)
+          .where(eq(endpointTelemetry.orgId, orgId))
+          .then((r) => r[0]?.value ?? 0),
+      ]);
+
+      const sourceCountMap: Record<string, number> = {
+        alerts: alertCount,
+        incidents: incidentCount,
+        entities: entityCount,
+        threat_intel: iocCount,
+        endpoint_telemetry: telemetryCount,
+        osint: 0,
+        ueba: 0,
+        network_flows: 0,
+        cloud_configs: 0,
+      };
+
       const contextPlan: {
         source: string;
         tokenBudget: number;
@@ -61,7 +89,7 @@ export function registerAiContextRoutes(app: Express): void {
           source,
           tokenBudget: Math.round(perSourceBudget * relevanceScore),
           relevanceScore: Math.round(relevanceScore * 100) / 100,
-          documentCount: Math.floor(Math.random() * 20) + 1,
+          documentCount: sourceCountMap[source] ?? 0,
           strategy: relevanceScore >= 0.7 ? "full_content" : relevanceScore >= 0.5 ? "summary" : "metadata_only",
         };
       });
