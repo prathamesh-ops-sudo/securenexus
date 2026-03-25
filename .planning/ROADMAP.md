@@ -15,9 +15,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Prerequisite Safety Fixes** - Fix empty catches, eliminate any types in critical modules, make error surface visible
 - [x] **Phase 2: Dependency Security & Build Hardening** - Upgrade vulnerable deps, move runtime DDL to migrations, secure API key rotation
 - [x] **Phase 3: God File Decomposition** - Split storage.ts, ai.ts, and playbooks.ts into domain modules with barrel exports
-- [ ] **Phase 4: Structured Logging & Observability** - Replace console.log calls with structured logger, enrich health endpoint, add error context
+- [x] **Phase 4: Structured Logging & Observability** - Replace console.log calls with structured logger, enrich health endpoint, add error context (completed 2026-03-25)
 - [x] **Phase 5: Correlation Engine Hardening** - Transaction isolation, conflict resolution, confidence scoring, and full test suite (completed 2026-03-25)
-- [ ] **Phase 6: Alert Pipeline Hardening** - Temporal deduplication, suppression rules, dashboard metrics, and stub elimination
+- [x] **Phase 6: Alert Pipeline Hardening** - Temporal deduplication, suppression rules, dashboard metrics, and stub elimination (completed 2026-03-25)
 - [ ] **Phase 7: Automated Response Safety** - Zod validation, dry-run mode, rollback API, audit trail, and dispatcher tests
 - [ ] **Phase 8: Connector Health & Resilience** - Health check loop, auto-restart, circuit breaker, status UI, and connector tests
 - [ ] **Phase 9: API Resilience & Performance** - Pool circuit breaker, AI degradation, async processing, caching, token budgets, billing fix
@@ -83,8 +83,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md -- Replace 24 console.* calls with logger.child() and enhance error tracker context (QUAL-02, OBS-01, OBS-03)
-- [ ] 04-02-PLAN.md -- Enrich /api/health with subsystem health: DB pool, connectors, job queue, AI (OBS-02)
+- [x] 04-01-PLAN.md -- Replace 24 console.* calls with logger.child() and enhance error tracker context (QUAL-02, OBS-01, OBS-03)
+- [x] 04-02-PLAN.md -- Enrich /api/health with subsystem health: DB pool, connectors, job queue, AI (OBS-02)
 
 ### Phase 5: Correlation Engine Hardening
 **Goal**: The correlation engine -- the platform's core value -- produces correct, conflict-free incident groupings backed by a full test suite
@@ -133,8 +133,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 07-01: TBD
-- [ ] 07-02: TBD
+- [ ] 07-01-PLAN.md -- Zod validation schemas for all action types + dry-run mode + audit logging in dispatcher (RESP-01, RESP-03, RESP-04)
+- [ ] 07-02-PLAN.md -- POST /api/incidents/:id/rollback-actions endpoint + autonomous rollback enhancements (RESP-02, RESP-04)
+- [ ] 07-03-PLAN.md -- Action dispatcher test suite: validation, dry-run, audit, rollback, concurrency (RESP-05)
 
 ### Phase 8: Connector Health & Resilience
 **Goal**: Connectors self-monitor, auto-recover from failures, and show real-time health status in the UI
@@ -196,10 +197,10 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 1. Prerequisite Safety Fixes | 2/2 | Complete | 2026-03-25 |
 | 2. Dependency Security & Build Hardening | 2/2 | Complete | 2026-03-25 |
 | 3. God File Decomposition | 3/3 | Complete | 2026-03-25 |
-| 4. Structured Logging & Observability | 0/2 | Not started | - |
+| 4. Structured Logging & Observability | 2/2 | Complete | 2026-03-25 |
 | 5. Correlation Engine Hardening | 3/3 | Complete   | 2026-03-25 |
-| 6. Alert Pipeline Hardening | 0/3 | Not started | - |
-| 7. Automated Response Safety | 0/2 | Not started | - |
+| 6. Alert Pipeline Hardening | 3/3 | Complete | 2026-03-25 |
+| 7. Automated Response Safety | 0/3 | Not started | - |
 | 8. Connector Health & Resilience | 0/2 | Not started | - |
 | 9. API Resilience & Performance | 0/3 | Not started | - |
 | 10. Test Coverage & Quality Gates | 0/3 | Not started | - |
