@@ -261,7 +261,7 @@ export interface IStorage {
   searchAlerts(query: string, orgId?: string): Promise<Alert[]>;
   getAlertsByIncident(incidentId: string): Promise<Alert[]>;
   findAlertByDedup(orgId: string | null, source: string, sourceEventId: string): Promise<Alert | undefined>;
-  upsertAlert(alert: InsertAlert): Promise<{ alert: Alert; isNew: boolean }>;
+  upsertAlert(alert: InsertAlert, dedupWindowMinutes?: number): Promise<{ alert: Alert; isNew: boolean; isDuplicate: boolean }>;
 
   getAlertsPaginated(params: {
     orgId?: string;

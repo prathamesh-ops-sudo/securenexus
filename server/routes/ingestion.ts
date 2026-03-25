@@ -304,7 +304,7 @@ export function registerIngestionRoutes(app: Express): void {
 
         const normalized = normalizeAlert(source, payload);
         const insertData = toInsertAlert(normalized, orgId);
-        const { alert, isNew } = await storage.upsertAlert(insertData);
+        const { alert, isNew, isDuplicate } = await storage.upsertAlert(insertData);
 
         let entityCount = 0;
         let correlationResult = null;
@@ -387,6 +387,8 @@ export function registerIngestionRoutes(app: Express): void {
           status: isNew ? "created" : "deduplicated",
           alertId: alert.id,
           source: normalized.source,
+          isDuplicate,
+          occurrenceCount: alert.occurrenceCount ?? 1,
           entities: entityCount,
           correlation: correlationResult
             ? { clusterId: correlationResult.clusterId, confidence: correlationResult.confidence }
@@ -451,7 +453,7 @@ export function registerIngestionRoutes(app: Express): void {
           try {
             const normalized = normalizeAlert(source, event);
             const insertData = toInsertAlert(normalized, orgId);
-            const { alert, isNew } = await storage.upsertAlert(insertData);
+            const { alert, isNew, isDuplicate } = await storage.upsertAlert(insertData);
             if (isNew) {
               created++;
               try {
@@ -475,7 +477,12 @@ export function registerIngestionRoutes(app: Express): void {
             } else {
               deduped++;
             }
-            results.push({ alertId: alert.id, status: isNew ? "created" : "deduplicated" });
+            results.push({
+              alertId: alert.id,
+              status: isNew ? "created" : "deduplicated",
+              isDuplicate,
+              occurrenceCount: alert.occurrenceCount ?? 1,
+            });
           } catch (err: any) {
             failed++;
             results.push({ error: "Processing failed", status: "failed" });
