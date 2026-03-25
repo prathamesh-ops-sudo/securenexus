@@ -1,6 +1,6 @@
 import type { IStorage } from "./storage";
 import { db } from "./db";
-import { agentResponseActions, nativeSensors } from "../shared/schema";
+import { agentResponseActions, nativeSensors, ROLE_PERMISSIONS } from "../shared/schema";
 import { eq, and, or, ilike, type SQL } from "drizzle-orm";
 import { logger } from "./routes/shared";
 import { validateWebhookUrl } from "./outbound-security";
@@ -95,6 +95,8 @@ export interface ActionContext {
   sensorId?: string;
   storage: IStorage;
   dryRun?: boolean;
+  callerOrgId?: string;
+  callerRole?: string;
 }
 
 export interface ActionResult {
@@ -103,6 +105,30 @@ export interface ActionResult {
   message: string;
   details?: Record<string, unknown>;
   executedAt: string;
+}
+
+/**
+ * Check permissions before allowing action dispatch.
+ * Validates org boundary and role-based access control.
+ */
+function checkActionPermissions(
+  actionType: string,
+  context: ActionContext,
+): { allowed: boolean; reason?: string } {
+  // Check org boundary: caller org must match target org
+  if (context.callerOrgId && context.orgId && context.callerOrgId !== context.orgId) {
+    return { allowed: false, reason: "Org boundary violation: caller org does not match target org" };
+  }
+
+  // Check role-based permissions: caller must have response_actions write scope
+  if (context.callerRole) {
+    const rolePerms = ROLE_PERMISSIONS[context.callerRole];
+    if (!rolePerms || !rolePerms.response_actions || !rolePerms.response_actions.includes("write")) {
+      return { allowed: false, reason: `Role ${context.callerRole} lacks response_actions write permission` };
+    }
+  }
+
+  return { allowed: true };
 }
 
 export async function dispatchAction(
@@ -126,6 +152,20 @@ export async function dispatchAction(
     // Audit the validation failure
     await safeCreateAuditLog(context, actionType, config, failResult, 0, false);
     return failResult;
+  }
+
+  // Step 1.5: Check permissions (per RESP-01 gap closure)
+  const permCheck = checkActionPermissions(actionType, context);
+  if (!permCheck.allowed) {
+    const denyResult: ActionResult = {
+      actionType,
+      status: "failed",
+      message: `Permission denied: ${permCheck.reason}`,
+      details: { permissionDenied: true, reason: permCheck.reason },
+      executedAt,
+    };
+    await safeCreateAuditLog(context, actionType, config, denyResult, 0, false, "response_action_permission_denied");
+    return denyResult;
   }
 
   // Step 2: If dry-run, return simulated result without executing (per RESP-01)
@@ -164,13 +204,14 @@ async function safeCreateAuditLog(
   result: ActionResult,
   durationMs: number,
   isDryRun: boolean,
+  auditAction?: string,
 ): Promise<void> {
   try {
     await createAuditLog({
       orgId: context.orgId || null,
       userId: context.userId || null,
       userName: context.userName || null,
-      action: isDryRun ? "response_action_dry_run" : "response_action_executed",
+      action: auditAction || (isDryRun ? "response_action_dry_run" : "response_action_executed"),
       resourceType: "response_action",
       resourceId: context.incidentId || context.alertId || null,
       details: {
