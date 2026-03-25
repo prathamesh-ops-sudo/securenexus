@@ -27,6 +27,8 @@ import {
   computeEmailStats,
   extractUrls,
 } from "../email-analyzer";
+import { getGraphAccessToken, fetchMailFromGraph, parseGraphMail } from "../integrations/microsoft365";
+import { getGmailAccessToken, fetchMailFromGmail, parseGmailMail } from "../integrations/google-workspace";
 
 const log = logger.child("email-security");
 
@@ -892,18 +894,104 @@ export function registerEmailSecurityRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        // This would use the microsoft365 integration module
-        // For now, return the expected contract
+        const { tenantId, clientId, clientSecret, userPrincipalName, maxMessages } = req.body;
+
+        // If no credentials provided, return configuration instructions
+        if (!tenantId || !clientId || !clientSecret) {
+          return res.json({
+            status: "ready",
+            message: "Microsoft 365 sync endpoint ready. Provide Graph API credentials in the request body to sync.",
+            configRequired: {
+              tenantId: "Azure AD tenant ID",
+              clientId: "App registration client ID",
+              clientSecret: "App registration client secret",
+              userPrincipalName: "Mailbox to monitor (e.g. security@company.com)",
+            },
+          });
+        }
+
+        // Authenticate with Graph API
+        let accessToken: string;
+        try {
+          accessToken = await getGraphAccessToken({ tenantId, clientId, clientSecret });
+        } catch (authErr) {
+          return res
+            .status(401)
+            .json({ error: "Failed to authenticate with Microsoft Graph API. Check your credentials." });
+        }
+
+        // Fetch mail from Graph API
+        const limit = Math.min(parseInt(String(maxMessages || "50")), 200);
+        const rawMessages = await fetchMailFromGraph(accessToken, userPrincipalName || "me", { top: limit });
+
+        // Parse and analyze each message
+        let ingested = 0;
+        let alertsCreated = 0;
+        for (const rawMsg of rawMessages) {
+          const parsed = parseGraphMail(rawMsg);
+          if (!parsed) continue;
+
+          // Analyze email for threats
+          const parsedHeaders =
+            parsed.headers && typeof parsed.headers === "object" ? (parsed.headers as Record<string, string>) : {};
+          const analysis = analyzeEmail(
+            parsed.senderAddress,
+            parsed.senderDisplayName || "",
+            parsed.subject || "",
+            parsed.bodyPreview || "",
+            parsedHeaders,
+            parsed.attachmentNames || [],
+            extractUrls(parsed.bodyPreview || ""),
+            parsed.replyTo,
+            [], // trustedDomains
+            [], // executiveNames
+          );
+
+          // Insert into emailMessages
+          const [created] = await db
+            .insert(emailMessages)
+            .values({
+              orgId,
+              messageId: parsed.messageId,
+              subject: parsed.subject,
+              senderAddress: parsed.senderAddress,
+              senderDisplayName: parsed.senderDisplayName,
+              recipientAddresses: parsed.recipientAddresses,
+              receivedAt: parsed.receivedAt,
+              direction: "inbound",
+              isSuspicious: analysis.isSuspicious,
+              headers: parsedHeaders,
+              source: "microsoft365",
+            })
+            .onConflictDoNothing()
+            .returning();
+
+          if (created) {
+            ingested++;
+            // Create findings for threats detected
+            for (const finding of analysis.allFindings) {
+              await db.insert(emailFindings).values({
+                orgId,
+                emailMessageId: created.id,
+                findingType: finding.findingType,
+                severity: finding.severity,
+                title: finding.title,
+                description: finding.description,
+                confidence: finding.confidence,
+                mitreTechnique: finding.mitreTechnique || null,
+                status: "open",
+              });
+              alertsCreated++;
+            }
+          }
+        }
+
         res.json({
-          status: "ready",
-          message:
-            "Microsoft 365 sync endpoint ready. Configure Graph API credentials in Integration Settings to enable.",
-          configRequired: {
-            tenantId: "Azure AD tenant ID",
-            clientId: "App registration client ID",
-            clientSecret: "App registration client secret",
-            userPrincipalName: "Mailbox to monitor (e.g. security@company.com)",
-          },
+          status: "completed",
+          message: `Synced ${ingested} messages from Microsoft 365`,
+          totalFetched: rawMessages.length,
+          ingested,
+          alertsCreated,
         });
       } catch (err) {
         log.error("Failed to sync M365 mail", { error: String(err) });
@@ -922,18 +1010,101 @@ export function registerEmailSecurityRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        // This would use the google-workspace integration module
-        // For now, return the expected contract
+        const { clientId, clientSecret, refreshToken, delegatedUser, maxMessages } = req.body;
+
+        // If no credentials provided, return configuration instructions
+        if (!clientId || !clientSecret || !refreshToken) {
+          return res.json({
+            status: "ready",
+            message: "Google Workspace sync endpoint ready. Provide Gmail API credentials in the request body to sync.",
+            configRequired: {
+              clientId: "OAuth2 client ID",
+              clientSecret: "OAuth2 client secret",
+              refreshToken: "OAuth2 refresh token",
+              delegatedUser: "Gmail user to monitor",
+            },
+          });
+        }
+
+        // Authenticate with Gmail API
+        let accessToken: string;
+        try {
+          accessToken = await getGmailAccessToken({ clientId, clientSecret, refreshToken });
+        } catch (authErr) {
+          return res.status(401).json({ error: "Failed to authenticate with Gmail API. Check your credentials." });
+        }
+
+        // Fetch mail from Gmail API
+        const limit = Math.min(parseInt(String(maxMessages || "50")), 200);
+        const rawMessages = await fetchMailFromGmail(accessToken, delegatedUser || "me", { maxResults: limit });
+
+        // Parse and analyze each message
+        let ingested = 0;
+        let alertsCreated = 0;
+        for (const rawMsg of rawMessages) {
+          const parsed = parseGmailMail(rawMsg);
+          if (!parsed) continue;
+
+          // Analyze email for threats
+          const gmailHeaders =
+            parsed.headers && typeof parsed.headers === "object" ? (parsed.headers as Record<string, string>) : {};
+          const analysis = analyzeEmail(
+            parsed.senderAddress,
+            parsed.senderDisplayName || "",
+            parsed.subject || "",
+            parsed.bodyPreview || "",
+            gmailHeaders,
+            parsed.attachmentNames || [],
+            extractUrls(parsed.bodyPreview || ""),
+            parsed.replyTo,
+            [], // trustedDomains
+            [], // executiveNames
+          );
+
+          // Insert into emailMessages
+          const [created] = await db
+            .insert(emailMessages)
+            .values({
+              orgId,
+              messageId: parsed.messageId,
+              subject: parsed.subject,
+              senderAddress: parsed.senderAddress,
+              senderDisplayName: parsed.senderDisplayName,
+              recipientAddresses: parsed.recipientAddresses,
+              receivedAt: parsed.receivedAt,
+              direction: "inbound",
+              isSuspicious: analysis.isSuspicious,
+              headers: gmailHeaders,
+              source: "gmail",
+            })
+            .onConflictDoNothing()
+            .returning();
+
+          if (created) {
+            ingested++;
+            for (const finding of analysis.allFindings) {
+              await db.insert(emailFindings).values({
+                orgId,
+                emailMessageId: created.id,
+                findingType: finding.findingType,
+                severity: finding.severity,
+                title: finding.title,
+                description: finding.description,
+                confidence: finding.confidence,
+                mitreTechnique: finding.mitreTechnique || null,
+                status: "open",
+              });
+              alertsCreated++;
+            }
+          }
+        }
+
         res.json({
-          status: "ready",
-          message:
-            "Google Workspace sync endpoint ready. Configure Gmail API credentials in Integration Settings to enable.",
-          configRequired: {
-            clientId: "OAuth2 client ID",
-            clientSecret: "OAuth2 client secret",
-            refreshToken: "OAuth2 refresh token",
-            delegatedUser: "Gmail user to monitor",
-          },
+          status: "completed",
+          message: `Synced ${ingested} messages from Gmail`,
+          totalFetched: rawMessages.length,
+          ingested,
+          alertsCreated,
         });
       } catch (err) {
         log.error("Failed to sync Gmail", { error: String(err) });

@@ -4,7 +4,8 @@ import { resolveOrgContext, requireOrgId } from "../rbac";
 import { logger, getOrgId, generateApiKey, hashApiKey } from "./shared";
 import { db } from "../db";
 import { sql, eq, and, desc, ilike, or, count } from "drizzle-orm";
-import { randomBytes } from "crypto";
+import { randomBytes, timingSafeEqual } from "crypto";
+import type { Request, Response, NextFunction } from "express";
 import {
   nativeSensors,
   sensorEvents,
@@ -18,8 +19,53 @@ import {
 } from "../../shared/schema";
 import { processEventBatch } from "../native-detections";
 import { seedBuiltinRules } from "../native-detections";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 const log = logger.child("native-sensors");
+
+/** Timing-safe comparison of two hex-encoded hashes */
+function safeHashEqual(a: string | null | undefined, b: string): boolean {
+  if (!a) return false;
+  try {
+    const bufA = Buffer.from(a, "hex");
+    const bufB = Buffer.from(b, "hex");
+    if (bufA.length !== bufB.length) return false;
+    return timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Middleware: authenticate a sensor agent via API key (Bearer token or X-API-Key header).
+ * On success sets req.sensorId and req.sensorOrgId on the request for downstream handlers.
+ */
+async function sensorApiKeyAuth(req: Request, res: Response, next: NextFunction) {
+  const sensorId = String(req.params.id);
+  const bearerToken =
+    req.headers["x-api-key"] ||
+    (typeof req.headers.authorization === "string" ? req.headers.authorization.replace("Bearer ", "") : undefined);
+  if (!bearerToken || typeof bearerToken !== "string") {
+    return res.status(401).json({ message: "Missing sensor API key" });
+  }
+  const keyHash = hashApiKey(bearerToken);
+
+  const [sensor] = await db
+    .select({ id: nativeSensors.id, orgId: nativeSensors.orgId, apiKey: nativeSensors.apiKey })
+    .from(nativeSensors)
+    .where(eq(nativeSensors.id, sensorId))
+    .limit(1);
+
+  if (!sensor || !safeHashEqual(sensor.apiKey, keyHash)) {
+    return res.status(401).json({ message: "Invalid sensor credentials" });
+  }
+
+  // Attach sensor context to request for downstream handlers
+  (req as any).sensorId = sensor.id;
+  (req as any).sensorOrgId = sensor.orgId;
+  next();
+}
 
 export function registerNativeSensorRoutes(app: Express): void {
   // ==========================================================================
@@ -181,10 +227,10 @@ export function registerNativeSensorRoutes(app: Express): void {
     }
   });
 
-  // Heartbeat — agent calls home every 30s
-  app.post("/api/native-sensors/:id/heartbeat", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+  // Heartbeat — agent calls home every 30s (supports both session auth and sensor API key auth)
+  app.post("/api/native-sensors/:id/heartbeat", sensorApiKeyAuth, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = (req as any).sensorOrgId;
       const sensorId = String(req.params.id);
 
       const [sensor] = await db
@@ -219,10 +265,10 @@ export function registerNativeSensorRoutes(app: Express): void {
     }
   });
 
-  // Bulk event ingestion — up to 500 events per call
-  app.post("/api/native-sensors/:id/events", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+  // Bulk event ingestion — up to 500 events per call (supports both session auth and sensor API key auth)
+  app.post("/api/native-sensors/:id/events", sensorApiKeyAuth, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = (req as any).sensorOrgId;
       const sensorId = String(req.params.id);
 
       const [sensor] = await db
@@ -449,6 +495,184 @@ EOF`;
       }
     },
   );
+
+  // ==========================================================================
+  // AGENT INSTALL SCRIPT SERVING
+  // ==========================================================================
+
+  // GET /api/native-sensors/agent/install.sh — serve Linux/macOS install script
+  app.get("/api/native-sensors/agent/install.sh", (_req, res) => {
+    try {
+      // Use process.cwd() for production esbuild compatibility (__dirname is dist/ in prod)
+      const scriptPath = join(process.cwd(), "server", "agent", "install.sh");
+      const script = readFileSync(scriptPath, "utf-8");
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Content-Disposition", "inline; filename=install.sh");
+      res.send(script);
+    } catch (error) {
+      log.error("Failed to serve install.sh", { error: String(error) });
+      res
+        .status(500)
+        .send("#!/bin/bash\necho 'ERROR: Install script not available. Contact your administrator.'\nexit 1\n");
+    }
+  });
+
+  // GET /api/native-sensors/agent/install.ps1 — serve Windows install script
+  app.get("/api/native-sensors/agent/install.ps1", (_req, res) => {
+    try {
+      // Use process.cwd() for production esbuild compatibility (__dirname is dist/ in prod)
+      const scriptPath = join(process.cwd(), "server", "agent", "install.ps1");
+      const script = readFileSync(scriptPath, "utf-8");
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Content-Disposition", "inline; filename=install.ps1");
+      res.send(script);
+    } catch (error) {
+      log.error("Failed to serve install.ps1", { error: String(error) });
+      res.status(500).send("Write-Error 'Install script not available. Contact your administrator.'\nexit 1\n");
+    }
+  });
+
+  // ==========================================================================
+  // AGENT ACTION POLLING & RESULT REPORTING
+  // ==========================================================================
+
+  // GET /api/native-sensors/:id/pending-actions — agents poll for approved actions
+  app.get("/api/native-sensors/:id/pending-actions", async (req, res) => {
+    try {
+      const sensorId = String(req.params.id);
+
+      // Authenticate sensor via API key (Bearer token or X-API-Key header)
+      const bearerToken =
+        req.headers["x-api-key"] ||
+        (typeof req.headers.authorization === "string" ? req.headers.authorization.replace("Bearer ", "") : undefined);
+      if (!bearerToken || typeof bearerToken !== "string") {
+        return res.status(401).json({ message: "Missing sensor API key", actions: [] });
+      }
+      const keyHash = hashApiKey(bearerToken);
+
+      // Verify sensor exists AND API key matches
+      const [sensor] = await db
+        .select({ id: nativeSensors.id, orgId: nativeSensors.orgId, apiKey: nativeSensors.apiKey })
+        .from(nativeSensors)
+        .where(eq(nativeSensors.id, sensorId))
+        .limit(1);
+
+      if (!sensor || !safeHashEqual(sensor.apiKey, keyHash)) {
+        return res.status(401).json({ message: "Invalid sensor credentials", actions: [] });
+      }
+
+      // Atomically claim and return approved actions (prevents double-dispatch on concurrent polls)
+      const claimedActions = await db.execute(sql`
+        UPDATE agent_response_actions
+        SET status = 'executing', dispatched_at = NOW(), updated_at = NOW()
+        WHERE id IN (
+          SELECT id FROM agent_response_actions
+          WHERE sensor_id = ${sensorId}
+            AND org_id = ${sensor.orgId}
+            AND status = 'approved'
+            AND dispatched_at IS NULL
+          ORDER BY created_at ASC
+          LIMIT 10
+          FOR UPDATE SKIP LOCKED
+        )
+        RETURNING id, action_type, status, target_pid, target_process_name,
+                  target_ip, target_file_path, target_user_name, target_domain,
+                  target_service_name, script_content, script_type, parameters,
+                  reason, timeout_seconds, created_at
+      `);
+
+      const actions = ((claimedActions as any).rows || []).map((row: any) => ({
+        id: row.id,
+        actionType: row.action_type,
+        status: row.status,
+        targetPid: row.target_pid,
+        targetProcessName: row.target_process_name,
+        targetIp: row.target_ip,
+        targetFilePath: row.target_file_path,
+        targetUserName: row.target_user_name,
+        targetDomain: row.target_domain,
+        targetServiceName: row.target_service_name,
+        scriptContent: row.script_content,
+        scriptType: row.script_type,
+        parameters: row.parameters,
+        reason: row.reason,
+        timeoutSeconds: row.timeout_seconds,
+        createdAt: row.created_at,
+      }));
+
+      res.json({ actions, count: actions.length });
+    } catch (error) {
+      log.error("Failed to fetch pending actions", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch pending actions", actions: [] });
+    }
+  });
+
+  // POST /api/native-sensors/:id/action-result/:actionId — agents report action results
+  app.post("/api/native-sensors/:id/action-result/:actionId", async (req, res) => {
+    try {
+      const sensorId = String(req.params.id);
+      const actionId = String(req.params.actionId);
+      const { status, resultOutput } = req.body;
+
+      // Authenticate sensor via API key
+      const bearerToken =
+        req.headers["x-api-key"] ||
+        (typeof req.headers.authorization === "string" ? req.headers.authorization.replace("Bearer ", "") : undefined);
+      if (!bearerToken || typeof bearerToken !== "string") {
+        return res.status(401).json({ message: "Missing sensor API key" });
+      }
+      const keyHash = hashApiKey(bearerToken);
+
+      // Verify sensor exists AND API key matches
+      const [sensorCheck] = await db
+        .select({ id: nativeSensors.id, apiKey: nativeSensors.apiKey })
+        .from(nativeSensors)
+        .where(eq(nativeSensors.id, sensorId))
+        .limit(1);
+
+      if (!sensorCheck || !safeHashEqual(sensorCheck.apiKey, keyHash)) {
+        return res.status(401).json({ message: "Invalid sensor credentials" });
+      }
+
+      if (!status || !["completed", "failed"].includes(status)) {
+        return res.status(400).json({ message: "status must be 'completed' or 'failed'" });
+      }
+
+      // Verify action belongs to this sensor
+      const actionResult = await db.execute(sql`
+        SELECT id, sensor_id, action_type, org_id
+        FROM agent_response_actions
+        WHERE id = ${actionId} AND sensor_id = ${sensorId}
+        LIMIT 1
+      `);
+
+      const actionRow = (actionResult as any).rows?.[0];
+      if (!actionRow) {
+        return res.status(404).json({ message: "Action not found for this sensor" });
+      }
+
+      // Update action status
+      await db.execute(sql`
+        UPDATE agent_response_actions
+        SET status = ${status},
+            completed_at = NOW(),
+            result_output = ${String(resultOutput || "").slice(0, 4000)},
+            updated_at = NOW()
+        WHERE id = ${actionId}
+      `);
+
+      log.info(`Action result reported: ${actionRow.action_type} -> ${status}`, {
+        actionId,
+        sensorId,
+        orgId: actionRow.org_id,
+      });
+
+      res.json({ message: "Action result recorded", actionId, status });
+    } catch (error) {
+      log.error("Failed to report action result", { error: String(error) });
+      res.status(500).json({ message: "Failed to report action result" });
+    }
+  });
 
   // ==========================================================================
   // SENSOR EVENTS

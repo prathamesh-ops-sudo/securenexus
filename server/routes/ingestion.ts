@@ -23,6 +23,7 @@ import { broadcastEvent } from "../event-bus";
 import { SOURCE_KEYS, normalizeAlert, toInsertAlert } from "../normalizer";
 import { CACHE_TTL, buildCacheKey, cacheGetOrLoad, cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { parseSyslog, syslogToEvent, normalizeWebhookPayload } from "../integrations/syslog-ingest";
 
 export function registerIngestionRoutes(app: Express): void {
   // API Key Management (authenticated user routes)
@@ -770,4 +771,184 @@ export function registerIngestionRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to fetch data quality metrics" });
     }
   });
+
+  // ==========================================================================
+  // SYSLOG / WEBHOOK INGESTION — Parse raw syslog or vendor webhook payloads
+  // ==========================================================================
+
+  // POST /api/ingestion/syslog — accept raw syslog messages (RFC 3164/5424)
+  app.post(
+    "/api/ingestion/syslog",
+    apiKeyAuth,
+    requireScope("ingest:write"),
+    ingestionLimiter,
+    async (req: Request, res: Response) => {
+      const startTime = Date.now();
+      const orgId = (req as any).orgId;
+      const requestId = randomBytes(8).toString("hex");
+
+      try {
+        const { messages, source } = req.body;
+        if (!messages || !Array.isArray(messages) || messages.length === 0) {
+          return res.status(400).json({ error: "messages array is required", requestId });
+        }
+        if (messages.length > 500) {
+          return res.status(400).json({ error: "Maximum 500 syslog messages per batch", requestId });
+        }
+
+        let parsed = 0;
+        let failed = 0;
+        const normalizedEvents: Array<Record<string, unknown>> = [];
+
+        for (const raw of messages) {
+          if (typeof raw !== "string") {
+            failed++;
+            continue;
+          }
+          const syslogMsg = parseSyslog(raw);
+          if (!syslogMsg) {
+            failed++;
+            continue;
+          }
+          const event = syslogToEvent(syslogMsg, source || "syslog");
+          normalizedEvents.push(event as unknown as Record<string, unknown>);
+          parsed++;
+        }
+
+        // Insert normalized events as alerts via the standard pipeline
+        let created = 0;
+        let insertFailed = 0;
+        for (const event of normalizedEvents) {
+          try {
+            const normalized = normalizeAlert(String(event.logSource || source || "syslog"), event);
+            const insertData = toInsertAlert(normalized, orgId);
+            const { alert, isNew } = await storage.upsertAlert(insertData);
+            if (isNew) {
+              created++;
+              try {
+                await resolveAndLinkEntities(alert);
+                await correlateAlert(alert);
+              } catch (err) {
+                logger.child("ingestion").warn("Syslog entity/correlation warning", { error: String(err) });
+              }
+            }
+          } catch {
+            insertFailed++;
+          }
+        }
+
+        const totalFailed = failed + insertFailed;
+
+        if (created > 0) {
+          cacheInvalidate("dashboard:");
+          cacheInvalidate("ingestion:");
+        }
+
+        await storage.createIngestionLog({
+          orgId,
+          source: source || "syslog",
+          status: totalFailed === messages.length ? "failed" : created > 0 ? "success" : "deduped",
+          alertsReceived: messages.length,
+          alertsCreated: created,
+          alertsDeduped: parsed - created - insertFailed,
+          alertsFailed: totalFailed,
+          requestId,
+          ipAddress: req.ip || null,
+          processingTimeMs: Date.now() - startTime,
+        });
+
+        res.status(created > 0 ? 201 : 200).json({
+          requestId,
+          status: totalFailed === messages.length ? "failed" : "success",
+          summary: {
+            received: messages.length,
+            parsed,
+            created,
+            failed: totalFailed,
+          },
+        });
+      } catch (error: any) {
+        logger.child("ingestion").error("Syslog ingestion error", { error: String(error) });
+        res.status(500).json({ error: "Syslog ingestion failed", requestId });
+      }
+    },
+  );
+
+  // POST /api/ingestion/webhook/:source — accept vendor webhook payloads (Palo Alto, Fortinet, CrowdStrike, CloudTrail)
+  app.post(
+    "/api/ingestion/webhook/:source",
+    apiKeyAuth,
+    requireScope("ingest:write"),
+    ingestionLimiter,
+    async (req: Request, res: Response) => {
+      const startTime = Date.now();
+      const source = p(req.params.source);
+      const orgId = (req as any).orgId;
+      const requestId = randomBytes(8).toString("hex");
+
+      try {
+        const payload = req.body;
+        if (!payload || typeof payload !== "object") {
+          return res.status(400).json({ error: "Invalid webhook payload", requestId });
+        }
+
+        // Normalize using our syslog-ingest normalizer
+        const normalizedEvents = normalizeWebhookPayload(payload, source);
+
+        let created = 0;
+        let failed = 0;
+
+        for (const event of normalizedEvents) {
+          try {
+            const normalized = normalizeAlert(source, event as unknown as Record<string, unknown>);
+            const insertData = toInsertAlert(normalized, orgId);
+            const { alert, isNew } = await storage.upsertAlert(insertData);
+            if (isNew) {
+              created++;
+              try {
+                await resolveAndLinkEntities(alert);
+                await correlateAlert(alert);
+              } catch (err) {
+                logger.child("ingestion").warn("Webhook entity/correlation warning", { error: String(err) });
+              }
+            }
+          } catch {
+            failed++;
+          }
+        }
+
+        if (created > 0) {
+          cacheInvalidate("dashboard:");
+          cacheInvalidate("ingestion:");
+        }
+
+        await storage.createIngestionLog({
+          orgId,
+          source,
+          status: normalizedEvents.length === 0 ? "failed" : created > 0 ? "success" : "deduped",
+          alertsReceived: normalizedEvents.length,
+          alertsCreated: created,
+          alertsDeduped: normalizedEvents.length - created - failed,
+          alertsFailed: failed,
+          requestId,
+          ipAddress: req.ip || null,
+          processingTimeMs: Date.now() - startTime,
+        });
+
+        res.status(created > 0 ? 201 : 200).json({
+          requestId,
+          status: normalizedEvents.length === 0 ? "no_events" : "success",
+          source,
+          summary: {
+            eventsNormalized: normalizedEvents.length,
+            created,
+            failed,
+          },
+        });
+      } catch (error: any) {
+        logger.child("ingestion").error(`Webhook ingestion error [${source}]`, { error: String(error) });
+        res.status(500).json({ error: "Webhook ingestion failed", requestId });
+      }
+    },
+  );
 }
