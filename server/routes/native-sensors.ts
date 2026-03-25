@@ -459,7 +459,8 @@ EOF`;
   // GET /api/native-sensors/agent/install.sh — serve Linux/macOS install script
   app.get("/api/native-sensors/agent/install.sh", (_req, res) => {
     try {
-      const scriptPath = join(__dirname, "..", "agent", "install.sh");
+      // Use process.cwd() for production esbuild compatibility (__dirname is dist/ in prod)
+      const scriptPath = join(process.cwd(), "server", "agent", "install.sh");
       const script = readFileSync(scriptPath, "utf-8");
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.setHeader("Content-Disposition", "inline; filename=install.sh");
@@ -475,7 +476,8 @@ EOF`;
   // GET /api/native-sensors/agent/install.ps1 — serve Windows install script
   app.get("/api/native-sensors/agent/install.ps1", (_req, res) => {
     try {
-      const scriptPath = join(__dirname, "..", "agent", "install.ps1");
+      // Use process.cwd() for production esbuild compatibility (__dirname is dist/ in prod)
+      const scriptPath = join(process.cwd(), "server", "agent", "install.ps1");
       const script = readFileSync(scriptPath, "utf-8");
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.setHeader("Content-Disposition", "inline; filename=install.ps1");

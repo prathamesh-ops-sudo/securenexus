@@ -820,7 +820,7 @@ export function registerIngestionRoutes(app: Express): void {
         let insertFailed = 0;
         for (const event of normalizedEvents) {
           try {
-            const normalized = normalizeAlert(String(event.source || "syslog"), event);
+            const normalized = normalizeAlert(String(event.logSource || source || "syslog"), event);
             const insertData = toInsertAlert(normalized, orgId);
             const { isNew } = await storage.upsertAlert(insertData);
             if (isNew) created++;

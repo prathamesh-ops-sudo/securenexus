@@ -175,7 +175,7 @@ get_memory_usage() {
   if [ "$PLATFORM" = "linux" ]; then
     free | awk '/Mem:/ {printf "%.1f", ($3/$2)*100}'
   elif [ "$PLATFORM" = "macos" ]; then
-    vm_stat 2>/dev/null | awk '/Pages active/ {active=$3} /Pages wired/ {wired=$3} /Pages free/ {free=$3} END {printf "%.1f", (active+wired)/(active+wired+free)*100}' | tr -d '.' || echo "0"
+    vm_stat 2>/dev/null | awk '/Pages active/ {gsub(/\./,"",$3); active=$3} /Pages wired/ {gsub(/\./,"",$3); wired=$3} /Pages free/ {gsub(/\./,"",$3); free=$3} END {printf "%.1f", (active+wired)/(active+wired+free)*100}' || echo "0"
   fi
 }
 
