@@ -1131,4 +1131,200 @@ export function registerThreatIntelRoutes(app: Express): void {
       }
     },
   );
+
+  // ==========================================================================
+  // THREAT INTEL ENRICHMENT — enrich IOCs using VirusTotal & AbuseIPDB
+  // ==========================================================================
+
+  app.post(
+    "/api/enrichment/lookup",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const { iocType, iocValue } = req.body;
+
+        if (!iocType || !iocValue) {
+          return res.status(400).json({ message: "iocType and iocValue are required" });
+        }
+
+        const validTypes = ["ip", "domain", "hash", "url"];
+        if (!validTypes.includes(iocType)) {
+          return res.status(400).json({ message: `iocType must be one of: ${validTypes.join(", ")}` });
+        }
+
+        // Get org's threat intel API keys
+        const vtConfig = await storage.getThreatIntelConfig(orgId, "virustotal");
+        const abuseConfig = await storage.getThreatIntelConfig(orgId, "abuseipdb");
+
+        const results: Array<Record<string, unknown>> = [];
+
+        // VirusTotal enrichment (supports all IOC types)
+        if (vtConfig?.apiKey && vtConfig.enabled !== false) {
+          try {
+            const { enrichIoc } = await import("../integrations/virustotal");
+            const vtResult = await enrichIoc(iocType as "ip" | "domain" | "hash" | "url", iocValue, vtConfig.apiKey);
+            results.push({
+              provider: "virustotal",
+              iocType: vtResult.iocType,
+              iocValue: vtResult.iocValue,
+              isMalicious: vtResult.isMalicious,
+              confidence: vtResult.confidence,
+              details: vtResult.details,
+              error: vtResult.error || null,
+            });
+          } catch (err) {
+            results.push({
+              provider: "virustotal",
+              iocType,
+              iocValue,
+              isMalicious: false,
+              confidence: 0,
+              details: null,
+              error: `VirusTotal lookup failed: ${String(err)}`,
+            });
+          }
+        }
+
+        // AbuseIPDB enrichment (IP only)
+        if (iocType === "ip" && abuseConfig?.apiKey && abuseConfig.enabled !== false) {
+          try {
+            const { checkIpReputation } = await import("../integrations/abuseipdb");
+            const abuseResult = await checkIpReputation(iocValue, abuseConfig.apiKey);
+            results.push({
+              provider: "abuseipdb",
+              iocType: "ip",
+              iocValue: abuseResult.ip,
+              isMalicious: abuseResult.isMalicious,
+              confidence: abuseResult.confidence,
+              details: abuseResult.details,
+              error: abuseResult.error || null,
+            });
+          } catch (err) {
+            results.push({
+              provider: "abuseipdb",
+              iocType: "ip",
+              iocValue,
+              isMalicious: false,
+              confidence: 0,
+              details: null,
+              error: `AbuseIPDB lookup failed: ${String(err)}`,
+            });
+          }
+        }
+
+        // Compute aggregate verdict
+        const anyMalicious = results.some((r) => r.isMalicious === true);
+        const maxConfidence = results.reduce((max, r) => Math.max(max, (r.confidence as number) || 0), 0);
+
+        res.json({
+          iocType,
+          iocValue,
+          verdict: anyMalicious ? "malicious" : maxConfidence > 30 ? "suspicious" : "clean",
+          confidence: maxConfidence,
+          providersQueried: results.length,
+          providersConfigured: [
+            vtConfig?.apiKey ? "virustotal" : null,
+            abuseConfig?.apiKey ? "abuseipdb" : null,
+          ].filter(Boolean),
+          results,
+        });
+      } catch (error) {
+        logger.child("routes").error("Enrichment lookup failed", { error: String(error) });
+        res.status(500).json({ message: "Failed to perform enrichment lookup" });
+      }
+    },
+  );
+
+  // Batch enrichment endpoint
+  app.post(
+    "/api/enrichment/batch",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const { iocs } = req.body;
+
+        if (!iocs || !Array.isArray(iocs) || iocs.length === 0) {
+          return res.status(400).json({ message: "iocs array is required" });
+        }
+        if (iocs.length > 25) {
+          return res.status(400).json({ message: "Maximum 25 IOCs per batch" });
+        }
+
+        const vtConfig = await storage.getThreatIntelConfig(orgId, "virustotal");
+        const abuseConfig = await storage.getThreatIntelConfig(orgId, "abuseipdb");
+
+        const results: Array<Record<string, unknown>> = [];
+
+        for (const ioc of iocs) {
+          const { type: iocType, value: iocValue } = ioc;
+          if (!iocType || !iocValue) continue;
+
+          const iocResults: Array<Record<string, unknown>> = [];
+
+          // VirusTotal
+          if (vtConfig?.apiKey && vtConfig.enabled !== false) {
+            try {
+              const { enrichIoc } = await import("../integrations/virustotal");
+              const vtResult = await enrichIoc(iocType as "ip" | "domain" | "hash" | "url", iocValue, vtConfig.apiKey);
+              iocResults.push({
+                provider: "virustotal",
+                isMalicious: vtResult.isMalicious,
+                confidence: vtResult.confidence,
+              });
+            } catch {
+              iocResults.push({ provider: "virustotal", isMalicious: false, confidence: 0, error: "lookup failed" });
+            }
+          }
+
+          // AbuseIPDB (IP only)
+          if (iocType === "ip" && abuseConfig?.apiKey && abuseConfig.enabled !== false) {
+            try {
+              const { checkIpReputation } = await import("../integrations/abuseipdb");
+              const abuseResult = await checkIpReputation(iocValue, abuseConfig.apiKey);
+              iocResults.push({
+                provider: "abuseipdb",
+                isMalicious: abuseResult.isMalicious,
+                confidence: abuseResult.confidence,
+              });
+            } catch {
+              iocResults.push({ provider: "abuseipdb", isMalicious: false, confidence: 0, error: "lookup failed" });
+            }
+          }
+
+          const anyMalicious = iocResults.some((r) => r.isMalicious === true);
+          const maxConf = iocResults.reduce((max, r) => Math.max(max, (r.confidence as number) || 0), 0);
+
+          results.push({
+            iocType,
+            iocValue,
+            verdict: anyMalicious ? "malicious" : maxConf > 30 ? "suspicious" : "clean",
+            confidence: maxConf,
+            providers: iocResults,
+          });
+
+          // Small delay between lookups to respect rate limits
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+
+        res.json({
+          totalProcessed: results.length,
+          malicious: results.filter((r) => r.verdict === "malicious").length,
+          suspicious: results.filter((r) => r.verdict === "suspicious").length,
+          clean: results.filter((r) => r.verdict === "clean").length,
+          results,
+        });
+      } catch (error) {
+        logger.child("routes").error("Batch enrichment failed", { error: String(error) });
+        res.status(500).json({ message: "Failed to perform batch enrichment" });
+      }
+    },
+  );
 }

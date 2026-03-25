@@ -18,6 +18,8 @@ import {
 } from "../../shared/schema";
 import { processEventBatch } from "../native-detections";
 import { seedBuiltinRules } from "../native-detections";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 const log = logger.child("native-sensors");
 
@@ -449,6 +451,159 @@ EOF`;
       }
     },
   );
+
+  // ==========================================================================
+  // AGENT INSTALL SCRIPT SERVING
+  // ==========================================================================
+
+  // GET /api/native-sensors/agent/install.sh — serve Linux/macOS install script
+  app.get("/api/native-sensors/agent/install.sh", (_req, res) => {
+    try {
+      const scriptPath = join(__dirname, "..", "agent", "install.sh");
+      const script = readFileSync(scriptPath, "utf-8");
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Content-Disposition", "inline; filename=install.sh");
+      res.send(script);
+    } catch (error) {
+      log.error("Failed to serve install.sh", { error: String(error) });
+      res
+        .status(500)
+        .send("#!/bin/bash\necho 'ERROR: Install script not available. Contact your administrator.'\nexit 1\n");
+    }
+  });
+
+  // GET /api/native-sensors/agent/install.ps1 — serve Windows install script
+  app.get("/api/native-sensors/agent/install.ps1", (_req, res) => {
+    try {
+      const scriptPath = join(__dirname, "..", "agent", "install.ps1");
+      const script = readFileSync(scriptPath, "utf-8");
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Content-Disposition", "inline; filename=install.ps1");
+      res.send(script);
+    } catch (error) {
+      log.error("Failed to serve install.ps1", { error: String(error) });
+      res.status(500).send("Write-Error 'Install script not available. Contact your administrator.'\nexit 1\n");
+    }
+  });
+
+  // ==========================================================================
+  // AGENT ACTION POLLING & RESULT REPORTING
+  // ==========================================================================
+
+  // GET /api/native-sensors/:id/pending-actions — agents poll for approved actions
+  app.get("/api/native-sensors/:id/pending-actions", async (req, res) => {
+    try {
+      const sensorId = String(req.params.id);
+
+      // Verify sensor exists (lightweight check without org context since agents call this)
+      const [sensor] = await db
+        .select({ id: nativeSensors.id, orgId: nativeSensors.orgId })
+        .from(nativeSensors)
+        .where(eq(nativeSensors.id, sensorId))
+        .limit(1);
+
+      if (!sensor) {
+        return res.status(404).json({ message: "Sensor not found", actions: [] });
+      }
+
+      // Fetch approved actions for this sensor that haven't been dispatched yet
+      const pendingActions = await db.execute(sql`
+        SELECT id, action_type, status, target_pid, target_process_name,
+               target_ip, target_file_path, target_user_name, target_domain,
+               target_service_name, script_content, script_type, parameters,
+               reason, timeout_seconds, created_at
+        FROM agent_response_actions
+        WHERE sensor_id = ${sensorId}
+          AND org_id = ${sensor.orgId}
+          AND status = 'approved'
+          AND dispatched_at IS NULL
+        ORDER BY created_at ASC
+        LIMIT 10
+      `);
+
+      const actions = ((pendingActions as any).rows || []).map((row: any) => ({
+        id: row.id,
+        actionType: row.action_type,
+        status: row.status,
+        targetPid: row.target_pid,
+        targetProcessName: row.target_process_name,
+        targetIp: row.target_ip,
+        targetFilePath: row.target_file_path,
+        targetUserName: row.target_user_name,
+        targetDomain: row.target_domain,
+        targetServiceName: row.target_service_name,
+        scriptContent: row.script_content,
+        scriptType: row.script_type,
+        parameters: row.parameters,
+        reason: row.reason,
+        timeoutSeconds: row.timeout_seconds,
+        createdAt: row.created_at,
+      }));
+
+      // Mark these actions as dispatched
+      if (actions.length > 0) {
+        const actionIds = actions.map((a: { id: string }) => a.id);
+        await db.execute(sql`
+          UPDATE agent_response_actions
+          SET status = 'executing', dispatched_at = NOW(), updated_at = NOW()
+          WHERE id = ANY(${actionIds})
+            AND sensor_id = ${sensorId}
+        `);
+      }
+
+      res.json({ actions, count: actions.length });
+    } catch (error) {
+      log.error("Failed to fetch pending actions", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch pending actions", actions: [] });
+    }
+  });
+
+  // POST /api/native-sensors/:id/action-result/:actionId — agents report action results
+  app.post("/api/native-sensors/:id/action-result/:actionId", async (req, res) => {
+    try {
+      const sensorId = String(req.params.id);
+      const actionId = String(req.params.actionId);
+      const { status, resultOutput } = req.body;
+
+      if (!status || !["completed", "failed"].includes(status)) {
+        return res.status(400).json({ message: "status must be 'completed' or 'failed'" });
+      }
+
+      // Verify action belongs to this sensor
+      const actionResult = await db.execute(sql`
+        SELECT id, sensor_id, action_type, org_id
+        FROM agent_response_actions
+        WHERE id = ${actionId} AND sensor_id = ${sensorId}
+        LIMIT 1
+      `);
+
+      const actionRow = (actionResult as any).rows?.[0];
+      if (!actionRow) {
+        return res.status(404).json({ message: "Action not found for this sensor" });
+      }
+
+      // Update action status
+      await db.execute(sql`
+        UPDATE agent_response_actions
+        SET status = ${status},
+            completed_at = NOW(),
+            result_output = ${String(resultOutput || "").slice(0, 4000)},
+            updated_at = NOW()
+        WHERE id = ${actionId}
+      `);
+
+      log.info(`Action result reported: ${actionRow.action_type} -> ${status}`, {
+        actionId,
+        sensorId,
+        orgId: actionRow.org_id,
+      });
+
+      res.json({ message: "Action result recorded", actionId, status });
+    } catch (error) {
+      log.error("Failed to report action result", { error: String(error) });
+      res.status(500).json({ message: "Failed to report action result" });
+    }
+  });
 
   // ==========================================================================
   // SENSOR EVENTS
