@@ -430,7 +430,7 @@ async function resolveSensorId(orgId: string, config: AgentActionConfig, context
 
   const conditions: SQL[] = [eq(nativeSensors.orgId, orgId)];
   if (hostname && ip) {
-    conditions.push(or(ilike(nativeSensors.hostname, hostname), eq(nativeSensors.ipAddress, ip)));
+    conditions.push(or(ilike(nativeSensors.hostname, hostname), eq(nativeSensors.ipAddress, ip))!);
   } else if (hostname) {
     conditions.push(ilike(nativeSensors.hostname, hostname));
   } else if (ip) {
