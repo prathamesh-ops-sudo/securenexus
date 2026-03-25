@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Structured Logging & Observability** - Replace console.log calls with structured logger, enrich health endpoint, add error context (completed 2026-03-25)
 - [x] **Phase 5: Correlation Engine Hardening** - Transaction isolation, conflict resolution, confidence scoring, and full test suite (completed 2026-03-25)
 - [x] **Phase 6: Alert Pipeline Hardening** - Temporal deduplication, suppression rules, dashboard metrics, and stub elimination (completed 2026-03-25)
-- [ ] **Phase 7: Automated Response Safety** - Zod validation, dry-run mode, rollback API, audit trail, and dispatcher tests
+- [x] **Phase 7: Automated Response Safety** - Zod validation, dry-run mode, rollback API, audit trail, and dispatcher tests
 - [ ] **Phase 8: Connector Health & Resilience** - Health check loop, auto-restart, circuit breaker, status UI, and connector tests
 - [ ] **Phase 9: API Resilience & Performance** - Pool circuit breaker, AI degradation, async processing, caching, token budgets, billing fix
 - [ ] **Phase 10: Test Coverage & Quality Gates** - OAuth tests, RBAC boundary tests, billing tests, ESLint pre-commit hooks
@@ -130,12 +130,13 @@ Plans:
   3. POST /api/incidents/{id}/rollback-actions generates and executes reverse operations with a full audit trail
   4. Every response action creates an audit_logs entry with action type, parameters, result, duration, and triggering user
   5. Test suite covers dry-run, rollback, permission checks, and concurrent execution on the same incident
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [ ] 07-01-PLAN.md -- Zod validation schemas for all action types + dry-run mode + audit logging in dispatcher (RESP-01, RESP-03, RESP-04)
 - [ ] 07-02-PLAN.md -- POST /api/incidents/:id/rollback-actions endpoint + autonomous rollback enhancements (RESP-02, RESP-04)
 - [ ] 07-03-PLAN.md -- Action dispatcher test suite: validation, dry-run, audit, rollback, concurrency (RESP-05)
+- [ ] 07-04-PLAN.md -- Gap closure: dispatcher permission checks + permission test coverage (RESP-01, RESP-05)
 
 ### Phase 8: Connector Health & Resilience
 **Goal**: Connectors self-monitor, auto-recover from failures, and show real-time health status in the UI
@@ -199,8 +200,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 3. God File Decomposition | 3/3 | Complete | 2026-03-25 |
 | 4. Structured Logging & Observability | 2/2 | Complete | 2026-03-25 |
 | 5. Correlation Engine Hardening | 3/3 | Complete   | 2026-03-25 |
-| 6. Alert Pipeline Hardening | 3/3 | Complete | 2026-03-25 |
-| 7. Automated Response Safety | 0/3 | Not started | - |
+| 6. Alert Pipeline Hardening | 0/3 | Complete | 2026-03-25 |
+| 7. Automated Response Safety | 0/4 | Gap closure | 2026-03-25 |
 | 8. Connector Health & Resilience | 0/2 | Not started | - |
 | 9. API Resilience & Performance | 0/3 | Not started | - |
 | 10. Test Coverage & Quality Gates | 0/3 | Not started | - |
