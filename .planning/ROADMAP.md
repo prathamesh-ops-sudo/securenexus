@@ -12,7 +12,7 @@ SecureNexus has a complete feature surface (28 pages, 110+ routes, 8 connectors)
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Prerequisite Safety Fixes** - Fix empty catches, eliminate any types in critical modules, make error surface visible
+- [x] **Phase 1: Prerequisite Safety Fixes** - Fix empty catches, eliminate any types in critical modules, make error surface visible
 - [ ] **Phase 2: Dependency Security & Build Hardening** - Upgrade vulnerable deps, move runtime DDL to migrations, secure API key rotation
 - [ ] **Phase 3: God File Decomposition** - Split storage.ts, ai.ts, and playbooks.ts into domain modules with barrel exports
 - [ ] **Phase 4: Structured Logging & Observability** - Replace console.log calls with structured logger, enrich health endpoint, add error context
@@ -48,11 +48,11 @@ Plans:
   2. ai_inference_log table creation happens via Drizzle migration at deploy time, not at runtime in ai.ts
   3. API key rotation endpoint allows generating a new key with a 24-hour grace period on the old key, with soft-delete audit trail
   4. No npm audit high/critical findings in the dependency tree
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md -- Upgrade xmldom/stripe/passport deps and move ai_inference_log to Drizzle migration
+- [ ] 02-02-PLAN.md -- Implement API key rotation endpoint with 24h grace period
 
 ### Phase 3: God File Decomposition
 **Goal**: The three largest files are split into navigable domain modules without breaking any existing imports or behavior
@@ -193,7 +193,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Prerequisite Safety Fixes | 0/2 | Planning complete | - |
+| 1. Prerequisite Safety Fixes | 2/2 | Complete | 2026-03-25 |
 | 2. Dependency Security & Build Hardening | 0/2 | Not started | - |
 | 3. God File Decomposition | 0/3 | Not started | - |
 | 4. Structured Logging & Observability | 0/2 | Not started | - |
