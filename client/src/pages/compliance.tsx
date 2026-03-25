@@ -32,8 +32,7 @@ import {
   LayoutDashboard,
   Archive,
 } from "lucide-react";
-import { SuccessIcon, LockUnlockIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
-import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
+import { LockUnlockIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -460,7 +459,7 @@ function ComplianceCenterTab() {
         <Card>
           <CardContent className="pt-4 pb-3 px-4">
             <div className="flex items-center gap-2 mb-2">
-              <SuccessIcon size={16} color="#22c55e" aria-hidden="true" />
+              <CheckCircle2 className="h-4 w-4 text-green-500" />
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Audit Readiness
               </span>
@@ -845,7 +844,7 @@ function PoliciesTab() {
                   onClick={() => toggleFramework(fw)}
                   data-testid={`badge-framework-${fw}`}
                 >
-                  {frameworks.includes(fw) && <SuccessIcon size={12} color="#22c55e" />}
+                  {frameworks.includes(fw) && <CheckCircle2 className="h-3 w-3 text-green-500" />}
                   {fw}
                 </Badge>
               ))}
@@ -1178,7 +1177,7 @@ function DsarTab() {
                                 {fulfillDsar.isPending && fulfillDsar.variables === req.id ? (
                                   <Loader2 className="h-3 w-3 animate-spin" />
                                 ) : (
-                                  <SuccessIcon size={12} color="#22c55e" />
+                                  <CheckCircle2 className="h-3 w-3 text-green-500" />
                                 )}
                               </Button>
                               {statusUpdateId === req.id ? (
@@ -1206,7 +1205,7 @@ function DsarTab() {
                                     {updateStatus.isPending ? (
                                       <Loader2 className="h-3 w-3 animate-spin" />
                                     ) : (
-                                      <SuccessIcon size={12} color="#22c55e" />
+                                      <CheckCircle2 className="h-3 w-3 text-green-500" />
                                     )}
                                   </Button>
                                 </div>
@@ -1450,7 +1449,7 @@ function AuditIntegrityTab() {
             <div className="space-y-3 pt-2" data-testid="section-verify-result">
               <div className="flex items-center gap-3 p-4 rounded-md bg-muted/30">
                 {verifyResult.verified ? (
-                  <SuccessIcon size={32} color="#22c55e" />
+                  <CheckCircle2 className="h-8 w-8 text-green-500" />
                 ) : (
                   <XCircle className="h-8 w-8 text-red-500 flex-shrink-0" />
                 )}
@@ -1514,7 +1513,7 @@ function AuditIntegrityTab() {
             <div className="flex items-center gap-3">
               {verifyResult ? (
                 verifyResult.verified ? (
-                  <SuccessIcon size={16} color="#22c55e" />
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
                 ) : (
                   <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
                 )

@@ -52,7 +52,6 @@ import {
   Skull,
   Timer,
 } from "lucide-react";
-import { EyeToggleIcon, NotificationIcon } from "@/components/ui/animated-state-icons";
 import { apiRequest } from "@/lib/queryClient";
 import { FormPageSkeleton } from "@/components/page-skeleton";
 

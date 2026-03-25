@@ -173,7 +173,7 @@ export default function TenantIsolationPage() {
               {quotaStatus.throttled ? (
                 <XCircle className="h-5 w-5 text-red-500" />
               ) : (
-                <SuccessIcon size={20} color="#22c55e" />
+                <CheckCircle2 className="h-5 w-5 text-green-500" />
               )}
               <div>
                 <p className="text-lg font-bold">{quotaStatus.throttled ? "Throttled" : "Active"}</p>

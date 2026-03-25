@@ -160,7 +160,7 @@ export default function ManualAiTriggersPage() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     {r.status === "success" ? (
-                      <SuccessIcon size={16} color="#22c55e" />
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
                     ) : (
                       <AlertTriangle className="h-4 w-4 text-red-500" />
                     )}

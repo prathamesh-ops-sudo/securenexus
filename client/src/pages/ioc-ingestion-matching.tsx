@@ -223,7 +223,7 @@ function FeedStatusBadge({ status }: { status: string | null }) {
   if (status === "success") {
     return (
       <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs">
-        <SuccessIcon size={12} color="#22c55e" /> Success
+        <CheckCircle2 className="h-3 w-3 text-green-500" /> Success
       </Badge>
     );
   }

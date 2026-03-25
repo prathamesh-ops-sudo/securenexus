@@ -358,7 +358,7 @@ export default function TenantDataPage() {
 function StatusIcon({ status }: { status: string }) {
   switch (status) {
     case "completed":
-      return <SuccessIcon size={20} color="#22c55e" />;
+      return <CheckCircle2 className="h-5 w-5 text-green-500" />;
     case "running":
     case "pending":
       return <Clock className="h-5 w-5 text-yellow-400" />;

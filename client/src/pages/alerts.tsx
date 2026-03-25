@@ -33,15 +33,10 @@ import {
   GitBranch,
   Network,
   GripVertical,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
-import {
-  VolumeIcon,
-  NotificationIcon as AnimatedBellIcon,
-  SuccessIcon,
-  EyeToggleIcon,
-  DownloadDoneIcon,
-} from "@/components/ui/animated-state-icons";
-import { ThunderIcon } from "@/components/ui/animated-weather-icons";
+import { EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -1349,7 +1344,7 @@ export default function AlertsPage() {
           }}
           title={soundEnabled ? "Disable sound notifications" : "Enable sound notifications"}
         >
-          <VolumeIcon size={16} color="currentColor" />
+          {soundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
         </Button>
         {/* 2.3: Quick preset save toggle */}
         <Button variant="outline" size="sm" onClick={() => setShowPresetSave(!showPresetSave)}>

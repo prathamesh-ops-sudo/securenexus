@@ -354,7 +354,7 @@ function CircuitBreakerPanel({ breakers }: { breakers: Record<string, CircuitBre
   if (entries.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-        <SuccessIcon size={40} color="#22c55e" />
+        <CheckCircle2 className="h-10 w-10 text-green-500" />
         <p className="text-sm font-medium">All Circuits Healthy</p>
         <p className="text-xs mt-1">No circuit breakers have been tripped</p>
       </div>
@@ -465,7 +465,7 @@ function ErrorLog({ errors }: { errors: ErrorEntry[] }) {
   if (errors.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-        <SuccessIcon size={40} color="#22c55e" />
+        <CheckCircle2 className="h-10 w-10 text-green-500" />
         <p className="text-sm font-medium">No Errors Recorded</p>
         <p className="text-xs mt-1">Error log is clean</p>
       </div>

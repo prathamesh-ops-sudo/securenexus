@@ -40,7 +40,7 @@ import {
   TrendingUp,
   Lock,
 } from "lucide-react";
-import { SuccessIcon, EyeToggleIcon, DownloadDoneIcon } from "@/components/ui/animated-state-icons";
+import { DownloadDoneIcon } from "@/components/ui/animated-state-icons";
 
 type PortalTab = "api-keys" | "webhooks" | "api-docs" | "sdk";
 

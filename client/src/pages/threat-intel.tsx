@@ -28,8 +28,7 @@ import {
   Bell,
   BellRing,
 } from "lucide-react";
-import { SuccessIcon, NotificationIcon } from "@/components/ui/animated-state-icons";
-import { WindIcon, FogIcon } from "@/components/ui/animated-weather-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -1192,7 +1191,7 @@ export default function ThreatIntelPage() {
             <Card data-testid="card-ioc-db-active">
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Active IOCs</CardTitle>
-                <SuccessIcon size={16} color="#22c55e" />
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="stat-ioc-db-active">

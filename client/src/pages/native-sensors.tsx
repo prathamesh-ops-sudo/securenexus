@@ -48,7 +48,7 @@ import {
   XCircle,
   Ban,
 } from "lucide-react";
-import { SuccessIcon, DownloadDoneIcon } from "@/components/ui/animated-state-icons";
+import { DownloadDoneIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -356,7 +356,7 @@ function RegisterSensorDialog({ onSuccess }: { onSuccess: () => void }) {
                 <div className="space-y-1">
                   {PLATFORM_CAPABILITIES[platform]?.features.slice(0, 4).map((f, i) => (
                     <div key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <SuccessIcon size={12} color="#22c55e" />
+                      <CheckCircle2 className="h-3 w-3 text-green-500" />
                       {f}
                     </div>
                   ))}
@@ -839,7 +839,7 @@ function SensorDeploymentWizard() {
 
         {step === 5 && (
           <div className="text-center space-y-3 py-4">
-            <SuccessIcon size={48} color="#22c55e" />
+            <CheckCircle2 className="h-12 w-12 text-green-500" />
             <h3 className="font-medium">Deployment Complete!</h3>
             <p className="text-sm text-muted-foreground">
               Your {selectedPlatform} sensor is online and reporting data.

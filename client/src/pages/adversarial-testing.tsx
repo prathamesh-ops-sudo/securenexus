@@ -830,7 +830,7 @@ function RemediationCard({
                 className="h-7 text-[10px] hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/30 transition-colors"
                 onClick={() => onUpdateStatus("resolved")}
               >
-                <SuccessIcon size={12} color="#22c55e" />
+                <CheckCircle2 className="h-3 w-3 text-green-500" />
                 Resolve
               </Button>
             )}

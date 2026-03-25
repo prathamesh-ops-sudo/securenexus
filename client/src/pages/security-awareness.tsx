@@ -50,7 +50,6 @@ import {
   Eye,
 } from "lucide-react";
 import { SuccessIcon } from "@/components/ui/animated-state-icons";
-import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
 import { apiRequest } from "@/lib/queryClient";
 import { FormPageSkeleton } from "@/components/page-skeleton";
 
@@ -1032,7 +1031,8 @@ export default function SecurityAwarenessPage() {
                             variant="outline"
                             className="bg-green-500/10 text-green-400 border-green-500/20 text-xs"
                           >
-                            <SuccessIcon size={12} color="#22c55e" /> {assignment.passed ? "Passed" : "Completed"}
+                            <CheckCircle2 className="h-3 w-3 text-green-500" />{" "}
+                            {assignment.passed ? "Passed" : "Completed"}
                             {assignment.score != null ? ` (${assignment.score}%)` : ""}
                           </Badge>
                         ) : (

@@ -77,7 +77,7 @@ export default function ForgotPasswordPage() {
           {isSuccess ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 p-4 rounded-xl border-2 border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10">
-                <SuccessIcon size={20} color="#22c55e" />
+                <CheckCircle2 className="h-5 w-5 text-green-500" />
                 <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                   If an account with <strong>{email}</strong> exists, you will receive a password reset email shortly.
                 </p>

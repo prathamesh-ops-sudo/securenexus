@@ -21,7 +21,6 @@ import {
   Save,
 } from "lucide-react";
 import { SuccessIcon } from "@/components/ui/animated-state-icons";
-import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -285,7 +284,7 @@ function AssessmentDetailView({ assessmentId, onBack }: { assessmentId: string; 
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <SuccessIcon size={16} color="#22c55e" />
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
             <p className="text-xl font-bold">{assessment.implementedControls}</p>
             <p className="text-[10px] text-muted-foreground">Implemented</p>
           </CardContent>
@@ -627,7 +626,7 @@ export default function SecurityAssessmentsPage() {
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
-                      <SuccessIcon size={12} color="#22c55e" /> {a.implementedControls}
+                      <CheckCircle2 className="h-3 w-3 text-green-500" /> {a.implementedControls}
                     </span>
                     <span className="flex items-center gap-1">
                       <MinusCircle className="h-3 w-3 text-yellow-500" /> {a.partialControls}

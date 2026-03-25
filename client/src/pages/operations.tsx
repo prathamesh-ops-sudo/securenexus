@@ -30,7 +30,7 @@ import {
   Gauge,
   Database,
 } from "lucide-react";
-import { SuccessIcon, PlayPauseIcon } from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 
 function jobStatusStyle(status: string) {
   const styles: Record<string, string> = {
@@ -1103,7 +1103,7 @@ function DRRunbooksTab() {
                               {testMutation.isPending ? (
                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                               ) : (
-                                <SuccessIcon size={16} color="#22c55e" />
+                                <CheckCircle2 className="h-4 w-4 text-green-500" />
                               )}
                               Record Result
                             </Button>

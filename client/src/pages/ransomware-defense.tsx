@@ -54,7 +54,7 @@ import {
   BarChart3,
   Gauge,
 } from "lucide-react";
-import { SuccessIcon, DownloadDoneIcon } from "@/components/ui/animated-state-icons";
+import { DownloadDoneIcon } from "@/components/ui/animated-state-icons";
 import { EmptyState } from "@/components/empty-state";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 
@@ -1465,7 +1465,7 @@ export default function RansomwareDefensePage() {
                                 className="h-6 text-xs border-zinc-700 gap-1"
                                 onClick={() => updateExercise.mutate({ id: e.id, status: "completed", score: 75 })}
                               >
-                                <SuccessIcon size={12} color="#22c55e" /> Complete
+                                <CheckCircle2 className="h-3 w-3 text-green-500" /> Complete
                               </Button>
                             )}
                             <Button
@@ -2034,7 +2034,7 @@ export default function RansomwareDefensePage() {
                         <ul className="space-y-1">
                           {selectedExercise.scenario.objectives.map((o, i) => (
                             <li key={i} className="text-xs text-zinc-300 flex items-start gap-1">
-                              <SuccessIcon size={12} color="#22c55e" />
+                              <CheckCircle2 className="h-3 w-3 text-green-500" />
                               {o}
                             </li>
                           ))}

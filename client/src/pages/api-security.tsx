@@ -40,8 +40,6 @@ import {
   Users,
   TrendingUp,
 } from "lucide-react";
-import { LockUnlockIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
-import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 
 // ─── Types ──────────────────────────────────────────────────────────────────

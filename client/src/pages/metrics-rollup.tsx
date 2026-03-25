@@ -746,7 +746,7 @@ export default function MetricsRollupPage() {
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <SuccessIcon size={16} color="#22c55e" />
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
                       Last Rollup Result
                     </CardTitle>
                   </CardHeader>

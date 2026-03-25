@@ -1,5 +1,5 @@
 import { Shield, Globe, Database, Lock, Users, CheckCircle2, Building2, MapPin } from "lucide-react";
-import { SuccessIcon, LockUnlockIcon } from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import ContentLayout from "./content-layout";
 
 const challenges = [
@@ -213,7 +213,7 @@ export default function SolutionsIndiaPage() {
             {complianceFrameworks.map((framework) => (
               <div key={framework.name} className={`${brutCard} p-5`}>
                 <div className="flex items-start gap-3">
-                  <SuccessIcon size={16} color="#22c55e" />
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
                   <div>
                     <h3 className="font-extrabold text-sm">{framework.name}</h3>
                     <p className="text-xs text-[#64748b] dark:text-[#94a3b8] font-medium mt-0.5">

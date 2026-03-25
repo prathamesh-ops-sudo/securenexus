@@ -615,7 +615,7 @@ export default function BoardDashboardPage() {
                 <div className="flex flex-wrap gap-2">
                   {["SOC 2", "ISO 27001", "PCI DSS", "HIPAA", "GDPR"].map((fw) => (
                     <Badge key={fw} variant="outline" className="text-xs gap-1">
-                      <SuccessIcon size={12} color="#22c55e" />
+                      <CheckCircle2 className="h-3 w-3 text-green-500" />
                       {fw}
                     </Badge>
                   ))}

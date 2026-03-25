@@ -43,8 +43,7 @@ import {
   Gauge,
   ScanLine,
 } from "lucide-react";
-import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
-import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 
 // ── API helpers ──────────────────────────────────────────────────
@@ -276,7 +275,7 @@ function OverviewTab() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">CI Gate Pass Rate</CardTitle>
-            <SuccessIcon size={16} color="#22c55e" />
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats?.ciGatePassRate ?? 100}%</div>
@@ -655,7 +654,7 @@ function SecretsTab() {
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
-                    <SuccessIcon size={32} color="#22c55e" />
+                    <CheckCircle2 className="h-8 w-8 text-green-500" />
                     <span>No exposed secrets detected</span>
                   </div>
                 </TableCell>
@@ -773,7 +772,7 @@ function CiGatesTab() {
                   <TableCell>
                     {gate.status === "passed" ? (
                       <Badge variant="default" className="bg-green-600">
-                        <SuccessIcon size={12} color="#22c55e" /> Passed
+                        <CheckCircle2 className="h-3 w-3 text-green-500" /> Passed
                       </Badge>
                     ) : gate.status === "failed" ? (
                       <Badge variant="destructive">
@@ -885,7 +884,7 @@ function CodeReviewTab() {
                   <TableCell className="text-sm">{review.repository}</TableCell>
                   <TableCell>
                     {review.commentPosted ? (
-                      <SuccessIcon size={16} color="#22c55e" />
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
                     ) : (
                       <XCircle className="h-4 w-4 text-muted-foreground" />
                     )}

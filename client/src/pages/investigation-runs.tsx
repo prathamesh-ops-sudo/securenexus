@@ -17,7 +17,7 @@ import {
   Shield,
   Activity,
 } from "lucide-react";
-import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -79,7 +79,7 @@ export default function InvestigationRunsPage() {
 
   const statusIcon = (s: string) => {
     if (s === "running") return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
-    if (s === "completed") return <SuccessIcon size={16} color="#22c55e" />;
+    if (s === "completed") return <CheckCircle2 className="h-4 w-4 text-green-500" />;
     if (s === "failed") return <XCircle className="h-4 w-4 text-red-500" />;
     if (s === "queued") return <Clock className="h-4 w-4 text-yellow-500" />;
     return <Clock className="h-4 w-4 text-muted-foreground" />;
@@ -179,7 +179,7 @@ export default function InvestigationRunsPage() {
         </Card>
         <Card>
           <CardContent className="pt-4 flex items-center gap-2">
-            <SuccessIcon size={20} color="#22c55e" />
+            <CheckCircle2 className="h-5 w-5 text-green-500" />
             <div>
               <p className="text-2xl font-bold">{list.filter((i) => i.status === "completed").length}</p>
               <p className="text-xs text-muted-foreground">Completed</p>

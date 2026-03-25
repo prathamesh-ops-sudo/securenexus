@@ -36,7 +36,6 @@ import {
   Network,
   Info,
 } from "lucide-react";
-import { EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { EmptyState } from "@/components/empty-state";
 import { useLocation } from "wouter";
 import { TablePageSkeleton } from "@/components/page-skeleton";

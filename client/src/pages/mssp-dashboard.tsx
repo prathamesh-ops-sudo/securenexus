@@ -440,7 +440,7 @@ export default function MsspDashboardPage() {
             <Card className="glass-subtle">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <SuccessIcon size={16} color="#22c55e" />
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
                   SLA Compliance Overview
                 </CardTitle>
               </CardHeader>

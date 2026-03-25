@@ -24,7 +24,7 @@ import {
   BarChart3,
   Sliders,
 } from "lucide-react";
-import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -600,7 +600,7 @@ function EngineTab({ engineName, config }: { engineName: string; config: EngineC
                             className="text-[10px]"
                           >
                             {run.status === "completed" ? (
-                              <SuccessIcon size={12} color="#22c55e" />
+                              <CheckCircle2 className="h-3 w-3 text-green-500" />
                             ) : run.status === "running" ? (
                               <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                             ) : (

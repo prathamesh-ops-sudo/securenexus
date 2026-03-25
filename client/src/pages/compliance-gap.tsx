@@ -20,7 +20,6 @@ import {
   Zap,
 } from "lucide-react";
 import { SuccessIcon } from "@/components/ui/animated-state-icons";
-import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -156,7 +155,7 @@ export default function ComplianceGapPage() {
                   </div>
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
-                      <SuccessIcon size={12} color="#22c55e" /> {a.implementedControls}
+                      <CheckCircle2 className="h-3 w-3 text-green-500" /> {a.implementedControls}
                     </span>
                     <span className="flex items-center gap-1">
                       <XCircle className="h-3 w-3 text-red-400" /> {a.missingControls}
@@ -345,7 +344,7 @@ function ComplianceGauge({ score }: { score: number }) {
 function ControlStatusIcon({ status }: { status: string }) {
   switch (status) {
     case "implemented":
-      return <SuccessIcon size={16} color="#22c55e" />;
+      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
     case "partial":
       return <Minus className="h-4 w-4 text-yellow-400" />;
     case "missing":

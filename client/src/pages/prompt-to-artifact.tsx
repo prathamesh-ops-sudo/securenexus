@@ -38,12 +38,7 @@ import {
   Heart,
   Layers,
 } from "lucide-react";
-import {
-  SuccessIcon,
-  EyeToggleIcon,
-  SendIcon as AnimatedSendIcon,
-  HeartIcon as AnimatedHeartIcon,
-} from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -249,7 +244,7 @@ function StepIndicator({ step }: { step: InvestigationStep }) {
     <div className="flex items-start gap-3 py-2">
       <div className="mt-0.5">
         {step.status === "completed" ? (
-          <SuccessIcon size={16} color="#22c55e" />
+          <CheckCircle2 className="h-4 w-4 text-green-500" />
         ) : step.status === "running" ? (
           <Loader2 className="h-4 w-4 text-cyan-400 animate-spin" />
         ) : (

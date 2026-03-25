@@ -157,7 +157,7 @@ export default function PostIncidentReviewPage() {
         </Card>
         <Card>
           <CardContent className="pt-4 flex items-center gap-2">
-            <SuccessIcon size={20} color="#22c55e" />
+            <CheckCircle2 className="h-5 w-5 text-green-500" />
             <div>
               <p className="text-2xl font-bold">{list.filter((p) => p.status === "published").length}</p>
               <p className="text-xs text-muted-foreground">Published</p>
@@ -285,7 +285,7 @@ export default function PostIncidentReviewPage() {
                         {pir.actionItems.map((a) => (
                           <div key={a.id} className="flex items-center gap-2 text-sm p-2 border rounded">
                             {a.status === "done" ? (
-                              <SuccessIcon size={12} color="#22c55e" />
+                              <CheckCircle2 className="h-3 w-3 text-green-500" />
                             ) : (
                               <Clock className="h-3 w-3 text-yellow-500" />
                             )}

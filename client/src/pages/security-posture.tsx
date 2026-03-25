@@ -40,7 +40,6 @@ import {
   Search,
 } from "lucide-react";
 import { LockUnlockIcon } from "@/components/ui/animated-state-icons";
-import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
 
 function scoreColor(score: number): string {
   if (score >= 80) return "text-green-500";

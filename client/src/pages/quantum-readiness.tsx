@@ -42,7 +42,7 @@ import {
   Trash2,
   ChevronRight,
 } from "lucide-react";
-import { SuccessIcon, LockUnlockIcon } from "@/components/ui/animated-state-icons";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { apiRequest } from "@/lib/queryClient";
 import { FormPageSkeleton } from "@/components/page-skeleton";
 
@@ -521,7 +521,7 @@ export default function QuantumReadinessPage() {
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 mb-1">
-              <SuccessIcon size={16} color="#22c55e" />
+              <CheckCircle2 className="h-4 w-4 text-green-500" />
               <span className="text-xs text-muted-foreground">Migrated</span>
             </div>
             <div className="text-2xl font-semibold text-green-500">{score?.migratedAssets || 0}</div>
