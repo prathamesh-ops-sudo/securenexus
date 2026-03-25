@@ -21,6 +21,8 @@ import {
   Activity,
   DollarSign,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
+import { SunIcon, ThunderIcon } from "@/components/ui/animated-weather-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -582,7 +584,7 @@ function MetricsTab({ metrics }: { metrics: ActionMetric[] }) {
                             {metric.unit === "%" ? "%" : ""}
                           </span>
                           {metric.targetMet ? (
-                            <CheckCircle2 className="h-3 w-3 text-emerald-400 inline ml-1" />
+                            <SuccessIcon size={12} color="#22c55e" />
                           ) : (
                             <AlertTriangle className="h-3 w-3 text-yellow-400 inline ml-1" />
                           )}

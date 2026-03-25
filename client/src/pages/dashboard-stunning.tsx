@@ -20,6 +20,7 @@ import {
   Star,
   Medal,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";

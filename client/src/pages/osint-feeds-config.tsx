@@ -25,6 +25,7 @@ import {
   BarChart3,
   ChevronRight,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 
 interface FeedStatus {
   name: string;
@@ -123,7 +124,7 @@ function HealthTimeline({ entries }: { entries: HealthEntry[] }) {
           className="flex items-center gap-2 text-xs px-2 py-1 rounded-md glass-subtle"
         >
           {entry.status === "success" ? (
-            <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+            <SuccessIcon size={12} color="#22c55e" />
           ) : (
             <XCircle className="h-3 w-3 text-red-500 shrink-0" />
           )}

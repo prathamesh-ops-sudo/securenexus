@@ -35,6 +35,7 @@ import {
   Pause,
   Trash2,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -829,7 +830,7 @@ function RemediationCard({
                 className="h-7 text-[10px] hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/30 transition-colors"
                 onClick={() => onUpdateStatus("resolved")}
               >
-                <CheckCircle2 className="h-3 w-3 mr-1" />
+                <SuccessIcon size={12} color="#22c55e" />
                 Resolve
               </Button>
             )}

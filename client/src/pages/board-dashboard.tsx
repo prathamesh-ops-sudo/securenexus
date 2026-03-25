@@ -28,6 +28,7 @@ import {
   Users,
   Activity,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { DashboardSkeleton } from "@/components/page-skeleton";
 
 function apiFetch(url: string, options?: RequestInit) {
@@ -614,7 +615,7 @@ export default function BoardDashboardPage() {
                 <div className="flex flex-wrap gap-2">
                   {["SOC 2", "ISO 27001", "PCI DSS", "HIPAA", "GDPR"].map((fw) => (
                     <Badge key={fw} variant="outline" className="text-xs gap-1">
-                      <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                      <SuccessIcon size={12} color="#22c55e" />
                       {fw}
                     </Badge>
                   ))}

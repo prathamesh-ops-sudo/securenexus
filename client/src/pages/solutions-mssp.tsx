@@ -1,4 +1,5 @@
 import { Users, Building2, Eye, BarChart3, Layers, Lock, CheckCircle2 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import ContentLayout from "./content-layout";
 
 const msspFeatures = [
@@ -227,7 +228,7 @@ export default function SolutionsMsspPage() {
               "API access for custom integrations and automation workflows",
             ].map((item, i) => (
               <div key={i} className="flex items-start gap-3 p-3">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                <SuccessIcon size={16} color="#22c55e" />
                 <span className="text-sm text-[#64748b] dark:text-[#94a3b8] font-medium">{item}</span>
               </div>
             ))}

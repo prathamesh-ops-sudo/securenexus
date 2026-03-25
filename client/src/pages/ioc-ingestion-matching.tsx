@@ -31,6 +31,7 @@ import {
   PowerOff,
   Pencil,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -222,7 +223,7 @@ function FeedStatusBadge({ status }: { status: string | null }) {
   if (status === "success") {
     return (
       <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs">
-        <CheckCircle2 className="h-3 w-3 mr-1" /> Success
+        <SuccessIcon size={12} color="#22c55e" /> Success
       </Badge>
     );
   }

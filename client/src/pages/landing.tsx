@@ -27,6 +27,13 @@ import {
   Lightbulb,
   Star,
 } from "lucide-react";
+import {
+  SuccessIcon,
+  LockUnlockIcon,
+  SendIcon as AnimatedSendIcon,
+  HeartIcon as AnimatedHeartIcon,
+} from "@/components/ui/animated-state-icons";
+import { SunIcon, ThunderIcon, CloudIcon, RainbowIcon, SunriseIcon } from "@/components/ui/animated-weather-icons";
 import { FaGoogle, FaGithub } from "react-icons/fa";
 import {
   SiSplunk,
@@ -164,7 +171,7 @@ const features = [
 const metrics = [
   { value: "30min", label: "Time to deploy", icon: Clock },
   { value: "100%", label: "Standalone ready", icon: Shield },
-  { value: "4", label: "Compliance frameworks", icon: CheckCircle2 },
+  { value: "4", label: "Compliance frameworks", icon: ShieldCheck },
   { value: "0", label: "Dependencies needed", icon: Lock },
 ];
 

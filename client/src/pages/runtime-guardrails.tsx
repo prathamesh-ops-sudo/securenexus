@@ -30,6 +30,7 @@ import {
   Layers,
   TrendingUp,
 } from "lucide-react";
+import { SuccessIcon, LockUnlockIcon } from "@/components/ui/animated-state-icons";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

@@ -1,4 +1,5 @@
 import { Shield, FileCheck, BarChart3, CheckCircle2, AlertTriangle, Lock } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import ContentLayout from "./content-layout";
 
 const frameworks = [
@@ -228,7 +229,7 @@ export default function SolutionsCompliancePage() {
               "Full audit trail for regulatory submissions",
             ].map((item, i) => (
               <div key={i} className="flex items-start gap-3 p-3">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                <SuccessIcon size={16} color="#22c55e" />
                 <span className="text-sm text-[#64748b] dark:text-[#94a3b8] font-medium">{item}</span>
               </div>
             ))}

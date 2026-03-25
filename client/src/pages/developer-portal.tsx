@@ -40,6 +40,7 @@ import {
   TrendingUp,
   Lock,
 } from "lucide-react";
+import { SuccessIcon, EyeToggleIcon, DownloadDoneIcon } from "@/components/ui/animated-state-icons";
 
 type PortalTab = "api-keys" | "webhooks" | "api-docs" | "sdk";
 
@@ -934,7 +935,7 @@ curl https://api.securenexus.io/api/api-keys \\
 
       <div className="space-y-3">
         <h3 className="text-sm font-medium flex items-center gap-2">
-          <Download className="h-4 w-4" />
+          <DownloadDoneIcon size={18} color="currentColor" />
           SDKs & Integration Libraries
         </h3>
 

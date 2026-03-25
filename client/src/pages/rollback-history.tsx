@@ -25,6 +25,7 @@ import {
   BarChart3,
   Timer,
 } from "lucide-react";
+import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -157,7 +158,7 @@ export default function RollbackHistoryPage() {
   const triggers = (triggersData as any)?.triggers || [];
 
   const statusIcon = (s: string) => {
-    if (s === "executed") return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+    if (s === "executed") return <SuccessIcon size={16} color="#22c55e" />;
     if (s === "failed") return <XCircle className="h-4 w-4 text-red-500" />;
     if (s === "completed") return <Undo2 className="h-4 w-4 text-blue-500" />;
     return <Clock className="h-4 w-4 text-yellow-500" />;
@@ -220,7 +221,7 @@ export default function RollbackHistoryPage() {
         </Card>
         <Card>
           <CardContent className="pt-4 flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-green-500" />
+            <SuccessIcon size={20} color="#22c55e" />
             <div>
               <p className="text-2xl font-bold">
                 {list.filter((e: RollbackEntry) => e.status === "executed" || e.status === "completed").length}

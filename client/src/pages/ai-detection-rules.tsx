@@ -42,6 +42,7 @@ import {
   Search,
   Flag,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { DashboardSkeleton } from "@/components/page-skeleton";
 
 function apiFetch(url: string, options?: RequestInit) {
@@ -168,7 +169,7 @@ function severityColor(s: string) {
 function statusIcon(s: string) {
   switch (s) {
     case "completed":
-      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+      return <SuccessIcon size={16} color="#22c55e" />;
     case "generating":
       return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
     case "failed":
@@ -575,7 +576,7 @@ function GenerateTab() {
                   )}
                   {job.generatedRuleId && (
                     <Badge variant="outline" className="text-green-500 border-green-500/20 text-xs">
-                      <CheckCircle2 className="h-3 w-3 mr-1" /> Deployed
+                      <SuccessIcon size={12} color="#22c55e" /> Deployed
                     </Badge>
                   )}
                   {job.status === "failed" && job.errorMessage && (
@@ -781,7 +782,7 @@ function AbTestingTab() {
                           <XCircle className="h-3 w-3 mr-1" /> Reject
                         </Button>
                         <Button size="sm" onClick={() => completeMutation.mutate({ testId: test.id, promote: true })}>
-                          <CheckCircle2 className="h-3 w-3 mr-1" /> Promote
+                          <SuccessIcon size={12} color="#22c55e" /> Promote
                         </Button>
                       </>
                     )}
@@ -863,7 +864,7 @@ function LifecycleTab() {
             </div>
           ) : !candidates?.candidates?.length ? (
             <div className="text-center py-8 text-muted-foreground">
-              <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-green-500 opacity-50" />
+              <SuccessIcon size={32} color="#22c55e" />
               <p>All rules are actively matching events. No deprecation candidates found.</p>
             </div>
           ) : (

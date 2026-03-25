@@ -43,6 +43,7 @@ import {
   Filter,
   Activity,
 } from "lucide-react";
+import { SuccessIcon, LockUnlockIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -769,7 +770,7 @@ function EvidenceExportPanel({ evidenceId }: { evidenceId: string }) {
                 <h4 className="font-semibold mb-2">Integrity Verification</h4>
                 <div className="flex items-center gap-2">
                   {report.integrityVerification?.chainValid ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-400" />
+                    <SuccessIcon size={16} color="#22c55e" />
                   ) : (
                     <XCircle className="h-4 w-4 text-red-400" />
                   )}
@@ -1255,7 +1256,7 @@ export default function EvidenceCustodyPage() {
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
                       {verifyResult.integrityValid ? (
-                        <CheckCircle2 className="h-5 w-5 text-green-400" />
+                        <SuccessIcon size={20} color="#22c55e" />
                       ) : (
                         <XCircle className="h-5 w-5 text-red-400" />
                       )}

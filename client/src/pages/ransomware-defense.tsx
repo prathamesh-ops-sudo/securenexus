@@ -54,6 +54,7 @@ import {
   BarChart3,
   Gauge,
 } from "lucide-react";
+import { SuccessIcon, DownloadDoneIcon } from "@/components/ui/animated-state-icons";
 import { EmptyState } from "@/components/empty-state";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 
@@ -573,7 +574,7 @@ export default function RansomwareDefensePage() {
             onClick={() => importSeedGroups.mutate()}
             disabled={importSeedGroups.isPending}
           >
-            <Download className="h-4 w-4" />
+            <DownloadDoneIcon size={18} color="currentColor" />
             Import Intel
           </Button>
           <Button className="gap-1.5 bg-red-600 hover:bg-red-700 text-white" onClick={() => setKillSwitchOpen(true)}>
@@ -1464,7 +1465,7 @@ export default function RansomwareDefensePage() {
                                 className="h-6 text-xs border-zinc-700 gap-1"
                                 onClick={() => updateExercise.mutate({ id: e.id, status: "completed", score: 75 })}
                               >
-                                <CheckCircle2 className="h-3 w-3" /> Complete
+                                <SuccessIcon size={12} color="#22c55e" /> Complete
                               </Button>
                             )}
                             <Button
@@ -2033,7 +2034,7 @@ export default function RansomwareDefensePage() {
                         <ul className="space-y-1">
                           {selectedExercise.scenario.objectives.map((o, i) => (
                             <li key={i} className="text-xs text-zinc-300 flex items-start gap-1">
-                              <CheckCircle2 className="h-3 w-3 text-green-400 mt-0.5 shrink-0" />
+                              <SuccessIcon size={12} color="#22c55e" />
                               {o}
                             </li>
                           ))}

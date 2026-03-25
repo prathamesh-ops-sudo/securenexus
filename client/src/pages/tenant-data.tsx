@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   Loader2,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -357,7 +358,7 @@ export default function TenantDataPage() {
 function StatusIcon({ status }: { status: string }) {
   switch (status) {
     case "completed":
-      return <CheckCircle2 className="h-5 w-5 text-green-400" />;
+      return <SuccessIcon size={20} color="#22c55e" />;
     case "running":
     case "pending":
       return <Clock className="h-5 w-5 text-yellow-400" />;

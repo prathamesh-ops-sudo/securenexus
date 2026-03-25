@@ -36,6 +36,7 @@ import {
   Lock,
   Activity,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 
 interface ChildOrg {
   id: string;
@@ -439,7 +440,7 @@ export default function MsspDashboardPage() {
             <Card className="glass-subtle">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  <SuccessIcon size={16} color="#22c55e" />
                   SLA Compliance Overview
                 </CardTitle>
               </CardHeader>

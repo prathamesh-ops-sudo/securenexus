@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, AlertCircle, ArrowRight, Plug, ArrowDownToLine, Monitor, Cloud, Shield } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -71,7 +72,7 @@ export default function OnboardingPage() {
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 Connect your first integration
                 {data?.steps.integrations.completed ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  <SuccessIcon size={16} color="#22c55e" />
                 ) : (
                   <AlertCircle className="h-4 w-4 text-amber-500" />
                 )}
@@ -108,7 +109,7 @@ export default function OnboardingPage() {
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 Ingest alerts and events
                 {data?.steps.ingestion.completed ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  <SuccessIcon size={16} color="#22c55e" />
                 ) : (
                   <AlertCircle className="h-4 w-4 text-amber-500" />
                 )}
@@ -155,7 +156,7 @@ export default function OnboardingPage() {
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 Discover endpoint assets
                 {data?.steps.endpoints.completed ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  <SuccessIcon size={16} color="#22c55e" />
                 ) : (
                   <AlertCircle className="h-4 w-4 text-amber-500" />
                 )}
@@ -191,7 +192,7 @@ export default function OnboardingPage() {
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 Connect cloud accounts
                 {data?.steps.cspm.completed ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  <SuccessIcon size={16} color="#22c55e" />
                 ) : (
                   <AlertCircle className="h-4 w-4 text-amber-500" />
                 )}
@@ -220,7 +221,7 @@ export default function OnboardingPage() {
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 Deploy native sensors
                 {data?.steps.sensors?.completed ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  <SuccessIcon size={16} color="#22c55e" />
                 ) : (
                   <AlertCircle className="h-4 w-4 text-amber-500" />
                 )}

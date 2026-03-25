@@ -18,6 +18,7 @@ import {
   Copy,
   Search,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -88,7 +89,7 @@ export default function DomainAutoJoinPage() {
   const list = Array.isArray(domains) ? domains : [];
 
   const statusIcon = (s: string) => {
-    if (s === "verified") return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+    if (s === "verified") return <SuccessIcon size={16} color="#22c55e" />;
     if (s === "failed") return <XCircle className="h-4 w-4 text-red-500" />;
     return <Clock className="h-4 w-4 text-yellow-500" />;
   };
@@ -183,7 +184,7 @@ export default function DomainAutoJoinPage() {
         </Card>
         <Card>
           <CardContent className="pt-4 flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-green-500" />
+            <SuccessIcon size={20} color="#22c55e" />
             <div>
               <p className="text-2xl font-bold">{list.filter((d) => d.status === "verified").length}</p>
               <p className="text-xs text-muted-foreground">Verified</p>

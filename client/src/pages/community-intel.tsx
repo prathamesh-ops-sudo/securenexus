@@ -46,6 +46,8 @@ import {
   ArrowRight,
   Calendar,
 } from "lucide-react";
+import { EyeToggleIcon } from "@/components/ui/animated-state-icons";
+import { WindIcon, FogIcon } from "@/components/ui/animated-weather-icons";
 import { Progress } from "@/components/ui/progress";
 import { DashboardSkeleton } from "@/components/page-skeleton";
 

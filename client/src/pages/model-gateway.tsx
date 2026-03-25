@@ -36,6 +36,7 @@ import {
   Calendar,
   Target,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -353,7 +354,7 @@ function CircuitBreakerPanel({ breakers }: { breakers: Record<string, CircuitBre
   if (entries.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-        <CheckCircle2 className="h-10 w-10 mb-3 text-emerald-500/60" />
+        <SuccessIcon size={40} color="#22c55e" />
         <p className="text-sm font-medium">All Circuits Healthy</p>
         <p className="text-xs mt-1">No circuit breakers have been tripped</p>
       </div>
@@ -464,7 +465,7 @@ function ErrorLog({ errors }: { errors: ErrorEntry[] }) {
   if (errors.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-        <CheckCircle2 className="h-10 w-10 mb-3 text-emerald-500/60" />
+        <SuccessIcon size={40} color="#22c55e" />
         <p className="text-sm font-medium">No Errors Recorded</p>
         <p className="text-xs mt-1">Error log is clean</p>
       </div>

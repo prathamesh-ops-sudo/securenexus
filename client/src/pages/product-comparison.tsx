@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { CheckCircle2, XCircle, Minus } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import ContentLayout from "./content-layout";
 
 type Support = "full" | "partial" | "none";
@@ -222,7 +223,7 @@ const comparisonRows: ComparisonRow[] = [
 ];
 
 function SupportIcon({ level }: { level: Support }) {
-  if (level === "full") return <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-label="Fully supported" />;
+  if (level === "full") return <SuccessIcon size={16} color="#22c55e" aria-label="Fully supported" />;
   if (level === "partial") return <Minus className="h-4 w-4 text-amber-500" aria-label="Partially supported" />;
   return <XCircle className="h-4 w-4 text-red-400" aria-label="Not supported" />;
 }

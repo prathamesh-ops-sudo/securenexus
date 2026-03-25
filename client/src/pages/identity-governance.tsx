@@ -30,6 +30,7 @@ import {
   Link2,
   Calendar,
 } from "lucide-react";
+import { EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

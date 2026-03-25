@@ -40,6 +40,7 @@ import {
   Users,
   Activity,
 } from "lucide-react";
+import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -492,7 +493,7 @@ function ActiveSessionsTab() {
             </div>
           ) : sessions.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <SuccessIcon size={32} color="#22c55e" />
               <p className="text-sm">No active JIT sessions</p>
               <p className="text-xs mt-1">All privileged access windows are closed</p>
             </div>

@@ -36,6 +36,14 @@ import {
   KeyRound,
   MessageSquare,
 } from "lucide-react";
+import {
+  LockUnlockIcon,
+  NotificationIcon as AnimatedBellIcon,
+  SendIcon as AnimatedSendIcon,
+  ToggleIcon,
+  EyeToggleIcon,
+  SuccessIcon,
+} from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDateTime } from "@/lib/i18n";
 import { useAuth } from "@/hooks/use-auth";
@@ -398,7 +406,7 @@ export default function SettingsPage() {
       <Card id="settings-security">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Shield className="h-4 w-4 text-muted-foreground" />
+            <LockUnlockIcon size={18} color="currentColor" />
             Security & Authentication
           </CardTitle>
         </CardHeader>
@@ -510,7 +518,7 @@ export default function SettingsPage() {
       <Card id="settings-notifications">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Bell className="h-4 w-4 text-muted-foreground" />
+            <AnimatedBellIcon size={18} color="currentColor" />
             Notification Preferences
           </CardTitle>
         </CardHeader>

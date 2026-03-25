@@ -1,4 +1,5 @@
 import { Brain, Shield, Zap, Activity, Clock, TrendingDown, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import ContentLayout from "./content-layout";
 
 const comparisonData = [

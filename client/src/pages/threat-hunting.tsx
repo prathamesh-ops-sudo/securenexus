@@ -70,6 +70,8 @@ import {
   ChevronRight,
   Copy,
 } from "lucide-react";
+import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
+import { WindIcon, FogIcon } from "@/components/ui/animated-weather-icons";
 import { EmptyState } from "@/components/empty-state";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Progress } from "@/components/ui/progress";
@@ -791,7 +793,7 @@ function HuntDetailView({ hunt }: { hunt: ThreatHunt }) {
                   {r.eventCount > 0 ? (
                     <AlertTriangle className="h-3 w-3 text-amber-400" />
                   ) : (
-                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                    <SuccessIcon size={12} color="#22c55e" />
                   )}
                   <span>{r.eventCount} events found</span>
                 </div>
@@ -1352,7 +1354,7 @@ function HuntResultsTab() {
                     {r.eventCount > 0 ? (
                       <AlertTriangle className="h-5 w-5 text-amber-400" />
                     ) : (
-                      <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                      <SuccessIcon size={20} color="#22c55e" />
                     )}
                     <div>
                       <p className="text-sm font-medium">{r.eventCount} events matched</p>
@@ -1589,7 +1591,7 @@ function PivotTab() {
           {result.totalHits === 0 && (
             <Card>
               <CardContent className="py-8 text-center">
-                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-emerald-400" />
+                <SuccessIcon size={32} color="#22c55e" />
                 <p className="text-muted-foreground">No matches found for this IOC across your data.</p>
               </CardContent>
             </Card>
@@ -2790,7 +2792,7 @@ function ExecutionPlanPanel({ huntId }: { huntId: string }) {
               <p className="text-[10px] font-medium text-emerald-400">Optimizations Applied</p>
               {plan.optimizations.map((o, i) => (
                 <div key={i} className="flex items-center gap-1.5 text-xs">
-                  <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                  <SuccessIcon size={12} color="#22c55e" />
                   <span>{o}</span>
                 </div>
               ))}
@@ -3081,7 +3083,7 @@ function DriftDetectionPanel() {
                         onClick={() => ackMutation.mutate(drift.id)}
                         disabled={ackMutation.isPending}
                       >
-                        <CheckCircle2 className="h-3 w-3 mr-1" /> Acknowledge
+                        <SuccessIcon size={12} color="#22c55e" /> Acknowledge
                       </Button>
                     )}
                   </div>

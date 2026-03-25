@@ -44,6 +44,7 @@ import {
   RefreshCw,
   BookOpen,
 } from "lucide-react";
+import { EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 
 interface SOCStats {

@@ -45,6 +45,7 @@ import {
   Mail,
   Hash,
 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import {
   ResponsiveContainer,
   PieChart,
@@ -621,7 +622,7 @@ export default function ReportsPage() {
                             <td className="p-3">
                               {r.status === "completed" ? (
                                 <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 no-default-hover-elevate no-default-active-elevate">
-                                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                                  <SuccessIcon size={12} color="#22c55e" />
                                   Completed
                                 </Badge>
                               ) : r.status === "failed" ? (

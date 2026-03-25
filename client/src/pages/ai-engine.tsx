@@ -40,6 +40,7 @@ import {
   Clock,
   Info,
 } from "lucide-react";
+import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1139,7 +1140,7 @@ export default function AIEnginePage() {
         ) : health ? (
           <Badge variant={health.status === "healthy" ? "default" : "destructive"} data-testid="badge-health-status">
             {health.status === "healthy" ? (
-              <CheckCircle2 className="h-3 w-3 mr-1" aria-hidden="true" />
+              <SuccessIcon size={12} color="#22c55e" aria-hidden="true" />
             ) : (
               <XCircle className="h-3 w-3 mr-1" aria-hidden="true" />
             )}
@@ -1164,7 +1165,7 @@ export default function AIEnginePage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               <div className="flex items-center gap-2">
                 {setupStatus.checks.bedrockReachable ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                  <SuccessIcon size={16} color="#22c55e" />
                 ) : (
                   <XCircle className="h-4 w-4 text-red-500 shrink-0" />
                 )}
@@ -1172,7 +1173,7 @@ export default function AIEnginePage() {
               </div>
               <div className="flex items-center gap-2">
                 {Object.values(setupStatus.checks.modelsEnabled).some(Boolean) ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                  <SuccessIcon size={16} color="#22c55e" />
                 ) : (
                   <XCircle className="h-4 w-4 text-red-500 shrink-0" />
                 )}
@@ -1180,7 +1181,7 @@ export default function AIEnginePage() {
               </div>
               <div className="flex items-center gap-2">
                 {setupStatus.checks.budgetSet ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                  <SuccessIcon size={16} color="#22c55e" />
                 ) : (
                   <XCircle className="h-4 w-4 text-red-500 shrink-0" />
                 )}
@@ -1188,7 +1189,7 @@ export default function AIEnginePage() {
               </div>
               <div className="flex items-center gap-2">
                 {setupStatus.checks.promptsInitialized ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                  <SuccessIcon size={16} color="#22c55e" />
                 ) : (
                   <XCircle className="h-4 w-4 text-red-500 shrink-0" />
                 )}
@@ -1196,7 +1197,7 @@ export default function AIEnginePage() {
               </div>
               <div className="flex items-center gap-2">
                 {setupStatus.checks.circuitHealthy ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                  <SuccessIcon size={16} color="#22c55e" />
                 ) : (
                   <XCircle className="h-4 w-4 text-red-500 shrink-0" />
                 )}
@@ -1655,7 +1656,7 @@ export default function AIEnginePage() {
                   {applyCorrelation.isPending ? (
                     <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
                   ) : (
-                    <CheckCircle2 className="h-3 w-3 mr-1.5" />
+                    <SuccessIcon size={12} color="#22c55e" />
                   )}
                   Create Incident
                 </Button>
@@ -1906,7 +1907,7 @@ export default function AIEnginePage() {
                       </>
                     ) : (
                       <>
-                        <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                        <SuccessIcon size={12} color="#22c55e" />
                         <span className="text-xs font-medium text-emerald-500">No Escalation Required</span>
                       </>
                     )}
@@ -2129,7 +2130,7 @@ export default function AIEnginePage() {
                         {submitFeedback.isPending ? (
                           <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
                         ) : (
-                          <CheckCircle2 className="h-3 w-3 mr-1.5" />
+                          <SuccessIcon size={12} color="#22c55e" />
                         )}
                         Submit Feedback
                       </Button>

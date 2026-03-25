@@ -36,6 +36,7 @@ import {
   ArrowRight,
   Gauge,
 } from "lucide-react";
+import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -277,7 +278,7 @@ function StatsCards({ total, processorStatus }: { total: number; processorStatus
       <Card>
         <CardContent className="pt-4 pb-3 px-4">
           <div className="flex items-center gap-2 mb-2">
-            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+            <SuccessIcon size={16} color="#22c55e" />
             <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Processed</span>
           </div>
           <p className="text-2xl font-bold tabular-nums">{processed.toLocaleString()}</p>
@@ -1460,7 +1461,7 @@ function RetryQueueView({
 
           {retryEvents.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-              <CheckCircle2 className="h-10 w-10 mb-3 opacity-30 text-emerald-400" />
+              <SuccessIcon size={40} color="#22c55e" />
               <p className="text-sm font-medium">Retry queue is empty</p>
               <p className="text-xs mt-1">No events are currently pending retry or in a failed state</p>
             </div>

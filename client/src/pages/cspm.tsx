@@ -48,6 +48,8 @@ import {
   Timer,
   Globe,
 } from "lucide-react";
+import { SuccessIcon, EyeToggleIcon, PlayPauseIcon } from "@/components/ui/animated-state-icons";
+import { SunIcon, ThunderIcon, CloudIcon } from "@/components/ui/animated-weather-icons";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -539,7 +541,7 @@ function ScanHistoryTab() {
                   </div>
                   <div className="flex-shrink-0">
                     {scan.status === "completed" ? (
-                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                      <SuccessIcon size={20} color="#22c55e" />
                     ) : scan.status === "failed" ? (
                       <XCircle className="h-5 w-5 text-red-500" />
                     ) : scan.status === "running" ? (
@@ -767,7 +769,7 @@ function FindingsTab() {
                         data-testid={`button-toggle-status-${finding.id || idx}`}
                       >
                         {finding.status === "open" ? (
-                          <CheckCircle2 className="h-4 w-4" />
+                          <SuccessIcon size={16} color="#22c55e" />
                         ) : (
                           <XCircle className="h-4 w-4" />
                         )}
@@ -1269,7 +1271,7 @@ function PolicyChecksTab() {
                       </div>
                       <div className="flex-shrink-0">
                         {result.status === "pass" ? (
-                          <CheckCircle2 className="h-5 w-5 text-green-500" />
+                          <SuccessIcon size={20} color="#22c55e" />
                         ) : result.status === "fail" ? (
                           <XCircle className="h-5 w-5 text-red-500" />
                         ) : (
@@ -1945,7 +1947,7 @@ function RemediationTab() {
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       {rem.status === "success" ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        <SuccessIcon size={16} color="#22c55e" />
                       ) : rem.status === "failed" ? (
                         <XCircle className="h-4 w-4 text-red-500" />
                       ) : (
@@ -2219,7 +2221,7 @@ function CompliancePostureTab() {
                           </TableCell>
                           <TableCell>
                             {ctrl.status === "pass" ? (
-                              <CheckCircle2 className="h-4 w-4 text-green-500" />
+                              <SuccessIcon size={16} color="#22c55e" />
                             ) : (
                               <XCircle className="h-4 w-4 text-red-500" />
                             )}
@@ -2812,7 +2814,7 @@ function ChangeTrackingTab() {
                       {change.isUnexpected ? (
                         <AlertTriangle className="h-4 w-4 text-red-500" />
                       ) : (
-                        <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        <SuccessIcon size={16} color="#22c55e" />
                       )}
                       <span className="text-sm font-medium">{change.resourceId}</span>
                       <Badge

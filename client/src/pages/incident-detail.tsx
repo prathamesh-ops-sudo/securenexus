@@ -48,6 +48,7 @@ import {
   GitBranch,
   Workflow,
 } from "lucide-react";
+import { SuccessIcon, EyeToggleIcon, SendIcon as AnimatedSendIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { FileManager } from "@/components/file-manager";
@@ -1646,7 +1647,7 @@ export default function IncidentDetailPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    <SuccessIcon size={16} color="#22c55e" />
                     Mitigation Steps
                   </CardTitle>
                 </CardHeader>
@@ -3906,7 +3907,7 @@ function AttackGraphTab({ incidentId }: { incidentId: string }) {
                     <ul className="mt-1 space-y-0.5">
                       {selectedNode.evidence.map((ev, i) => (
                         <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
-                          <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0 text-green-400" />
+                          <SuccessIcon size={12} color="#22c55e" />
                           {ev}
                         </li>
                       ))}

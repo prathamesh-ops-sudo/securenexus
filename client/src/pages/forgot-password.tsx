@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Mail, ArrowLeft, CheckCircle2, Loader2 } from "lucide-react";
+import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -76,7 +77,7 @@ export default function ForgotPasswordPage() {
           {isSuccess ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 p-4 rounded-xl border-2 border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <SuccessIcon size={20} color="#22c55e" />
                 <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                   If an account with <strong>{email}</strong> exists, you will receive a password reset email shortly.
                 </p>

@@ -33,6 +33,7 @@ import {
   ToggleRight,
   Server,
 } from "lucide-react";
+import { SuccessIcon, EyeToggleIcon } from "@/components/ui/animated-state-icons";
 
 type DevTab = "api-docs" | "playground" | "webhooks" | "database" | "config" | "deployment";
 
@@ -497,7 +498,7 @@ function WebhooksTab() {
             >
               <div className="flex items-center gap-2 mb-2">
                 {testResult.success ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  <SuccessIcon size={16} color="#22c55e" />
                 ) : (
                   <XCircle className="h-4 w-4 text-red-400" />
                 )}
@@ -1083,7 +1084,7 @@ function DeploymentTab() {
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Database</p>
             <p className="text-xl font-bold mt-1 flex items-center gap-2">
               {data.database.connected ? (
-                <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                <SuccessIcon size={20} color="#22c55e" />
               ) : (
                 <XCircle className="h-5 w-5 text-red-400" />
               )}
