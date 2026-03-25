@@ -10,6 +10,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and } from "drizzle-orm";
 import { users } from "@shared/models/auth";
+import type { User } from "@shared/models/auth";
 import { organizationMemberships } from "@shared/schema";
 import { config } from "../config";
 import { pool } from "../db";
@@ -19,13 +20,22 @@ import { replyUnauthenticated } from "../api-response";
 import { logger } from "../logger";
 import { checkAndPromoteSuperAdmin } from "../bootstrap-super-admin";
 
+/**
+ * Augmented user type that includes session-derived org membership fields.
+ * These fields are added during deserialization (not on the DB schema User type).
+ */
+export interface SessionUser extends User {
+  orgId?: string | null;
+  orgRole?: string | null;
+}
+
 const scryptAsync = promisify(scrypt);
 
 const DESERIALIZE_CACHE_TTL_MS = 30_000;
 const DESERIALIZE_CACHE_MAX = 500;
 
 interface CachedUser {
-  user: any;
+  user: SessionUser;
   expiresAt: number;
 }
 
@@ -162,7 +172,7 @@ export async function setupAuth(app: Express) {
         if (!user.isSuperAdmin && user.email) {
           const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
           if (promoted) {
-            (user as any).isSuperAdmin = true;
+            (user as SessionUser).isSuperAdmin = true;
           }
         }
         return done(null, user);
@@ -181,7 +191,12 @@ export async function setupAuth(app: Express) {
           clientSecret: config.oauth.google.clientSecret,
           callbackURL: googleCallbackUrl,
         },
-        async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
+        async (
+          _accessToken: string,
+          _refreshToken: string,
+          profile: passport.Profile,
+          done: (err: Error | null, user?: Express.User | false, info?: { message: string }) => void,
+        ) => {
           try {
             const email = profile.emails?.[0]?.value;
             if (!email) return done(null, false, { message: "No email from Google" });
@@ -201,12 +216,12 @@ export async function setupAuth(app: Express) {
             if (!user.isSuperAdmin && user.email) {
               const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
               if (promoted) {
-                (user as any).isSuperAdmin = true;
+                (user as SessionUser).isSuperAdmin = true;
               }
             }
             return done(null, user);
           } catch (err) {
-            return done(err);
+            return done(err as Error);
           }
         },
       ),
@@ -224,7 +239,12 @@ export async function setupAuth(app: Express) {
           callbackURL: githubCallbackUrl,
           scope: ["user:email"],
         },
-        async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
+        async (
+          _accessToken: string,
+          _refreshToken: string,
+          profile: passport.Profile,
+          done: (err: Error | null, user?: Express.User | false, info?: { message: string }) => void,
+        ) => {
           try {
             const emails: Array<{ value?: string; primary?: boolean; verified?: boolean }> = profile.emails || [];
             const verified = emails.find((e) => e.primary && e.verified && e.value);
@@ -248,12 +268,12 @@ export async function setupAuth(app: Express) {
             if (!user.isSuperAdmin && user.email) {
               const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
               if (promoted) {
-                (user as any).isSuperAdmin = true;
+                (user as SessionUser).isSuperAdmin = true;
               }
             }
             return done(null, user);
           } catch (err) {
-            return done(err);
+            return done(err as Error);
           }
         },
       ),
@@ -261,7 +281,7 @@ export async function setupAuth(app: Express) {
     logger.child("auth-session").info("GitHub OAuth strategy configured", { callbackURL: githubCallbackUrl });
   }
 
-  passport.serializeUser((user: any, cb) => cb(null, user.id));
+  passport.serializeUser((user: Express.User, cb) => cb(null, (user as SessionUser).id));
   passport.deserializeUser(async (id: string, cb) => {
     try {
       const now = Date.now();
@@ -295,21 +315,22 @@ export async function setupAuth(app: Express) {
         return cb(null, null);
       }
 
-      (user as any).orgId = row.membershipOrgId || null;
-      (user as any).orgRole = row.membershipRole || null;
+      const sessionUser = user as SessionUser;
+      sessionUser.orgId = row.membershipOrgId || null;
+      sessionUser.orgRole = row.membershipRole || null;
 
       // Safety-net: auto-promote super-admin on deserialize if DB flag is stale
-      if (!user.isSuperAdmin && user.email) {
-        const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
+      if (!sessionUser.isSuperAdmin && sessionUser.email) {
+        const promoted = await checkAndPromoteSuperAdmin(sessionUser.id, sessionUser.email);
         if (promoted) {
-          (user as any).isSuperAdmin = true;
+          sessionUser.isSuperAdmin = true;
         }
       }
 
-      deserializeCache.set(id, { user, expiresAt: now + DESERIALIZE_CACHE_TTL_MS });
+      deserializeCache.set(id, { user: sessionUser, expiresAt: now + DESERIALIZE_CACHE_TTL_MS });
       pruneDeserializeCache();
 
-      cb(null, user);
+      cb(null, sessionUser);
     } catch (err) {
       cb(err);
     }
