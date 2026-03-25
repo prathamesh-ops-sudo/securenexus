@@ -33,11 +33,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Zero empty catch blocks remain in the codebase -- every catch either logs, re-throws, or has an explicit comment justifying silence
   2. Correlation engine, action dispatcher, auth, and AI modules use typed interfaces instead of any[] parameters
   3. Running the test suite produces meaningful error output when something breaks (no silently swallowed failures)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+- [ ] 01-01-PLAN.md -- Fix 22 empty .catch(() => {}) handlers with warn-level logging
+- [ ] 01-02-PLAN.md -- Eliminate any types in 6 critical modules (correlation, action dispatcher, auth, AI)
 
 ### Phase 2: Dependency Security & Build Hardening
 **Goal**: Known vulnerabilities are eliminated, runtime DDL hacks are replaced with proper migrations, and API keys can be safely rotated
@@ -193,7 +193,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Prerequisite Safety Fixes | 0/2 | Not started | - |
+| 1. Prerequisite Safety Fixes | 0/2 | Planning complete | - |
 | 2. Dependency Security & Build Hardening | 0/2 | Not started | - |
 | 3. God File Decomposition | 0/3 | Not started | - |
 | 4. Structured Logging & Observability | 0/2 | Not started | - |
