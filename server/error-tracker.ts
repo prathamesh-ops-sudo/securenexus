@@ -163,6 +163,11 @@ export function errorTrackingMiddleware(err: Error, req: Request, res: Response,
     route: tracked.route,
     method: tracked.method,
     message: tracked.message,
+    stack: tracked.stack,
+    userId: tracked.userId,
+    orgId: tracked.orgId,
+    statusCode: tracked.statusCode,
+    context: tracked.context,
   });
 
   // Don't send response if headers already sent
