@@ -152,11 +152,10 @@ function Send-Events {
 
     if ($result -and $result.accepted) {
         Write-Log "INFO" "Events accepted: $($result.accepted), alerts: $($result.alertsCreated)"
+        $script:EventBuffer.Clear()
     } else {
-        Write-Log "WARN" "Event flush failed"
+        Write-Log "WARN" "Event flush failed (retaining buffer)"
     }
-
-    $script:EventBuffer.Clear()
 }
 
 # ── Process monitoring ──────────────────────────────────────────────────────

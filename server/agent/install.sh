@@ -212,11 +212,10 @@ flush_events() {
     local alerts
     alerts=$(echo "$result" | jq '.alertsCreated // 0')
     log "INFO" "Events accepted: $accepted, alerts created: $alerts"
+    EVENT_BUFFER="[]"
   else
-    log "WARN" "Event flush failed: $result"
+    log "WARN" "Event flush failed (retaining buffer): $result"
   fi
-
-  EVENT_BUFFER="[]"
 }
 
 # ── Process monitoring ──────────────────────────────────────────────────────
@@ -750,7 +749,9 @@ ${fpath}:${hash}"
     # Flush events every EVENT_FLUSH_INTERVAL seconds
     local buf_size
     buf_size=$(echo "$EVENT_BUFFER" | jq 'length' 2>/dev/null || echo 0)
-    if [ "$buf_size" -ge "$EVENT_BATCH_SIZE" ] || [ $((event_counter % (EVENT_FLUSH_INTERVAL / 10))) -eq 0 ]; then
+    local flush_interval_cycles=$(( (EVENT_FLUSH_INTERVAL + 9) / 10 ))
+    [ "$flush_interval_cycles" -lt 1 ] && flush_interval_cycles=1
+    if [ "$buf_size" -ge "$EVENT_BATCH_SIZE" ] || [ $((event_counter % flush_interval_cycles)) -eq 0 ]; then
       flush_events
     fi
 

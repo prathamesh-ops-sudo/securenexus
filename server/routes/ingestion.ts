@@ -822,14 +822,28 @@ export function registerIngestionRoutes(app: Express): void {
           try {
             const normalized = normalizeAlert(String(event.logSource || source || "syslog"), event);
             const insertData = toInsertAlert(normalized, orgId);
-            const { isNew } = await storage.upsertAlert(insertData);
-            if (isNew) created++;
+            const { alert, isNew } = await storage.upsertAlert(insertData);
+            if (isNew) {
+              created++;
+              try {
+                await resolveAndLinkEntities(alert);
+                await correlateAlert(alert);
+              } catch (err) {
+                logger.child("ingestion").warn("Syslog entity/correlation warning", { error: String(err) });
+              }
+            }
           } catch {
             insertFailed++;
           }
         }
 
         const totalFailed = failed + insertFailed;
+
+        if (created > 0) {
+          cacheInvalidate("dashboard:");
+          cacheInvalidate("ingestion:");
+        }
+
         await storage.createIngestionLog({
           orgId,
           source: source || "syslog",
