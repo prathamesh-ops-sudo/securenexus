@@ -12,6 +12,8 @@ import {
 } from "./outbound-security";
 import { startSpan } from "./tracing";
 
+const log = logger.child("outbox-processor");
+
 const POLL_INTERVAL_MS = 3000;
 const BATCH_SIZE = 10;
 let processorRunning = false;
@@ -109,7 +111,7 @@ async function dispatchOutboxEvent(event: any): Promise<void> {
               responseBody: `Blocked: ${urlCheck.reason}`,
               success: false,
             })
-            .catch(() => {});
+            .catch((err) => log.warn("Failed to log blocked webhook delivery", { error: String(err), webhookId: webhook.id }));
           continue;
         }
         if (isCircuitOpen(webhook.id)) {
@@ -158,7 +160,7 @@ async function dispatchOutboxEvent(event: any): Promise<void> {
             responseBody: result.responseBody.slice(0, 2000),
             success: result.success,
           })
-          .catch(() => {});
+          .catch((err) => log.warn("Failed to log webhook delivery result", { error: String(err), webhookId: webhook.id }));
       }
     },
     { "outbox.eventId": event.id, "outbox.eventType": event.eventType },

@@ -32,6 +32,8 @@ import {
   validatePasswordComplexity,
 } from "../middleware/security-policy-enforcement";
 
+const log = logger.child("auth-routes");
+
 const CONSUMER_EMAIL_DOMAINS = new Set([
   "gmail.com",
   "googlemail.com",
@@ -135,7 +137,7 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
               invitationId: validInvitation.id,
             },
           })
-          .catch(() => {});
+          .catch((err) => log.warn("Failed to record invitation audit", { error: String(err), userId: user.id }));
         logger.child("auth").info("User auto-joined org via pending invitation", {
           userId: user.id,
           email: user.email,
@@ -177,7 +179,7 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
                 pendingApproval: needsApproval,
               },
             })
-            .catch(() => {});
+            .catch((err) => log.warn("Failed to record domain auto-join audit", { error: String(err), userId: user.id }));
           logger
             .child("auth")
             .info(needsApproval ? "User pending approval via domain match" : "User auto-joined org via domain match", {
@@ -361,12 +363,12 @@ export function registerAuthRoutes(app: Express): void {
               details: { ip: failIp, reason: info?.message || "invalid_credentials" },
               ipAddress: failIp,
             })
-            .catch(() => {});
+            .catch((err) => log.warn("Failed to record login failure audit", { error: String(err), email: failEmail }));
         }
         return replyUnauthenticated(res, info?.message || "Invalid credentials");
       }
       clearLoginBuckets(user.email);
-      clearLockout(user.email).catch(() => {});
+      clearLockout(user.email).catch((err) => log.warn("Failed to clear lockout", { error: String(err), email: user.email }));
       req.login(user, async (loginErr) => {
         if (loginErr) return next(loginErr);
         await ensureOrgMembership(user);

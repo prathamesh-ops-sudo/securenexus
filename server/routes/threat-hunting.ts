@@ -299,7 +299,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
         .update(threatHunts)
         .set({ status: "failed", updatedAt: new Date() })
         .where(eq(threatHunts.id, id))
-        .catch(() => {});
+        .catch((err) => log.warn("Failed to update hunt status on error", { error: String(err), huntId: id }));
       res.status(500).json({ message: "Failed to execute hunt" });
     }
   });

@@ -24,6 +24,8 @@ import {
   redactDeliveryLog,
 } from "../outbound-security";
 
+const log = logger.child("routes-shared");
+
 export {
   storage,
   logger,
@@ -249,7 +251,7 @@ export async function dispatchWebhookEvent(orgId: string | null, event: string, 
               responseBody: `Blocked: ${urlCheck.reason}`,
               success: false,
             })
-            .catch(() => {});
+            .catch((err) => log.warn("Failed to log webhook delivery", { error: String(err), webhookId: webhook.id }));
           return;
         }
         if (isCircuitOpen(webhook.id)) {
@@ -263,7 +265,7 @@ export async function dispatchWebhookEvent(orgId: string | null, event: string, 
               responseBody: "Circuit breaker open",
               success: false,
             })
-            .catch(() => {});
+            .catch((err) => log.warn("Failed to log webhook delivery", { error: String(err), webhookId: webhook.id }));
           return;
         }
         if (isWebhookRateLimited(webhook.id)) {
@@ -276,7 +278,7 @@ export async function dispatchWebhookEvent(orgId: string | null, event: string, 
               responseBody: "Rate limited",
               success: false,
             })
-            .catch(() => {});
+            .catch((err) => log.warn("Failed to log webhook delivery", { error: String(err), webhookId: webhook.id }));
           return;
         }
         const body = JSON.stringify(payload);

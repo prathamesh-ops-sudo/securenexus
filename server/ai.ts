@@ -358,7 +358,9 @@ async function invokeWithPrompt(
   };
 
   // Persist to DB (non-blocking) — no in-memory array needed
-  persistInferenceEntry(metrics, true, undefined, orgId).catch(() => {});
+  persistInferenceEntry(metrics, true, undefined, orgId).catch((err) =>
+    log.warn("Failed to persist inference entry", { error: String(err), orgId }),
+  );
 
   return { text: result.text, metrics };
 }
@@ -457,7 +459,9 @@ export async function invokeWithPromptStream(
           promptVersion: prompt.version,
         };
         // Persist to DB (non-blocking) — no in-memory array needed
-        persistInferenceEntry(im, true, undefined, orgId).catch(() => {});
+        persistInferenceEntry(im, true, undefined, orgId).catch((err) =>
+          log.warn("Failed to persist inference entry", { error: String(err), orgId }),
+        );
 
         await callbacks.onComplete(fullText, metrics);
       },

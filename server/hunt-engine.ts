@@ -8,6 +8,9 @@
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { compileQuery, type CompiledFilter } from "./sigma-compiler";
+import { logger } from "./logger";
+
+const log = logger.child("hunt-engine");
 
 export interface HuntExecutionResult {
   eventCount: number;
@@ -91,7 +94,7 @@ async function queryTable(compiled: CompiledFilter, orgId: string, limit: number
     throw error;
   } finally {
     // Reset statement timeout
-    await db.execute(sql`SET statement_timeout = ${"0"}`).catch(() => {});
+    await db.execute(sql`SET statement_timeout = ${"0"}`).catch((err) => log.warn("Failed to reset statement_timeout", { error: String(err) }));
   }
 }
 
