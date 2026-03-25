@@ -162,6 +162,3 @@ export async function updateWarRoomHandoff(id: string, data: Partial<WarRoomHand
   const [updated] = await db.update(warRoomHandoffs).set(data).where(eq(warRoomHandoffs.id, id)).returning();
   return updated;
 }
-}
-
-export const storage = new DatabaseStorage();

@@ -14,7 +14,6 @@ import {
   organizationMemberships,
   users,
 } from "@shared/schema";
-import { users } from "@shared/models/auth";
 import { db } from "../db";
 import { and, asc, count, desc, eq, ilike, inArray, lte, or, sql } from "drizzle-orm";
 
