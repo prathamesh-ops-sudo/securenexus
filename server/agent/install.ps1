@@ -334,8 +334,12 @@ function Execute-PendingActions {
                     $success = $true
                 } elseif ($targetName) {
                     Stop-Process -Name $targetName -Force 2>$null
-                    $output = "Process $targetName terminated"
-                    $success = $true
+                    if (-not (Get-Process -Name $targetName -ErrorAction SilentlyContinue)) {
+                        $output = "Process $targetName terminated"
+                        $success = $true
+                    } else {
+                        $output = "Failed to terminate process $targetName"
+                    }
                 }
             }
             "block_ip" {
@@ -389,6 +393,13 @@ function Execute-PendingActions {
                     # Allow loopback
                     New-NetFirewallRule -DisplayName "ATS Isolate Allow Loopback In" -Direction Inbound -RemoteAddress 127.0.0.1 -Action Allow -Profile Any 2>$null
                     New-NetFirewallRule -DisplayName "ATS Isolate Allow Loopback Out" -Direction Outbound -RemoteAddress 127.0.0.1 -Action Allow -Profile Any 2>$null
+
+                    # Allow DNS so the agent can keep resolving the server hostname
+                    $dnsServers = Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ServerAddresses -ErrorAction SilentlyContinue | Sort-Object -Unique
+                    foreach ($dnsIp in $dnsServers) {
+                        New-NetFirewallRule -DisplayName "ATS Isolate Allow DNS Out $dnsIp" -Direction Outbound -RemoteAddress $dnsIp -RemotePort 53 -Protocol UDP -Action Allow -Profile Any 2>$null
+                        New-NetFirewallRule -DisplayName "ATS Isolate Allow DNS In $dnsIp" -Direction Inbound -RemoteAddress $dnsIp -LocalPort 53 -Protocol UDP -Action Allow -Profile Any 2>$null
+                    }
 
                     # Block all other traffic via profile defaults (explicit Block rules override Allow rules in Windows Firewall)
                     Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block -DefaultOutboundAction Block

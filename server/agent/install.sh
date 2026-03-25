@@ -579,7 +579,7 @@ poll_and_execute_actions() {
           kill -0 "$target_pid" 2>/dev/null || success=true
         elif [ -n "$target_process" ]; then
           output=$(pkill -9 -f "$target_process" 2>&1 && echo "Process $target_process killed" || echo "Failed to kill $target_process")
-          success=true
+          pgrep -f "$target_process" >/dev/null 2>&1 || success=true
         fi
         ;;
 
@@ -637,6 +637,13 @@ poll_and_execute_actions() {
           iptables -A OUTPUT -d "$server_host" -j ACCEPT -m comment --comment "ATS-ISOLATE"
           iptables -A INPUT -i lo -j ACCEPT -m comment --comment "ATS-ISOLATE"
           iptables -A OUTPUT -o lo -j ACCEPT -m comment --comment "ATS-ISOLATE"
+          # Allow DNS so the agent can keep resolving the server hostname
+          for dns_ip in $(grep -E '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}'); do
+            iptables -A OUTPUT -d "$dns_ip" -p udp --dport 53 -j ACCEPT -m comment --comment "ATS-ISOLATE"
+            iptables -A INPUT -s "$dns_ip" -p udp --sport 53 -j ACCEPT -m comment --comment "ATS-ISOLATE"
+            iptables -A OUTPUT -d "$dns_ip" -p tcp --dport 53 -j ACCEPT -m comment --comment "ATS-ISOLATE"
+            iptables -A INPUT -s "$dns_ip" -p tcp --sport 53 -j ACCEPT -m comment --comment "ATS-ISOLATE"
+          done
           iptables -A INPUT -j DROP -m comment --comment "ATS-ISOLATE"
           iptables -A OUTPUT -j DROP -m comment --comment "ATS-ISOLATE"
           iptables -A FORWARD -j DROP -m comment --comment "ATS-ISOLATE"
