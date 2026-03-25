@@ -917,6 +917,11 @@ export function registerIngestionRoutes(app: Express): void {
           }
         }
 
+        if (created > 0) {
+          cacheInvalidate("dashboard:");
+          cacheInvalidate("ingestion:");
+        }
+
         await storage.createIngestionLog({
           orgId,
           source,
@@ -929,11 +934,6 @@ export function registerIngestionRoutes(app: Express): void {
           ipAddress: req.ip || null,
           processingTimeMs: Date.now() - startTime,
         });
-
-        if (created > 0) {
-          cacheInvalidate("dashboard:");
-          cacheInvalidate("ingestion:");
-        }
 
         res.status(created > 0 ? 201 : 200).json({
           requestId,
