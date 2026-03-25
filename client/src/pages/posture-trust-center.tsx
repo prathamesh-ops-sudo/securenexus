@@ -755,7 +755,7 @@ export default function PostureTrustCenterPage() {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-3 gap-4">
                     <div className="text-center p-3 rounded bg-green-500/10 border border-green-500/20">
-                      <SuccessIcon size={16} color="#22c55e" />
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
                       <span className="text-lg font-bold text-green-400">{sub.controlsPassed}</span>
                       <p className="text-[10px] text-muted-foreground">Passed</p>
                     </div>
@@ -1171,7 +1171,7 @@ export default function PostureTrustCenterPage() {
                         updateQuestionnaire.mutate({ id: questionnaireDetail.questionnaire.id, status: "completed" })
                       }
                     >
-                      <SuccessIcon size={16} color="#22c55e" /> Mark Complete
+                      <CheckCircle2 className="h-4 w-4 text-green-500" /> Mark Complete
                     </Button>
                   )}
                   {questionnaireDetail.questionnaire.status !== "submitted" && (

@@ -182,7 +182,7 @@ export default function JobQueueDashboardPage() {
 
   const statusIcon = (s: string) => {
     if (s === "running") return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
-    if (s === "completed") return <SuccessIcon size={16} color="#22c55e" />;
+    if (s === "completed") return <CheckCircle2 className="h-4 w-4 text-green-500" />;
     if (s === "failed") return <XCircle className="h-4 w-4 text-red-500" />;
     if (s === "dead") return <XCircle className="h-4 w-4 text-muted-foreground" />;
     return <Clock className="h-4 w-4 text-yellow-500" />;
@@ -259,7 +259,7 @@ export default function JobQueueDashboardPage() {
         </Card>
         <Card>
           <CardContent className="pt-4 flex items-center gap-2">
-            <SuccessIcon size={20} color="#22c55e" />
+            <CheckCircle2 className="h-5 w-5 text-green-500" />
             <div>
               <p className="text-2xl font-bold">{stats.completed}</p>
               <p className="text-xs text-muted-foreground">Completed</p>
@@ -551,7 +551,7 @@ export default function JobQueueDashboardPage() {
               ))}
             {jobs.filter((j) => j.status === "pending" || j.status === "running").length === 0 && (
               <div className="flex flex-col items-center py-8 gap-2 text-muted-foreground">
-                <SuccessIcon size={24} color="#22c55e" />
+                <CheckCircle2 className="h-6 w-6 text-green-500" />
                 <p className="text-xs">Queue is empty</p>
               </div>
             )}

@@ -832,7 +832,7 @@ function FreshnessTab() {
         </div>
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
           <div className="flex items-center gap-2 mb-1">
-            <SuccessIcon size={20} color="#22c55e" />
+            <CheckCircle2 className="h-5 w-5 text-green-500" />
             <span className="text-sm font-medium text-emerald-400">Current</span>
           </div>
           <p className="text-2xl font-bold text-emerald-400">{current.length}</p>
@@ -917,7 +917,7 @@ function FreshnessTab() {
       {current.length > 0 && (
         <div>
           <h4 className="text-sm font-semibold text-emerald-400 mb-3 flex items-center gap-2">
-            <SuccessIcon size={16} color="#22c55e" />
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
             Current ({current.length})
           </h4>
           <div className="space-y-2">

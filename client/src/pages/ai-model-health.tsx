@@ -189,7 +189,7 @@ export default function AiModelHealthPage() {
   const historyEntries = Array.isArray(history) ? history : [];
 
   const statusIcon = (s: string) => {
-    if (s === "healthy") return <SuccessIcon size={16} color="#22c55e" />;
+    if (s === "healthy") return <CheckCircle2 className="h-4 w-4 text-green-500" />;
     if (s === "degraded") return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
     return <XCircle className="h-4 w-4 text-red-500" />;
   };

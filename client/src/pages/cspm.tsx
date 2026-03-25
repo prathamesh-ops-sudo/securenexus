@@ -540,7 +540,7 @@ function ScanHistoryTab() {
                   </div>
                   <div className="flex-shrink-0">
                     {scan.status === "completed" ? (
-                      <SuccessIcon size={20} color="#22c55e" />
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
                     ) : scan.status === "failed" ? (
                       <XCircle className="h-5 w-5 text-red-500" />
                     ) : scan.status === "running" ? (
@@ -768,7 +768,7 @@ function FindingsTab() {
                         data-testid={`button-toggle-status-${finding.id || idx}`}
                       >
                         {finding.status === "open" ? (
-                          <SuccessIcon size={16} color="#22c55e" />
+                          <CheckCircle2 className="h-4 w-4 text-green-500" />
                         ) : (
                           <XCircle className="h-4 w-4" />
                         )}
@@ -1270,7 +1270,7 @@ function PolicyChecksTab() {
                       </div>
                       <div className="flex-shrink-0">
                         {result.status === "pass" ? (
-                          <SuccessIcon size={20} color="#22c55e" />
+                          <CheckCircle2 className="h-5 w-5 text-green-500" />
                         ) : result.status === "fail" ? (
                           <XCircle className="h-5 w-5 text-red-500" />
                         ) : (
@@ -1946,7 +1946,7 @@ function RemediationTab() {
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       {rem.status === "success" ? (
-                        <SuccessIcon size={16} color="#22c55e" />
+                        <CheckCircle2 className="h-4 w-4 text-green-500" />
                       ) : rem.status === "failed" ? (
                         <XCircle className="h-4 w-4 text-red-500" />
                       ) : (
@@ -2220,7 +2220,7 @@ function CompliancePostureTab() {
                           </TableCell>
                           <TableCell>
                             {ctrl.status === "pass" ? (
-                              <SuccessIcon size={16} color="#22c55e" />
+                              <CheckCircle2 className="h-4 w-4 text-green-500" />
                             ) : (
                               <XCircle className="h-4 w-4 text-red-500" />
                             )}
@@ -2813,7 +2813,7 @@ function ChangeTrackingTab() {
                       {change.isUnexpected ? (
                         <AlertTriangle className="h-4 w-4 text-red-500" />
                       ) : (
-                        <SuccessIcon size={16} color="#22c55e" />
+                        <CheckCircle2 className="h-4 w-4 text-green-500" />
                       )}
                       <span className="text-sm font-medium">{change.resourceId}</span>
                       <Badge

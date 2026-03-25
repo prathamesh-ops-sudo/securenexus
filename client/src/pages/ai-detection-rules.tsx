@@ -169,7 +169,7 @@ function severityColor(s: string) {
 function statusIcon(s: string) {
   switch (s) {
     case "completed":
-      return <SuccessIcon size={16} color="#22c55e" />;
+      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
     case "generating":
       return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
     case "failed":
@@ -576,7 +576,7 @@ function GenerateTab() {
                   )}
                   {job.generatedRuleId && (
                     <Badge variant="outline" className="text-green-500 border-green-500/20 text-xs">
-                      <SuccessIcon size={12} color="#22c55e" /> Deployed
+                      <CheckCircle2 className="h-3 w-3 text-green-500" /> Deployed
                     </Badge>
                   )}
                   {job.status === "failed" && job.errorMessage && (
@@ -782,7 +782,7 @@ function AbTestingTab() {
                           <XCircle className="h-3 w-3 mr-1" /> Reject
                         </Button>
                         <Button size="sm" onClick={() => completeMutation.mutate({ testId: test.id, promote: true })}>
-                          <SuccessIcon size={12} color="#22c55e" /> Promote
+                          <CheckCircle2 className="h-3 w-3 text-green-500" /> Promote
                         </Button>
                       </>
                     )}
@@ -864,7 +864,7 @@ function LifecycleTab() {
             </div>
           ) : !candidates?.candidates?.length ? (
             <div className="text-center py-8 text-muted-foreground">
-              <SuccessIcon size={32} color="#22c55e" />
+              <CheckCircle2 className="h-8 w-8 text-green-500" />
               <p>All rules are actively matching events. No deprecation candidates found.</p>
             </div>
           ) : (

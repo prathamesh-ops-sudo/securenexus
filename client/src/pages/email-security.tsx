@@ -1235,7 +1235,7 @@ export default function EmailSecurityPage() {
                     <p className="text-2xl font-bold">{data?.rate ?? 0}%</p>
                     <div className="flex justify-center gap-2 mt-1 text-[10px] text-muted-foreground">
                       <span className="flex items-center gap-0.5">
-                        <SuccessIcon size={12} color="#22c55e" /> {data?.pass ?? 0}
+                        <CheckCircle2 className="h-3 w-3 text-green-500" /> {data?.pass ?? 0}
                       </span>
                       <span className="flex items-center gap-0.5">
                         <XCircle className="h-3 w-3 text-red-500" /> {data?.fail ?? 0}

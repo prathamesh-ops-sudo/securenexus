@@ -329,7 +329,7 @@ export default function ReportSchedulingPage() {
                 {s.slaMet !== null && (
                   <div className="flex items-center gap-1 mt-1">
                     {s.slaMet ? (
-                      <SuccessIcon size={12} color="#22c55e" />
+                      <CheckCircle2 className="h-3 w-3 text-green-500" />
                     ) : (
                       <AlertTriangle className="h-3 w-3 text-red-400" />
                     )}
@@ -440,7 +440,7 @@ export default function ReportSchedulingPage() {
                       >
                         <div className="flex items-center gap-3">
                           {d.slaMet ? (
-                            <SuccessIcon size={20} color="#22c55e" />
+                            <CheckCircle2 className="h-5 w-5 text-green-500" />
                           ) : (
                             <XCircle className="h-5 w-5 text-red-400" />
                           )}

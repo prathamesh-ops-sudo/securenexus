@@ -379,7 +379,7 @@ function EndpointCard({
             )}
             <div className="space-y-1.5">
               <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <SuccessIcon size={12} color="#22c55e" />
+                <CheckCircle2 className="h-3 w-3 text-green-500" />
                 v1 Endpoint
               </p>
               <div className="flex items-center gap-2 p-2 rounded border border-emerald-500/20 bg-emerald-500/5">
@@ -541,7 +541,7 @@ function AuthenticationCard({ auth }: { auth: MigrationGuide["authentication"] }
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-start gap-3 p-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
-          <SuccessIcon size={16} color="#22c55e" />
+          <CheckCircle2 className="h-4 w-4 text-green-500" />
           <div>
             <p className="text-xs font-medium">Current (v1)</p>
             <p className="text-xs text-muted-foreground">{auth.current}</p>
@@ -891,7 +891,7 @@ export default function ApiVersioningPage() {
             <CardContent>
               <div className="space-y-3">
                 <div className="flex items-start gap-3 p-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
-                  <SuccessIcon size={16} color="#22c55e" />
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
                   <div>
                     <p className="text-xs font-medium">No Breaking Changes</p>
                     <p className="text-xs text-muted-foreground">{policy.stabilityGuarantees.breakingChanges}</p>

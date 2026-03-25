@@ -347,7 +347,7 @@ function IntegrityVerificationPanel({
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
           {integrityValid ? (
-            <SuccessIcon size={16} color="#22c55e" />
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
           ) : (
             <AlertTriangle className="h-4 w-4 text-red-400" />
           )}
@@ -731,7 +731,7 @@ function EvidenceCustodyManager() {
                     <span className="text-xs font-medium truncate">{item.name}</span>
                     <div className="flex items-center gap-1">
                       {item.integrityValid ? (
-                        <SuccessIcon size={12} color="#22c55e" />
+                        <CheckCircle2 className="h-3 w-3 text-green-500" />
                       ) : (
                         <AlertTriangle className="h-3 w-3 text-red-400" />
                       )}
@@ -1176,7 +1176,7 @@ export default function EvidenceChainViewerPage() {
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
                     {verification.valid ? (
-                      <SuccessIcon size={20} color="#22c55e" />
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
                     ) : (
                       <AlertTriangle className="h-5 w-5 text-red-400 shrink-0" />
                     )}

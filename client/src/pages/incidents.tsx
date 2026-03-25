@@ -19,7 +19,7 @@ import {
   BookmarkPlus,
   Keyboard,
 } from "lucide-react";
-import { SuccessIcon, DownloadDoneIcon } from "@/components/ui/animated-state-icons";
+import { DownloadDoneIcon } from "@/components/ui/animated-state-icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -1267,7 +1267,7 @@ export default function IncidentsPage() {
                         Escalate <kbd className="ml-1 text-[9px] opacity-50">E</kbd>
                       </Button>
                       <Button size="sm" variant="outline" className="text-xs h-8" onClick={resolveFocused}>
-                        <SuccessIcon size={12} color="#22c55e" />
+                        <CheckCircle2 className="h-3 w-3 text-green-500" />
                         Resolve <kbd className="ml-1 text-[9px] opacity-50">R</kbd>
                       </Button>
                     </div>

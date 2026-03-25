@@ -72,7 +72,7 @@ export default function OnboardingPage() {
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 Connect your first integration
                 {data?.steps.integrations.completed ? (
-                  <SuccessIcon size={16} color="#22c55e" />
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
                 ) : (
                   <AlertCircle className="h-4 w-4 text-amber-500" />
                 )}
@@ -109,7 +109,7 @@ export default function OnboardingPage() {
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 Ingest alerts and events
                 {data?.steps.ingestion.completed ? (
-                  <SuccessIcon size={16} color="#22c55e" />
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
                 ) : (
                   <AlertCircle className="h-4 w-4 text-amber-500" />
                 )}
@@ -156,7 +156,7 @@ export default function OnboardingPage() {
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 Discover endpoint assets
                 {data?.steps.endpoints.completed ? (
-                  <SuccessIcon size={16} color="#22c55e" />
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
                 ) : (
                   <AlertCircle className="h-4 w-4 text-amber-500" />
                 )}
@@ -192,7 +192,7 @@ export default function OnboardingPage() {
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 Connect cloud accounts
                 {data?.steps.cspm.completed ? (
-                  <SuccessIcon size={16} color="#22c55e" />
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
                 ) : (
                   <AlertCircle className="h-4 w-4 text-amber-500" />
                 )}
@@ -221,7 +221,7 @@ export default function OnboardingPage() {
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 Deploy native sensors
                 {data?.steps.sensors?.completed ? (
-                  <SuccessIcon size={16} color="#22c55e" />
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
                 ) : (
                   <AlertCircle className="h-4 w-4 text-amber-500" />
                 )}

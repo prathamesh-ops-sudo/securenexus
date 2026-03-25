@@ -1103,7 +1103,7 @@ function DRRunbooksTab() {
                               {testMutation.isPending ? (
                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                               ) : (
-                                <SuccessIcon size={16} color="#22c55e" />
+                                <CheckCircle2 className="h-4 w-4 text-green-500" />
                               )}
                               Record Result
                             </Button>

@@ -554,7 +554,7 @@ function HypothesisCard({
               <ul className="space-y-1">
                 {hypothesis.supportingEvidence.map((ev, i) => (
                   <li key={i} className="text-xs flex items-start gap-1.5">
-                    <SuccessIcon size={12} color="#22c55e" aria-hidden="true" />
+                    <CheckCircle2 className="h-3 w-3 text-green-500" />
                     {ev}
                   </li>
                 ))}

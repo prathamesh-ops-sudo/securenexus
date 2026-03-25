@@ -1442,7 +1442,7 @@ function EmailLogsTab() {
                     </td>
                     <td className="p-3">
                       {entry.success ? (
-                        <SuccessIcon size={16} color="#22c55e" />
+                        <CheckCircle2 className="h-4 w-4 text-green-500" />
                       ) : (
                         <XCircle className="h-4 w-4 text-red-500" />
                       )}

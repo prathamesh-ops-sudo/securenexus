@@ -124,7 +124,7 @@ function HealthTimeline({ entries }: { entries: HealthEntry[] }) {
           className="flex items-center gap-2 text-xs px-2 py-1 rounded-md glass-subtle"
         >
           {entry.status === "success" ? (
-            <SuccessIcon size={12} color="#22c55e" />
+            <CheckCircle2 className="h-3 w-3 text-green-500" />
           ) : (
             <XCircle className="h-3 w-3 text-red-500 shrink-0" />
           )}

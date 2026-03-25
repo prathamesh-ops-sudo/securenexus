@@ -361,7 +361,11 @@ function TemplateEditor({
                     </span>
                     <span className="text-xs font-medium truncate flex-1">{preview.subject}</span>
                     <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={handleCopySubject}>
-                      {copiedSubject ? <SuccessIcon size={12} color="#22c55e" /> : <Copy className="h-3 w-3" />}
+                      {copiedSubject ? (
+                        <CheckCircle2 className="h-3 w-3 text-green-500" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
                     </Button>
                   </div>
                 )}
@@ -545,7 +549,7 @@ export default function EmailTemplatesPage() {
               <Badge variant={emailStatus.emailEnabled ? "default" : "secondary"} className="text-[10px]">
                 {emailStatus.emailEnabled ? (
                   <>
-                    <SuccessIcon size={12} color="#22c55e" />
+                    <CheckCircle2 className="h-3 w-3 text-green-500" />
                     SES Active
                   </>
                 ) : (

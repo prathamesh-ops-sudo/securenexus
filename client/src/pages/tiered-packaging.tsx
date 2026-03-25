@@ -43,7 +43,7 @@ import {
   CheckCircle2,
   Table2,
 } from "lucide-react";
-import { SuccessIcon, LockUnlockIcon } from "@/components/ui/animated-state-icons";
+import { LockUnlockIcon } from "@/components/ui/animated-state-icons";
 
 interface PlanLimits {
   users: number;
@@ -1029,7 +1029,7 @@ export default function TieredPackagingPage() {
                   <span>14-day free trial on all paid plans. No credit card required.</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <SuccessIcon size={12} color="#22c55e" />
+                  <CheckCircle2 className="h-3 w-3 text-green-500" />
                   <span>Full feature access during trial period with production-level limits.</span>
                 </div>
                 <div className="flex items-center gap-2">

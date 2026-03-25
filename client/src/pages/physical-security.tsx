@@ -192,7 +192,7 @@ function statusColor(status: string) {
 function eventTypeIcon(type: string) {
   switch (type) {
     case "access_granted":
-      return <SuccessIcon size={16} color="#22c55e" />;
+      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
     case "access_denied":
       return <XCircle className="h-4 w-4 text-red-400" />;
     case "door_forced":

@@ -597,7 +597,7 @@ function ActivationsTab() {
     return (
       <Card className="glass-subtle">
         <CardContent className="p-8 text-center text-muted-foreground">
-          <SuccessIcon size={48} color="#22c55e" />
+          <CheckCircle2 className="h-12 w-12 text-green-500" />
           <p className="font-medium">No active policy packs</p>
           <p className="text-xs mt-1">Go to the Pack Catalog tab to activate policy packs for your organization.</p>
         </CardContent>

@@ -1647,7 +1647,7 @@ export default function IncidentDetailPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <SuccessIcon size={16} color="#22c55e" />
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
                     Mitigation Steps
                   </CardTitle>
                 </CardHeader>
@@ -3907,7 +3907,7 @@ function AttackGraphTab({ incidentId }: { incidentId: string }) {
                     <ul className="mt-1 space-y-0.5">
                       {selectedNode.evidence.map((ev, i) => (
                         <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
-                          <SuccessIcon size={12} color="#22c55e" />
+                          <CheckCircle2 className="h-3 w-3 text-green-500" />
                           {ev}
                         </li>
                       ))}

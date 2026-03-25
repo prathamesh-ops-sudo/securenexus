@@ -980,7 +980,7 @@ function SetupWizardDialog({
               )}
               {testStatus === "success" && (
                 <div className="flex items-center justify-center gap-2">
-                  <SuccessIcon size={16} color="#22c55e" />
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
                   <span className="text-sm text-emerald-400">Connection successful!</span>
                 </div>
               )}
@@ -1192,7 +1192,7 @@ function UpdatesView() {
                 )}
                 {!update.hasUpdate && (
                   <Badge className="bg-emerald-600/20 text-emerald-300 text-xs">
-                    <SuccessIcon size={12} color="#22c55e" />
+                    <CheckCircle2 className="h-3 w-3 text-green-500" />
                     Up to date
                   </Badge>
                 )}

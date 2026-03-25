@@ -83,7 +83,7 @@ function riskBadge(level: string) {
 
 function complianceBadge(status: string) {
   const map: Record<string, { color: string; icon: React.ReactNode }> = {
-    compliant: { color: "bg-green-600 text-white", icon: <SuccessIcon size={12} color="#22c55e" /> },
+    compliant: { color: "bg-green-600 text-white", icon: <CheckCircle2 className="h-3 w-3 text-green-500" /> },
     "non-compliant": { color: "bg-red-600 text-white", icon: <XCircle className="h-3 w-3" /> },
     pending: { color: "bg-yellow-500 text-black", icon: <Clock className="h-3 w-3" /> },
     unknown: { color: "bg-muted", icon: <Eye className="h-3 w-3" /> },
@@ -296,7 +296,7 @@ function DashboardTab() {
                 pct: Math.round((compliantCount / total) * 100),
                 color: "bg-green-500",
                 textColor: "text-green-500",
-                icon: <SuccessIcon size={16} color="#22c55e" />,
+                icon: <CheckCircle2 className="h-4 w-4 text-green-500" />,
               },
               {
                 label: "Non-Compliant",

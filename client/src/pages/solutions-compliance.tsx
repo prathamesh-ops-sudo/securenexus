@@ -229,7 +229,7 @@ export default function SolutionsCompliancePage() {
               "Full audit trail for regulatory submissions",
             ].map((item, i) => (
               <div key={i} className="flex items-start gap-3 p-3">
-                <SuccessIcon size={16} color="#22c55e" />
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
                 <span className="text-sm text-[#64748b] dark:text-[#94a3b8] font-medium">{item}</span>
               </div>
             ))}

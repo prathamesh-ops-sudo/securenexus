@@ -600,7 +600,7 @@ function EngineTab({ engineName, config }: { engineName: string; config: EngineC
                             className="text-[10px]"
                           >
                             {run.status === "completed" ? (
-                              <SuccessIcon size={12} color="#22c55e" />
+                              <CheckCircle2 className="h-3 w-3 text-green-500" />
                             ) : run.status === "running" ? (
                               <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                             ) : (

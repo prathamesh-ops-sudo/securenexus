@@ -792,7 +792,7 @@ function HuntDetailView({ hunt }: { hunt: ThreatHunt }) {
                   {r.eventCount > 0 ? (
                     <AlertTriangle className="h-3 w-3 text-amber-400" />
                   ) : (
-                    <SuccessIcon size={12} color="#22c55e" />
+                    <CheckCircle2 className="h-3 w-3 text-green-500" />
                   )}
                   <span>{r.eventCount} events found</span>
                 </div>
@@ -1353,7 +1353,7 @@ function HuntResultsTab() {
                     {r.eventCount > 0 ? (
                       <AlertTriangle className="h-5 w-5 text-amber-400" />
                     ) : (
-                      <SuccessIcon size={20} color="#22c55e" />
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
                     )}
                     <div>
                       <p className="text-sm font-medium">{r.eventCount} events matched</p>
@@ -1590,7 +1590,7 @@ function PivotTab() {
           {result.totalHits === 0 && (
             <Card>
               <CardContent className="py-8 text-center">
-                <SuccessIcon size={32} color="#22c55e" />
+                <CheckCircle2 className="h-8 w-8 text-green-500" />
                 <p className="text-muted-foreground">No matches found for this IOC across your data.</p>
               </CardContent>
             </Card>
@@ -2791,7 +2791,7 @@ function ExecutionPlanPanel({ huntId }: { huntId: string }) {
               <p className="text-[10px] font-medium text-emerald-400">Optimizations Applied</p>
               {plan.optimizations.map((o, i) => (
                 <div key={i} className="flex items-center gap-1.5 text-xs">
-                  <SuccessIcon size={12} color="#22c55e" />
+                  <CheckCircle2 className="h-3 w-3 text-green-500" />
                   <span>{o}</span>
                 </div>
               ))}
@@ -3082,7 +3082,7 @@ function DriftDetectionPanel() {
                         onClick={() => ackMutation.mutate(drift.id)}
                         disabled={ackMutation.isPending}
                       >
-                        <SuccessIcon size={12} color="#22c55e" /> Acknowledge
+                        <CheckCircle2 className="h-3 w-3 text-green-500" /> Acknowledge
                       </Button>
                     )}
                   </div>

@@ -388,7 +388,7 @@ export default function AdvancedReportingPage() {
                     <CardHeader className="pb-2">
                       <div className="flex items-center justify-between">
                         <Badge variant="secondary">{tpl.framework}</Badge>
-                        <SuccessIcon size={16} color="#22c55e" />
+                        <CheckCircle2 className="h-4 w-4 text-green-500" />
                       </div>
                       <CardTitle className="text-sm">{tpl.name}</CardTitle>
                       <CardDescription className="text-xs">{tpl.description}</CardDescription>
@@ -736,7 +736,7 @@ export default function AdvancedReportingPage() {
             </div>
             <div className="text-center">
               <div className="flex items-center justify-center gap-1">
-                <SuccessIcon size={16} color="#22c55e" />
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
                 <p className="text-sm font-medium">Ready</p>
               </div>
               <p className="text-xs text-muted-foreground">Engine Status</p>

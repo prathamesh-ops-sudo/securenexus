@@ -457,7 +457,7 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
                                         onClick={() => approveMember.mutate(member.id)}
                                         data-testid={`action-approve-${member.id}`}
                                       >
-                                        <SuccessIcon size={16} color="#22c55e" />
+                                        <CheckCircle2 className="h-4 w-4 text-green-500" />
                                         Approve
                                       </DropdownMenuItem>
                                       <DropdownMenuItem

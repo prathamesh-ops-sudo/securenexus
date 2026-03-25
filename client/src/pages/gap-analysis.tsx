@@ -120,7 +120,7 @@ export default function GapAnalysisPage() {
   const overallScore = list.length > 0 ? Math.round(((totalMet + totalPartial * 0.5) / list.length) * 100) : 0;
 
   const statusIcon = (s: string) => {
-    if (s === "met") return <SuccessIcon size={16} color="#22c55e" />;
+    if (s === "met") return <CheckCircle2 className="h-4 w-4 text-green-500" />;
     if (s === "partial") return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
     if (s === "not_met") return <XCircle className="h-4 w-4 text-red-500" />;
     return <FileText className="h-4 w-4 text-muted-foreground" />;
@@ -186,7 +186,7 @@ export default function GapAnalysisPage() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-2">
-              <SuccessIcon size={20} color="#22c55e" />
+              <CheckCircle2 className="h-5 w-5 text-green-500" />
               <div>
                 <p className="text-2xl font-bold">{totalMet}</p>
                 <p className="text-xs text-muted-foreground">Controls Met</p>
@@ -339,7 +339,7 @@ export default function GapAnalysisPage() {
                         <span className="text-2xl font-bold">{score}%</span>
                         <div className="flex gap-3 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
-                            <SuccessIcon size={12} color="#22c55e" /> {f.metCount}
+                            <CheckCircle2 className="h-3 w-3 text-green-500" /> {f.metCount}
                           </span>
                           <span className="flex items-center gap-1">
                             <AlertTriangle className="h-3 w-3 text-yellow-500" /> {f.partialCount}
@@ -481,7 +481,7 @@ export default function GapAnalysisPage() {
                 {gaps.length === 0 ? (
                   <Card>
                     <CardContent className="flex flex-col items-center py-12 gap-2">
-                      <SuccessIcon size={32} color="#22c55e" />
+                      <CheckCircle2 className="h-8 w-8 text-green-500" />
                       <p className="text-muted-foreground">All controls are met — no gaps to remediate</p>
                     </CardContent>
                   </Card>

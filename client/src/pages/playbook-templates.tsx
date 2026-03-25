@@ -736,7 +736,7 @@ function CategoryIcon({ category }: { category: string }) {
     case "Vulnerability Management":
       return <Bug className="h-4 w-4 text-green-400" />;
     case "Compliance":
-      return <SuccessIcon size={16} color="#22c55e" />;
+      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
     case "Remediation":
       return <RefreshCw className="h-4 w-4 text-indigo-400" />;
     case "Threat Hunting":

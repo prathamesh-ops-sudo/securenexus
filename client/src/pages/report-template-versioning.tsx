@@ -263,7 +263,7 @@ function TemplateDetailPanel({
                                       className="h-7 w-7"
                                       onClick={() => onApproveVersion(version.id)}
                                     >
-                                      <SuccessIcon size={16} color="#22c55e" />
+                                      <CheckCircle2 className="h-4 w-4 text-green-500" />
                                     </Button>
                                   </TooltipTrigger>
                                   <TooltipContent>Approve &amp; Activate</TooltipContent>
@@ -333,7 +333,7 @@ function TemplateDetailPanel({
                           <p className="text-xs text-muted-foreground mt-1">{v.changeDescription}</p>
                         </div>
                         <Button size="sm" onClick={() => onApproveVersion(v.id)} className="gap-1">
-                          <SuccessIcon size={16} color="#22c55e" /> Approve
+                          <CheckCircle2 className="h-4 w-4 text-green-500" /> Approve
                         </Button>
                       </div>
                     </CardContent>
