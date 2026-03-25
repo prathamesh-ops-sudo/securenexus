@@ -66,7 +66,11 @@ function extractSamlNameId(xml: string): string | null {
 function verifySamlSignature(xml: string, pemCert: string): boolean {
   try {
     const doc = new DOMParser().parseFromString(xml, "text/xml");
-    const signatureNode = findSignatureNode(doc);
+    if (!doc) {
+      logger.child("sso").warn("Failed to parse SAML XML - malformed document");
+      return false;
+    }
+    const signatureNode = findSignatureNode(doc as unknown as globalThis.Node);
     if (!signatureNode) {
       return false;
     }
