@@ -3,6 +3,9 @@ import { alerts, entities, alertEntities, correlationClusters, attackPaths, camp
 import type { AttackPath, Campaign } from "@shared/schema";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { createHash } from "crypto";
+import { logger } from "./logger";
+
+const log = logger.child("graph-correlation");
 
 export interface AlertNodeData {
   alertId: string;
@@ -409,111 +412,119 @@ export async function runGraphCorrelation(orgId?: string): Promise<{
     const firstAlertOrgId = alertDataList.length > 0 ? alertDataList[0].orgId : orgId || null;
 
     const reasoningTrace = buildReasoningTrace(path, alertDataList);
-
-    const [cluster] = await db
-      .insert(correlationClusters)
-      .values({
-        orgId: firstAlertOrgId,
-        confidence: path.confidence,
-        method: "graph_traversal_v2",
-        sharedEntities: path.entityIds.map((eid) => {
-          const meta = nodeMetadata.get(`e:${eid}`);
-          return meta && meta.type === "entity"
-            ? { type: meta.data.type, value: meta.data.value }
-            : { type: "unknown", value: eid };
-        }),
-        reasoningTrace,
-        alertIds: path.alertIds,
-        status: path.confidence >= 0.65 ? "confirmed" : "pending",
-      })
-      .returning();
-
-    clustersCreated++;
-
-    const [attackPath] = await db
-      .insert(attackPaths)
-      .values({
-        orgId: firstAlertOrgId,
-        clusterId: cluster.id,
-        alertIds: path.alertIds,
-        entityIds: path.entityIds,
-        nodes: path.nodes,
-        edges: path.edges,
-        tacticsSequence: path.tacticsSequence,
-        techniquesUsed: path.techniquesUsed,
-        hopCount: path.hopCount,
-        confidence: path.confidence,
-        timeSpanHours: path.timeSpanHours,
-        firstAlertAt: path.firstAlertAt,
-        lastAlertAt: path.lastAlertAt,
-      })
-      .returning();
-
     const fp = generateCampaignFingerprint(path, alertDataList);
 
-    const existingCampaigns = await db
-      .select()
-      .from(campaigns)
-      .where(
-        and(
-          eq(campaigns.fingerprint, fp.fingerprint),
-          firstAlertOrgId ? eq(campaigns.orgId, firstAlertOrgId) : sql`${campaigns.orgId} IS NULL`,
-        ),
-      )
-      .limit(1);
-
-    if (existingCampaigns.length > 0) {
-      const existing = existingCampaigns[0];
-      const existingClusterIds = (existing.clusterIds || []) as string[];
-      const existingPathIds = (existing.attackPathIds || []) as string[];
-      await db
-        .update(campaigns)
-        .set({
-          clusterIds: [...existingClusterIds, cluster.id],
-          attackPathIds: [...existingPathIds, attackPath.id],
-          confidence: Math.max(existing.confidence, path.confidence),
-          alertCount: (existing.alertCount || 0) + path.alertIds.length,
-          lastSeenAt: path.lastAlertAt || new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(campaigns.id, existing.id));
-
-      await db.update(attackPaths).set({ campaignId: existing.id }).where(eq(attackPaths.id, attackPath.id));
-    } else {
-      const campaignName = generateCampaignName(fp, path);
-      const [newCampaign] = await db
-        .insert(campaigns)
+    const result = await db.transaction(async (tx) => {
+      const [cluster] = await tx
+        .insert(correlationClusters)
         .values({
           orgId: firstAlertOrgId,
-          name: campaignName,
-          fingerprint: fp.fingerprint,
-          tacticsSequence: fp.tacticsSequence,
-          entitySignature: fp.entitySignature,
-          sourceSignature: fp.sourceSignature,
-          clusterIds: [cluster.id],
-          attackPathIds: [attackPath.id],
           confidence: path.confidence,
-          alertCount: path.alertIds.length,
-          status: "active",
-          firstSeenAt: path.firstAlertAt || new Date(),
-          lastSeenAt: path.lastAlertAt || new Date(),
+          method: "graph_traversal_v2",
+          sharedEntities: path.entityIds.map((eid) => {
+            const meta = nodeMetadata.get(`e:${eid}`);
+            return meta && meta.type === "entity"
+              ? { type: meta.data.type, value: meta.data.value }
+              : { type: "unknown", value: eid };
+          }),
+          reasoningTrace,
+          alertIds: path.alertIds,
+          status: path.confidence >= 0.65 ? "confirmed" : "pending",
         })
         .returning();
 
-      await db.update(attackPaths).set({ campaignId: newCampaign.id }).where(eq(attackPaths.id, attackPath.id));
-
-      campaignsCreated++;
-    }
-
-    if (path.alertIds.length > 0) {
-      await db
-        .update(alerts)
-        .set({
-          correlationScore: path.confidence,
-          correlationClusterId: cluster.id,
-          correlationReason: reasoningTrace.substring(0, 500),
+      const [attackPath] = await tx
+        .insert(attackPaths)
+        .values({
+          orgId: firstAlertOrgId,
+          clusterId: cluster.id,
+          alertIds: path.alertIds,
+          entityIds: path.entityIds,
+          nodes: path.nodes,
+          edges: path.edges,
+          tacticsSequence: path.tacticsSequence,
+          techniquesUsed: path.techniquesUsed,
+          hopCount: path.hopCount,
+          confidence: path.confidence,
+          timeSpanHours: path.timeSpanHours,
+          firstAlertAt: path.firstAlertAt,
+          lastAlertAt: path.lastAlertAt,
         })
-        .where(inArray(alerts.id, path.alertIds));
+        .returning();
+
+      const existingCampaigns = await tx
+        .select()
+        .from(campaigns)
+        .where(
+          and(
+            eq(campaigns.fingerprint, fp.fingerprint),
+            firstAlertOrgId ? eq(campaigns.orgId, firstAlertOrgId) : sql`${campaigns.orgId} IS NULL`,
+          ),
+        )
+        .limit(1);
+
+      let newCampaignCreated = false;
+
+      if (existingCampaigns.length > 0) {
+        const existing = existingCampaigns[0];
+        const existingClusterIds = (existing.clusterIds || []) as string[];
+        const existingPathIds = (existing.attackPathIds || []) as string[];
+        await tx
+          .update(campaigns)
+          .set({
+            clusterIds: [...existingClusterIds, cluster.id],
+            attackPathIds: [...existingPathIds, attackPath.id],
+            confidence: Math.max(existing.confidence, path.confidence),
+            alertCount: (existing.alertCount || 0) + path.alertIds.length,
+            lastSeenAt: path.lastAlertAt || new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(campaigns.id, existing.id));
+
+        await tx.update(attackPaths).set({ campaignId: existing.id }).where(eq(attackPaths.id, attackPath.id));
+      } else {
+        const campaignName = generateCampaignName(fp, path);
+        const [newCampaign] = await tx
+          .insert(campaigns)
+          .values({
+            orgId: firstAlertOrgId,
+            name: campaignName,
+            fingerprint: fp.fingerprint,
+            tacticsSequence: fp.tacticsSequence,
+            entitySignature: fp.entitySignature,
+            sourceSignature: fp.sourceSignature,
+            clusterIds: [cluster.id],
+            attackPathIds: [attackPath.id],
+            confidence: path.confidence,
+            alertCount: path.alertIds.length,
+            status: "active",
+            firstSeenAt: path.firstAlertAt || new Date(),
+            lastSeenAt: path.lastAlertAt || new Date(),
+          })
+          .returning();
+
+        await tx.update(attackPaths).set({ campaignId: newCampaign.id }).where(eq(attackPaths.id, attackPath.id));
+
+        newCampaignCreated = true;
+      }
+
+      if (path.alertIds.length > 0) {
+        await tx
+          .update(alerts)
+          .set({
+            correlationScore: path.confidence,
+            correlationClusterId: cluster.id,
+            correlationReason: reasoningTrace.substring(0, 500),
+          })
+          .where(inArray(alerts.id, path.alertIds));
+      }
+
+      return { newCampaignCreated };
+    }, { isolationLevel: "repeatable read" });
+
+    clustersCreated++;
+    if (result.newCampaignCreated) {
+      campaignsCreated++;
     }
   }
 

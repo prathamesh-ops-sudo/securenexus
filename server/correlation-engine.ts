@@ -12,6 +12,11 @@ import { eq, and, sql, gte, desc, inArray, ne } from "drizzle-orm";
 import { findRelatedAlertsByEntity } from "./entity-resolver";
 import { computeThreatIntelConfidenceBoost } from "./threat-enrichment";
 import { logger } from "./logger";
+import {
+  aggregateCorrelationScores,
+  buildAlgorithmScore,
+  type AggregatedScore,
+} from "./correlation-aggregator";
 
 export interface CorrelationResult {
   clusterId: string;
@@ -21,6 +26,7 @@ export interface CorrelationResult {
   sharedEntities: { type: string; value: string; count: number }[];
   reasoningTrace: string;
   warnings: string[];
+  algorithmScore?: import("./correlation-aggregator").AlgorithmScore;
 }
 
 interface AlertWithEntities {
@@ -122,27 +128,34 @@ export async function correlateAlert(alert: Alert): Promise<CorrelationResult | 
   const clusterAlertIds = [alert.id, ...relatedAlerts.map((a) => a.id)];
   const reasoningTrace = generateReasoningTrace(alert, relatedAlerts, sharedEntities, confidence, warnings);
 
-  const [cluster] = await db
-    .insert(correlationClusters)
-    .values({
-      orgId: alert.orgId,
-      confidence,
-      method: "temporal_entity_clustering_v1",
-      sharedEntities: sharedEntities,
-      reasoningTrace,
-      alertIds: clusterAlertIds,
-      status: confidence >= CORRELATION_CONFIG.confidenceThresholdForIncident ? "confirmed" : "pending",
-    })
-    .returning();
+  // Build algorithm score for temporal+entity correlation
+  const temporalScore = buildAlgorithmScore("temporal_entity", confidence, true);
 
-  await db
-    .update(alerts)
-    .set({
-      correlationScore: confidence,
-      correlationClusterId: cluster.id,
-      correlationReason: reasoningTrace.substring(0, 500),
-    })
-    .where(eq(alerts.id, alert.id));
+  const cluster = await db.transaction(async (tx) => {
+    const [newCluster] = await tx
+      .insert(correlationClusters)
+      .values({
+        orgId: alert.orgId,
+        confidence,
+        method: "temporal_entity_clustering_v1",
+        sharedEntities: sharedEntities,
+        reasoningTrace,
+        alertIds: clusterAlertIds,
+        status: confidence >= CORRELATION_CONFIG.confidenceThresholdForIncident ? "confirmed" : "pending",
+      })
+      .returning();
+
+    await tx
+      .update(alerts)
+      .set({
+        correlationScore: confidence,
+        correlationClusterId: newCluster.id,
+        correlationReason: reasoningTrace.substring(0, 500),
+      })
+      .where(eq(alerts.id, alert.id));
+
+    return newCluster;
+  }, { isolationLevel: "repeatable read" });
 
   return {
     clusterId: cluster.id,
@@ -152,6 +165,7 @@ export async function correlateAlert(alert: Alert): Promise<CorrelationResult | 
     sharedEntities,
     reasoningTrace,
     warnings,
+    algorithmScore: temporalScore,
   };
 }
 
@@ -339,46 +353,73 @@ export async function getCorrelationCluster(id: string): Promise<CorrelationClus
   return cluster;
 }
 
+const log = logger.child("correlation-engine");
+
 export async function promoteClusterToIncident(
   clusterId: string,
   title: string,
   severity: string,
+  aggregatedScore?: AggregatedScore,
 ): Promise<{ incidentId: string }> {
-  const cluster = await getCorrelationCluster(clusterId);
-  if (!cluster) throw new Error("Cluster not found");
+  const maxRetries = 3;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await db.transaction(async (tx) => {
+        const [cluster] = await tx
+          .select()
+          .from(correlationClusters)
+          .where(eq(correlationClusters.id, clusterId))
+          .limit(1);
 
-  const [incident] = await db
-    .insert(incidents)
-    .values({
-      orgId: cluster.orgId,
-      title,
-      severity,
-      status: "investigating",
-      priority: severity === "critical" ? 1 : severity === "high" ? 2 : 3,
-      confidence: cluster.confidence,
-      alertCount: cluster.alertIds?.length || 0,
-      mitreTactics: [],
-      mitreTechniques: [],
-      referencedAlertIds: cluster.alertIds as string[] | undefined,
-      reasoningTrace: cluster.reasoningTrace,
-    })
-    .returning();
+        if (!cluster) throw new Error("Cluster not found");
 
-  if (cluster.alertIds && Array.isArray(cluster.alertIds)) {
-    await db
-      .update(alerts)
-      .set({
-        incidentId: incident.id,
-        status: "correlated",
-        correlationScore: cluster.confidence,
-      })
-      .where(inArray(alerts.id, cluster.alertIds as string[]));
+        const [incident] = await tx
+          .insert(incidents)
+          .values({
+            orgId: cluster.orgId,
+            title,
+            severity,
+            status: "investigating",
+            priority: severity === "critical" ? 1 : severity === "high" ? 2 : 3,
+            confidence: aggregatedScore?.finalConfidence ?? cluster.confidence,
+            needsReview: aggregatedScore?.needsReview ?? false,
+            algorithmScores: aggregatedScore?.algorithmScores ?? null,
+            alertCount: cluster.alertIds?.length || 0,
+            mitreTactics: [],
+            mitreTechniques: [],
+            referencedAlertIds: cluster.alertIds as string[] | undefined,
+            reasoningTrace: cluster.reasoningTrace,
+          })
+          .returning();
+
+        if (cluster.alertIds && Array.isArray(cluster.alertIds)) {
+          await tx
+            .update(alerts)
+            .set({
+              incidentId: incident.id,
+              status: "correlated",
+              correlationScore: cluster.confidence,
+            })
+            .where(inArray(alerts.id, cluster.alertIds as string[]));
+        }
+
+        await tx
+          .update(correlationClusters)
+          .set({ incidentId: incident.id, status: "promoted", updatedAt: new Date() })
+          .where(eq(correlationClusters.id, clusterId));
+
+        return { incidentId: incident.id };
+      }, { isolationLevel: "serializable" });
+    } catch (err: unknown) {
+      const pgCode = (err as { code?: string }).code;
+      if (pgCode === "40001" && attempt < maxRetries) {
+        const jitter = Math.random() * 100;
+        await new Promise((r) => setTimeout(r, 50 * attempt + jitter));
+        log.warn("Serialization failure in promoteClusterToIncident, retrying", { attempt, clusterId });
+        continue;
+      }
+      throw err;
+    }
   }
-
-  await db
-    .update(correlationClusters)
-    .set({ incidentId: incident.id, status: "promoted", updatedAt: new Date() })
-    .where(eq(correlationClusters.id, clusterId));
-
-  return { incidentId: incident.id };
+  throw new Error("promoteClusterToIncident: max retries exceeded");
 }
