@@ -1,11 +1,88 @@
 import type { IStorage } from "./storage";
 import { db } from "./db";
 import { agentResponseActions, nativeSensors } from "../shared/schema";
-import { eq, and, or, ilike } from "drizzle-orm";
+import { eq, and, or, ilike, type SQL } from "drizzle-orm";
 import { logger } from "./routes/shared";
 import { validateWebhookUrl } from "./outbound-security";
 
 const log = logger.child("action-dispatcher");
+
+// Typed config interfaces for each action type
+interface TicketingConfig {
+  summary?: string;
+  priority?: string;
+  project?: string;
+  projectKey?: string;
+  webhookUrl?: string;
+  apiUrl?: string;
+  authHeader?: string;
+}
+
+interface NotificationConfig {
+  message?: string;
+  channel?: string;
+  recipient?: string;
+  webhookUrl?: string;
+}
+
+interface AgentActionConfig {
+  target?: string;
+  hostname?: string;
+  ip?: string;
+  targetIp?: string;
+  hash?: string;
+  sensorId?: string;
+  timeoutSeconds?: number;
+  targetPid?: number;
+  targetProcessName?: string;
+  processName?: string;
+  filePath?: string;
+  targetFilePath?: string;
+  userName?: string;
+  targetUserName?: string;
+  domain?: string;
+  targetDomain?: string;
+  serviceName?: string;
+  targetServiceName?: string;
+  parameters?: Record<string, unknown>;
+  allowedIps?: string[];
+  reason?: string;
+}
+
+interface AutoTriageConfig {
+  severity?: string;
+  category?: string;
+}
+
+interface AssignAnalystConfig {
+  analyst?: string;
+  assignee?: string;
+}
+
+interface ChangeStatusConfig {
+  status?: string;
+  newStatus?: string;
+}
+
+interface AddTagConfig {
+  tag?: string;
+  tagName?: string;
+}
+
+interface EscalateConfig {
+  targetTeam?: string;
+  reason?: string;
+}
+
+type ActionConfig =
+  | TicketingConfig
+  | NotificationConfig
+  | AgentActionConfig
+  | AutoTriageConfig
+  | AssignAnalystConfig
+  | ChangeStatusConfig
+  | AddTagConfig
+  | EscalateConfig;
 
 export interface ActionContext {
   orgId?: string;
@@ -21,47 +98,47 @@ export interface ActionResult {
   actionType: string;
   status: "completed" | "failed" | "simulated" | "pending_approval" | "approved";
   message: string;
-  details?: any;
+  details?: Record<string, unknown>;
   executedAt: string;
 }
 
-export async function dispatchAction(actionType: string, config: any, context: ActionContext): Promise<ActionResult> {
+export async function dispatchAction(actionType: string, config: Record<string, unknown>, context: ActionContext): Promise<ActionResult> {
   const executedAt = new Date().toISOString();
 
   switch (actionType) {
     case "create_jira_ticket":
-      return executeTicketing("jira", config, context, executedAt);
+      return executeTicketing("jira", config as TicketingConfig, context, executedAt);
     case "create_servicenow_ticket":
-      return executeTicketing("servicenow", config, context, executedAt);
+      return executeTicketing("servicenow", config as TicketingConfig, context, executedAt);
     case "notify_slack":
-      return executeNotification("slack", config, context, executedAt);
+      return executeNotification("slack", config as NotificationConfig, context, executedAt);
     case "notify_teams":
-      return executeNotification("teams", config, context, executedAt);
+      return executeNotification("teams", config as NotificationConfig, context, executedAt);
     case "notify_email":
-      return executeNotification("email", config, context, executedAt);
+      return executeNotification("email", config as NotificationConfig, context, executedAt);
     case "notify_webhook":
-      return executeNotification("webhook", config, context, executedAt);
+      return executeNotification("webhook", config as NotificationConfig, context, executedAt);
     case "notify_pagerduty":
-      return executeNotification("pagerduty", config, context, executedAt);
+      return executeNotification("pagerduty", config as NotificationConfig, context, executedAt);
     case "isolate_host":
     case "block_ip":
     case "block_domain":
     case "quarantine_file":
     case "disable_user":
     case "kill_process":
-      return executeAgentResponseAction(actionType, config, context, executedAt);
+      return executeAgentResponseAction(actionType, config as AgentActionConfig, context, executedAt);
     case "auto_triage":
-      return executeAutoTriage(config, context, executedAt);
+      return executeAutoTriage(config as AutoTriageConfig, context, executedAt);
     case "assign_analyst":
-      return executeAssignAnalyst(config, context, executedAt);
+      return executeAssignAnalyst(config as AssignAnalystConfig, context, executedAt);
     case "change_status":
-      return executeChangeStatus(config, context, executedAt);
+      return executeChangeStatus(config as ChangeStatusConfig, context, executedAt);
     case "add_tag":
-      return executeAddTag(config, context, executedAt);
+      return executeAddTag(config as AddTagConfig, context, executedAt);
     case "escalate":
-      return executeEscalate(config, context, executedAt);
+      return executeEscalate(config as EscalateConfig, context, executedAt);
     case "notify":
-      return executeNotification("default", config, context, executedAt);
+      return executeNotification("default", config as NotificationConfig, context, executedAt);
     default:
       return {
         actionType,
@@ -74,7 +151,7 @@ export async function dispatchAction(actionType: string, config: any, context: A
 
 async function executeTicketing(
   platform: string,
-  config: any,
+  config: TicketingConfig,
   context: ActionContext,
   executedAt: string,
 ): Promise<ActionResult> {
@@ -111,7 +188,8 @@ async function executeTicketing(
         clearTimeout(timeout);
         if (response.ok) {
           const data = await response.json().catch(() => ({}));
-          ticketUrl = (data as any)?.url || (data as any)?.ticketUrl || ticketUrl;
+          const ticketResponse = data as Record<string, unknown>;
+          ticketUrl = (ticketResponse.url as string) || (ticketResponse.ticketUrl as string) || ticketUrl;
           message = `Created ${platform} ticket via API: "${summary}" (Priority: ${priority})`;
         } else {
           status = "failed";
@@ -150,7 +228,7 @@ async function executeTicketing(
 
 async function executeNotification(
   channel: string,
-  config: any,
+  config: NotificationConfig,
   context: ActionContext,
   executedAt: string,
 ): Promise<ActionResult> {
@@ -234,7 +312,7 @@ function determineInitialStatus(riskLevel: string): string {
  * 2. Lookup by hostname or IP in nativeSensors table
  * Returns null if no sensor can be resolved.
  */
-async function resolveSensorId(orgId: string, config: any, context: ActionContext): Promise<string | null> {
+async function resolveSensorId(orgId: string, config: AgentActionConfig, context: ActionContext): Promise<string | null> {
   // 1. Explicit sensorId
   const explicit = context.sensorId || config?.sensorId;
   if (explicit) {
@@ -253,7 +331,7 @@ async function resolveSensorId(orgId: string, config: any, context: ActionContex
 
   if (!hostname && !ip) return null;
 
-  const conditions: unknown[] = [eq(nativeSensors.orgId, orgId)];
+  const conditions: SQL[] = [eq(nativeSensors.orgId, orgId)];
   if (hostname && ip) {
     conditions.push(or(ilike(nativeSensors.hostname, hostname), eq(nativeSensors.ipAddress, ip)));
   } else if (hostname) {
@@ -265,7 +343,7 @@ async function resolveSensorId(orgId: string, config: any, context: ActionContex
   const [sensor] = await db
     .select({ id: nativeSensors.id })
     .from(nativeSensors)
-    .where(and(...(conditions as any[])))
+    .where(and(...conditions))
     .limit(1);
 
   return sensor ? sensor.id : null;
@@ -278,7 +356,7 @@ async function resolveSensorId(orgId: string, config: any, context: ActionContex
  */
 async function executeAgentResponseAction(
   actionType: string,
-  config: any,
+  config: AgentActionConfig,
   context: ActionContext,
   executedAt: string,
 ): Promise<ActionResult> {
@@ -436,7 +514,7 @@ async function executeAgentResponseAction(
  */
 async function legacySimulateEdrAction(
   actionType: string,
-  config: any,
+  config: AgentActionConfig,
   context: ActionContext,
   executedAt: string,
 ): Promise<ActionResult> {
@@ -479,7 +557,7 @@ async function legacySimulateEdrAction(
   };
 }
 
-async function executeAutoTriage(config: any, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeAutoTriage(config: AutoTriageConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
   return {
     actionType: "auto_triage",
     status: "completed",
@@ -489,7 +567,7 @@ async function executeAutoTriage(config: any, context: ActionContext, executedAt
   };
 }
 
-async function executeAssignAnalyst(config: any, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeAssignAnalyst(config: AssignAnalystConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
   const analyst = config?.analyst || config?.assignee || "on-call";
   if (context.incidentId && context.storage) {
     await context.storage.updateIncident(context.incidentId, { assignedTo: analyst });
@@ -503,7 +581,7 @@ async function executeAssignAnalyst(config: any, context: ActionContext, execute
   };
 }
 
-async function executeChangeStatus(config: any, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeChangeStatus(config: ChangeStatusConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
   const newStatus = config?.status || config?.newStatus || "investigating";
   if (context.incidentId && context.storage) {
     await context.storage.updateIncident(context.incidentId, { status: newStatus });
@@ -517,7 +595,7 @@ async function executeChangeStatus(config: any, context: ActionContext, executed
   };
 }
 
-async function executeAddTag(config: any, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeAddTag(config: AddTagConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
   const tagName = config?.tag || config?.tagName || "automated";
   return {
     actionType: "add_tag",
@@ -528,7 +606,7 @@ async function executeAddTag(config: any, context: ActionContext, executedAt: st
   };
 }
 
-async function executeEscalate(config: any, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeEscalate(config: EscalateConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
   if (context.incidentId && context.storage) {
     await context.storage.updateIncident(context.incidentId, {
       escalated: true,
