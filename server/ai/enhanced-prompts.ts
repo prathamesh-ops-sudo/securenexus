@@ -10,6 +10,9 @@
  */
 
 import { registerPrompt } from "./prompt-registry";
+import { logger } from "../logger";
+
+const log = logger.child("ai-enhanced-prompts");
 
 export function registerEnhancedPrompts(): void {
   const now = new Date().toISOString();
@@ -723,5 +726,5 @@ DETECTION ENGINEERING PRINCIPLES:
     tags: ["detection-engineering", "sigma", "rule-generation", "mitre-mapping"],
   });
 
-  console.log("✅ Enhanced AI prompts registered for beast-mode analysis");
+  log.info("Enhanced AI prompts registered for beast-mode analysis");
 }

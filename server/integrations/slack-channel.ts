@@ -9,6 +9,9 @@
  */
 
 import { storage } from "../storage";
+import { logger } from "../logger";
+
+const log = logger.child("slack-integration");
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -121,7 +124,7 @@ export async function tryCreateSlackChannel(
           return existing;
         }
       }
-      console.warn(`[slack] Failed to create channel: ${createData.error}`);
+      log.warn("Failed to create channel", { error: createData.error });
       return null;
     }
 
@@ -158,7 +161,7 @@ export async function tryCreateSlackChannel(
 
     return result;
   } catch (err) {
-    console.warn("[slack] Channel creation error:", err);
+    log.warn("Channel creation error", { error: String(err) });
     return null;
   }
 }
@@ -192,7 +195,7 @@ async function postSlackMessage(botToken: string, channelId: string, text: strin
 
   const data = (await res.json()) as { ok: boolean; error?: string };
   if (!data.ok) {
-    console.warn(`[slack] Failed to post message: ${data.error}`);
+    log.warn("Failed to post message", { error: data.error });
     return false;
   }
   return true;

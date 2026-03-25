@@ -1,5 +1,8 @@
 import crypto from "crypto";
 import { db } from "./db";
+import { logger } from "./logger";
+
+const log = logger.child("deception-engine");
 import { eq, and, sql } from "drizzle-orm";
 import { canaryTokens, deceptionHits, honeypotAssets, alerts, playbooks, playbookExecutions } from "@shared/schema";
 
@@ -341,7 +344,7 @@ export async function processDeceptionHit(
     }
   } catch (playbookErr) {
     // Don't fail the hit processing if playbook auto-trigger fails
-    console.error("Deception playbook auto-trigger error:", playbookErr);
+    log.error("Deception playbook auto-trigger error", { error: String(playbookErr) });
   }
 
   return { hitId: hit.id, alertId: alert.id };

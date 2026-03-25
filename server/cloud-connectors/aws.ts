@@ -44,6 +44,9 @@ import {
 } from "@aws-sdk/client-guardduty";
 
 import { STSClient, GetCallerIdentityCommand, AssumeRoleCommand } from "@aws-sdk/client-sts";
+import { logger } from "../logger";
+
+const log = logger.child("cloud-connector-aws");
 
 export interface CloudFinding {
   ruleId: string;
@@ -234,7 +237,7 @@ export async function scanS3Buckets(config: AwsConnectorConfig): Promise<CloudFi
       }
     }
   } catch (err: unknown) {
-    console.error("[AWS Connector] S3 scan error:", err instanceof Error ? err.message : err);
+    log.error("S3 scan error", { error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;
@@ -319,7 +322,7 @@ export async function scanEC2SecurityGroups(config: AwsConnectorConfig, region: 
       }
     }
   } catch (err: unknown) {
-    console.error(`[AWS Connector] EC2 SG scan error in ${region}:`, err instanceof Error ? err.message : err);
+    log.error("EC2 security group scan error", { region, error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;
@@ -352,7 +355,7 @@ export async function scanEBSVolumes(config: AwsConnectorConfig, region: string)
       }
     }
   } catch (err: unknown) {
-    console.error(`[AWS Connector] EBS scan error in ${region}:`, err instanceof Error ? err.message : err);
+    log.error("EBS scan error", { region, error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;
@@ -472,7 +475,7 @@ export async function scanIAMUsers(config: AwsConnectorConfig): Promise<CloudFin
       }
     }
   } catch (err: unknown) {
-    console.error("[AWS Connector] IAM scan error:", err instanceof Error ? err.message : err);
+    log.error("IAM scan error", { error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;
@@ -553,7 +556,7 @@ export async function scanRDSInstances(config: AwsConnectorConfig, region: strin
       }
     }
   } catch (err: unknown) {
-    console.error(`[AWS Connector] RDS scan error in ${region}:`, err instanceof Error ? err.message : err);
+    log.error("RDS scan error", { region, error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;
@@ -590,7 +593,7 @@ export async function scanVPCFlowLogs(config: AwsConnectorConfig, region: string
       }
     }
   } catch (err: unknown) {
-    console.error(`[AWS Connector] VPC scan error in ${region}:`, err instanceof Error ? err.message : err);
+    log.error("VPC scan error", { region, error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;
@@ -676,7 +679,7 @@ export async function fetchGuardDutyFindings(config: AwsConnectorConfig, region:
       }
     }
   } catch (err: unknown) {
-    console.error(`[AWS Connector] GuardDuty scan error in ${region}:`, err instanceof Error ? err.message : err);
+    log.error("GuardDuty scan error", { region, error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;
@@ -718,7 +721,7 @@ export async function discoverEC2Instances(config: AwsConnectorConfig, region: s
       }
     }
   } catch (err: unknown) {
-    console.error(`[AWS Connector] EC2 discovery error in ${region}:`, err instanceof Error ? err.message : err);
+    log.error("EC2 discovery error", { region, error: err instanceof Error ? err.message : String(err) });
   }
 
   return resources;

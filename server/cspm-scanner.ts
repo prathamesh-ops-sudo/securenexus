@@ -5,6 +5,9 @@
 
 import { storage } from "./storage";
 import type { InsertCspmScan, InsertCspmFinding } from "@shared/schema";
+import { logger } from "./logger";
+
+const log = logger.child("cspm-scanner");
 import { runAwsScan, validateAwsCredentials } from "./cloud-connectors/aws";
 import { runAzureScan, validateAzureCredentials } from "./cloud-connectors/azure";
 import { runGcpScan, validateGcpCredentials } from "./cloud-connectors/gcp";
@@ -237,7 +240,7 @@ export async function runCspmScan(orgId: string, accountId: string): Promise<voi
     });
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    console.error(`[CSPM] Scan error for account ${accountId}:`, errorMessage);
+    log.error("Scan error for account", { accountId, error: errorMessage });
     await storage.updateCspmScan(scan.id, {
       status: "failed",
       completedAt: new Date(),

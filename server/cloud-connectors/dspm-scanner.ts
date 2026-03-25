@@ -13,6 +13,9 @@ import {
 } from "@aws-sdk/client-s3";
 
 import type { AwsConnectorConfig } from "./aws";
+import { logger } from "../logger";
+
+const log = logger.child("dspm-scanner");
 
 export interface DspmFinding {
   resourceId: string;
@@ -300,7 +303,7 @@ export class DspmScanner {
             }
           }
         } catch (err: unknown) {
-          console.error(`[DSPM] Error scanning bucket ${bucketName}:`, err instanceof Error ? err.message : err);
+          log.error("Error scanning bucket", { bucketName, error: err instanceof Error ? err.message : String(err) });
         }
       }
 
@@ -321,7 +324,7 @@ export class DspmScanner {
         });
       }
     } catch (err: unknown) {
-      console.error("[DSPM] S3 scan error:", err instanceof Error ? err.message : err);
+      log.error("S3 scan error", { error: err instanceof Error ? err.message : String(err) });
     }
 
     return {
