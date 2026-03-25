@@ -295,8 +295,13 @@ collect_process_events() {
 
 collect_network_events() {
   local connections
+  local use_ss=false
   if [ "$PLATFORM" = "linux" ]; then
-    connections=$(ss -tunapH 2>/dev/null | head -50 || netstat -tunaW 2>/dev/null | tail -n +3 | head -50 || true)
+    if connections=$(ss -tunapH 2>/dev/null | head -50) && [ -n "$connections" ]; then
+      use_ss=true
+    else
+      connections=$(netstat -tunaW 2>/dev/null | tail -n +3 | head -50 || true)
+    fi
   else
     connections=$(netstat -an -f inet 2>/dev/null | grep -E 'ESTABLISHED|LISTEN' | head -50 || true)
   fi
@@ -305,7 +310,8 @@ collect_network_events() {
     [ -z "$line" ] && continue
 
     local proto src_addr src_port dst_addr dst_port state
-    if [ "$PLATFORM" = "linux" ]; then
+    if [ "$PLATFORM" = "linux" ] && [ "$use_ss" = "true" ]; then
+      # ss output: $1=Netid $2=State $3=Recv-Q $4=Send-Q $5=Local:Port $6=Peer:Port
       proto=$(echo "$line" | awk '{print $1}')
       local src dst
       src=$(echo "$line" | awk '{print $5}')
@@ -315,6 +321,17 @@ collect_network_events() {
       dst_addr=$(echo "$dst" | rev | cut -d: -f2- | rev)
       dst_port=$(echo "$dst" | rev | cut -d: -f1 | rev)
       state=$(echo "$line" | awk '{print $2}')
+    elif [ "$PLATFORM" = "linux" ]; then
+      # netstat output: $1=Proto $2=Recv-Q $3=Send-Q $4=Local $5=Foreign $6=State
+      proto=$(echo "$line" | awk '{print $1}')
+      local src dst
+      src=$(echo "$line" | awk '{print $4}')
+      dst=$(echo "$line" | awk '{print $5}')
+      src_addr=$(echo "$src" | rev | cut -d: -f2- | rev)
+      src_port=$(echo "$src" | rev | cut -d: -f1 | rev)
+      dst_addr=$(echo "$dst" | rev | cut -d: -f2- | rev)
+      dst_port=$(echo "$dst" | rev | cut -d: -f1 | rev)
+      state=$(echo "$line" | awk '{print $6}')
     else
       proto=$(echo "$line" | awk '{print $1}')
       local src dst
