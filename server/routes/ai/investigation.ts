@@ -91,7 +91,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
 
         const orgId = (req as any).orgId || (req as any).user?.orgId;
 
-        let threatIntelCtx;
+        let threatIntelCtx: Awaited<ReturnType<typeof buildThreatIntelContext>> | undefined;
         if (telemetryData.alerts && Array.isArray(telemetryData.alerts)) {
           threatIntelCtx = await buildThreatIntelContext(telemetryData.alerts);
         }

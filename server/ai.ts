@@ -28,6 +28,7 @@ import { getOrgUsageSummary, getAllOrgUsageSummaries, setOrgBudget } from "./ai/
 import { registerEnhancedPrompts } from "./ai/enhanced-prompts";
 import { buildRAGContext, formatRAGContextForPrompt, type RAGContext } from "./ai/vector-search";
 import { buildFewShotAugmentedPrompt, getSuppressedSourcesForContext } from "./ai/active-learning";
+import { buildBudgetedNarrativeMessage } from "./ai/narrative-budget";
 
 initializeDefaultPrompts().catch((err) => log.error("Failed to initialize default prompts", { error: String(err) }));
 registerEnhancedPrompts();
@@ -1031,9 +1032,21 @@ export async function generateIncidentNarrative(
   threatIntelCtx?: ThreatIntelContext,
   orgId?: string,
 ): Promise<NarrativeResult> {
-  const userMessage = buildNarrativeUserMessage(incident, alerts);
   const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
-  const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
+
+  // Token budget: pack highest-severity alerts within budget, reserve space for response
+  const budgeted = buildBudgetedNarrativeMessage(incident, alerts, threatIntelBlock, 6144, 2048);
+
+  if (budgeted.alertsTruncated > 0) {
+    log.info("Narrative token budget applied", {
+      incidentId: incident.id,
+      alertsIncluded: budgeted.alertsIncluded,
+      alertsTruncated: budgeted.alertsTruncated,
+      totalInputTokens: budgeted.totalInputTokens,
+    });
+  }
+
+  const finalUserMessage = budgeted.message;
 
   const { text } = await invokeWithPrompt("narrative", finalUserMessage, "narrative", orgId, 6144);
   const parsed = JSON.parse(extractJson(text));
