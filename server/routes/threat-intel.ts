@@ -17,6 +17,7 @@ import {
   fetchAllThreatIntelFeeds,
   getCachedThreatIntelArticles,
   getThreatIntelCategories,
+  scoreArticlesForOrg,
 } from "../threat-intel-feeds";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
@@ -131,9 +132,9 @@ export function registerThreatIntelRoutes(app: Express): void {
             success = resp.ok;
             message = resp.ok ? "API key is valid" : `API returned status ${resp.status}`;
           }
-        } catch (err: any) {
+        } catch (err: unknown) {
           success = false;
-          message = `Connection error: ${err.message}`;
+          message = `Connection error: ${err instanceof Error ? err.message : String(err)}`;
         }
 
         await storage.upsertThreatIntelConfig({
@@ -433,8 +434,8 @@ export function registerThreatIntelRoutes(app: Express): void {
         }
         const feed = await storage.createIocFeed({ ...parsed.data, orgId });
         res.status(201).json(feed);
-      } catch (error: any) {
-        if (error.message === "ORG_CONTEXT_MISSING")
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message === "ORG_CONTEXT_MISSING")
           return res.status(403).json({ message: "Organization context required" });
         res.status(500).json({ message: "Failed to create IOC feed" });
       }
@@ -570,8 +571,8 @@ export function registerThreatIntelRoutes(app: Express): void {
         }
         const entry = await storage.createIocEntry({ ...parsed.data, orgId });
         res.status(201).json(entry);
-      } catch (error: any) {
-        if (error.message === "ORG_CONTEXT_MISSING")
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message === "ORG_CONTEXT_MISSING")
           return res.status(403).json({ message: "Organization context required" });
         res.status(500).json({ message: "Failed to create IOC entry" });
       }
@@ -662,7 +663,7 @@ export function registerThreatIntelRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const user = (req as any).user;
+        const user = (req as Express.Request & { user?: { firstName?: string; lastName?: string } }).user;
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
         const parsed = insertIocWatchlistSchema.safeParse({ ...req.body, orgId, createdBy: userName });
         if (!parsed.success) {
@@ -670,8 +671,8 @@ export function registerThreatIntelRoutes(app: Express): void {
         }
         const watchlist = await storage.createIocWatchlist({ ...parsed.data, orgId, createdBy: userName });
         res.status(201).json(watchlist);
-      } catch (error: any) {
-        if (error.message === "ORG_CONTEXT_MISSING")
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message === "ORG_CONTEXT_MISSING")
           return res.status(403).json({ message: "Organization context required" });
         res.status(500).json({ message: "Failed to create watchlist" });
       }
@@ -687,9 +688,7 @@ export function registerThreatIntelRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const existing = (await storage.getIocWatchlist)
-          ? await (storage as any).getIocWatchlist(p(req.params.id))
-          : null;
+        const existing = storage.getIocWatchlist ? await storage.getIocWatchlist(p(req.params.id)) : null;
         if (existing && existing.orgId !== orgId) return res.status(404).json({ message: "Watchlist not found" });
         const { orgId: _ignoreOrgId, ...updateData } = req.body;
         const watchlist = await storage.updateIocWatchlist(p(req.params.id), updateData);
@@ -711,7 +710,7 @@ export function registerThreatIntelRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const watchlists = await storage.getIocWatchlists(orgId);
-        const existing = watchlists.find((w: any) => w.id === p(req.params.id));
+        const existing = watchlists.find((w: { id: number }) => w.id === p(req.params.id));
         if (!existing) return res.status(404).json({ message: "Watchlist not found" });
         const deleted = await storage.deleteIocWatchlist(p(req.params.id));
         if (!deleted) return res.status(404).json({ message: "Watchlist not found" });
@@ -746,7 +745,7 @@ export function registerThreatIntelRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
+        const user = (req as Express.Request & { user?: { firstName?: string; lastName?: string } }).user;
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
         const entry = await storage.addIocToWatchlist({
           watchlistId: p(req.params.id),
@@ -809,8 +808,8 @@ export function registerThreatIntelRoutes(app: Express): void {
         }
         const rule = await storage.createIocMatchRule({ ...parsed.data, orgId });
         res.status(201).json(rule);
-      } catch (error: any) {
-        if (error.message === "ORG_CONTEXT_MISSING")
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message === "ORG_CONTEXT_MISSING")
           return res.status(403).json({ message: "Organization context required" });
         res.status(500).json({ message: "Failed to create match rule" });
       }
@@ -827,7 +826,7 @@ export function registerThreatIntelRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const rules = await storage.getIocMatchRules(orgId);
-        const existing = rules.find((r: any) => r.id === p(req.params.id));
+        const existing = rules.find((r: { id: number }) => r.id === p(req.params.id));
         if (!existing) return res.status(404).json({ message: "Match rule not found" });
         const { orgId: _ignoreOrgId, ...updateData } = req.body;
         const rule = await storage.updateIocMatchRule(p(req.params.id), updateData);
@@ -849,7 +848,7 @@ export function registerThreatIntelRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const rules = await storage.getIocMatchRules(orgId);
-        const existing = rules.find((r: any) => r.id === p(req.params.id));
+        const existing = rules.find((r: { id: number }) => r.id === p(req.params.id));
         if (!existing) return res.status(404).json({ message: "Match rule not found" });
         const deleted = await storage.deleteIocMatchRule(p(req.params.id));
         if (!deleted) return res.status(404).json({ message: "Match rule not found" });
@@ -1014,20 +1013,68 @@ export function registerThreatIntelRoutes(app: Express): void {
     resolveOrgContext,
     requireOrgId,
     requireMinRole("analyst"),
-    (req: Request, res: Response) => {
+    async (req: Request, res: Response) => {
       try {
         const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 500;
         const category = req.query.category ? String(req.query.category) : undefined;
         const search = req.query.search ? String(req.query.search) : undefined;
         const feedSlug = req.query.feedSlug ? String(req.query.feedSlug) : undefined;
+        const aiFilter = req.query.aiFilter === "true";
+        const relevanceThreshold = req.query.relevanceThreshold
+          ? parseInt(String(req.query.relevanceThreshold), 10)
+          : 5;
         if (isNaN(limit) || limit < 1 || limit > 5000) {
           return res.status(400).json({ message: "limit must be between 1 and 5000" });
         }
         const orgId = getOrgId(req);
-        const articles = getCachedThreatIntelArticles({ limit, category, search, feedSlug, orgId });
+        const articles = getCachedThreatIntelArticles({
+          limit,
+          category,
+          search,
+          feedSlug,
+          orgId,
+          relevanceThreshold: aiFilter ? relevanceThreshold : undefined,
+        });
         res.json({ articles, total: articles.length });
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch articles" });
+      }
+    },
+  );
+
+  // AI Relevance Scoring endpoint — scores a batch of articles for the org
+  app.post(
+    "/api/threat-intel-feeds/score-relevance",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const { orgName, industry, size, threatProfile, articleLimit } = req.body;
+        if (!orgName) {
+          return res.status(400).json({ message: "orgName is required" });
+        }
+        const limit = articleLimit ? parseInt(String(articleLimit), 10) : 100;
+        const articles = getCachedThreatIntelArticles({ limit, orgId });
+        const scored = await scoreArticlesForOrg(articles, {
+          orgId,
+          orgName: String(orgName),
+          industry: industry ? String(industry) : undefined,
+          size: size ? String(size) : undefined,
+          threatProfile: threatProfile ? String(threatProfile) : undefined,
+        });
+        // Sort by relevance score descending
+        scored.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+        res.json({
+          articles: scored,
+          total: scored.length,
+          scoredCount: scored.filter((a) => a.relevanceScore !== undefined).length,
+        });
+      } catch (error) {
+        logger.child("routes").error("Failed to score article relevance", { error: String(error) });
+        res.status(500).json({ message: "Failed to score article relevance" });
       }
     },
   );
