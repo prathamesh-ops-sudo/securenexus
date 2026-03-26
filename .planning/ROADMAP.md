@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Correlation Engine Hardening** - Transaction isolation, conflict resolution, confidence scoring, and full test suite (completed 2026-03-25)
 - [x] **Phase 6: Alert Pipeline Hardening** - Temporal deduplication, suppression rules, dashboard metrics, and stub elimination (completed 2026-03-25)
 - [x] **Phase 7: Automated Response Safety** - Zod validation, dry-run mode, rollback API, audit trail, and dispatcher tests
-- [ ] **Phase 8: Connector Health & Resilience** - Health check loop, auto-restart, circuit breaker, status UI, and connector tests
+- [x] **Phase 8: Connector Health & Resilience** - Health check loop, auto-restart, circuit breaker, status UI, and connector tests
 - [ ] **Phase 9: API Resilience & Performance** - Pool circuit breaker, AI degradation, async processing, caching, token budgets, billing fix
 - [ ] **Phase 10: Test Coverage & Quality Gates** - OAuth tests, RBAC boundary tests, billing tests, ESLint pre-commit hooks
 
@@ -151,8 +151,8 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 08-01: TBD
-- [ ] 08-02: TBD
+- [x] 08-01-PLAN.md -- Circuit breaker module + health check loop + connector-engine integration (CONN-01, CONN-02, CONN-04)
+- [x] 08-02-PLAN.md -- Health status API + boot wiring + failure mode tests (CONN-03, TEST-02)
 
 ### Phase 9: API Resilience & Performance
 **Goal**: The API layer handles failures gracefully, AI operations run asynchronously, and expensive operations are cached or budget-limited
@@ -202,6 +202,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 5. Correlation Engine Hardening | 3/3 | Complete   | 2026-03-25 |
 | 6. Alert Pipeline Hardening | 0/3 | Complete | 2026-03-25 |
 | 7. Automated Response Safety | 4/4 | Complete | 2026-03-26 |
-| 8. Connector Health & Resilience | 0/2 | Not started | - |
+| 8. Connector Health & Resilience | 2/2 | Complete | 2026-03-26 |
 | 9. API Resilience & Performance | 0/3 | Not started | - |
 | 10. Test Coverage & Quality Gates | 0/3 | Not started | - |
