@@ -9,7 +9,7 @@ progress:
   total_phases: 10
   completed_phases: 8
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-25)
 ## Current Position
 
 Phase: 09 (api-resilience-performance) — COMPLETE
-Plan: 2 of 2 (all complete)
+Plan: 3 of 3 (all complete)
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Plan: 2 of 2 (all complete)
 | Phase 06 P03 | 6min | 2 tasks | 4 files |
 | Phase 09 P01 | 5min | 2 tasks | 5 files |
 | Phase 09 P02 | 8min | 2 tasks | 8 files |
+| Phase 09 P03 | 5min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,8 @@ Recent decisions affecting current work:
 - [Phase 09]: Used module-level cached utilization with 1s refresh for pool circuit breaker to avoid per-request overhead
 - [Phase 09]: Tenant-scoped entity-graph cache keys using orgId prefix for isolation; invalidated on entity:resolved events
 - [Phase 09]: Separate narrative-budget.ts module for testability; 30% budget cap for threat intel block to preserve alert space
+- [Phase 09]: Exported getAiTriageHandler() from triage.ts for direct testing and job-queue registration via dynamic import
+- [Phase 09]: Dedup handling returns 202 with null jobId when triage already queued for same alert
 
 ### Pending Todos
 
@@ -100,6 +103,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-26T07:07:00.000Z
-Stopped at: Completed 09-02-PLAN.md (Phase 09 complete)
+Last session: 2026-03-26T12:45:00.000Z
+Stopped at: Completed 09-03-PLAN.md (Phase 09 Plan 3 complete)
 Resume file: None
