@@ -126,7 +126,7 @@ export function registerAiTriageRoutes(app: Express): void {
           return res.json({ status: "completed", result: job.result });
         }
         if (job.status === "failed" || job.status === "dead_letter") {
-          return res.json({ status: "failed", error: job.lastError || job.error || "Unknown error" });
+          return res.json({ status: "failed", error: job.lastError || "Unknown error" });
         }
         res.json({ status: job.status }); // pending, running
       } catch (error: any) {

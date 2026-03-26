@@ -189,6 +189,7 @@ describe("Async triage endpoint", () => {
         orgId: "org-1",
         status: "failed",
         lastError: "AI model error",
+        error: undefined,
       });
 
       const app = createApp();
