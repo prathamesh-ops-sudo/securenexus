@@ -56,7 +56,26 @@ function makeAlert(overrides: Partial<Alert>): Alert {
     detectedAt: overrides.createdAt ?? BASE_TIME,
     createdAt: overrides.createdAt ?? BASE_TIME,
     updatedAt: null,
-  } as Alert;
+    assignedTo: null,
+    suppressed: false,
+    suppressedBy: null,
+    suppressionRuleId: null,
+    duplicateOf: null,
+    duplicateCount: 0,
+    firstSeenAt: overrides.createdAt ?? BASE_TIME,
+    lastSeenAt: overrides.createdAt ?? BASE_TIME,
+    enrichmentStatus: null,
+    enrichedAt: null,
+    confidenceScore: null,
+    confidenceSource: null,
+    confidenceNotes: null,
+    dedupClusterId: null,
+    occurrenceCount: 1,
+    ingestionPipeline: null,
+    ingestionLatencyMs: null,
+    analystNotes: null,
+    ingestedAt: overrides.createdAt ?? BASE_TIME,
+  } as unknown as Alert;
 }
 
 export interface ExpectedEntityLink {

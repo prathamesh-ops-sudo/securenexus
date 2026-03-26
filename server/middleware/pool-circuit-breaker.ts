@@ -39,7 +39,7 @@ export function poolCircuitBreakerMiddleware(req: Request, res: Response, next: 
   if (cachedUtilization >= UTILIZATION_THRESHOLD) {
     log.warn("Pool circuit breaker: rejecting request", {
       utilizationPercent: cachedUtilization,
-      orgId: (req as any).orgId,
+      orgId: (req as unknown as Record<string, unknown>).orgId,
       path: req.path,
     });
     res.status(503).set("Retry-After", String(RETRY_AFTER_SECONDS)).json({

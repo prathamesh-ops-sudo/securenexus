@@ -179,7 +179,9 @@ async function ensureOrgMembership(user: SessionUser): Promise<boolean> {
                 pendingApproval: needsApproval,
               },
             })
-            .catch((err) => log.warn("Failed to record domain auto-join audit", { error: String(err), userId: user.id }));
+            .catch((err) =>
+              log.warn("Failed to record domain auto-join audit", { error: String(err), userId: user.id }),
+            );
           logger
             .child("auth")
             .info(needsApproval ? "User pending approval via domain match" : "User auto-joined org via domain match", {
@@ -343,68 +345,75 @@ export function registerAuthRoutes(app: Express): void {
   });
 
   app.post("/api/login", loginRateLimitPre, (req, res, next) => {
-    passport.authenticate("local", (err: Error | null, user: SessionUser | false, info: { message: string } | undefined) => {
-      if (err) return next(err);
-      if (!user) {
-        recordFailedLogin(req);
-        const failEmail = req.body?.email?.toLowerCase?.();
-        const failIp = (() => {
-          const fwd = req.headers["x-forwarded-for"];
-          if (typeof fwd === "string") return fwd.split(",")[0].trim();
-          return req.socket.remoteAddress || "unknown";
-        })();
-        if (failEmail) {
-          storage
-            .createAuditLog({
-              userId: undefined,
-              userName: failEmail,
-              action: "login_failed",
-              resourceType: "auth",
-              resourceId: failEmail,
-              details: { ip: failIp, reason: info?.message || "invalid_credentials" },
-              ipAddress: failIp,
-            })
-            .catch((err) => log.warn("Failed to record login failure audit", { error: String(err), email: failEmail }));
+    passport.authenticate(
+      "local",
+      (err: Error | null, user: SessionUser | false, info: { message: string } | undefined) => {
+        if (err) return next(err);
+        if (!user) {
+          recordFailedLogin(req);
+          const failEmail = req.body?.email?.toLowerCase?.();
+          const failIp = (() => {
+            const fwd = req.headers["x-forwarded-for"];
+            if (typeof fwd === "string") return fwd.split(",")[0].trim();
+            return req.socket.remoteAddress || "unknown";
+          })();
+          if (failEmail) {
+            storage
+              .createAuditLog({
+                userId: undefined,
+                userName: failEmail,
+                action: "login_failed",
+                resourceType: "auth",
+                resourceId: failEmail,
+                details: { ip: failIp, reason: info?.message || "invalid_credentials" },
+                ipAddress: failIp,
+              })
+              .catch((err) =>
+                log.warn("Failed to record login failure audit", { error: String(err), email: failEmail }),
+              );
+          }
+          return replyUnauthenticated(res, info?.message || "Invalid credentials");
         }
-        return replyUnauthenticated(res, info?.message || "Invalid credentials");
-      }
-      clearLoginBuckets(user.email);
-      clearLockout(user.email).catch((err) => log.warn("Failed to clear lockout", { error: String(err), email: user.email }));
-      req.login(user, async (loginErr) => {
-        if (loginErr) return next(loginErr);
-        await ensureOrgMembership(user);
+        clearLoginBuckets(user.email!);
+        clearLockout(user.email!).catch((err) =>
+          log.warn("Failed to clear lockout", { error: String(err), email: user.email }),
+        );
+        req.login(user, async (loginErr) => {
+          if (loginErr) return next(loginErr);
+          await ensureOrgMembership(user);
 
-        const memberships = await storage.getUserMemberships(user.id).catch(() => []);
-        const userOrgId = memberships.length > 0 ? memberships[0].orgId : null;
+          const memberships = await storage.getUserMemberships(user.id).catch(() => []);
+          const userOrgId = memberships.length > 0 ? memberships[0].orgId : null;
 
-        const clientIp = (() => {
-          const fwd = req.headers["x-forwarded-for"];
-          if (typeof fwd === "string") return fwd.split(",")[0].trim();
-          return req.socket.remoteAddress || "unknown";
-        })();
+          const clientIp = (() => {
+            const fwd = req.headers["x-forwarded-for"];
+            if (typeof fwd === "string") return fwd.split(",")[0].trim();
+            return req.socket.remoteAddress || "unknown";
+          })();
 
-        const policyResult = await checkLoginPolicy(user, userOrgId, clientIp);
-        if (!policyResult.allowed) {
-          req.logout(() => {
-            req.session.destroy(() => {
-              return replyForbidden(res, policyResult.reason || "Access denied", policyResult.code || "FORBIDDEN");
+          const policyResult = await checkLoginPolicy(user, userOrgId, clientIp);
+          if (!policyResult.allowed) {
+            req.logout(() => {
+              req.session.destroy(() => {
+                return replyForbidden(res, policyResult.reason || "Access denied", policyResult.code || "FORBIDDEN");
+              });
             });
+            return;
+          }
+
+          if (userOrgId) {
+            await enforceMaxConcurrentSessions(user.id, userOrgId);
+          }
+
+          const { passwordHash, ...safeUser } = user;
+          return reply(res, {
+            ...safeUser,
+            mfaRequired: policyResult.mfaRequired || false,
+            passwordExpired: policyResult.passwordExpired || false,
           });
-          return;
-        }
-
-        if (userOrgId) {
-          await enforceMaxConcurrentSessions(user.id, userOrgId);
-        }
-
-        const { passwordHash, ...safeUser } = user;
-        return reply(res, {
-          ...safeUser,
-          mfaRequired: policyResult.mfaRequired || false,
-          passwordExpired: policyResult.passwordExpired || false,
         });
-      });
-    })(req, res, next);
+      },
+    )(req, res, next);
   });
 
   app.post("/api/logout", (req, res) => {

@@ -63,7 +63,6 @@ async function persistInferenceEntry(
   orgId?: string,
 ): Promise<void> {
   try {
-
     await pool.query(
       `INSERT INTO ai_inference_log (tier, model, prompt_id, prompt_version, input_tokens, output_tokens, latency_ms, cost_estimate_usd, cached, success, error_message, org_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
@@ -110,7 +109,6 @@ export async function getInferenceHistory(options: {
     createdAt: string;
   }>
 > {
-
   const safeLimit = Math.min(Math.max(options.limit || 100, 1), 1000);
   const since = options.since || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // default 7 days
 
@@ -175,7 +173,6 @@ export async function getInferenceStats(
     }
   >;
 }> {
-
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
   const orgFilter = orgId ? ` AND org_id = $2` : ``;
@@ -868,18 +865,18 @@ export async function buildThreatIntelContext(alerts: Alert[]): Promise<ThreatIn
       const ragCtx = await buildRAGContext(
         {
           title: representativeAlert.title,
-          description: representativeAlert.description,
-          mitreTactic: representativeAlert.mitreTactic,
-          mitreTechnique: representativeAlert.mitreTechnique,
-          sourceIp: representativeAlert.sourceIp,
-          destIp: representativeAlert.destIp,
-          hostname: representativeAlert.hostname,
-          domain: representativeAlert.domain,
-          fileHash: representativeAlert.fileHash,
-          category: representativeAlert.category,
+          description: representativeAlert.description ?? undefined,
+          mitreTactic: representativeAlert.mitreTactic ?? undefined,
+          mitreTechnique: representativeAlert.mitreTechnique ?? undefined,
+          sourceIp: representativeAlert.sourceIp ?? undefined,
+          destIp: representativeAlert.destIp ?? undefined,
+          hostname: representativeAlert.hostname ?? undefined,
+          domain: representativeAlert.domain ?? undefined,
+          fileHash: representativeAlert.fileHash ?? undefined,
+          category: representativeAlert.category ?? undefined,
           severity: representativeAlert.severity,
         },
-        representativeAlert.orgId,
+        representativeAlert.orgId ?? undefined,
       );
       result.historicalContext = ragCtx;
     } catch (ragErr) {
@@ -1222,8 +1219,6 @@ export async function getInferenceMetrics(): Promise<{
   operationsByTier: Record<string, { count: number; avgLatencyMs: number; totalCostUsd: number; cachedCount: number }>;
 }> {
   try {
-
-
     // Fetch recent 20 operations from DB
     const recentResult = await pool.query(
       `SELECT tier, model, prompt_id, prompt_version, input_tokens, output_tokens,
@@ -1858,7 +1853,7 @@ function buildHeuristicInvestigation(incident: Incident, alerts: Alert[]): DeepI
     ],
     timeline: alerts
       .filter((a) => a.detectedAt)
-      .sort((a, b) => new Date(a.detectedAt).getTime() - new Date(b.detectedAt).getTime())
+      .sort((a, b) => new Date(a.detectedAt!).getTime() - new Date(b.detectedAt!).getTime())
       .slice(0, 10)
       .map((a) => ({
         timestamp: a.detectedAt,
@@ -1877,7 +1872,10 @@ function buildHeuristicInvestigation(incident: Incident, alerts: Alert[]): DeepI
   } as unknown as DeepInvestigationResult; /* eslint-disable-line @typescript-eslint/no-unsafe-return -- heuristic fallback returns simplified shape consumed by JSON serialization */
 }
 
-function buildHeuristicThreatHunt(huntContext: string, telemetryData: Record<string, unknown> | Array<Record<string, unknown>>): ThreatHuntingResult {
+function buildHeuristicThreatHunt(
+  huntContext: string,
+  telemetryData: Record<string, unknown> | Array<Record<string, unknown>>,
+): ThreatHuntingResult {
   const dataPoints = Array.isArray(telemetryData) ? telemetryData.length : 0;
   return {
     huntMissionId: "heuristic_" + Date.now(),
@@ -1917,8 +1915,8 @@ function buildHeuristicBehavioralAnalysis(
 ): BehavioralAnalysisResult {
   const activities = Array.isArray(activityData) ? activityData.length : 0;
   return {
-    entityId: entityContext?.id || "unknown",
-    entityType: entityContext?.type || "unknown",
+    entityId: (entityContext?.id as string) || "unknown",
+    entityType: (entityContext?.type as string) || "unknown",
     analysisTimeframe: "last_30_days",
     behavioralScore: 50,
     riskLevel: "medium",
@@ -1943,14 +1941,17 @@ function buildHeuristicBehavioralAnalysis(
   };
 }
 
-function buildHeuristicAttackPaths(compromiseState: Record<string, unknown>, crownJewels: string[]): AttackPathPredictionResult {
+function buildHeuristicAttackPaths(
+  compromiseState: Record<string, unknown>,
+  crownJewels: string[],
+): AttackPathPredictionResult {
   return {
     currentCompromiseState: {
-      accessLevel: compromiseState?.accessLevel || "unknown",
-      compromisedHosts: compromiseState?.compromisedHosts || [],
-      compromisedAccounts: compromiseState?.compromisedAccounts || [],
-      establishedPersistence: compromiseState?.establishedPersistence || [],
-      c2Channels: compromiseState?.c2Channels || [],
+      accessLevel: (compromiseState?.accessLevel as string) || "unknown",
+      compromisedHosts: (compromiseState?.compromisedHosts as string[]) || [],
+      compromisedAccounts: (compromiseState?.compromisedAccounts as string[]) || [],
+      establishedPersistence: (compromiseState?.establishedPersistence as string[]) || [],
+      c2Channels: (compromiseState?.c2Channels as string[]) || [],
     },
     inferredObjectives: [
       {
