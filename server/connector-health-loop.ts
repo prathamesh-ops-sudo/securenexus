@@ -118,7 +118,12 @@ export async function runHealthChecks(): Promise<void> {
   }
 }
 
-function handleFailure(connector: Connector, state: ConnectorHealthState, errorMessage: string, latencyMs: number): void {
+function handleFailure(
+  connector: Connector,
+  state: ConnectorHealthState,
+  errorMessage: string,
+  latencyMs: number,
+): void {
   const now = Date.now();
   recordConnectorFailure(connector.id);
   state.consecutiveFailures++;
@@ -128,19 +133,21 @@ function handleFailure(connector: Connector, state: ConnectorHealthState, errorM
   const isFailed = state.consecutiveFailures >= CONSECUTIVE_FAILURE_THRESHOLD;
   state.status = isFailed ? "failed" : "degraded";
 
-  storage.createConnectorHealthCheck({
-    connectorId: connector.id,
-    orgId: connector.orgId,
-    status: state.status,
-    latencyMs,
-    errorMessage,
-    credentialStatus: "unknown",
-  }).catch((dbErr: unknown) => {
-    log.warn("Failed to persist health check failure", {
+  storage
+    .createConnectorHealthCheck({
       connectorId: connector.id,
-      error: (dbErr as Error).message,
+      orgId: connector.orgId,
+      status: state.status,
+      latencyMs,
+      errorMessage,
+      credentialStatus: "unknown",
+    })
+    .catch((dbErr: unknown) => {
+      log.warn("Failed to persist health check failure", {
+        connectorId: connector.id,
+        error: (dbErr as Error).message,
+      });
     });
-  });
 
   if (isFailed) {
     const backoff = Math.min(BACKOFF_BASE_MS * Math.pow(2, state.restartCount), BACKOFF_MAX_MS);
@@ -155,15 +162,17 @@ function handleFailure(connector: Connector, state: ConnectorHealthState, errorM
       nextRestartAt: new Date(state.nextRestartAt).toISOString(),
     });
 
-    storage.updateConnector(connector.id, {
-      status: "error",
-      lastSyncError: "Auto-restart: " + state.consecutiveFailures + " consecutive health check failures",
-    } as Partial<Connector>).catch((dbErr: unknown) => {
-      log.warn("Failed to update connector status to error", {
-        connectorId: connector.id,
-        error: (dbErr as Error).message,
+    storage
+      .updateConnector(connector.id, {
+        status: "error",
+        lastSyncError: "Auto-restart: " + state.consecutiveFailures + " consecutive health check failures",
+      } as Partial<Connector>)
+      .catch((dbErr: unknown) => {
+        log.warn("Failed to update connector status to error", {
+          connectorId: connector.id,
+          error: (dbErr as Error).message,
+        });
       });
-    });
 
     // Reset consecutive failures after scheduling restart
     state.consecutiveFailures = 0;
@@ -192,7 +201,7 @@ export function resetConnectorHealthStates(): void {
 
 export function getConnectorHealthStatus(): Map<string, ConnectorHealthState> {
   const clone = new Map<string, ConnectorHealthState>();
-  for (const [key, value] of healthStates) {
+  for (const [key, value] of Array.from(healthStates.entries())) {
     clone.set(key, { ...value });
   }
   return clone;
