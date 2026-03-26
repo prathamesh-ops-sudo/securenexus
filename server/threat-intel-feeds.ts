@@ -954,13 +954,6 @@ const RSS_FEEDS: ThreatIntelFeedDefinition[] = [
     type: "rss",
   },
   {
-    name: "Trellix Research",
-    slug: "trellix",
-    url: "https://www.trellix.com/blogs/research/feed/",
-    category: "Endpoint Security",
-    type: "rss",
-  },
-  {
     name: "Deep Instinct",
     slug: "deep-instinct",
     url: "https://www.deepinstinct.com/blog/rss.xml",
@@ -2001,7 +1994,7 @@ const RSS_FEEDS: ThreatIntelFeedDefinition[] = [
   {
     name: "Chronicle (Google)",
     slug: "chronicle",
-    url: "https://cloud.google.com/blog/products/identity-security/rss",
+    url: "https://chronicle.security/blog/rss.xml",
     category: "SIEM",
     type: "rss",
   },
@@ -2924,11 +2917,25 @@ export async function scoreArticlesForOrg(
   for (let i = 0; i < uncached.length; i += RELEVANCE_BATCH_SIZE) {
     const batch = uncached.slice(i, i + RELEVANCE_BATCH_SIZE);
     const scores = await scoreArticleBatch(batch, orgCtx);
+    const scoredIds = new Set<string>();
     for (const { articleId, score, reason } of scores) {
       setCachedRelevance(orgCtx.orgId, articleId, score, reason);
       const article = batch.find((a) => a.id === articleId);
       if (article) {
         results.push({ ...article, relevanceScore: score, relevanceReason: reason });
+        scoredIds.add(articleId);
+      }
+    }
+    // Add any batch articles that the AI didn't score, using heuristic fallback
+    for (const article of batch) {
+      if (!scoredIds.has(article.id)) {
+        const fallbackScore = heuristicRelevanceScore(article, orgCtx);
+        setCachedRelevance(orgCtx.orgId, article.id, fallbackScore, "Heuristic score (AI partial response)");
+        results.push({
+          ...article,
+          relevanceScore: fallbackScore,
+          relevanceReason: "Heuristic score (AI partial response)",
+        });
       }
     }
   }
