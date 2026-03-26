@@ -1,14 +1,45 @@
 import { db } from "./db";
 import { alerts, entities, alertEntities, correlationClusters, attackPaths, campaigns } from "@shared/schema";
-import type { Alert, Entity, AttackPath, Campaign } from "@shared/schema";
+import type { AttackPath, Campaign } from "@shared/schema";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { createHash } from "crypto";
+import { logger } from "./logger";
 
-interface GraphNode {
-  id: string;
-  type: "alert" | "entity";
-  data: any;
+const log = logger.child("graph-correlation");
+
+export interface AlertNodeData {
+  alertId: string;
+  title: string;
+  severity: string;
+  source: string;
+  category: string | null;
+  mitreTactic: string | null;
+  mitreTechnique: string | null;
+  createdAt: Date | null;
+  orgId: string | null;
 }
+
+export interface EntityNodeData {
+  entityId: string;
+  type: string;
+  value: string;
+  displayName: string | null;
+  riskScore: number | null;
+}
+
+export interface AlertGraphNode {
+  id: string;
+  type: "alert";
+  data: AlertNodeData;
+}
+
+export interface EntityGraphNode {
+  id: string;
+  type: "entity";
+  data: EntityNodeData;
+}
+
+export type TypedGraphNode = AlertGraphNode | EntityGraphNode;
 
 interface GraphEdge {
   source: string;
@@ -20,7 +51,7 @@ interface GraphEdge {
 interface AttackPathResult {
   alertIds: string[];
   entityIds: string[];
-  nodes: GraphNode[];
+  nodes: TypedGraphNode[];
   edges: GraphEdge[];
   tacticsSequence: string[];
   techniquesUsed: string[];
@@ -67,7 +98,7 @@ const MAX_CLUSTER_SIZE = 100;
 
 export async function buildAlertEntityGraph(orgId?: string): Promise<{
   graph: Map<string, Set<string>>;
-  nodeMetadata: Map<string, GraphNode>;
+  nodeMetadata: Map<string, TypedGraphNode>;
 }> {
   const conditions = orgId ? eq(alerts.orgId, orgId) : undefined;
 
@@ -94,7 +125,7 @@ export async function buildAlertEntityGraph(orgId?: string): Promise<{
     .where(conditions ? and(conditions) : undefined);
 
   const graph = new Map<string, Set<string>>();
-  const nodeMetadata = new Map<string, GraphNode>();
+  const nodeMetadata = new Map<string, TypedGraphNode>();
 
   const ensureNode = (id: string) => {
     if (!graph.has(id)) {
@@ -150,7 +181,7 @@ export async function buildAlertEntityGraph(orgId?: string): Promise<{
 
 export function findAttackPaths(
   graph: Map<string, Set<string>>,
-  nodeMetadata: Map<string, GraphNode>,
+  nodeMetadata: Map<string, TypedGraphNode>,
   maxDepth: number = 6,
 ): AttackPathResult[] {
   const globalVisited = new Set<string>();
@@ -165,7 +196,7 @@ export function findAttackPaths(
 
     const componentAlerts: string[] = [];
     const componentEntities: string[] = [];
-    const componentNodes: GraphNode[] = [];
+    const componentNodes: TypedGraphNode[] = [];
     const componentEdges: GraphEdge[] = [];
     const visited = new Set<string>();
     const queue: { node: string; depth: number }[] = [{ node: startNode, depth: 0 }];
@@ -182,7 +213,7 @@ export function findAttackPaths(
         alertCount++;
         componentAlerts.push(meta.data.alertId);
         if (alertCount > MAX_CLUSTER_SIZE) break;
-      } else {
+      } else if (meta.type === "entity") {
         componentEntities.push(meta.data.entityId);
       }
       componentNodes.push(meta);
@@ -217,7 +248,7 @@ export function findAttackPaths(
 
     const alertDataList = componentAlerts
       .map((aid) => nodeMetadata.get(`a:${aid}`))
-      .filter((m): m is GraphNode => m !== undefined)
+      .filter((m): m is AlertGraphNode => m !== undefined && m.type === "alert")
       .map((m) => m.data)
       .sort((a, b) => {
         const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -226,16 +257,16 @@ export function findAttackPaths(
       });
 
     const tacticsSequence = alertDataList
-      .map((a) => a.mitreTactic as string | null)
+      .map((a) => a.mitreTactic)
       .filter((t): t is string => t !== null);
 
     const techniquesUsed = Array.from(
-      new Set(alertDataList.map((a) => a.mitreTechnique as string | null).filter((t): t is string => t !== null)),
+      new Set(alertDataList.map((a) => a.mitreTechnique).filter((t): t is string => t !== null)),
     );
 
     const entityDataList = componentEntities
       .map((eid) => nodeMetadata.get(`e:${eid}`))
-      .filter((m): m is GraphNode => m !== undefined)
+      .filter((m): m is EntityGraphNode => m !== undefined && m.type === "entity")
       .map((m) => m.data);
 
     const hopCount = Math.max(0, Math.floor(componentEdges.length / 2));
@@ -270,8 +301,8 @@ export function findAttackPaths(
 }
 
 export function computePathConfidence(
-  alertDataList: any[],
-  entityDataList: any[],
+  alertDataList: AlertNodeData[],
+  entityDataList: EntityNodeData[],
   hopCount: number,
   timeSpanHours: number,
 ): number {
@@ -281,7 +312,7 @@ export function computePathConfidence(
   const entityDensityScore = Math.min(uniqueEntityTypes.size / 4, 1.0);
   score += entityDensityScore * 0.2;
 
-  const allTactics = alertDataList.map((a) => a.mitreTactic as string | null).filter((t): t is string => t !== null);
+  const allTactics = alertDataList.map((a) => a.mitreTactic).filter((t): t is string => t !== null);
   const uniqueTactics = Array.from(new Set(allTactics));
   const tacticIndices = uniqueTactics
     .map((t) => KILL_CHAIN_ORDER.indexOf(t))
@@ -329,14 +360,18 @@ export function computePathConfidence(
   return Math.round(Math.min(score, 1.0) * 100) / 100;
 }
 
-export function generateCampaignFingerprint(attackPath: AttackPathResult, alertDataList: any[]): CampaignFingerprint {
+export function generateCampaignFingerprint(attackPath: AttackPathResult, alertDataList: AlertNodeData[]): CampaignFingerprint {
   const sortedTactics = Array.from(new Set(attackPath.tacticsSequence)).sort();
 
   const entityTypes = Array.from(
-    new Set(attackPath.nodes.filter((n) => n.type === "entity").map((n) => n.data.type as string)),
+    new Set(
+      attackPath.nodes
+        .filter((n): n is EntityGraphNode => n.type === "entity")
+        .map((n) => n.data.type),
+    ),
   ).sort();
 
-  const sources = Array.from(new Set(alertDataList.map((a) => a.source as string))).sort();
+  const sources = Array.from(new Set(alertDataList.map((a) => a.source))).sort();
 
   const fingerprintInput = [
     `tactics:${sortedTactics.join(",")}`,
@@ -371,115 +406,125 @@ export async function runGraphCorrelation(orgId?: string): Promise<{
   for (const path of qualifiedPaths) {
     const alertDataList = path.alertIds
       .map((aid) => nodeMetadata.get(`a:${aid}`))
-      .filter((m): m is GraphNode => m !== undefined)
+      .filter((m): m is AlertGraphNode => m !== undefined && m.type === "alert")
       .map((m) => m.data);
 
     const firstAlertOrgId = alertDataList.length > 0 ? alertDataList[0].orgId : orgId || null;
 
     const reasoningTrace = buildReasoningTrace(path, alertDataList);
-
-    const [cluster] = await db
-      .insert(correlationClusters)
-      .values({
-        orgId: firstAlertOrgId,
-        confidence: path.confidence,
-        method: "graph_traversal_v2",
-        sharedEntities: path.entityIds.map((eid) => {
-          const meta = nodeMetadata.get(`e:${eid}`);
-          return meta ? { type: meta.data.type, value: meta.data.value } : { type: "unknown", value: eid };
-        }),
-        reasoningTrace,
-        alertIds: path.alertIds,
-        status: path.confidence >= 0.65 ? "confirmed" : "pending",
-      })
-      .returning();
-
-    clustersCreated++;
-
-    const [attackPath] = await db
-      .insert(attackPaths)
-      .values({
-        orgId: firstAlertOrgId,
-        clusterId: cluster.id,
-        alertIds: path.alertIds,
-        entityIds: path.entityIds,
-        nodes: path.nodes,
-        edges: path.edges,
-        tacticsSequence: path.tacticsSequence,
-        techniquesUsed: path.techniquesUsed,
-        hopCount: path.hopCount,
-        confidence: path.confidence,
-        timeSpanHours: path.timeSpanHours,
-        firstAlertAt: path.firstAlertAt,
-        lastAlertAt: path.lastAlertAt,
-      })
-      .returning();
-
     const fp = generateCampaignFingerprint(path, alertDataList);
 
-    const existingCampaigns = await db
-      .select()
-      .from(campaigns)
-      .where(
-        and(
-          eq(campaigns.fingerprint, fp.fingerprint),
-          firstAlertOrgId ? eq(campaigns.orgId, firstAlertOrgId) : sql`${campaigns.orgId} IS NULL`,
-        ),
-      )
-      .limit(1);
-
-    if (existingCampaigns.length > 0) {
-      const existing = existingCampaigns[0];
-      const existingClusterIds = (existing.clusterIds || []) as string[];
-      const existingPathIds = (existing.attackPathIds || []) as string[];
-      await db
-        .update(campaigns)
-        .set({
-          clusterIds: [...existingClusterIds, cluster.id],
-          attackPathIds: [...existingPathIds, attackPath.id],
-          confidence: Math.max(existing.confidence, path.confidence),
-          alertCount: (existing.alertCount || 0) + path.alertIds.length,
-          lastSeenAt: path.lastAlertAt || new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(campaigns.id, existing.id));
-
-      await db.update(attackPaths).set({ campaignId: existing.id }).where(eq(attackPaths.id, attackPath.id));
-    } else {
-      const campaignName = generateCampaignName(fp, path);
-      const [newCampaign] = await db
-        .insert(campaigns)
+    const result = await db.transaction(async (tx) => {
+      const [cluster] = await tx
+        .insert(correlationClusters)
         .values({
           orgId: firstAlertOrgId,
-          name: campaignName,
-          fingerprint: fp.fingerprint,
-          tacticsSequence: fp.tacticsSequence,
-          entitySignature: fp.entitySignature,
-          sourceSignature: fp.sourceSignature,
-          clusterIds: [cluster.id],
-          attackPathIds: [attackPath.id],
           confidence: path.confidence,
-          alertCount: path.alertIds.length,
-          status: "active",
-          firstSeenAt: path.firstAlertAt || new Date(),
-          lastSeenAt: path.lastAlertAt || new Date(),
+          method: "graph_traversal_v2",
+          sharedEntities: path.entityIds.map((eid) => {
+            const meta = nodeMetadata.get(`e:${eid}`);
+            return meta && meta.type === "entity"
+              ? { type: meta.data.type, value: meta.data.value }
+              : { type: "unknown", value: eid };
+          }),
+          reasoningTrace,
+          alertIds: path.alertIds,
+          status: path.confidence >= 0.65 ? "confirmed" : "pending",
         })
         .returning();
 
-      await db.update(attackPaths).set({ campaignId: newCampaign.id }).where(eq(attackPaths.id, attackPath.id));
-
-      campaignsCreated++;
-    }
-
-    if (path.alertIds.length > 0) {
-      await db
-        .update(alerts)
-        .set({
-          correlationScore: path.confidence,
-          correlationClusterId: cluster.id,
-          correlationReason: reasoningTrace.substring(0, 500),
+      const [attackPath] = await tx
+        .insert(attackPaths)
+        .values({
+          orgId: firstAlertOrgId,
+          clusterId: cluster.id,
+          alertIds: path.alertIds,
+          entityIds: path.entityIds,
+          nodes: path.nodes,
+          edges: path.edges,
+          tacticsSequence: path.tacticsSequence,
+          techniquesUsed: path.techniquesUsed,
+          hopCount: path.hopCount,
+          confidence: path.confidence,
+          timeSpanHours: path.timeSpanHours,
+          firstAlertAt: path.firstAlertAt,
+          lastAlertAt: path.lastAlertAt,
         })
-        .where(inArray(alerts.id, path.alertIds));
+        .returning();
+
+      const existingCampaigns = await tx
+        .select()
+        .from(campaigns)
+        .where(
+          and(
+            eq(campaigns.fingerprint, fp.fingerprint),
+            firstAlertOrgId ? eq(campaigns.orgId, firstAlertOrgId) : sql`${campaigns.orgId} IS NULL`,
+          ),
+        )
+        .limit(1);
+
+      let newCampaignCreated = false;
+
+      if (existingCampaigns.length > 0) {
+        const existing = existingCampaigns[0];
+        const existingClusterIds = (existing.clusterIds || []) as string[];
+        const existingPathIds = (existing.attackPathIds || []) as string[];
+        await tx
+          .update(campaigns)
+          .set({
+            clusterIds: [...existingClusterIds, cluster.id],
+            attackPathIds: [...existingPathIds, attackPath.id],
+            confidence: Math.max(existing.confidence, path.confidence),
+            alertCount: (existing.alertCount || 0) + path.alertIds.length,
+            lastSeenAt: path.lastAlertAt || new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(campaigns.id, existing.id));
+
+        await tx.update(attackPaths).set({ campaignId: existing.id }).where(eq(attackPaths.id, attackPath.id));
+      } else {
+        const campaignName = generateCampaignName(fp, path);
+        const [newCampaign] = await tx
+          .insert(campaigns)
+          .values({
+            orgId: firstAlertOrgId,
+            name: campaignName,
+            fingerprint: fp.fingerprint,
+            tacticsSequence: fp.tacticsSequence,
+            entitySignature: fp.entitySignature,
+            sourceSignature: fp.sourceSignature,
+            clusterIds: [cluster.id],
+            attackPathIds: [attackPath.id],
+            confidence: path.confidence,
+            alertCount: path.alertIds.length,
+            status: "active",
+            firstSeenAt: path.firstAlertAt || new Date(),
+            lastSeenAt: path.lastAlertAt || new Date(),
+          })
+          .returning();
+
+        await tx.update(attackPaths).set({ campaignId: newCampaign.id }).where(eq(attackPaths.id, attackPath.id));
+
+        newCampaignCreated = true;
+      }
+
+      if (path.alertIds.length > 0) {
+        await tx
+          .update(alerts)
+          .set({
+            correlationScore: path.confidence,
+            correlationClusterId: cluster.id,
+            correlationReason: reasoningTrace.substring(0, 500),
+          })
+          .where(inArray(alerts.id, path.alertIds));
+      }
+
+      return { newCampaignCreated };
+    }, { isolationLevel: "repeatable read" });
+
+    clustersCreated++;
+    if (result.newCampaignCreated) {
+      campaignsCreated++;
     }
   }
 
@@ -490,7 +535,7 @@ export async function runGraphCorrelation(orgId?: string): Promise<{
   };
 }
 
-function buildReasoningTrace(path: AttackPathResult, alertDataList: any[]): string {
+function buildReasoningTrace(path: AttackPathResult, alertDataList: AlertNodeData[]): string {
   const lines: string[] = [];
   lines.push(`GRAPH CORRELATION ANALYSIS — Confidence: ${(path.confidence * 100).toFixed(1)}%`);
   lines.push(`Method: Graph Traversal v2 (no time window constraint)`);

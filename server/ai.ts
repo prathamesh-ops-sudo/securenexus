@@ -1,5 +1,6 @@
 import { db, pool } from "./db";
 import { entities } from "@shared/schema";
+import type { Alert, Incident } from "@shared/schema";
 import { inArray } from "drizzle-orm";
 import { getEnrichmentForEntity } from "./threat-enrichment";
 import { getCachedOsintIndicators } from "./osint-feeds";
@@ -27,6 +28,7 @@ import { getOrgUsageSummary, getAllOrgUsageSummaries, setOrgBudget } from "./ai/
 import { registerEnhancedPrompts } from "./ai/enhanced-prompts";
 import { buildRAGContext, formatRAGContextForPrompt, type RAGContext } from "./ai/vector-search";
 import { buildFewShotAugmentedPrompt, getSuppressedSourcesForContext } from "./ai/active-learning";
+import { buildBudgetedNarrativeMessage } from "./ai/narrative-budget";
 
 initializeDefaultPrompts().catch((err) => log.error("Failed to initialize default prompts", { error: String(err) }));
 registerEnhancedPrompts();
@@ -54,34 +56,6 @@ interface InferenceMetrics {
 
 // ─── Persistent Inference Log (DB-backed) ─────────────────────────────────────
 
-const INFERENCE_TABLE_ENSURED = { done: false };
-
-async function ensureInferenceTable(): Promise<void> {
-  if (INFERENCE_TABLE_ENSURED.done) return;
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ai_inference_log (
-      id SERIAL PRIMARY KEY,
-      tier VARCHAR NOT NULL,
-      model VARCHAR NOT NULL,
-      prompt_id VARCHAR,
-      prompt_version INTEGER,
-      input_tokens INTEGER NOT NULL DEFAULT 0,
-      output_tokens INTEGER NOT NULL DEFAULT 0,
-      latency_ms INTEGER NOT NULL DEFAULT 0,
-      cost_estimate_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
-      cached BOOLEAN NOT NULL DEFAULT false,
-      success BOOLEAN NOT NULL DEFAULT true,
-      error_message TEXT,
-      org_id VARCHAR,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_inference_log_tier ON ai_inference_log (tier)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_inference_log_created ON ai_inference_log (created_at)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_inference_log_org ON ai_inference_log (org_id)`);
-  INFERENCE_TABLE_ENSURED.done = true;
-}
-
 async function persistInferenceEntry(
   metrics: InferenceMetrics,
   success: boolean = true,
@@ -89,7 +63,6 @@ async function persistInferenceEntry(
   orgId?: string,
 ): Promise<void> {
   try {
-    await ensureInferenceTable();
     await pool.query(
       `INSERT INTO ai_inference_log (tier, model, prompt_id, prompt_version, input_tokens, output_tokens, latency_ms, cost_estimate_usd, cached, success, error_message, org_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
@@ -136,7 +109,6 @@ export async function getInferenceHistory(options: {
     createdAt: string;
   }>
 > {
-  await ensureInferenceTable();
   const safeLimit = Math.min(Math.max(options.limit || 100, 1), 1000);
   const since = options.since || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // default 7 days
 
@@ -201,7 +173,6 @@ export async function getInferenceStats(
     }
   >;
 }> {
-  await ensureInferenceTable();
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
   const orgFilter = orgId ? ` AND org_id = $2` : ``;
@@ -358,7 +329,9 @@ async function invokeWithPrompt(
   };
 
   // Persist to DB (non-blocking) — no in-memory array needed
-  persistInferenceEntry(metrics, true, undefined, orgId).catch(() => {});
+  persistInferenceEntry(metrics, true, undefined, orgId).catch((err) =>
+    log.warn("Failed to persist inference entry", { error: String(err), orgId }),
+  );
 
   return { text: result.text, metrics };
 }
@@ -457,7 +430,9 @@ export async function invokeWithPromptStream(
           promptVersion: prompt.version,
         };
         // Persist to DB (non-blocking) — no in-memory array needed
-        persistInferenceEntry(im, true, undefined, orgId).catch(() => {});
+        persistInferenceEntry(im, true, undefined, orgId).catch((err) =>
+          log.warn("Failed to persist inference entry", { error: String(err), orgId }),
+        );
 
         await callbacks.onComplete(fullText, metrics);
       },
@@ -471,8 +446,8 @@ export async function invokeWithPromptStream(
  * the AI response chunk-by-chunk.
  */
 export async function streamNarrative(
-  incident: any,
-  alerts: any[],
+  incident: Incident,
+  alerts: Alert[],
   threatIntelCtx: ThreatIntelContext,
   callbacks: StreamCallbacks,
   orgId?: string,
@@ -487,8 +462,8 @@ export async function streamNarrative(
  * Stream a deep investigation via SSE.
  */
 export async function streamDeepInvestigation(
-  incident: any,
-  alerts: any[],
+  incident: Incident,
+  alerts: Alert[],
   threatIntelCtx: ThreatIntelContext | undefined,
   callbacks: StreamCallbacks,
   orgId?: string,
@@ -697,7 +672,7 @@ export interface ThreatIntelContext {
   droppedSummary?: string;
 }
 
-export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatIntelContext> {
+export async function buildThreatIntelContext(alerts: Alert[]): Promise<ThreatIntelContext> {
   const result: ThreatIntelContext = {
     enrichmentResults: [],
     osintMatches: [],
@@ -743,7 +718,7 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
       const matchingEntities = await db.select().from(entities).where(inArray(entities.value, iocValues)).limit(100);
 
       for (const entity of matchingEntities) {
-        const enrichment = getEnrichmentForEntity(entity.metadata as Record<string, any> | null);
+        const enrichment = getEnrichmentForEntity(entity.metadata as Record<string, unknown> | null);
         if (enrichment && enrichment.results.length > 0) {
           for (const er of enrichment.results) {
             result.enrichmentResults.push({
@@ -890,18 +865,18 @@ export async function buildThreatIntelContext(alerts: any[]): Promise<ThreatInte
       const ragCtx = await buildRAGContext(
         {
           title: representativeAlert.title,
-          description: representativeAlert.description,
-          mitreTactic: representativeAlert.mitreTactic,
-          mitreTechnique: representativeAlert.mitreTechnique,
-          sourceIp: representativeAlert.sourceIp,
-          destIp: representativeAlert.destIp,
-          hostname: representativeAlert.hostname,
-          domain: representativeAlert.domain,
-          fileHash: representativeAlert.fileHash,
-          category: representativeAlert.category,
+          description: representativeAlert.description ?? undefined,
+          mitreTactic: representativeAlert.mitreTactic ?? undefined,
+          mitreTechnique: representativeAlert.mitreTechnique ?? undefined,
+          sourceIp: representativeAlert.sourceIp ?? undefined,
+          destIp: representativeAlert.destIp ?? undefined,
+          hostname: representativeAlert.hostname ?? undefined,
+          domain: representativeAlert.domain ?? undefined,
+          fileHash: representativeAlert.fileHash ?? undefined,
+          category: representativeAlert.category ?? undefined,
           severity: representativeAlert.severity,
         },
-        representativeAlert.orgId,
+        representativeAlert.orgId ?? undefined,
       );
       result.historicalContext = ragCtx;
     } catch (ragErr) {
@@ -1006,7 +981,7 @@ export function formatThreatIntelForPrompt(ctx: ThreatIntelContext): string {
 }
 
 export async function correlateAlerts(
-  alertsData: any[],
+  alertsData: Alert[],
   threatIntelCtx?: ThreatIntelContext,
   orgId?: string,
 ): Promise<CorrelationResult> {
@@ -1018,7 +993,7 @@ export async function correlateAlerts(
   return JSON.parse(extractJson(text));
 }
 
-function buildCorrelationUserMessage(alertsData: any[]): string {
+function buildCorrelationUserMessage(alertsData: Alert[]): string {
   const telemetry = JSON.stringify(
     alertsData.map((a) => ({
       id: a.id,
@@ -1049,14 +1024,26 @@ function buildCorrelationUserMessage(alertsData: any[]): string {
 }
 
 export async function generateIncidentNarrative(
-  incident: any,
-  alerts: any[],
+  incident: Incident,
+  alerts: Alert[],
   threatIntelCtx?: ThreatIntelContext,
   orgId?: string,
 ): Promise<NarrativeResult> {
-  const userMessage = buildNarrativeUserMessage(incident, alerts);
   const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
-  const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
+
+  // Token budget: pack highest-severity alerts within budget, reserve space for response
+  const budgeted = buildBudgetedNarrativeMessage(incident, alerts, threatIntelBlock, 6144, 2048);
+
+  if (budgeted.alertsTruncated > 0) {
+    log.info("Narrative token budget applied", {
+      incidentId: incident.id,
+      alertsIncluded: budgeted.alertsIncluded,
+      alertsTruncated: budgeted.alertsTruncated,
+      totalInputTokens: budgeted.totalInputTokens,
+    });
+  }
+
+  const finalUserMessage = budgeted.message;
 
   const { text } = await invokeWithPrompt("narrative", finalUserMessage, "narrative", orgId, 6144);
   const parsed = JSON.parse(extractJson(text));
@@ -1072,7 +1059,7 @@ export async function generateIncidentNarrative(
   return parsed;
 }
 
-function buildNarrativeUserMessage(incident: any, alerts: any[]): string {
+function buildNarrativeUserMessage(incident: Incident, alerts: Alert[]): string {
   const incidentCtx = JSON.stringify(
     {
       title: incident.title,
@@ -1118,7 +1105,7 @@ function buildNarrativeUserMessage(incident: any, alerts: any[]): string {
 }
 
 export async function triageAlert(
-  alertData: any,
+  alertData: Alert,
   threatIntelCtx?: ThreatIntelContext,
   orgId?: string,
 ): Promise<TriageResult> {
@@ -1130,7 +1117,7 @@ export async function triageAlert(
   return JSON.parse(extractJson(text));
 }
 
-function buildTriageUserMessage(alertData: any): string {
+function buildTriageUserMessage(alertData: Alert): string {
   const telemetry = JSON.stringify(
     {
       title: alertData.title,
@@ -1232,8 +1219,6 @@ export async function getInferenceMetrics(): Promise<{
   operationsByTier: Record<string, { count: number; avgLatencyMs: number; totalCostUsd: number; cachedCount: number }>;
 }> {
   try {
-    await ensureInferenceTable();
-
     // Fetch recent 20 operations from DB
     const recentResult = await pool.query(
       `SELECT tier, model, prompt_id, prompt_version, input_tokens, output_tokens,
@@ -1348,9 +1333,9 @@ export interface DeepInvestigationResult {
     criticalAssets: number;
   };
   attackGraph: {
-    initialAccess: any;
-    nodes: any[];
-    edges: any[];
+    initialAccess: Record<string, unknown>;
+    nodes: Array<Record<string, unknown>>;
+    edges: Array<Record<string, unknown>>;
     currentPosition: string;
     objectivesAchieved: string[];
     objectivesInProgress: string[];
@@ -1362,7 +1347,7 @@ export interface DeepInvestigationResult {
     operationalTempo: string;
     ttps: string[];
     tooling: string[];
-    infrastructureFingerprint: any;
+    infrastructureFingerprint: Record<string, unknown>;
     attributionConfidence: number;
     possibleThreatActors: string[];
     attributionEvidence: string[];
@@ -1427,7 +1412,7 @@ export interface ThreatHuntingResult {
     finding: string;
     severity: string;
     confidence: number;
-    evidence: any[];
+    evidence: Array<Record<string, unknown>>;
     iocs: Array<{ type: string; value: string }>;
     recommendedAction: string;
     escalate: boolean;
@@ -1463,7 +1448,7 @@ export interface BehavioralAnalysisResult {
     severity: string;
     confidence: number;
     deviationMagnitude: string;
-    evidence: any[];
+    evidence: Array<Record<string, unknown>>;
     timeframe: string;
     peersComparison: string;
     threatIndicators: string[];
@@ -1547,8 +1532,8 @@ export interface AttackPathPredictionResult {
  * Conduct deep forensic investigation with advanced analysis
  */
 export async function conductDeepInvestigation(
-  incident: any,
-  alerts: any[],
+  incident: Incident,
+  alerts: Alert[],
   threatIntelCtx?: ThreatIntelContext,
   orgId?: string,
 ): Promise<DeepInvestigationResult> {
@@ -1622,7 +1607,7 @@ ${threatIntelBlock}`;
  */
 export async function conductThreatHunt(
   huntContext: string,
-  telemetryData: any,
+  telemetryData: Record<string, unknown> | Array<Record<string, unknown>>,
   threatIntelCtx?: ThreatIntelContext,
   orgId?: string,
 ): Promise<ThreatHuntingResult> {
@@ -1654,9 +1639,9 @@ ${threatIntelBlock}`;
  * Analyze behavioral patterns for insider threats and account compromise
  */
 export async function analyzeBehavior(
-  entityContext: any,
-  activityData: any,
-  baselineData: any,
+  entityContext: Record<string, unknown>,
+  activityData: Record<string, unknown> | Array<Record<string, unknown>>,
+  baselineData: Record<string, unknown>,
   orgId?: string,
 ): Promise<BehavioralAnalysisResult> {
   const userMessage = `Analyze behavioral patterns in this telemetry for anomalies and threats.
@@ -1683,10 +1668,10 @@ ${JSON.stringify(baselineData, null, 2)}`;
  * Predict attacker's next moves and attack paths
  */
 export async function predictAttackPaths(
-  compromiseState: any,
-  networkTopology: any,
+  compromiseState: Record<string, unknown>,
+  networkTopology: Record<string, unknown>,
   crownJewels: string[],
-  securityControls: any,
+  securityControls: Record<string, unknown>,
   orgId?: string,
 ): Promise<AttackPathPredictionResult> {
   const userMessage = `Predict the attacker's next moves and possible attack paths.
@@ -1847,7 +1832,7 @@ Generate detection rules as JSON:
 // These provide meaningful data-driven responses when AI/LLM is unavailable,
 // using deterministic analysis of the provided telemetry data.
 
-function buildHeuristicInvestigation(incident: any, alerts: any[]): DeepInvestigationResult {
+function buildHeuristicInvestigation(incident: Incident, alerts: Alert[]): DeepInvestigationResult {
   const uniqueIPs = new Set(alerts.map((a) => a.sourceIp).filter(Boolean));
   const uniqueHosts = new Set(alerts.map((a) => a.hostname).filter(Boolean));
   const tactics = new Set(alerts.map((a) => a.mitreTactic).filter(Boolean));
@@ -1868,7 +1853,7 @@ function buildHeuristicInvestigation(incident: any, alerts: any[]): DeepInvestig
     ],
     timeline: alerts
       .filter((a) => a.detectedAt)
-      .sort((a, b) => new Date(a.detectedAt).getTime() - new Date(b.detectedAt).getTime())
+      .sort((a, b) => new Date(a.detectedAt!).getTime() - new Date(b.detectedAt!).getTime())
       .slice(0, 10)
       .map((a) => ({
         timestamp: a.detectedAt,
@@ -1884,10 +1869,13 @@ function buildHeuristicInvestigation(incident: any, alerts: any[]): DeepInvestig
     ],
     confidenceScore: 0.4,
     dataSource: "heuristic_fallback",
-  } as any;
+  } as unknown as DeepInvestigationResult; /* eslint-disable-line @typescript-eslint/no-unsafe-return -- heuristic fallback returns simplified shape consumed by JSON serialization */
 }
 
-function buildHeuristicThreatHunt(huntContext: string, telemetryData: any): ThreatHuntingResult {
+function buildHeuristicThreatHunt(
+  huntContext: string,
+  telemetryData: Record<string, unknown> | Array<Record<string, unknown>>,
+): ThreatHuntingResult {
   const dataPoints = Array.isArray(telemetryData) ? telemetryData.length : 0;
   return {
     huntMissionId: "heuristic_" + Date.now(),
@@ -1921,14 +1909,14 @@ function buildHeuristicThreatHunt(huntContext: string, telemetryData: any): Thre
 }
 
 function buildHeuristicBehavioralAnalysis(
-  entityContext: any,
-  activityData: any,
-  baselineData: any,
+  entityContext: Record<string, unknown>,
+  activityData: Record<string, unknown> | Array<Record<string, unknown>>,
+  baselineData: Record<string, unknown>,
 ): BehavioralAnalysisResult {
   const activities = Array.isArray(activityData) ? activityData.length : 0;
   return {
-    entityId: entityContext?.id || "unknown",
-    entityType: entityContext?.type || "unknown",
+    entityId: (entityContext?.id as string) || "unknown",
+    entityType: (entityContext?.type as string) || "unknown",
     analysisTimeframe: "last_30_days",
     behavioralScore: 50,
     riskLevel: "medium",
@@ -1953,14 +1941,17 @@ function buildHeuristicBehavioralAnalysis(
   };
 }
 
-function buildHeuristicAttackPaths(compromiseState: any, crownJewels: string[]): AttackPathPredictionResult {
+function buildHeuristicAttackPaths(
+  compromiseState: Record<string, unknown>,
+  crownJewels: string[],
+): AttackPathPredictionResult {
   return {
     currentCompromiseState: {
-      accessLevel: compromiseState?.accessLevel || "unknown",
-      compromisedHosts: compromiseState?.compromisedHosts || [],
-      compromisedAccounts: compromiseState?.compromisedAccounts || [],
-      establishedPersistence: compromiseState?.establishedPersistence || [],
-      c2Channels: compromiseState?.c2Channels || [],
+      accessLevel: (compromiseState?.accessLevel as string) || "unknown",
+      compromisedHosts: (compromiseState?.compromisedHosts as string[]) || [],
+      compromisedAccounts: (compromiseState?.compromisedAccounts as string[]) || [],
+      establishedPersistence: (compromiseState?.establishedPersistence as string[]) || [],
+      c2Channels: (compromiseState?.c2Channels as string[]) || [],
     },
     inferredObjectives: [
       {

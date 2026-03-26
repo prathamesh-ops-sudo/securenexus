@@ -7,6 +7,7 @@ import { getPlugin, getAllPluginTypes, getPluginMetadata as registryGetMetadata 
 import type { ConnectorPlugin } from "./connectors/connector-plugin";
 import { initializeConnectorPlugins } from "./connectors/registry";
 import { startSpan, addSpanAttribute } from "./tracing";
+import { isCircuitOpen, recordConnectorSuccess, recordConnectorFailure } from "./connector-circuit-breaker";
 import {
   distributedAcquireSlot,
   distributedReleaseSlot,
@@ -149,6 +150,17 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
     };
   }
 
+  if (isCircuitOpen(connector.id)) {
+    return {
+      alertsReceived: 0,
+      alertsCreated: 0,
+      alertsDeduped: 0,
+      alertsFailed: 0,
+      errors: ["Circuit breaker open for connector " + connector.id],
+      rawAlerts: [],
+    };
+  }
+
   const backoffMs = await checkProviderBackoff(type);
   if (backoffMs > 0) {
     return {
@@ -168,6 +180,7 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
     try {
       rawAlerts = await plugin.fetch(config, since || undefined);
     } catch (err: unknown) {
+      recordConnectorFailure(connector.id);
       const msg = ((err as Error).message || "").toLowerCase();
       if (msg.includes("429") || msg.includes("rate limit") || msg.includes("throttl") || msg.includes("503")) {
         await applyProviderBackoff(type);
@@ -181,6 +194,8 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
         rawAlerts: [],
       };
     }
+
+    recordConnectorSuccess(connector.id);
 
     try {
       await clearProviderBackoff(type);

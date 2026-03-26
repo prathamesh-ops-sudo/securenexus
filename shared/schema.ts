@@ -10,6 +10,7 @@ import {
   jsonb,
   real,
   doublePrecision,
+  serial,
   index,
   uniqueIndex,
   uuid,
@@ -28,6 +29,7 @@ export const ALERT_STATUSES = [
   "resolved",
   "dismissed",
   "false_positive",
+  "deduped",
 ] as const;
 export const INCIDENT_SEVERITIES = ["critical", "high", "medium", "low"] as const;
 export const INCIDENT_STATUSES = [
@@ -297,10 +299,12 @@ export const alerts = pgTable(
     confidenceSource: text("confidence_source"),
     confidenceNotes: text("confidence_notes"),
     dedupClusterId: varchar("dedup_cluster_id"),
+    occurrenceCount: integer("occurrence_count").default(1),
     analystNotes: text("analyst_notes"),
     assignedTo: varchar("assigned_to"),
     detectedAt: timestamp("detected_at"),
     ingestedAt: timestamp("ingested_at").defaultNow(),
+    lastSeenAt: timestamp("last_seen_at"),
     createdAt: timestamp("created_at").defaultNow(),
   },
   (table) => [
@@ -331,6 +335,8 @@ export const incidents = pgTable(
     status: text("status").notNull().default("open"),
     priority: integer("priority").default(3),
     confidence: real("confidence"),
+    needsReview: boolean("needs_review").default(false),
+    algorithmScores: jsonb("algorithm_scores"),
     attackerProfile: jsonb("attacker_profile"),
     mitreTactics: text("mitre_tactics").array(),
     mitreTechniques: text("mitre_techniques").array(),
@@ -543,6 +549,9 @@ export const apiKeys = pgTable(
     createdBy: varchar("created_by"),
     createdAt: timestamp("created_at").defaultNow(),
     revokedAt: timestamp("revoked_at"),
+    deprecatedAt: timestamp("deprecated_at"),
+    graceExpiresAt: timestamp("grace_expires_at"),
+    replacedByKeyId: varchar("replaced_by_key_id"),
   },
   (table) => [index("idx_api_keys_org").on(table.orgId), index("idx_api_keys_hash").on(table.keyHash)],
 );
@@ -1949,6 +1958,9 @@ export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
   createdAt: true,
   lastUsedAt: true,
   revokedAt: true,
+  deprecatedAt: true,
+  graceExpiresAt: true,
+  replacedByKeyId: true,
 });
 export const insertIngestionLogSchema = createInsertSchema(ingestionLogs).omit({ id: true, receivedAt: true });
 export const insertConnectorSchema = createInsertSchema(connectors).omit({
@@ -4001,10 +4013,12 @@ export const alertsArchive = pgTable(
     confidenceSource: text("confidence_source"),
     confidenceNotes: text("confidence_notes"),
     dedupClusterId: varchar("dedup_cluster_id"),
+    occurrenceCount: integer("occurrence_count").default(1),
     analystNotes: text("analyst_notes"),
     assignedTo: varchar("assigned_to"),
     detectedAt: timestamp("detected_at"),
     ingestedAt: timestamp("ingested_at").defaultNow(),
+    lastSeenAt: timestamp("last_seen_at"),
     createdAt: timestamp("created_at").defaultNow(),
     archivedAt: timestamp("archived_at").defaultNow(),
     archiveReason: text("archive_reason"),
@@ -12812,3 +12826,33 @@ export type EmailUrlRewrite = typeof emailUrlRewrites.$inferSelect;
 export type InsertEmailUrlRewrite = typeof emailUrlRewrites.$inferInsert;
 export type EmailQuarantineItem = typeof emailQuarantineItems.$inferSelect;
 export type InsertEmailQuarantineItem = typeof emailQuarantineItems.$inferInsert;
+
+// ─── AI Inference Log ─────────────────────────────────────────────────────────
+
+export const aiInferenceLog = pgTable(
+  "ai_inference_log",
+  {
+    id: serial("id").primaryKey(),
+    tier: varchar("tier").notNull(),
+    model: varchar("model").notNull(),
+    promptId: varchar("prompt_id"),
+    promptVersion: integer("prompt_version"),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    latencyMs: integer("latency_ms").notNull().default(0),
+    costEstimateUsd: doublePrecision("cost_estimate_usd").notNull().default(0),
+    cached: boolean("cached").notNull().default(false),
+    success: boolean("success").notNull().default(true),
+    errorMessage: text("error_message"),
+    orgId: varchar("org_id"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ai_inference_log_tier").on(table.tier),
+    index("idx_ai_inference_log_created").on(table.createdAt),
+    index("idx_ai_inference_log_org").on(table.orgId),
+  ],
+);
+
+export type AiInferenceLog = typeof aiInferenceLog.$inferSelect;
+export type InsertAiInferenceLog = typeof aiInferenceLog.$inferInsert;

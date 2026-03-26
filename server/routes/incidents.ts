@@ -17,12 +17,17 @@ import {
 } from "@shared/schema";
 import { createHash } from "crypto";
 import { dispatchAction, type ActionContext } from "../action-dispatcher";
+import { canRollback, createRollbackRecord, executeRollback } from "../rollback-engine";
+import { createAuditLog } from "../storage/audit";
+import { getResponseActions } from "../storage/response-actions";
 import { parsePaginationParams } from "../db-performance";
 import { getEntitiesForIncident } from "../entity-resolver";
 import { broadcastEvent } from "../event-bus";
 import { cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { upsertIncidentEmbedding } from "../ai/vector-search";
+
+const log = logger.child("incidents");
 
 function computeSlaStatus(incident: any): { slaLabel: string; slaVariant: string } | null {
   const now = new Date();
@@ -1372,6 +1377,136 @@ export function registerIncidentsRoutes(app: Express): void {
       res.json({ message: "Action item deleted" });
     } catch (error) {
       res.status(500).json({ message: "Failed to delete PIR action item" });
+    }
+  });
+
+  // POST /api/incidents/:id/rollback-actions — batch rollback completed actions (RESP-02)
+  app.post("/api/incidents/:id/rollback-actions", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const incidentId = p(req.params.id);
+      const userId = (req as any).user?.id || "unknown";
+      const userName = (req as any).user?.username || (req as any).user?.firstName || "unknown";
+      const { dryRun = false, actionIds } = req.body || {};
+
+      // Verify incident exists and belongs to this org
+      const incident = await storage.getIncident(incidentId);
+      if (!incident || incident.orgId !== orgId) {
+        return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "Incident not found" }] });
+      }
+
+      // Get all response actions for this incident
+      const actions = await getResponseActions(orgId, incidentId);
+
+      // Filter to rollback-eligible: completed status, has a reverse action, not itself a rollback
+      const ROLLBACK_TYPES = ["unisolate_host", "unblock_ip", "unblock_domain", "restore_file", "enable_user", "restart_process"];
+      let eligible = actions.filter(
+        (a) =>
+          a.status === "completed" &&
+          canRollback(a.actionType) &&
+          !ROLLBACK_TYPES.includes(a.actionType),
+      );
+
+      // Optional filter by specific action IDs
+      if (Array.isArray(actionIds) && actionIds.length > 0) {
+        eligible = eligible.filter((a) => actionIds.includes(a.id));
+      }
+
+      if (eligible.length === 0) {
+        return sendEnvelope(res, { message: "No rollback-eligible actions found", rollbacks: [], count: 0 });
+      }
+
+      // Dry-run mode: preview what would be rolled back without executing
+      if (dryRun) {
+        const reverseMap: Record<string, string> = {
+          isolate: "unisolate",
+          block: "unblock",
+          quarantine: "restore",
+          disable: "enable",
+          kill: "restart",
+        };
+        const preview = eligible.map((a) => ({
+          originalActionId: a.id,
+          originalActionType: a.actionType,
+          rollbackActionType: a.actionType.replace(/^(isolate|block|quarantine|disable|kill)/, (m: string) => {
+            return reverseMap[m] || m;
+          }),
+          target: a.targetValue || "unknown",
+          status: "preview",
+        }));
+
+        try {
+          await createAuditLog({
+            orgId,
+            userId,
+            userName,
+            action: "response_action_rollback_preview",
+            resourceType: "incident",
+            resourceId: incidentId,
+            details: { dryRun: true, eligibleCount: eligible.length, preview },
+          });
+        } catch (_auditErr) {
+          log.warn("Failed to create audit log for rollback preview", { incidentId });
+        }
+
+        return sendEnvelope(res, { message: "Dry-run rollback preview", rollbacks: preview, count: preview.length, dryRun: true });
+      }
+
+      // Execute rollbacks sequentially (avoid conflicts on same target)
+      const results = [];
+      for (const action of eligible) {
+        try {
+          const rollbackRecord = await createRollbackRecord(
+            orgId,
+            action.id,
+            action.actionType,
+            action.targetValue || "unknown",
+          );
+          const executed = await executeRollback(rollbackRecord.id, userId);
+          results.push({
+            originalActionId: action.id,
+            originalActionType: action.actionType,
+            rollbackId: rollbackRecord.id,
+            status: executed?.status || "failed",
+            target: action.targetValue || "unknown",
+          });
+
+          // Audit each rollback
+          try {
+            await createAuditLog({
+              orgId,
+              userId,
+              userName,
+              action: "response_action_rolled_back",
+              resourceType: "response_action",
+              resourceId: action.id,
+              details: {
+                originalAction: action.actionType,
+                rollbackId: rollbackRecord.id,
+                status: executed?.status || "failed",
+                target: action.targetValue,
+                incidentId,
+              },
+            });
+          } catch (_auditErr) {
+            log.warn("Failed to create audit log for rollback", { actionId: action.id, incidentId });
+          }
+        } catch (err) {
+          results.push({
+            originalActionId: action.id,
+            originalActionType: action.actionType,
+            rollbackId: null,
+            status: "failed",
+            error: String(err),
+            target: action.targetValue || "unknown",
+          });
+        }
+      }
+
+      return sendEnvelope(res, { rollbacks: results, count: results.length });
+    } catch (error: unknown) {
+      log.error("Failed to rollback incident actions", { incidentId: req.params.id, error: String(error) });
+      return sendEnvelope(res, null, { status: 500, errors: [{ code: "INTERNAL_ERROR", message: "Rollback failed" }] });
     }
   });
 }

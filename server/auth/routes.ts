@@ -1,7 +1,7 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import passport from "passport";
 import { authStorage } from "./storage";
-import { isAuthenticated, hashPassword, invalidateDeserializeCache } from "./session";
+import { isAuthenticated, hashPassword, invalidateDeserializeCache, type SessionUser } from "./session";
 import { checkAndPromoteSuperAdmin } from "../bootstrap-super-admin";
 import { storage } from "../storage";
 import { config } from "../config";
@@ -31,6 +31,8 @@ import {
   enforceMaxConcurrentSessions,
   validatePasswordComplexity,
 } from "../middleware/security-policy-enforcement";
+
+const log = logger.child("auth-routes");
 
 const CONSUMER_EMAIL_DOMAINS = new Set([
   "gmail.com",
@@ -103,7 +105,7 @@ async function hasActiveInvitation(email: string): Promise<boolean> {
   }
 }
 
-async function ensureOrgMembership(user: any): Promise<boolean> {
+async function ensureOrgMembership(user: SessionUser): Promise<boolean> {
   try {
     const memberships = await storage.getUserMemberships(user.id);
     if (memberships.length > 0) return true;
@@ -135,7 +137,7 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
               invitationId: validInvitation.id,
             },
           })
-          .catch(() => {});
+          .catch((err) => log.warn("Failed to record invitation audit", { error: String(err), userId: user.id }));
         logger.child("auth").info("User auto-joined org via pending invitation", {
           userId: user.id,
           email: user.email,
@@ -177,7 +179,9 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
                 pendingApproval: needsApproval,
               },
             })
-            .catch(() => {});
+            .catch((err) =>
+              log.warn("Failed to record domain auto-join audit", { error: String(err), userId: user.id }),
+            );
           logger
             .child("auth")
             .info(needsApproval ? "User pending approval via domain match" : "User auto-joined org via domain match", {
@@ -223,9 +227,10 @@ async function ensureOrgMembership(user: any): Promise<boolean> {
 }
 
 export function registerAuthRoutes(app: Express): void {
-  app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
+  app.get("/api/auth/user", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const user = await authStorage.getUser(req.user.id);
+      const reqUser = req.user as SessionUser;
+      const user = await authStorage.getUser(reqUser.id);
       if (!user) {
         return replyNotFound(res, "User not found");
       }
@@ -241,8 +246,8 @@ export function registerAuthRoutes(app: Express): void {
       const { passwordHash, ...safeUser } = user;
       return reply(res, {
         ...safeUser,
-        orgId: req.user.orgId ?? null,
-        role: req.user.orgRole ?? null,
+        orgId: reqUser.orgId ?? null,
+        role: reqUser.orgRole ?? null,
       });
     } catch (error) {
       logger.child("routes").error("Error fetching user", { error: String(error) });
@@ -340,68 +345,75 @@ export function registerAuthRoutes(app: Express): void {
   });
 
   app.post("/api/login", loginRateLimitPre, (req, res, next) => {
-    passport.authenticate("local", (err: any, user: any, info: any) => {
-      if (err) return next(err);
-      if (!user) {
-        recordFailedLogin(req);
-        const failEmail = req.body?.email?.toLowerCase?.();
-        const failIp = (() => {
-          const fwd = req.headers["x-forwarded-for"];
-          if (typeof fwd === "string") return fwd.split(",")[0].trim();
-          return req.socket.remoteAddress || "unknown";
-        })();
-        if (failEmail) {
-          storage
-            .createAuditLog({
-              userId: undefined,
-              userName: failEmail,
-              action: "login_failed",
-              resourceType: "auth",
-              resourceId: failEmail,
-              details: { ip: failIp, reason: info?.message || "invalid_credentials" },
-              ipAddress: failIp,
-            })
-            .catch(() => {});
+    passport.authenticate(
+      "local",
+      (err: Error | null, user: SessionUser | false, info: { message: string } | undefined) => {
+        if (err) return next(err);
+        if (!user) {
+          recordFailedLogin(req);
+          const failEmail = req.body?.email?.toLowerCase?.();
+          const failIp = (() => {
+            const fwd = req.headers["x-forwarded-for"];
+            if (typeof fwd === "string") return fwd.split(",")[0].trim();
+            return req.socket.remoteAddress || "unknown";
+          })();
+          if (failEmail) {
+            storage
+              .createAuditLog({
+                userId: undefined,
+                userName: failEmail,
+                action: "login_failed",
+                resourceType: "auth",
+                resourceId: failEmail,
+                details: { ip: failIp, reason: info?.message || "invalid_credentials" },
+                ipAddress: failIp,
+              })
+              .catch((err) =>
+                log.warn("Failed to record login failure audit", { error: String(err), email: failEmail }),
+              );
+          }
+          return replyUnauthenticated(res, info?.message || "Invalid credentials");
         }
-        return replyUnauthenticated(res, info?.message || "Invalid credentials");
-      }
-      clearLoginBuckets(user.email);
-      clearLockout(user.email).catch(() => {});
-      req.login(user, async (loginErr) => {
-        if (loginErr) return next(loginErr);
-        await ensureOrgMembership(user);
+        clearLoginBuckets(user.email!);
+        clearLockout(user.email!).catch((err) =>
+          log.warn("Failed to clear lockout", { error: String(err), email: user.email }),
+        );
+        req.login(user, async (loginErr) => {
+          if (loginErr) return next(loginErr);
+          await ensureOrgMembership(user);
 
-        const memberships = await storage.getUserMemberships(user.id).catch(() => []);
-        const userOrgId = memberships.length > 0 ? memberships[0].orgId : null;
+          const memberships = await storage.getUserMemberships(user.id).catch(() => []);
+          const userOrgId = memberships.length > 0 ? memberships[0].orgId : null;
 
-        const clientIp = (() => {
-          const fwd = req.headers["x-forwarded-for"];
-          if (typeof fwd === "string") return fwd.split(",")[0].trim();
-          return req.socket.remoteAddress || "unknown";
-        })();
+          const clientIp = (() => {
+            const fwd = req.headers["x-forwarded-for"];
+            if (typeof fwd === "string") return fwd.split(",")[0].trim();
+            return req.socket.remoteAddress || "unknown";
+          })();
 
-        const policyResult = await checkLoginPolicy(user, userOrgId, clientIp);
-        if (!policyResult.allowed) {
-          req.logout(() => {
-            req.session.destroy(() => {
-              return replyForbidden(res, policyResult.reason || "Access denied", policyResult.code || "FORBIDDEN");
+          const policyResult = await checkLoginPolicy(user, userOrgId, clientIp);
+          if (!policyResult.allowed) {
+            req.logout(() => {
+              req.session.destroy(() => {
+                return replyForbidden(res, policyResult.reason || "Access denied", policyResult.code || "FORBIDDEN");
+              });
             });
+            return;
+          }
+
+          if (userOrgId) {
+            await enforceMaxConcurrentSessions(user.id, userOrgId);
+          }
+
+          const { passwordHash, ...safeUser } = user;
+          return reply(res, {
+            ...safeUser,
+            mfaRequired: policyResult.mfaRequired || false,
+            passwordExpired: policyResult.passwordExpired || false,
           });
-          return;
-        }
-
-        if (userOrgId) {
-          await enforceMaxConcurrentSessions(user.id, userOrgId);
-        }
-
-        const { passwordHash, ...safeUser } = user;
-        return reply(res, {
-          ...safeUser,
-          mfaRequired: policyResult.mfaRequired || false,
-          passwordExpired: policyResult.passwordExpired || false,
         });
-      });
-    })(req, res, next);
+      },
+    )(req, res, next);
   });
 
   app.post("/api/logout", (req, res) => {
@@ -432,15 +444,16 @@ export function registerAuthRoutes(app: Express): void {
     (req, res, next) => {
       passport.authenticate("google", { failureRedirect: "/?error=google_auth_failed" })(req, res, next);
     },
-    async (req: any, res) => {
+    async (req: Request, res: Response) => {
       try {
-        if (req.user) {
-          if (req.user.email && isConsumerEmailDomain(req.user.email)) {
-            const invited = await hasActiveInvitation(req.user.email);
-            const memberships = await storage.getUserMemberships(req.user.id).catch(() => []);
+        const reqUser = req.user as SessionUser | undefined;
+        if (reqUser) {
+          if (reqUser.email && isConsumerEmailDomain(reqUser.email)) {
+            const invited = await hasActiveInvitation(reqUser.email);
+            const memberships = await storage.getUserMemberships(reqUser.id).catch(() => []);
             if (!invited && memberships.length === 0) {
               logger.child("auth").warn("OAuth login blocked: consumer email domain without invitation", {
-                email: req.user.email,
+                email: reqUser.email,
                 provider: "google",
               });
               req.logout(() => {
@@ -451,16 +464,16 @@ export function registerAuthRoutes(app: Express): void {
               return;
             }
           }
-          await ensureOrgMembership(req.user);
+          await ensureOrgMembership(reqUser);
 
-          const oauthMemberships = await storage.getUserMemberships(req.user.id).catch(() => []);
+          const oauthMemberships = await storage.getUserMemberships(reqUser.id).catch(() => []);
           const oauthOrgId = oauthMemberships.length > 0 ? oauthMemberships[0].orgId : null;
           const oauthIp = (() => {
             const fwd = req.headers["x-forwarded-for"];
             if (typeof fwd === "string") return fwd.split(",")[0].trim();
             return req.socket.remoteAddress || "unknown";
           })();
-          const oauthPolicy = await checkLoginPolicy(req.user, oauthOrgId, oauthIp);
+          const oauthPolicy = await checkLoginPolicy(reqUser, oauthOrgId, oauthIp);
           if (!oauthPolicy.allowed) {
             req.logout(() => {
               req.session.destroy(() => {
@@ -470,15 +483,15 @@ export function registerAuthRoutes(app: Express): void {
             return;
           }
           if (oauthOrgId) {
-            await enforceMaxConcurrentSessions(req.user.id, oauthOrgId);
+            await enforceMaxConcurrentSessions(reqUser.id, oauthOrgId);
           }
         }
         res.redirect("/");
       } catch (err) {
         logger.child("auth").error("Google OAuth callback error", {
           error: String(err),
-          userId: req.user?.id,
-          email: req.user?.email,
+          userId: (req.user as SessionUser | undefined)?.id,
+          email: (req.user as SessionUser | undefined)?.email,
         });
         res.redirect("/?error=google_auth_failed");
       }
@@ -497,15 +510,16 @@ export function registerAuthRoutes(app: Express): void {
     (req, res, next) => {
       passport.authenticate("github", { failureRedirect: "/?error=github_auth_failed" })(req, res, next);
     },
-    async (req: any, res) => {
+    async (req: Request, res: Response) => {
       try {
-        if (req.user) {
-          if (req.user.email && isConsumerEmailDomain(req.user.email)) {
-            const invited = await hasActiveInvitation(req.user.email);
-            const memberships = await storage.getUserMemberships(req.user.id).catch(() => []);
+        const reqUser = req.user as SessionUser | undefined;
+        if (reqUser) {
+          if (reqUser.email && isConsumerEmailDomain(reqUser.email)) {
+            const invited = await hasActiveInvitation(reqUser.email);
+            const memberships = await storage.getUserMemberships(reqUser.id).catch(() => []);
             if (!invited && memberships.length === 0) {
               logger.child("auth").warn("OAuth login blocked: consumer email domain without invitation", {
-                email: req.user.email,
+                email: reqUser.email,
                 provider: "github",
               });
               req.logout(() => {
@@ -516,16 +530,16 @@ export function registerAuthRoutes(app: Express): void {
               return;
             }
           }
-          await ensureOrgMembership(req.user);
+          await ensureOrgMembership(reqUser);
 
-          const ghMemberships = await storage.getUserMemberships(req.user.id).catch(() => []);
+          const ghMemberships = await storage.getUserMemberships(reqUser.id).catch(() => []);
           const ghOrgId = ghMemberships.length > 0 ? ghMemberships[0].orgId : null;
           const ghIp = (() => {
             const fwd = req.headers["x-forwarded-for"];
             if (typeof fwd === "string") return fwd.split(",")[0].trim();
             return req.socket.remoteAddress || "unknown";
           })();
-          const ghPolicy = await checkLoginPolicy(req.user, ghOrgId, ghIp);
+          const ghPolicy = await checkLoginPolicy(reqUser, ghOrgId, ghIp);
           if (!ghPolicy.allowed) {
             req.logout(() => {
               req.session.destroy(() => {
@@ -535,15 +549,15 @@ export function registerAuthRoutes(app: Express): void {
             return;
           }
           if (ghOrgId) {
-            await enforceMaxConcurrentSessions(req.user.id, ghOrgId);
+            await enforceMaxConcurrentSessions(reqUser.id, ghOrgId);
           }
         }
         res.redirect("/");
       } catch (err) {
         logger.child("auth").error("GitHub OAuth callback error", {
           error: String(err),
-          userId: req.user?.id,
-          email: req.user?.email,
+          userId: (req.user as SessionUser | undefined)?.id,
+          email: (req.user as SessionUser | undefined)?.email,
         });
         res.redirect("/?error=github_auth_failed");
       }

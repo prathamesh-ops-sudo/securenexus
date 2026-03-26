@@ -337,7 +337,7 @@ export function registerWarRoomRoutes(app: Express): void {
             orgId,
             room.slackChannelId,
             `[${entryType.toUpperCase()}] ${user?.username || "unknown"}: ${content}`,
-          ).catch(() => {});
+          ).catch((err) => log.warn("Failed to forward message to Slack", { error: String(err), roomId: room.id }));
         }
 
         return reply(res, entry, undefined, 201);

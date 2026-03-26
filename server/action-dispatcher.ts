@@ -1,11 +1,90 @@
 import type { IStorage } from "./storage";
 import { db } from "./db";
-import { agentResponseActions, nativeSensors } from "../shared/schema";
-import { eq, and, or, ilike } from "drizzle-orm";
+import { agentResponseActions, nativeSensors, ROLE_PERMISSIONS } from "../shared/schema";
+import { eq, and, or, ilike, type SQL } from "drizzle-orm";
 import { logger } from "./routes/shared";
 import { validateWebhookUrl } from "./outbound-security";
+import { validateActionInput } from "./action-schemas";
+import { createAuditLog } from "./storage/audit";
 
 const log = logger.child("action-dispatcher");
+
+// Typed config interfaces for each action type
+interface TicketingConfig {
+  summary?: string;
+  priority?: string;
+  project?: string;
+  projectKey?: string;
+  webhookUrl?: string;
+  apiUrl?: string;
+  authHeader?: string;
+}
+
+interface NotificationConfig {
+  message?: string;
+  channel?: string;
+  recipient?: string;
+  webhookUrl?: string;
+}
+
+interface AgentActionConfig {
+  target?: string;
+  hostname?: string;
+  ip?: string;
+  targetIp?: string;
+  hash?: string;
+  sensorId?: string;
+  timeoutSeconds?: number;
+  targetPid?: number;
+  targetProcessName?: string;
+  processName?: string;
+  filePath?: string;
+  targetFilePath?: string;
+  userName?: string;
+  targetUserName?: string;
+  domain?: string;
+  targetDomain?: string;
+  serviceName?: string;
+  targetServiceName?: string;
+  parameters?: Record<string, unknown>;
+  allowedIps?: string[];
+  reason?: string;
+}
+
+interface AutoTriageConfig {
+  severity?: string;
+  category?: string;
+}
+
+interface AssignAnalystConfig {
+  analyst?: string;
+  assignee?: string;
+}
+
+interface ChangeStatusConfig {
+  status?: string;
+  newStatus?: string;
+}
+
+interface AddTagConfig {
+  tag?: string;
+  tagName?: string;
+}
+
+interface EscalateConfig {
+  targetTeam?: string;
+  reason?: string;
+}
+
+type ActionConfig =
+  | TicketingConfig
+  | NotificationConfig
+  | AgentActionConfig
+  | AutoTriageConfig
+  | AssignAnalystConfig
+  | ChangeStatusConfig
+  | AddTagConfig
+  | EscalateConfig;
 
 export interface ActionContext {
   orgId?: string;
@@ -15,53 +94,189 @@ export interface ActionContext {
   userName?: string;
   sensorId?: string;
   storage: IStorage;
+  dryRun?: boolean;
+  callerOrgId?: string;
+  callerRole?: string;
 }
 
 export interface ActionResult {
   actionType: string;
   status: "completed" | "failed" | "simulated" | "pending_approval" | "approved";
   message: string;
-  details?: any;
+  details?: Record<string, unknown>;
   executedAt: string;
 }
 
-export async function dispatchAction(actionType: string, config: any, context: ActionContext): Promise<ActionResult> {
-  const executedAt = new Date().toISOString();
+/**
+ * Check permissions before allowing action dispatch.
+ * Validates org boundary and role-based access control.
+ */
+function checkActionPermissions(
+  actionType: string,
+  context: ActionContext,
+): { allowed: boolean; reason?: string } {
+  // Check org boundary: caller org must match target org
+  if (context.callerOrgId && context.orgId && context.callerOrgId !== context.orgId) {
+    return { allowed: false, reason: "Org boundary violation: caller org does not match target org" };
+  }
 
+  // Check role-based permissions: caller must have response_actions write scope
+  if (context.callerRole) {
+    const rolePerms = ROLE_PERMISSIONS[context.callerRole];
+    if (!rolePerms || !rolePerms.response_actions || !rolePerms.response_actions.includes("write")) {
+      return { allowed: false, reason: `Role ${context.callerRole} lacks response_actions write permission` };
+    }
+  }
+
+  return { allowed: true };
+}
+
+export async function dispatchAction(
+  actionType: string,
+  config: Record<string, unknown>,
+  context: ActionContext,
+): Promise<ActionResult> {
+  const executedAt = new Date().toISOString();
+  const startMs = Date.now();
+
+  // Step 1: Validate inputs with Zod schema (per RESP-03)
+  const validation = validateActionInput(actionType, config);
+  if (!validation.valid) {
+    const failResult: ActionResult = {
+      actionType,
+      status: "failed",
+      message: `Validation failed: ${validation.errors.issues.map((i) => i.message).join(", ")}`,
+      details: { validationErrors: validation.errors.issues },
+      executedAt,
+    };
+    // Audit the validation failure
+    await safeCreateAuditLog(context, actionType, config, failResult, 0, false);
+    return failResult;
+  }
+
+  // Step 1.5: Check permissions (per RESP-01 gap closure)
+  const permCheck = checkActionPermissions(actionType, context);
+  if (!permCheck.allowed) {
+    const denyResult: ActionResult = {
+      actionType,
+      status: "failed",
+      message: `Permission denied: ${permCheck.reason}`,
+      details: { permissionDenied: true, reason: permCheck.reason },
+      executedAt,
+    };
+    await safeCreateAuditLog(context, actionType, config, denyResult, 0, false, "response_action_permission_denied");
+    return denyResult;
+  }
+
+  // Step 2: If dry-run, return simulated result without executing (per RESP-01)
+  if (context.dryRun) {
+    const dryResult: ActionResult = {
+      actionType,
+      status: "simulated",
+      message: `[Dry Run] Would execute: ${actionType}`,
+      details: { config, validationPassed: true, dryRun: true },
+      executedAt,
+    };
+    await safeCreateAuditLog(context, actionType, config, dryResult, 0, true);
+    return dryResult;
+  }
+
+  // Step 3: Execute action (existing switch statement)
+  const result = await executeActionSwitch(actionType, config, context, executedAt);
+  const durationMs = Date.now() - startMs;
+
+  // Step 4: Audit log every execution (per RESP-04)
+  // Only log for actions that actually executed (not pending_approval — those get audited when approved)
+  if (result.status !== "pending_approval") {
+    await safeCreateAuditLog(context, actionType, config, result, durationMs, false);
+  }
+
+  return result;
+}
+
+/**
+ * Wraps createAuditLog in try/catch so audit failures never break action dispatch.
+ */
+async function safeCreateAuditLog(
+  context: ActionContext,
+  actionType: string,
+  config: Record<string, unknown>,
+  result: ActionResult,
+  durationMs: number,
+  isDryRun: boolean,
+  auditAction?: string,
+): Promise<void> {
+  try {
+    await createAuditLog({
+      orgId: context.orgId || null,
+      userId: context.userId || null,
+      userName: context.userName || null,
+      action: auditAction || (isDryRun ? "response_action_dry_run" : "response_action_executed"),
+      resourceType: "response_action",
+      resourceId: context.incidentId || context.alertId || null,
+      details: {
+        actionType,
+        parameters: config,
+        result: result.status,
+        message: result.message,
+        durationMs,
+        dryRun: isDryRun,
+        incidentId: context.incidentId,
+        alertId: context.alertId,
+      },
+    });
+  } catch (err) {
+    log.warn("Failed to create audit log for response action", {
+      actionType,
+      error: String(err),
+    });
+  }
+}
+
+/**
+ * Internal switch statement extracted from dispatchAction for separation of concerns.
+ * Contains all existing action execution cases unchanged.
+ */
+async function executeActionSwitch(
+  actionType: string,
+  config: Record<string, unknown>,
+  context: ActionContext,
+  executedAt: string,
+): Promise<ActionResult> {
   switch (actionType) {
     case "create_jira_ticket":
-      return executeTicketing("jira", config, context, executedAt);
+      return executeTicketing("jira", config as TicketingConfig, context, executedAt);
     case "create_servicenow_ticket":
-      return executeTicketing("servicenow", config, context, executedAt);
+      return executeTicketing("servicenow", config as TicketingConfig, context, executedAt);
     case "notify_slack":
-      return executeNotification("slack", config, context, executedAt);
+      return executeNotification("slack", config as NotificationConfig, context, executedAt);
     case "notify_teams":
-      return executeNotification("teams", config, context, executedAt);
+      return executeNotification("teams", config as NotificationConfig, context, executedAt);
     case "notify_email":
-      return executeNotification("email", config, context, executedAt);
+      return executeNotification("email", config as NotificationConfig, context, executedAt);
     case "notify_webhook":
-      return executeNotification("webhook", config, context, executedAt);
+      return executeNotification("webhook", config as NotificationConfig, context, executedAt);
     case "notify_pagerduty":
-      return executeNotification("pagerduty", config, context, executedAt);
+      return executeNotification("pagerduty", config as NotificationConfig, context, executedAt);
     case "isolate_host":
     case "block_ip":
     case "block_domain":
     case "quarantine_file":
     case "disable_user":
     case "kill_process":
-      return executeAgentResponseAction(actionType, config, context, executedAt);
+      return executeAgentResponseAction(actionType, config as AgentActionConfig, context, executedAt);
     case "auto_triage":
-      return executeAutoTriage(config, context, executedAt);
+      return executeAutoTriage(config as AutoTriageConfig, context, executedAt);
     case "assign_analyst":
-      return executeAssignAnalyst(config, context, executedAt);
+      return executeAssignAnalyst(config as AssignAnalystConfig, context, executedAt);
     case "change_status":
-      return executeChangeStatus(config, context, executedAt);
+      return executeChangeStatus(config as ChangeStatusConfig, context, executedAt);
     case "add_tag":
-      return executeAddTag(config, context, executedAt);
+      return executeAddTag(config as AddTagConfig, context, executedAt);
     case "escalate":
-      return executeEscalate(config, context, executedAt);
+      return executeEscalate(config as EscalateConfig, context, executedAt);
     case "notify":
-      return executeNotification("default", config, context, executedAt);
+      return executeNotification("default", config as NotificationConfig, context, executedAt);
     default:
       return {
         actionType,
@@ -74,7 +289,7 @@ export async function dispatchAction(actionType: string, config: any, context: A
 
 async function executeTicketing(
   platform: string,
-  config: any,
+  config: TicketingConfig,
   context: ActionContext,
   executedAt: string,
 ): Promise<ActionResult> {
@@ -111,7 +326,8 @@ async function executeTicketing(
         clearTimeout(timeout);
         if (response.ok) {
           const data = await response.json().catch(() => ({}));
-          ticketUrl = (data as any)?.url || (data as any)?.ticketUrl || ticketUrl;
+          const ticketResponse = data as Record<string, unknown>;
+          ticketUrl = (ticketResponse.url as string) || (ticketResponse.ticketUrl as string) || ticketUrl;
           message = `Created ${platform} ticket via API: "${summary}" (Priority: ${priority})`;
         } else {
           status = "failed";
@@ -150,7 +366,7 @@ async function executeTicketing(
 
 async function executeNotification(
   channel: string,
-  config: any,
+  config: NotificationConfig,
   context: ActionContext,
   executedAt: string,
 ): Promise<ActionResult> {
@@ -234,7 +450,7 @@ function determineInitialStatus(riskLevel: string): string {
  * 2. Lookup by hostname or IP in nativeSensors table
  * Returns null if no sensor can be resolved.
  */
-async function resolveSensorId(orgId: string, config: any, context: ActionContext): Promise<string | null> {
+async function resolveSensorId(orgId: string, config: AgentActionConfig, context: ActionContext): Promise<string | null> {
   // 1. Explicit sensorId
   const explicit = context.sensorId || config?.sensorId;
   if (explicit) {
@@ -253,9 +469,9 @@ async function resolveSensorId(orgId: string, config: any, context: ActionContex
 
   if (!hostname && !ip) return null;
 
-  const conditions: unknown[] = [eq(nativeSensors.orgId, orgId)];
+  const conditions: SQL[] = [eq(nativeSensors.orgId, orgId)];
   if (hostname && ip) {
-    conditions.push(or(ilike(nativeSensors.hostname, hostname), eq(nativeSensors.ipAddress, ip)));
+    conditions.push(or(ilike(nativeSensors.hostname, hostname), eq(nativeSensors.ipAddress, ip))!);
   } else if (hostname) {
     conditions.push(ilike(nativeSensors.hostname, hostname));
   } else if (ip) {
@@ -265,7 +481,7 @@ async function resolveSensorId(orgId: string, config: any, context: ActionContex
   const [sensor] = await db
     .select({ id: nativeSensors.id })
     .from(nativeSensors)
-    .where(and(...(conditions as any[])))
+    .where(and(...conditions))
     .limit(1);
 
   return sensor ? sensor.id : null;
@@ -278,7 +494,7 @@ async function resolveSensorId(orgId: string, config: any, context: ActionContex
  */
 async function executeAgentResponseAction(
   actionType: string,
-  config: any,
+  config: AgentActionConfig,
   context: ActionContext,
   executedAt: string,
 ): Promise<ActionResult> {
@@ -436,7 +652,7 @@ async function executeAgentResponseAction(
  */
 async function legacySimulateEdrAction(
   actionType: string,
-  config: any,
+  config: AgentActionConfig,
   context: ActionContext,
   executedAt: string,
 ): Promise<ActionResult> {
@@ -479,7 +695,7 @@ async function legacySimulateEdrAction(
   };
 }
 
-async function executeAutoTriage(config: any, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeAutoTriage(config: AutoTriageConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
   return {
     actionType: "auto_triage",
     status: "completed",
@@ -489,7 +705,7 @@ async function executeAutoTriage(config: any, context: ActionContext, executedAt
   };
 }
 
-async function executeAssignAnalyst(config: any, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeAssignAnalyst(config: AssignAnalystConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
   const analyst = config?.analyst || config?.assignee || "on-call";
   if (context.incidentId && context.storage) {
     await context.storage.updateIncident(context.incidentId, { assignedTo: analyst });
@@ -503,7 +719,7 @@ async function executeAssignAnalyst(config: any, context: ActionContext, execute
   };
 }
 
-async function executeChangeStatus(config: any, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeChangeStatus(config: ChangeStatusConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
   const newStatus = config?.status || config?.newStatus || "investigating";
   if (context.incidentId && context.storage) {
     await context.storage.updateIncident(context.incidentId, { status: newStatus });
@@ -517,7 +733,7 @@ async function executeChangeStatus(config: any, context: ActionContext, executed
   };
 }
 
-async function executeAddTag(config: any, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeAddTag(config: AddTagConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
   const tagName = config?.tag || config?.tagName || "automated";
   return {
     actionType: "add_tag",
@@ -528,7 +744,7 @@ async function executeAddTag(config: any, context: ActionContext, executedAt: st
   };
 }
 
-async function executeEscalate(config: any, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeEscalate(config: EscalateConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
   if (context.incidentId && context.storage) {
     await context.storage.updateIncident(context.incidentId, {
       escalated: true,

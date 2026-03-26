@@ -5,6 +5,9 @@
  */
 
 import type { CloudFinding, CloudResource } from "./aws";
+import { logger } from "../logger";
+
+const log = logger.child("cloud-connector-azure");
 
 export interface AzureConnectorConfig {
   tenantId: string;
@@ -156,7 +159,7 @@ export async function scanAzureDefender(config: AzureConnectorConfig): Promise<C
       });
     }
   } catch (err: unknown) {
-    console.error("[Azure Connector] Defender scan error:", err instanceof Error ? err.message : err);
+    log.error("Defender scan error", { error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;
@@ -201,7 +204,7 @@ export async function scanAzurePolicy(config: AzureConnectorConfig): Promise<Clo
       });
     }
   } catch (err: unknown) {
-    console.error("[Azure Connector] Policy scan error:", err instanceof Error ? err.message : err);
+    log.error("Policy scan error", { error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;
@@ -294,7 +297,7 @@ export async function scanAzureStorage(config: AzureConnectorConfig): Promise<Cl
       }
     }
   } catch (err: unknown) {
-    console.error("[Azure Connector] Storage scan error:", err instanceof Error ? err.message : err);
+    log.error("Storage scan error", { error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;
@@ -388,7 +391,7 @@ export async function scanAzureNSGs(config: AzureConnectorConfig): Promise<Cloud
       }
     }
   } catch (err: unknown) {
-    console.error("[Azure Connector] NSG scan error:", err instanceof Error ? err.message : err);
+    log.error("NSG scan error", { error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;

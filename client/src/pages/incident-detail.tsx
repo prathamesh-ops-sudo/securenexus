@@ -88,6 +88,61 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
+interface AlgorithmScore {
+  algorithm: "temporal_entity" | "graph" | "physical";
+  confidence: number;
+  weight: number;
+  available: boolean;
+}
+
+function ConfidenceBadge({
+  confidence,
+  algorithmScores,
+  needsReview,
+}: {
+  confidence: number | null;
+  algorithmScores: AlgorithmScore[] | null;
+  needsReview: boolean;
+}) {
+  if (confidence == null) return null;
+  const pct = Math.round(confidence * 100);
+  const color =
+    pct > 75
+      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+      : pct >= 50
+        ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+        : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center gap-1">
+            <Badge className={color} data-testid="badge-confidence">{pct}% confidence</Badge>
+            {needsReview && (
+              <Badge className="bg-yellow-200 text-yellow-900 dark:bg-yellow-800 dark:text-yellow-100" data-testid="badge-needs-review">
+                Review
+              </Badge>
+            )}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          <div className="text-sm space-y-1">
+            <div className="font-medium">Algorithm Scores</div>
+            {algorithmScores?.map((s) => (
+              <div key={s.algorithm}>
+                {s.algorithm === "temporal_entity" ? "Temporal" : s.algorithm === "graph" ? "Graph" : "Physical"}:{" "}
+                {s.available ? `${Math.round(s.confidence * 100)}%` : "N/A"}
+              </div>
+            )) ?? <div>No algorithm breakdown available</div>}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 const INCIDENT_STATUSES = [
   "open",
@@ -911,6 +966,11 @@ export default function IncidentDetailPage() {
                 {incident.title}
               </h1>
               <SeverityBadge severity={incident.severity} />
+              <ConfidenceBadge
+                confidence={incident.confidence}
+                algorithmScores={incident.algorithmScores as AlgorithmScore[] | null}
+                needsReview={incident.needsReview ?? false}
+              />
               <IncidentStatusBadge status={incident.status} />
               {incident.escalated && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border bg-red-500/10 text-red-500 border-red-500/20">

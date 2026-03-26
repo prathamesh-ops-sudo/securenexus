@@ -4,6 +4,9 @@
  */
 
 import type { CloudFinding, CloudResource } from "./aws";
+import { logger } from "../logger";
+
+const log = logger.child("cloud-connector-gcp");
 
 export interface GcpConnectorConfig {
   projectId: string;
@@ -193,7 +196,7 @@ export async function scanGcpSCC(config: GcpConnectorConfig): Promise<CloudFindi
       });
     }
   } catch (err: unknown) {
-    console.error("[GCP Connector] SCC scan error:", err instanceof Error ? err.message : err);
+    log.error("SCC scan error", { error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;
@@ -279,7 +282,7 @@ export async function scanGcpFirewalls(config: GcpConnectorConfig): Promise<Clou
       }
     }
   } catch (err: unknown) {
-    console.error("[GCP Connector] Firewall scan error:", err instanceof Error ? err.message : err);
+    log.error("Firewall scan error", { error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;
@@ -353,7 +356,7 @@ export async function scanGcpStorage(config: GcpConnectorConfig): Promise<CloudF
       }
     }
   } catch (err: unknown) {
-    console.error("[GCP Connector] Storage scan error:", err instanceof Error ? err.message : err);
+    log.error("Storage scan error", { error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;
@@ -451,7 +454,7 @@ export async function scanGcpCloudSQL(config: GcpConnectorConfig): Promise<Cloud
       }
     }
   } catch (err: unknown) {
-    console.error("[GCP Connector] Cloud SQL scan error:", err instanceof Error ? err.message : err);
+    log.error("Cloud SQL scan error", { error: err instanceof Error ? err.message : String(err) });
   }
 
   return findings;

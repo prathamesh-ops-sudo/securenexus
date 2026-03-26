@@ -73,7 +73,7 @@
     "@types/passport-google-oauth20": "^2.0.17",
     "@types/pdfkit": "^0.17.5",
     "@types/qrcode": "^1.5.6",
-    "@xmldom/xmldom": "^0.8.11",
+    "@xmldom/xmldom": "^0.9.8",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -112,7 +112,7 @@
     "react-resizable-panels": "^2.1.7",
     "recharts": "^2.15.4",
     "rss-parser": "^3.13.0",
-    "stripe": "^20.4.0",
+    "stripe": "^20.4.1",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
@@ -145,6 +145,7 @@
     "@types/passport-local": "^1.0.38",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
+    "@types/supertest": "^7.2.0",
     "@types/ws": "^8.5.13",
     "@vitejs/plugin-react": "^4.7.0",
     "@vitest/coverage-v8": "^4.0.18",
@@ -160,6 +161,7 @@
     "lint-staged": "^16.2.7",
     "postcss": "^8.4.47",
     "prettier": "^3.8.1",
+    "supertest": "^7.2.2",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.20.5",
     "typescript": "5.6.3",
@@ -171,15 +173,6 @@
     "drizzle-kit": {
       "@esbuild-kit/esm-loader": "npm:tsx@^4.20.4"
     }
-  },
-  "lint-staged": {
-    "*.{ts,tsx}": [
-      "eslint --quiet",
-      "prettier --check"
-    ],
-    "*.{json,md,yml,yaml}": [
-      "prettier --check"
-    ]
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"

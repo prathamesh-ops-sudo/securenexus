@@ -46,8 +46,11 @@ export default tseslint.config(
           destructuredArrayIgnorePattern: "^_",
         },
       ],
+      // Enforced as "error" on staged files via lint-staged (see .lintstagedrc.json).
+      // Kept as "warn" here to avoid blocking full-repo lint while legacy violations exist.
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-non-null-asserted-optional-chain": "warn",
+      // Enforced as "error" on staged files via lint-staged (see .lintstagedrc.json).
       "no-console": ["warn", { allow: ["warn", "error"] }],
       "no-control-regex": "warn",
       "no-useless-escape": "warn",

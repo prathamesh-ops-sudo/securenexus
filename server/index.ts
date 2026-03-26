@@ -26,12 +26,14 @@ import { startArchivalScheduler } from "./partition-strategy";
 import { startMetricsRollupScheduler } from "./metrics-rollup";
 import { tracingMiddleware, startTracingFlush, stopTracingFlush } from "./tracing";
 import { inFlightMiddleware, markServerReady, markServerNotReady, waitForInFlightDrain } from "./request-lifecycle";
+import { poolCircuitBreakerMiddleware } from "./middleware/pool-circuit-breaker";
 import { stopJobWorker } from "./job-queue";
 import { startDrillScheduler, stopDrillScheduler } from "./dr-drill-scheduler";
 import { startStaleSlotReaper, stopStaleSlotReaper } from "./distributed-concurrency";
 import { startBudgetResetScheduler, stopBudgetResetScheduler } from "./ai/budget";
 import { bootstrapSuperAdmin } from "./bootstrap-super-admin";
 import { errorTrackingMiddleware, trackError } from "./error-tracker";
+import { startConnectorHealthLoop, stopConnectorHealthLoop } from "./connector-health-loop";
 
 const startedAt = Date.now();
 
@@ -124,6 +126,7 @@ app.get("/api/ops/metrics", (_req, res) => {
 });
 
 app.use(inFlightMiddleware);
+app.use(poolCircuitBreakerMiddleware);
 app.use(requestTimeoutMiddleware(30_000)); // 30s timeout for API requests (excludes SSE/streaming)
 app.use(prometheusMiddleware);
 app.use(sliMiddleware);
@@ -218,7 +221,9 @@ export function log(message: string, source = "express") {
       startDrillScheduler();
       startStaleSlotReaper();
       startBudgetResetScheduler();
+      startConnectorHealthLoop();
       registerShutdownHandler("job-worker", stopJobWorker);
+      registerShutdownHandler("connector-health-loop", async () => stopConnectorHealthLoop());
       registerShutdownHandler("dr-drill-scheduler", async () => stopDrillScheduler());
       registerShutdownHandler("stale-slot-reaper", stopStaleSlotReaper);
       registerShutdownHandler("budget-reset-scheduler", stopBudgetResetScheduler);

@@ -22,6 +22,27 @@
       "when": 1773417953175,
       "tag": "0002_careful_changeling",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774433489571,
+      "tag": "0003_hard_george_stacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774433940380,
+      "tag": "0004_nappy_queen_noir",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1774442314850,
+      "tag": "0005_lively_hulk",
+      "breakpoints": true
     }
   ]
 }

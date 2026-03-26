@@ -14,13 +14,18 @@ import {
   storage,
   verifyWebhookSignature,
 } from "./shared";
+import { reply, replyNotFound, replyBadRequest, replyError } from "../api-response";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, requirePermission, resolveOrgContext } from "../rbac";
 import { bodySchemas, validateBody, validatePathId } from "../request-validator";
+import { db } from "../db";
+import { ingestionLogs } from "@shared/schema";
+import { sql, eq } from "drizzle-orm";
 import { correlateAlert } from "../correlation-engine";
 import { resolveAndLinkEntities } from "../entity-resolver";
 import { broadcastEvent } from "../event-bus";
 import { SOURCE_KEYS, normalizeAlert, toInsertAlert } from "../normalizer";
+import { evaluateSuppression } from "../suppression-engine";
 import { CACHE_TTL, buildCacheKey, cacheGetOrLoad, cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { parseSyslog, syslogToEvent, normalizeWebhookPayload } from "../integrations/syslog-ingest";
@@ -189,6 +194,86 @@ export function registerIngestionRoutes(app: Express): void {
     },
   );
 
+  // API Key Rotation with 24-hour grace period
+  app.post(
+    "/api/api-keys/:id/rotate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("api_keys", "write"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const id = p(req.params.id);
+        const orgId = getOrgId(req);
+
+        // 1. Get existing key
+        const existingKey = await storage.getApiKeyById(id);
+        if (!existingKey || existingKey.orgId !== orgId) {
+          return replyNotFound(res, "API key not found.");
+        }
+        if (!existingKey.isActive) {
+          return replyBadRequest(res, "Cannot rotate an inactive API key.");
+        }
+
+        // 2. Generate new key
+        const { key, prefix, hash } = generateApiKey();
+
+        // 3. Create new key (inherits scopes from old key)
+        const newKey = await storage.createApiKey({
+          orgId: existingKey.orgId,
+          name: `${existingKey.name} (rotated)`,
+          keyHash: hash,
+          keyPrefix: prefix,
+          scopes: existingKey.scopes,
+          isActive: true,
+          createdBy: (req as any).user?.id || null,
+        });
+
+        // 4. Deprecate old key with 24h grace period
+        await storage.deprecateApiKey(id, newKey.id);
+
+        const graceExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+        // 5. Audit log
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "api_key.rotated",
+          resourceType: "api_key",
+          resourceId: id,
+          details: {
+            oldKeyId: id,
+            oldKeyPrefix: existingKey.keyPrefix,
+            newKeyId: newKey.id,
+            newKeyPrefix: prefix,
+            graceExpiresAt,
+          },
+        });
+
+        return reply(res, {
+          newKey: {
+            id: newKey.id,
+            key,
+            prefix,
+            scopes: existingKey.scopes,
+          },
+          oldKey: {
+            id: existingKey.id,
+            prefix: existingKey.keyPrefix,
+            deprecatedAt: new Date().toISOString(),
+            graceExpiresAt,
+          },
+        });
+      } catch (error) {
+        logger.child("ingestion").error("API key rotation failed", { error: String(error) });
+        return replyError(res, 500, [{ code: "INTERNAL_ERROR", message: "Failed to rotate API key." }]);
+      }
+    },
+  );
+
   // Ingestion Routes (API key authenticated, webhook signature verification)
   app.post(
     "/api/ingest/:source",
@@ -224,7 +309,37 @@ export function registerIngestionRoutes(app: Express): void {
 
         const normalized = normalizeAlert(source, payload);
         const insertData = toInsertAlert(normalized, orgId);
-        const { alert, isNew } = await storage.upsertAlert(insertData);
+
+        // Evaluate suppression rules before dedup/correlation
+        const suppression = await evaluateSuppression(insertData, orgId);
+        if (suppression.suppressed) {
+          insertData.suppressed = true;
+          insertData.suppressedBy = "rule";
+          insertData.suppressionRuleId = suppression.ruleId;
+          const created = await storage.createAlert(insertData);
+          await storage.createIngestionLog({
+            orgId,
+            source: normalized.source,
+            status: "success",
+            alertsReceived: 1,
+            alertsCreated: 1,
+            alertsDeduped: 0,
+            alertsFailed: 0,
+            requestId,
+            ipAddress: req.ip || null,
+            processingTimeMs: Date.now() - startTime,
+          });
+          cacheInvalidate("dashboard:");
+          return res.status(201).json({
+            requestId,
+            status: "suppressed",
+            alertId: created.id,
+            source: normalized.source,
+            suppressionRuleId: suppression.ruleId,
+          });
+        }
+
+        const { alert, isNew, isDuplicate } = await storage.upsertAlert(insertData);
 
         let entityCount = 0;
         let correlationResult = null;
@@ -307,6 +422,8 @@ export function registerIngestionRoutes(app: Express): void {
           status: isNew ? "created" : "deduplicated",
           alertId: alert.id,
           source: normalized.source,
+          isDuplicate,
+          occurrenceCount: alert.occurrenceCount ?? 1,
           entities: entityCount,
           correlation: correlationResult
             ? { clusterId: correlationResult.clusterId, confidence: correlationResult.confidence }
@@ -364,14 +481,33 @@ export function registerIngestionRoutes(app: Express): void {
 
         let created = 0,
           deduped = 0,
-          failed = 0;
+          failed = 0,
+          suppressed = 0;
         const results: any[] = [];
 
         for (const event of events) {
           try {
             const normalized = normalizeAlert(source, event);
             const insertData = toInsertAlert(normalized, orgId);
-            const { alert, isNew } = await storage.upsertAlert(insertData);
+
+            // Evaluate suppression rules before dedup/correlation
+            const suppressionCheck = await evaluateSuppression(insertData, orgId);
+            if (suppressionCheck.suppressed) {
+              insertData.suppressed = true;
+              insertData.suppressedBy = "rule";
+              insertData.suppressionRuleId = suppressionCheck.ruleId;
+              const suppressedAlert = await storage.createAlert(insertData);
+              suppressed++;
+              created++;
+              results.push({
+                alertId: suppressedAlert.id,
+                status: "suppressed",
+                suppressionRuleId: suppressionCheck.ruleId,
+              });
+              continue;
+            }
+
+            const { alert, isNew, isDuplicate } = await storage.upsertAlert(insertData);
             if (isNew) {
               created++;
               try {
@@ -395,7 +531,12 @@ export function registerIngestionRoutes(app: Express): void {
             } else {
               deduped++;
             }
-            results.push({ alertId: alert.id, status: isNew ? "created" : "deduplicated" });
+            results.push({
+              alertId: alert.id,
+              status: isNew ? "created" : "deduplicated",
+              isDuplicate,
+              occurrenceCount: alert.occurrenceCount ?? 1,
+            });
           } catch (err: any) {
             failed++;
             results.push({ error: "Processing failed", status: "failed" });
@@ -741,12 +882,35 @@ export function registerIngestionRoutes(app: Express): void {
       const unparsedPercent = total > 0 ? Math.round((stats.totalFailed / total) * 10000) / 100 : 0;
       const UNPARSED_THRESHOLD = 5; // alert if >5% unparsed
 
-      const perSourceQuality = stats.sourceBreakdown.map((s) => ({
-        source: s.source,
-        eventCount: s.count,
-        quality: "good" as string, // Would compute from actual field extraction rates
-        fieldExtractionRate: 95 + Math.round(Math.random() * 5), // Simulated
-      }));
+      // Query real per-source field extraction rates from ingestion logs
+      const orgCondition = orgId ? eq(ingestionLogs.orgId, orgId) : undefined;
+      const perSourceRates = await db
+        .select({
+          source: ingestionLogs.source,
+          totalReceived: sql<number>`COALESCE(SUM(${ingestionLogs.alertsReceived}), 0)::int`,
+          totalCreated: sql<number>`COALESCE(SUM(${ingestionLogs.alertsCreated}), 0)::int`,
+          totalFailed: sql<number>`COALESCE(SUM(${ingestionLogs.alertsFailed}), 0)::int`,
+        })
+        .from(ingestionLogs)
+        .where(orgCondition)
+        .groupBy(ingestionLogs.source);
+
+      const rateMap = new Map(
+        perSourceRates.map((r) => [
+          r.source,
+          r.totalReceived > 0 ? Math.round((r.totalCreated / r.totalReceived) * 10000) / 100 : 100,
+        ]),
+      );
+
+      const perSourceQuality = stats.sourceBreakdown.map((s) => {
+        const extractionRate = rateMap.get(s.source) ?? 100;
+        return {
+          source: s.source,
+          eventCount: s.count,
+          quality: extractionRate >= 95 ? "good" : extractionRate >= 80 ? "degraded" : "poor",
+          fieldExtractionRate: extractionRate,
+        };
+      });
 
       res.json({
         overallQuality: unparsedPercent > UNPARSED_THRESHOLD ? "degraded" : "healthy",

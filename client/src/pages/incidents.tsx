@@ -361,6 +361,7 @@ export default function IncidentsPage() {
   const [focusedIncidentId, setFocusedIncidentId] = useState<string | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [severityFilter, setSeverityFilter] = useState<string>("all");
+  const [filterNeedsReview, setFilterNeedsReview] = useState(false);
   const [showQueryBuilder, setShowQueryBuilder] = useState(false);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
@@ -494,14 +495,15 @@ export default function IncidentsPage() {
           inc.summary?.toLowerCase().includes(search.toLowerCase());
         const matchesDateFrom = !dateFrom || new Date(inc.createdAt || 0) >= new Date(dateFrom);
         const matchesDateTo = !dateTo || new Date(inc.createdAt || 0) <= new Date(dateTo + "T23:59:59");
-        return matchesStatus && matchesSeverity && matchesSearch && matchesDateFrom && matchesDateTo;
+        const matchesReview = !filterNeedsReview || (inc as any).needsReview === true;
+        return matchesStatus && matchesSeverity && matchesSearch && matchesDateFrom && matchesDateTo && matchesReview;
       })
       .sort((a, b) => {
         const aDate = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
         const bDate = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
         return bDate - aDate;
       });
-  }, [activeIncidents, search, statusFilter, severityFilter, dateFrom, dateTo]);
+  }, [activeIncidents, search, statusFilter, severityFilter, dateFrom, dateTo, filterNeedsReview]);
 
   const currentLoading = queueTab === "all" ? isLoading : queuesLoading;
   const allPageIds = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((i) => i.id);
@@ -574,8 +576,9 @@ export default function IncidentsPage() {
     if (queueTab !== "all") chips.push({ key: "queue", label: "Queue", value: queueTab });
     if (dateFrom) chips.push({ key: "dateFrom", label: "From", value: dateFrom });
     if (dateTo) chips.push({ key: "dateTo", label: "To", value: dateTo });
+    if (filterNeedsReview) chips.push({ key: "needsReview", label: "Needs Review", value: "Yes" });
     return chips;
-  }, [statusFilter, severityFilter, search, queueTab, dateFrom, dateTo]);
+  }, [statusFilter, severityFilter, search, queueTab, dateFrom, dateTo, filterNeedsReview]);
 
   const handleRemoveFilter = useCallback((key: string) => {
     if (key === "status") setStatusFilter("all");
@@ -584,6 +587,7 @@ export default function IncidentsPage() {
     if (key === "queue") setQueueTab("all");
     if (key === "dateFrom") setDateFrom("");
     if (key === "dateTo") setDateTo("");
+    if (key === "needsReview") setFilterNeedsReview(false);
   }, []);
 
   const handleClearAllFilters = useCallback(() => {
@@ -593,6 +597,7 @@ export default function IncidentsPage() {
     setQueueTab("all");
     setDateFrom("");
     setDateTo("");
+    setFilterNeedsReview(false);
   }, []);
 
   const applySavedView = useCallback((view: SavedView) => {
@@ -844,6 +849,20 @@ export default function IncidentsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
+                  Needs Review
+                </label>
+                <Button
+                  variant={filterNeedsReview ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => setFilterNeedsReview(!filterNeedsReview)}
+                  data-testid="button-filter-needs-review"
+                >
+                  {filterNeedsReview ? "Showing Review" : "All Incidents"}
+                </Button>
               </div>
               <div>
                 <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
@@ -1109,7 +1128,17 @@ export default function IncidentsPage() {
                               </div>
                             </td>
                             <td className="px-4 py-3">
-                              <SeverityBadge severity={incident.severity} />
+                              <div className="flex items-center gap-1">
+                                <SeverityBadge severity={incident.severity} />
+                                {(incident as any).needsReview && (
+                                  <Badge className="bg-yellow-200 text-yellow-900 dark:bg-yellow-800 dark:text-yellow-100 text-[10px]">
+                                    Review
+                                  </Badge>
+                                )}
+                                {incident.confidence != null && (
+                                  <span className="text-xs text-muted-foreground">{Math.round(incident.confidence * 100)}%</span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-4 py-3">
                               <IncidentStatusBadge status={incident.status} />
@@ -1213,8 +1242,13 @@ export default function IncidentsPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Severity</span>
-                      <div className="mt-1">
+                      <div className="mt-1 flex items-center gap-1">
                         <SeverityBadge severity={selectedIncident.severity} />
+                        {(selectedIncident as any).needsReview && (
+                          <Badge className="bg-yellow-200 text-yellow-900 dark:bg-yellow-800 dark:text-yellow-100 text-[10px]">
+                            Review
+                          </Badge>
+                        )}
                       </div>
                     </div>
                     <div>

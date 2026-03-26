@@ -10,8 +10,9 @@ import {
   getTableScanStats,
   getUnusedIndexes,
 } from "../db-performance";
-import { getPoolHealth, checkPoolConnectivity } from "../db";
+import { getPoolHealth, checkPoolConnectivity, db } from "../db";
 import { getDeadLetterJobs, retryDeadLetterJob, scheduleJob } from "../job-queue";
+import { sql } from "drizzle-orm";
 import { getOutboxProcessorStatus } from "../outbox-processor";
 import { cacheInvalidate, cacheStats } from "../query-cache";
 import { getTableSizes, getPartitionConfigs, runArchivalJob } from "../partition-strategy";
@@ -1050,22 +1051,62 @@ export function registerAdminRoutes(app: Express): void {
     async (_req, res) => {
       try {
         const now = Date.now();
+
+        // Query real job queue metrics from the last 24 hours
+        const rows = await db.execute(sql`
+          SELECT
+            date_trunc('hour', completed_at) as bucket,
+            count(*)::int as throughput,
+            COALESCE(AVG(EXTRACT(EPOCH FROM (started_at - created_at)) * 1000), 0)::int as avg_wait_ms,
+            COALESCE(AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000), 0)::int as avg_exec_ms,
+            CASE WHEN count(*) > 0
+              THEN ROUND(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)::numeric / count(*) * 100, 2)
+              ELSE 0
+            END as failure_rate
+          FROM job_queue
+          WHERE completed_at >= NOW() - INTERVAL '24 hours'
+          GROUP BY bucket
+          ORDER BY bucket
+        `);
+
+        // Build a map of hour -> metrics from DB results
+        const dbBucketMap = new Map<string, { throughput: number; avgWaitMs: number; avgExecMs: number; failureRate: number }>();
+        for (const row of rows.rows as any[]) {
+          if (row.bucket) {
+            const key = new Date(row.bucket).toISOString();
+            dbBucketMap.set(key, {
+              throughput: Number(row.throughput) || 0,
+              avgWaitMs: Number(row.avg_wait_ms) || 0,
+              avgExecMs: Number(row.avg_exec_ms) || 0,
+              failureRate: Number(row.failure_rate) || 0,
+            });
+          }
+        }
+
+        // Build 24-bucket array, filling gaps with zeros
         const buckets = Array.from({ length: 24 }, (_, i) => {
-          const ts = new Date(now - (23 - i) * 3600000).toISOString();
+          const ts = new Date(now - (23 - i) * 3600000);
+          ts.setMinutes(0, 0, 0);
+          const key = ts.toISOString();
+          const dbData = dbBucketMap.get(key);
           return {
-            timestamp: ts,
-            throughput: Math.floor(Math.random() * 40) + 10,
-            avgWaitMs: Math.floor(Math.random() * 5000) + 500,
-            avgExecMs: Math.floor(Math.random() * 15000) + 2000,
-            failureRate: Math.round(Math.random() * 8 * 100) / 100,
+            timestamp: key,
+            throughput: dbData?.throughput ?? 0,
+            avgWaitMs: dbData?.avgWaitMs ?? 0,
+            avgExecMs: dbData?.avgExecMs ?? 0,
+            failureRate: dbData?.failureRate ?? 0,
           };
         });
+
+        const nonEmptyBuckets = buckets.filter((b) => b.throughput > 0);
+        const bucketCount = nonEmptyBuckets.length || 1;
         const totals = {
-          avgWaitMs: Math.round(buckets.reduce((s, b) => s + b.avgWaitMs, 0) / buckets.length),
-          avgExecMs: Math.round(buckets.reduce((s, b) => s + b.avgExecMs, 0) / buckets.length),
+          avgWaitMs: Math.round(nonEmptyBuckets.reduce((s, b) => s + b.avgWaitMs, 0) / bucketCount),
+          avgExecMs: Math.round(nonEmptyBuckets.reduce((s, b) => s + b.avgExecMs, 0) / bucketCount),
           totalProcessed: buckets.reduce((s, b) => s + b.throughput, 0),
-          failureRate: Math.round((buckets.reduce((s, b) => s + b.failureRate, 0) / buckets.length) * 100) / 100,
-          peakThroughput: Math.max(...buckets.map((b) => b.throughput)),
+          failureRate:
+            Math.round((nonEmptyBuckets.reduce((s, b) => s + b.failureRate, 0) / bucketCount) * 100) / 100,
+          peakThroughput: Math.max(0, ...buckets.map((b) => b.throughput)),
         };
         return sendEnvelope(res, { buckets, totals });
       } catch (error: any) {
