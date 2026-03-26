@@ -26,6 +26,7 @@ import { startArchivalScheduler } from "./partition-strategy";
 import { startMetricsRollupScheduler } from "./metrics-rollup";
 import { tracingMiddleware, startTracingFlush, stopTracingFlush } from "./tracing";
 import { inFlightMiddleware, markServerReady, markServerNotReady, waitForInFlightDrain } from "./request-lifecycle";
+import { poolCircuitBreakerMiddleware } from "./middleware/pool-circuit-breaker";
 import { stopJobWorker } from "./job-queue";
 import { startDrillScheduler, stopDrillScheduler } from "./dr-drill-scheduler";
 import { startStaleSlotReaper, stopStaleSlotReaper } from "./distributed-concurrency";
@@ -125,6 +126,7 @@ app.get("/api/ops/metrics", (_req, res) => {
 });
 
 app.use(inFlightMiddleware);
+app.use(poolCircuitBreakerMiddleware);
 app.use(requestTimeoutMiddleware(30_000)); // 30s timeout for API requests (excludes SSE/streaming)
 app.use(prometheusMiddleware);
 app.use(sliMiddleware);
