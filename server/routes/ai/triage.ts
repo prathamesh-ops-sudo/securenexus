@@ -1,15 +1,47 @@
-import type { Express, Request, Response } from "express";
+import type { Express } from "express";
 import { getOrgId, logger, p, storage, strictLimiter } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { resolveOrgContext } from "../../rbac";
-import { triageAlert, correlateAlerts, buildThreatIntelContext } from "../../ai";
+import { correlateAlerts, buildThreatIntelContext } from "../../ai";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
 import { withAiFallback } from "../../ai/fallback";
+import { enqueueJob } from "../../job-queue";
 
 const log = logger.child("routes-ai-triage");
 
+/**
+ * Returns the ai_triage job handler function for use by the job queue worker.
+ * Exported separately so it can be registered in JOB_HANDLERS and tested independently.
+ */
+export function getAiTriageHandler(): (job: any) => Promise<any> {
+  return async (job: any) => {
+    const { alertId, orgId } = job.payload;
+    try {
+      const { triageAlert, buildThreatIntelContext } = await import("../../ai");
+      const alert = await storage.getAlert(alertId);
+      if (!alert) {
+        return { error: "Alert not found", alertId };
+      }
+      const threatIntelCtx = await buildThreatIntelContext([alert]);
+      const result = await triageAlert(alert, threatIntelCtx, orgId);
+
+      // Broadcast completion via SSE
+      const { broadcastEvent } = await import("../../event-bus");
+      broadcastEvent({
+        type: "ai:triage_complete",
+        orgId: orgId || null,
+        data: { jobId: job.id, alertId, result },
+      });
+
+      return { alertId, result };
+    } catch (err: any) {
+      return { error: err.message || String(err), alertId };
+    }
+  };
+}
+
 export function registerAiTriageRoutes(app: Express): void {
-  // POST /api/ai/triage/:alertId
+  // POST /api/ai/triage/:alertId - Async triage via job queue (returns 202 Accepted)
   app.post(
     "/api/ai/triage/:alertId",
     isAuthenticated,
@@ -23,37 +55,33 @@ export function registerAiTriageRoutes(app: Express): void {
         if (!alert || (triageOrgId && alert.orgId && alert.orgId !== triageOrgId)) {
           return res.status(404).json({ message: "Alert not found" });
         }
-        const threatIntelCtx = await buildThreatIntelContext([alert]);
-        const cacheKey = `triage:${alert.id}`;
-        const fallbackResult = await withAiFallback(cacheKey, () =>
-          triageAlert(alert, threatIntelCtx, triageOrgId),
-        );
-        if (fallbackResult.source === "unavailable") {
-          return res.status(503).json({ message: "AI triage temporarily unavailable", status: "ai_unavailable" });
+
+        // Enqueue async triage job
+        const job = await enqueueJob("ai_triage", triageOrgId, {
+          alertId: alert.id,
+          orgId: triageOrgId,
+        });
+
+        if (!job) {
+          // Dedup: job already exists for this alert
+          return res.status(202).json({
+            jobId: null,
+            status: "accepted",
+            message: "Triage job already queued for this alert",
+          });
         }
-        const result = fallbackResult.data!;
-        if (fallbackResult.source === "cached" && fallbackResult.cachedAt) {
-          (result as any)._aiSource = "cached";
-          (result as any)._cachedAt = fallbackResult.cachedAt;
-        }
-        if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
-          result.threatIntelSources = Array.from(
-            new Set([
-              ...threatIntelCtx.enrichmentResults.map((r) => r.provider),
-              ...threatIntelCtx.osintMatches.map((r) => r.feedName),
-            ]),
-          );
-        }
+
         await storage.createAuditLog({
           userId: (req as any).user?.id,
           userName: (req as any).user?.firstName
             ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
             : "Analyst",
-          action: "ai_triage",
+          action: "ai_triage_queued",
           resourceType: "alert",
           resourceId: p(req.params.alertId),
-          details: { severity: result.severity, priority: result.priority },
+          details: { jobId: job.id },
         });
+
         try {
           await storage.incrementUsage((req as any).orgId || (req as any).user?.orgId, "ai_analyses");
         } catch (e) {
@@ -62,10 +90,48 @@ export function registerAiTriageRoutes(app: Express): void {
             orgId: (req as any).orgId || (req as any).user?.orgId,
           });
         }
-        res.json(result);
+
+        res.status(202).json({
+          jobId: job.id,
+          status: "accepted",
+          pollUrl: `/api/ai/triage/jobs/${job.id}`,
+        });
       } catch (error: any) {
-        logger.child("ai").error("AI triage error", { error: String(error) });
+        logger.child("ai").error("AI triage enqueue error", { error: String(error) });
         res.status(500).json({ message: "AI triage failed. Please try again." });
+      }
+    },
+  );
+
+  // GET /api/ai/triage/jobs/:jobId - Poll triage job status
+  app.get(
+    "/api/ai/triage/jobs/:jobId",
+    isAuthenticated,
+    resolveOrgContext,
+    async (req, res) => {
+      try {
+        const jobId = p(req.params.jobId);
+        const job = await storage.getJob(jobId);
+        if (!job) {
+          return res.status(404).json({ message: "Job not found" });
+        }
+
+        // Verify org access
+        const orgId = (req as any).orgId || (req as any).user?.orgId;
+        if (job.orgId && orgId && job.orgId !== orgId) {
+          return res.status(404).json({ message: "Job not found" });
+        }
+
+        if (job.status === "completed") {
+          return res.json({ status: "completed", result: job.result });
+        }
+        if (job.status === "failed" || job.status === "dead_letter") {
+          return res.json({ status: "failed", error: job.lastError || job.error || "Unknown error" });
+        }
+        res.json({ status: job.status }); // pending, running
+      } catch (error: any) {
+        logger.child("ai").error("Job poll error", { error: String(error) });
+        res.status(500).json({ message: "Failed to check job status" });
       }
     },
   );

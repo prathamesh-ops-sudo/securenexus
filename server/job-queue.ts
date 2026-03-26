@@ -20,6 +20,15 @@ function buildJobFingerprint(type: string, orgId: string, payload: unknown): str
 }
 
 const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
+  ai_triage: async (job) => {
+    try {
+      const { getAiTriageHandler } = await import("./routes/ai/triage");
+      const handler = getAiTriageHandler();
+      return await handler(job);
+    } catch (err: any) {
+      return { error: err.message || String(err), alertId: job.payload?.alertId };
+    }
+  },
   connector_sync: async (job) => {
     try {
       const { syncConnectorWithRetry } = await import("./connector-engine");
