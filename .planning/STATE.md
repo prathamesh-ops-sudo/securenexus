@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** Every feature that exists in the UI must actually work end-to-end with real data -- no stubs, no hardcoded returns, no demo-quality shortcuts.
-**Current focus:** Phase 07 — automated-response-safety
+**Current focus:** Phase 09 — api-resilience-performance
 
 ## Current Position
 
-Phase: 07 (automated-response-safety) — EXECUTING
-Plan: 1 of 3
+Phase: 09 (api-resilience-performance) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Plan: 1 of 3
 | Phase 06 P01 | 5min | 2 tasks | 5 files |
 | Phase 06 P02 | 6min | 2 tasks | 6 files |
 | Phase 06 P03 | 6min | 2 tasks | 4 files |
+| Phase 09 P01 | 5min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,8 @@ Recent decisions affecting current work:
 - [Phase 06]: Expiry defaults 7 days, max 30 days; regex validated at CRUD and evaluation time
 - [Phase 06]: Field extraction rate computed as alertsCreated/alertsReceived per source from ingestion_logs
 - [Phase 06]: MTTD from alert detectedAt-createdAt delta; MTTR from incident createdAt-resolvedAt; Alert Coverage from active/total connectors ratio
+- [Phase 09]: Used module-level cached utilization with 1s refresh for pool circuit breaker to avoid per-request overhead
+- [Phase 09]: Tenant-scoped entity-graph cache keys using orgId prefix for isolation; invalidated on entity:resolved events
 
 ### Pending Todos
 
@@ -95,6 +98,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T13:49:29.447Z
-Stopped at: Completed 06-03-PLAN.md
+Last session: 2026-03-26T06:55:00.000Z
+Stopped at: Completed 09-01-PLAN.md
 Resume file: None
