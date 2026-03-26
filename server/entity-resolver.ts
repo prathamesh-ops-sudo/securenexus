@@ -14,6 +14,21 @@ import {
 } from "@shared/schema";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import { logger } from "./logger";
+import { cacheGetOrLoad, cacheInvalidate, CACHE_TTL } from "./query-cache";
+import { eventBus } from "./event-bus";
+import type { BusEvent } from "./event-bus";
+
+const log = logger.child("entity-resolver");
+
+// Invalidate entity-graph cache entries when entities are resolved
+eventBus.on("entity:resolved", (event: BusEvent) => {
+  if (event.orgId) {
+    const removed = cacheInvalidate(`entity-graph:${event.orgId}:`);
+    if (removed > 0) {
+      log.debug("Invalidated entity cache entries", { removed, orgId: event.orgId });
+    }
+  }
+});
 
 export interface ExtractedEntity {
   type: string;
@@ -178,54 +193,72 @@ function calculateEntityRisk(alert: Alert, entity: ExtractedEntity): number {
   return Math.round(risk * 100) / 100;
 }
 
-export async function getEntitiesForAlert(alertId: string): Promise<(Entity & { role: string })[]> {
-  const results = await db
-    .select({
-      id: entities.id,
-      orgId: entities.orgId,
-      type: entities.type,
-      value: entities.value,
-      displayName: entities.displayName,
-      metadata: entities.metadata,
-      firstSeenAt: entities.firstSeenAt,
-      lastSeenAt: entities.lastSeenAt,
-      alertCount: entities.alertCount,
-      riskScore: entities.riskScore,
-      createdAt: entities.createdAt,
-      role: alertEntities.role,
-    })
-    .from(alertEntities)
-    .innerJoin(entities, eq(alertEntities.entityId, entities.id))
-    .where(eq(alertEntities.alertId, alertId));
+export async function getEntitiesForAlert(
+  alertId: string,
+  orgId?: string,
+): Promise<(Entity & { role: string })[]> {
+  const cacheKey = `entity-graph:${orgId || "global"}:alert:${alertId}`;
+  return cacheGetOrLoad(
+    cacheKey,
+    async () => {
+      const results = await db
+        .select({
+          id: entities.id,
+          orgId: entities.orgId,
+          type: entities.type,
+          value: entities.value,
+          displayName: entities.displayName,
+          metadata: entities.metadata,
+          firstSeenAt: entities.firstSeenAt,
+          lastSeenAt: entities.lastSeenAt,
+          alertCount: entities.alertCount,
+          riskScore: entities.riskScore,
+          createdAt: entities.createdAt,
+          role: alertEntities.role,
+        })
+        .from(alertEntities)
+        .innerJoin(entities, eq(alertEntities.entityId, entities.id))
+        .where(eq(alertEntities.alertId, alertId));
 
-  return results;
+      return results;
+    },
+    CACHE_TTL.ENTITY_GRAPH,
+  );
 }
 
 export async function getEntitiesForIncident(
   incidentId: string,
+  orgId?: string,
 ): Promise<(Entity & { role: string; alertId: string })[]> {
-  const results = await db
-    .select({
-      id: entities.id,
-      orgId: entities.orgId,
-      type: entities.type,
-      value: entities.value,
-      displayName: entities.displayName,
-      metadata: entities.metadata,
-      firstSeenAt: entities.firstSeenAt,
-      lastSeenAt: entities.lastSeenAt,
-      alertCount: entities.alertCount,
-      riskScore: entities.riskScore,
-      createdAt: entities.createdAt,
-      role: alertEntities.role,
-      alertId: alertEntities.alertId,
-    })
-    .from(alerts)
-    .innerJoin(alertEntities, eq(alertEntities.alertId, alerts.id))
-    .innerJoin(entities, eq(alertEntities.entityId, entities.id))
-    .where(eq(alerts.incidentId, incidentId));
+  const cacheKey = `entity-graph:${orgId || "global"}:incident:${incidentId}`;
+  return cacheGetOrLoad(
+    cacheKey,
+    async () => {
+      const results = await db
+        .select({
+          id: entities.id,
+          orgId: entities.orgId,
+          type: entities.type,
+          value: entities.value,
+          displayName: entities.displayName,
+          metadata: entities.metadata,
+          firstSeenAt: entities.firstSeenAt,
+          lastSeenAt: entities.lastSeenAt,
+          alertCount: entities.alertCount,
+          riskScore: entities.riskScore,
+          createdAt: entities.createdAt,
+          role: alertEntities.role,
+          alertId: alertEntities.alertId,
+        })
+        .from(alerts)
+        .innerJoin(alertEntities, eq(alertEntities.alertId, alerts.id))
+        .innerJoin(entities, eq(alertEntities.entityId, entities.id))
+        .where(eq(alerts.incidentId, incidentId));
 
-  return results;
+      return results;
+    },
+    CACHE_TTL.ENTITY_GRAPH,
+  );
 }
 
 export async function findRelatedAlertsByEntity(
