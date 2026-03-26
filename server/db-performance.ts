@@ -25,6 +25,12 @@ export const PERFORMANCE_BUDGETS: Record<string, { staging: number; production: 
   "GET /api/dashboard/analytics": { staging: 1500, production: 1000 },
   "POST /api/ingest/:source": { staging: 2000, production: 1500 },
   "POST /api/v1/ingest/bulk": { staging: 3000, production: 2000 },
+  // AI endpoints
+  "POST /api/ai/triage/:alertId": { staging: 2000, production: 1500 },
+  "POST /api/ai/narrative/:incidentId": { staging: 3000, production: 2000 },
+  "POST /api/ai/correlate": { staging: 3000, production: 2000 },
+  "POST /api/ai/investigate/:incidentId": { staging: 3000, production: 2000 },
+  "GET /api/ai/triage/jobs/:jobId": { staging: 500, production: 300 },
 };
 
 import { PAGINATION_CONTRACT, parseStandardPagination } from "./pagination-contract";
