@@ -167,9 +167,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 09-01: TBD
-- [ ] 09-02: TBD
-- [ ] 09-03: TBD
+- [ ] 09-01-PLAN.md -- Pool circuit breaker middleware + entity graph caching with event-driven invalidation (API-01, API-04)
+- [ ] 09-02-PLAN.md -- AI fallback wrapper + token budget enforcement for narrative generation (API-02, PERF-01)
+- [ ] 09-03-PLAN.md -- Async triage endpoint conversion + AI performance budgets (API-03, PERF-02, PERF-03, PERF-04, PERF-05)
 
 ### Phase 10: Test Coverage & Quality Gates
 **Goal**: Security-critical boundaries are verified by automated tests and ESLint rules prevent regression of fixed issues
