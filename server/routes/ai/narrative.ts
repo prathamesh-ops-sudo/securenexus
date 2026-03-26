@@ -4,6 +4,7 @@ import { isAuthenticated } from "../../auth";
 import { resolveOrgContext } from "../../rbac";
 import { generateIncidentNarrative, buildThreatIntelContext, streamNarrative, streamDeepInvestigation } from "../../ai";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
+import { withAiFallback } from "../../ai/fallback";
 import { persistAttackGraph } from "./helpers";
 
 const log = logger.child("routes-ai-narrative");
@@ -25,7 +26,20 @@ export function registerAiNarrativeRoutes(app: Express): void {
         }
         const incidentAlerts = await storage.getAlertsByIncident(p(req.params.incidentId));
         const threatIntelCtx = await buildThreatIntelContext(incidentAlerts);
-        const result = await generateIncidentNarrative(incident, incidentAlerts, threatIntelCtx, narrativeOrgId);
+        const narrativeCacheKey = `narrative:${incident.id}`;
+        const fallbackResult = await withAiFallback(narrativeCacheKey, () =>
+          generateIncidentNarrative(incident, incidentAlerts, threatIntelCtx, narrativeOrgId),
+        );
+        if (fallbackResult.source === "unavailable") {
+          return res
+            .status(503)
+            .json({ message: "AI narrative generation temporarily unavailable", status: "ai_unavailable" });
+        }
+        const result = fallbackResult.data!;
+        if (fallbackResult.source === "cached" && fallbackResult.cachedAt) {
+          (result as any)._aiSource = "cached";
+          (result as any)._cachedAt = fallbackResult.cachedAt;
+        }
         if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
           (result as any).threatIntelSources = Array.from(
             new Set([

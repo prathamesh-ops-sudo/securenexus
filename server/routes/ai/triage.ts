@@ -4,6 +4,7 @@ import { isAuthenticated } from "../../auth";
 import { resolveOrgContext } from "../../rbac";
 import { triageAlert, correlateAlerts, buildThreatIntelContext } from "../../ai";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
+import { withAiFallback } from "../../ai/fallback";
 
 const log = logger.child("routes-ai-triage");
 
@@ -23,7 +24,18 @@ export function registerAiTriageRoutes(app: Express): void {
           return res.status(404).json({ message: "Alert not found" });
         }
         const threatIntelCtx = await buildThreatIntelContext([alert]);
-        const result = await triageAlert(alert, threatIntelCtx, triageOrgId);
+        const cacheKey = `triage:${alert.id}`;
+        const fallbackResult = await withAiFallback(cacheKey, () =>
+          triageAlert(alert, threatIntelCtx, triageOrgId),
+        );
+        if (fallbackResult.source === "unavailable") {
+          return res.status(503).json({ message: "AI triage temporarily unavailable", status: "ai_unavailable" });
+        }
+        const result = fallbackResult.data!;
+        if (fallbackResult.source === "cached" && fallbackResult.cachedAt) {
+          (result as any)._aiSource = "cached";
+          (result as any)._cachedAt = fallbackResult.cachedAt;
+        }
         if (threatIntelCtx.enrichmentResults.length > 0 || threatIntelCtx.osintMatches.length > 0) {
           result.threatIntelSources = Array.from(
             new Set([
@@ -82,7 +94,14 @@ export function registerAiTriageRoutes(app: Express): void {
           return res.status(400).json({ message: "No alerts to correlate" });
         }
         const threatIntelCtx = await buildThreatIntelContext(alertsToCorrelate);
-        const result = await correlateAlerts(alertsToCorrelate, threatIntelCtx, orgId);
+        const correlationCacheKey = `correlate:${orgId}:${alertsToCorrelate.map((a) => a.id).sort().join(",")}`;
+        const fallbackResult = await withAiFallback(correlationCacheKey, () =>
+          correlateAlerts(alertsToCorrelate, threatIntelCtx, orgId),
+        );
+        if (fallbackResult.source === "unavailable") {
+          return res.status(503).json({ message: "AI correlation temporarily unavailable", status: "ai_unavailable" });
+        }
+        const result = fallbackResult.data!;
         await storage.createAuditLog({
           userId: (req as any).user?.id,
           userName: (req as any).user?.firstName

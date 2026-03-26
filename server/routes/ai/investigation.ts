@@ -11,6 +11,7 @@ import {
   conductMultiTurnInvestigation,
 } from "../../ai";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
+import { withAiFallback } from "../../ai/fallback";
 import { persistAttackGraph } from "./helpers";
 import { pool } from "../../db";
 
@@ -37,7 +38,16 @@ export function registerAiInvestigationRoutes(app: Express): void {
         const threatIntelCtx = await buildThreatIntelContext(incidentAlerts);
         const orgId = (req as any).orgId || (req as any).user?.orgId;
 
-        const result = await conductDeepInvestigation(incident, incidentAlerts, threatIntelCtx, orgId);
+        const investigationCacheKey = `investigation:${incident.id}`;
+        const fallbackResult = await withAiFallback(investigationCacheKey, () =>
+          conductDeepInvestigation(incident, incidentAlerts, threatIntelCtx, orgId),
+        );
+        if (fallbackResult.source === "unavailable") {
+          return res
+            .status(503)
+            .json({ message: "AI deep investigation temporarily unavailable", status: "ai_unavailable" });
+        }
+        const result = fallbackResult.data!;
 
         persistAttackGraph(result as unknown as Record<string, unknown>, incident.id, orgId).catch((err) => {
           logger.child("ai").warn("Failed to persist attack graph", { error: String(err) });
@@ -86,7 +96,16 @@ export function registerAiInvestigationRoutes(app: Express): void {
           threatIntelCtx = await buildThreatIntelContext(telemetryData.alerts);
         }
 
-        const result = await conductThreatHunt(huntContext, telemetryData, threatIntelCtx, orgId);
+        const huntCacheKey = `threat-hunt:${orgId}:${Date.now()}`;
+        const fallbackResult = await withAiFallback(huntCacheKey, () =>
+          conductThreatHunt(huntContext, telemetryData, threatIntelCtx, orgId),
+        );
+        if (fallbackResult.source === "unavailable") {
+          return res
+            .status(503)
+            .json({ message: "AI threat hunting temporarily unavailable", status: "ai_unavailable" });
+        }
+        const result = fallbackResult.data!;
 
         await storage.createAuditLog({
           userId: (req as any).user?.id,
@@ -130,7 +149,16 @@ export function registerAiInvestigationRoutes(app: Express): void {
         }
 
         const orgId = (req as any).orgId || (req as any).user?.orgId;
-        const result = await analyzeBehavior(entityContext, activityData, baselineData, orgId);
+        const behaviorCacheKey = `behavior:${orgId}:${entityContext.entityId || "unknown"}`;
+        const fallbackResult = await withAiFallback(behaviorCacheKey, () =>
+          analyzeBehavior(entityContext, activityData, baselineData, orgId),
+        );
+        if (fallbackResult.source === "unavailable") {
+          return res
+            .status(503)
+            .json({ message: "AI behavioral analysis temporarily unavailable", status: "ai_unavailable" });
+        }
+        const result = fallbackResult.data!;
 
         await storage.createAuditLog({
           userId: (req as any).user?.id,
@@ -266,13 +294,16 @@ export function registerAiInvestigationRoutes(app: Express): void {
 
         const orgId = (req as any).orgId || (req as any).user?.orgId;
 
-        const result = await predictAttackPaths(
-          compromiseState,
-          networkTopology || {},
-          crownJewels || [],
-          securityControls || {},
-          orgId,
+        const attackPathCacheKey = `attack-path:${orgId}:${Date.now()}`;
+        const fallbackResult = await withAiFallback(attackPathCacheKey, () =>
+          predictAttackPaths(compromiseState, networkTopology || {}, crownJewels || [], securityControls || {}, orgId),
         );
+        if (fallbackResult.source === "unavailable") {
+          return res
+            .status(503)
+            .json({ message: "AI attack path prediction temporarily unavailable", status: "ai_unavailable" });
+        }
+        const result = fallbackResult.data!;
 
         await storage.createAuditLog({
           userId: (req as any).user?.id,
@@ -340,7 +371,16 @@ export function registerAiInvestigationRoutes(app: Express): void {
           content: message,
         });
 
-        const aiResponse = await conductMultiTurnInvestigation(incidentContext, conversationHistory, message, orgId);
+        const chatCacheKey = `investigation-chat:${activeThreadId}:${message.slice(0, 50)}`;
+        const fallbackResult = await withAiFallback(chatCacheKey, () =>
+          conductMultiTurnInvestigation(incidentContext, conversationHistory, message, orgId),
+        );
+        if (fallbackResult.source === "unavailable") {
+          return res
+            .status(503)
+            .json({ message: "AI investigation chat temporarily unavailable", status: "ai_unavailable" });
+        }
+        const aiResponse = fallbackResult.data!;
 
         await storage.createChatMessage({
           orgId,
