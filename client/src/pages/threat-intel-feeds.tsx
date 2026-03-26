@@ -28,6 +28,8 @@ import {
   ChevronRight,
   Globe,
   Tag,
+  Sparkles,
+  Brain,
 } from "lucide-react";
 
 interface ThreatIntelArticle {
@@ -46,6 +48,8 @@ interface ThreatIntelArticle {
   summaryText: string;
   contentText: string;
   fetchedAt: string;
+  relevanceScore?: number;
+  relevanceReason?: string;
 }
 
 interface FeedStatus {
@@ -116,6 +120,31 @@ function StatusDot({ status }: { status: string }) {
   );
 }
 
+function RelevanceBadge({ score, reason }: { score: number; reason?: string }) {
+  const color =
+    score >= 8
+      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+      : score >= 6
+        ? "bg-blue-500/15 text-blue-400 border-blue-500/30"
+        : score >= 4
+          ? "bg-yellow-500/15 text-yellow-400 border-yellow-500/30"
+          : "bg-zinc-500/15 text-zinc-400 border-zinc-500/30";
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge className={"text-[9px] px-1.5 py-0 h-4 gap-0.5 cursor-help border " + color}>
+          <Sparkles className="h-2.5 w-2.5" />
+          {score}/10
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[250px] text-xs">
+        <p className="font-medium">AI Relevance: {score}/10</p>
+        {reason && <p className="text-muted-foreground mt-0.5">{reason}</p>}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function ArticleCard({ article }: { article: ThreatIntelArticle }) {
   return (
     <div className="group flex flex-col gap-2 p-4 rounded-lg glass-subtle border border-border/30 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all duration-200">
@@ -149,6 +178,9 @@ function ArticleCard({ article }: { article: ThreatIntelArticle }) {
             )}
           </div>
         </div>
+        {article.relevanceScore !== undefined && (
+          <RelevanceBadge score={article.relevanceScore} reason={article.relevanceReason} />
+        )}
       </div>
       {article.summaryText && (
         <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{article.summaryText}</p>
@@ -303,6 +335,9 @@ export default function ThreatIntelFeedsPage() {
   const [refreshingSlug, setRefreshingSlug] = useState<string | null>(null);
   const [view, setView] = useState<"articles" | "feeds">("articles");
   const [articleLimit, setArticleLimit] = useState(100);
+  const [aiFilterEnabled, setAiFilterEnabled] = useState(false);
+  const [relevanceThreshold, setRelevanceThreshold] = useState(5);
+  const [isScoring, setIsScoring] = useState(false);
 
   useEffect(() => {
     document.title = "Threat Intel Feeds | SecureNexus";
@@ -329,6 +364,10 @@ export default function ThreatIntelFeedsPage() {
   articleQueryParams.set("limit", String(articleLimit));
   if (selectedCategory !== "all") articleQueryParams.set("category", selectedCategory);
   if (searchQuery.trim()) articleQueryParams.set("search", searchQuery.trim());
+  if (aiFilterEnabled) {
+    articleQueryParams.set("aiFilter", "true");
+    articleQueryParams.set("relevanceThreshold", String(relevanceThreshold));
+  }
 
   const { data: articlesData, isLoading: articlesLoading } = useQuery<{
     articles: ThreatIntelArticle[];
@@ -353,7 +392,7 @@ export default function ThreatIntelFeedsPage() {
         clearTimeout(timer);
       }
     },
-    onSuccess: (result: any) => {
+    onSuccess: (result: { meta?: { okFeedCount?: number }; feedCount?: number; itemCount?: number }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/threat-intel-feeds/statuses"] });
       queryClient.invalidateQueries({ queryKey: ["/api/threat-intel-feeds/articles"] });
       const ok = result?.meta?.okFeedCount ?? 0;
@@ -379,7 +418,7 @@ export default function ThreatIntelFeedsPage() {
       const res = await apiRequest("POST", "/api/threat-intel-feeds/" + slug + "/refresh");
       return res.json();
     },
-    onSuccess: (result: any) => {
+    onSuccess: (result: { articleCount?: number; error?: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/threat-intel-feeds/statuses"] });
       queryClient.invalidateQueries({ queryKey: ["/api/threat-intel-feeds/articles"] });
       const count = result?.articleCount ?? 0;
@@ -412,6 +451,35 @@ export default function ThreatIntelFeedsPage() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to toggle feed.", variant: "destructive" });
+    },
+  });
+
+  const scoreRelevanceMutation = useMutation({
+    mutationFn: async () => {
+      setIsScoring(true);
+      const res = await apiRequest("POST", "/api/threat-intel-feeds/score-relevance", {
+        orgName: "My Organization",
+        industry: "Technology",
+        articleLimit: articleLimit,
+      });
+      return res.json();
+    },
+    onSuccess: (result: { scoredCount: number; total: number }) => {
+      setIsScoring(false);
+      setAiFilterEnabled(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/threat-intel-feeds/articles"] });
+      toast({
+        title: "AI Relevance Scoring Complete",
+        description: result.scoredCount + " of " + result.total + " articles scored for relevance",
+      });
+    },
+    onError: (error: Error) => {
+      setIsScoring(false);
+      toast({
+        title: "Scoring Failed",
+        description: error.message || "Could not score articles. AI service may be unavailable.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -611,6 +679,66 @@ export default function ThreatIntelFeedsPage() {
               </SelectContent>
             </Select>
           )}
+          {view === "articles" && (
+            <div className="flex items-center gap-2 border-l border-border/50 pl-2 ml-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant={aiFilterEnabled ? "default" : "outline"}
+                    className={
+                      "h-8 text-xs gap-1.5 " +
+                      (aiFilterEnabled
+                        ? "bg-purple-600 hover:bg-purple-700 text-white"
+                        : "hover:bg-purple-500/10 hover:border-purple-500/30")
+                    }
+                    onClick={() => {
+                      if (!aiFilterEnabled) {
+                        scoreRelevanceMutation.mutate();
+                      } else {
+                        setAiFilterEnabled(false);
+                      }
+                    }}
+                    disabled={isScoring}
+                  >
+                    {isScoring ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />}
+                    {isScoring ? "Scoring..." : aiFilterEnabled ? "AI Filter ON" : "AI Filter"}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[250px]">
+                  <p className="font-medium">AI Relevance Filter</p>
+                  <p className="text-muted-foreground text-xs mt-0.5">
+                    Uses Claude to score each article for relevance to your organization. Click to{" "}
+                    {aiFilterEnabled ? "disable" : "enable"}.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+              {aiFilterEnabled && (
+                <Select
+                  value={String(relevanceThreshold)}
+                  onValueChange={(v) => setRelevanceThreshold(parseInt(v, 10))}
+                >
+                  <SelectTrigger className="h-8 text-xs w-[90px]">
+                    <SelectValue placeholder="Min score" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="3" className="text-xs">
+                      Min 3/10
+                    </SelectItem>
+                    <SelectItem value="5" className="text-xs">
+                      Min 5/10
+                    </SelectItem>
+                    <SelectItem value="7" className="text-xs">
+                      Min 7/10
+                    </SelectItem>
+                    <SelectItem value="8" className="text-xs">
+                      Min 8/10
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -652,6 +780,9 @@ export default function ThreatIntelFeedsPage() {
                 Showing {articles.length} article{articles.length !== 1 ? "s" : ""}
                 {selectedCategory !== "all" ? " in " + selectedCategory : ""}
                 {searchQuery ? ' matching "' + searchQuery + '"' : ""}
+                {aiFilterEnabled && (
+                  <span className="ml-1 text-purple-400">(AI filtered, min relevance: {relevanceThreshold}/10)</span>
+                )}
               </div>
               {articles.map((article) => (
                 <ArticleCard key={article.id} article={article} />
