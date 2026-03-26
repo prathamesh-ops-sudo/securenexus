@@ -132,7 +132,7 @@ export function getSession() {
  * This prevents redirect_uri mismatch behind reverse proxies (App Runner, CloudFront)
  * where passport may reconstruct the wrong origin from request headers.
  */
-function resolveCallbackUrl(callbackUrl: string): string {
+export function resolveCallbackUrl(callbackUrl: string): string {
   if (callbackUrl.startsWith("http://") || callbackUrl.startsWith("https://")) {
     return callbackUrl;
   }
@@ -146,6 +146,86 @@ function resolveCallbackUrl(callbackUrl: string): string {
     return resolved;
   }
   return callbackUrl;
+}
+
+/**
+ * Google OAuth verify callback. Extracted from setupAuth for testability.
+ * Parses Google profile, upserts user, checks disabled status, promotes super-admin.
+ */
+export async function googleVerifyCallback(
+  _accessToken: string,
+  _refreshToken: string,
+  profile: passport.Profile,
+  done: (err: Error | null, user?: Express.User | false, info?: { message: string }) => void,
+): Promise<void> {
+  try {
+    const email = profile.emails?.[0]?.value;
+    if (!email) return done(null, false, { message: "No email from Google" });
+    let user = await authStorage.getUserByEmail(email);
+    if (!user) {
+      user = await authStorage.upsertUser({
+        email,
+        firstName: profile.name?.givenName || null,
+        lastName: profile.name?.familyName || null,
+        profileImageUrl: profile.photos?.[0]?.value || null,
+      });
+    }
+    if (user.disabledAt) {
+      return done(null, false, { message: "Account is disabled" });
+    }
+    // Auto-promote super-admin on login (not on every deserialize)
+    if (!user.isSuperAdmin && user.email) {
+      const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
+      if (promoted) {
+        (user as SessionUser).isSuperAdmin = true;
+      }
+    }
+    return done(null, user);
+  } catch (err) {
+    return done(err as Error);
+  }
+}
+
+/**
+ * GitHub OAuth verify callback. Extracted from setupAuth for testability.
+ * Finds verified primary email, splits displayName, upserts user, checks disabled status.
+ */
+export async function githubVerifyCallback(
+  _accessToken: string,
+  _refreshToken: string,
+  profile: passport.Profile,
+  done: (err: Error | null, user?: Express.User | false, info?: { message: string }) => void,
+): Promise<void> {
+  try {
+    const emails: Array<{ value?: string; primary?: boolean; verified?: boolean }> = profile.emails || [];
+    const verified = emails.find((e) => e.primary && e.verified && e.value);
+    if (!verified?.value) {
+      return done(null, false, { message: "No verified primary email from GitHub" });
+    }
+    const email = verified.value;
+    let user = await authStorage.getUserByEmail(email);
+    if (!user) {
+      user = await authStorage.upsertUser({
+        email,
+        firstName: profile.displayName?.split(" ")[0] || profile.username || null,
+        lastName: profile.displayName?.split(" ").slice(1).join(" ") || null,
+        profileImageUrl: profile.photos?.[0]?.value || null,
+      });
+    }
+    if (user.disabledAt) {
+      return done(null, false, { message: "Account is disabled" });
+    }
+    // Auto-promote super-admin on login (not on every deserialize)
+    if (!user.isSuperAdmin && user.email) {
+      const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
+      if (promoted) {
+        (user as SessionUser).isSuperAdmin = true;
+      }
+    }
+    return done(null, user);
+  } catch (err) {
+    return done(err as Error);
+  }
 }
 
 export async function setupAuth(app: Express) {
@@ -191,39 +271,7 @@ export async function setupAuth(app: Express) {
           clientSecret: config.oauth.google.clientSecret,
           callbackURL: googleCallbackUrl,
         },
-        async (
-          _accessToken: string,
-          _refreshToken: string,
-          profile: passport.Profile,
-          done: (err: Error | null, user?: Express.User | false, info?: { message: string }) => void,
-        ) => {
-          try {
-            const email = profile.emails?.[0]?.value;
-            if (!email) return done(null, false, { message: "No email from Google" });
-            let user = await authStorage.getUserByEmail(email);
-            if (!user) {
-              user = await authStorage.upsertUser({
-                email,
-                firstName: profile.name?.givenName || null,
-                lastName: profile.name?.familyName || null,
-                profileImageUrl: profile.photos?.[0]?.value || null,
-              });
-            }
-            if (user.disabledAt) {
-              return done(null, false, { message: "Account is disabled" });
-            }
-            // Auto-promote super-admin on login (not on every deserialize)
-            if (!user.isSuperAdmin && user.email) {
-              const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
-              if (promoted) {
-                (user as SessionUser).isSuperAdmin = true;
-              }
-            }
-            return done(null, user);
-          } catch (err) {
-            return done(err as Error);
-          }
-        },
+        googleVerifyCallback,
       ),
     );
     logger.child("auth-session").info("Google OAuth strategy configured", { callbackURL: googleCallbackUrl });
@@ -239,43 +287,7 @@ export async function setupAuth(app: Express) {
           callbackURL: githubCallbackUrl,
           scope: ["user:email"],
         },
-        async (
-          _accessToken: string,
-          _refreshToken: string,
-          profile: passport.Profile,
-          done: (err: Error | null, user?: Express.User | false, info?: { message: string }) => void,
-        ) => {
-          try {
-            const emails: Array<{ value?: string; primary?: boolean; verified?: boolean }> = profile.emails || [];
-            const verified = emails.find((e) => e.primary && e.verified && e.value);
-            if (!verified?.value) {
-              return done(null, false, { message: "No verified primary email from GitHub" });
-            }
-            const email = verified.value;
-            let user = await authStorage.getUserByEmail(email);
-            if (!user) {
-              user = await authStorage.upsertUser({
-                email,
-                firstName: profile.displayName?.split(" ")[0] || profile.username || null,
-                lastName: profile.displayName?.split(" ").slice(1).join(" ") || null,
-                profileImageUrl: profile.photos?.[0]?.value || null,
-              });
-            }
-            if (user.disabledAt) {
-              return done(null, false, { message: "Account is disabled" });
-            }
-            // Auto-promote super-admin on login (not on every deserialize)
-            if (!user.isSuperAdmin && user.email) {
-              const promoted = await checkAndPromoteSuperAdmin(user.id, user.email);
-              if (promoted) {
-                (user as SessionUser).isSuperAdmin = true;
-              }
-            }
-            return done(null, user);
-          } catch (err) {
-            return done(err as Error);
-          }
-        },
+        githubVerifyCallback,
       ),
     );
     logger.child("auth-session").info("GitHub OAuth strategy configured", { callbackURL: githubCallbackUrl });
