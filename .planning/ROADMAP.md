@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Alert Pipeline Hardening** - Temporal deduplication, suppression rules, dashboard metrics, and stub elimination (completed 2026-03-25)
 - [x] **Phase 7: Automated Response Safety** - Zod validation, dry-run mode, rollback API, audit trail, and dispatcher tests
 - [x] **Phase 8: Connector Health & Resilience** - Health check loop, auto-restart, circuit breaker, status UI, and connector tests
-- [ ] **Phase 9: API Resilience & Performance** - Pool circuit breaker, AI degradation, async processing, caching, token budgets, billing fix
+- [x] **Phase 9: API Resilience & Performance** - Pool circuit breaker, AI degradation, async processing, caching, token budgets, billing fix
 - [ ] **Phase 10: Test Coverage & Quality Gates** - OAuth tests, RBAC boundary tests, billing tests, ESLint pre-commit hooks
 
 ## Phase Details
@@ -184,9 +184,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 10-01: TBD
-- [ ] 10-02: TBD
-- [ ] 10-03: TBD
+- [ ] 10-01-PLAN.md -- OAuth flow tests + exhaustive RBAC boundary tests (TEST-01, TEST-03)
+- [ ] 10-02-PLAN.md -- Billing/metering tests + ESLint quality gates (TEST-04, QUAL-03)
+- [ ] 10-03-PLAN.md -- Rate limit consistency audit + org rate limit unit tests (API-03)
 
 ## Progress
 
@@ -203,5 +203,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 6. Alert Pipeline Hardening | 0/3 | Complete | 2026-03-25 |
 | 7. Automated Response Safety | 4/4 | Complete | 2026-03-26 |
 | 8. Connector Health & Resilience | 2/2 | Complete | 2026-03-26 |
-| 9. API Resilience & Performance | 0/3 | Not started | - |
+| 9. API Resilience & Performance | 3/3 | Complete | 2026-03-26 |
 | 10. Test Coverage & Quality Gates | 0/3 | Not started | - |
