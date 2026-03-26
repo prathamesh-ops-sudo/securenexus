@@ -18,6 +18,8 @@ import { parsePaginationParams } from "../db-performance";
 import { cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { sendEmail } from "../email-service";
+import { getConnectorHealthStatus } from "../connector-health-loop";
+import { getAllCircuitBreakerStates, getCircuitBreakerState, resetConnectorCircuitBreaker } from "../connector-circuit-breaker";
 
 export function registerConnectorsRoutes(app: Express): void {
   // Connector Engine Routes
@@ -156,6 +158,104 @@ export function registerConnectorsRoutes(app: Express): void {
       } catch (error: any) {
         logger.child("routes").error("Dead letter alert check failed", { error: String(error) });
         res.status(500).json({ message: "Failed to check dead letter alerts" });
+      }
+    },
+  );
+
+  // ============================
+  // Connector Health Status (aggregated from in-memory health loop + circuit breakers)
+  // ============================
+  app.get("/api/connectors/health-status", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      if (!orgId) {
+        return res.status(401).json({ message: "Organization context required" });
+      }
+
+      // Fetch all connectors for the user's org
+      const { items: connectors } = await storage.getConnectorsPaginated({ orgId, offset: 0, limit: 1000 });
+
+      const healthStates = getConnectorHealthStatus();
+      const circuitBreakerStates = getAllCircuitBreakerStates();
+
+      const results = connectors.map((connector) => {
+        const health = healthStates.get(connector.id);
+        const cb = circuitBreakerStates.get(connector.id);
+
+        return {
+          connectorId: connector.id,
+          connectorName: connector.name,
+          connectorType: connector.type,
+          health: health
+            ? {
+                status: health.status,
+                consecutiveFailures: health.consecutiveFailures,
+                lastCheckAt: health.lastCheckAt || null,
+                lastSuccessAt: health.lastSuccessAt || null,
+                latencyMs: health.latencyMs,
+                restartCount: health.restartCount,
+                nextRestartAt: health.nextRestartAt || null,
+              }
+            : null,
+          circuitBreaker: cb
+            ? {
+                state: cb.state,
+                failures: cb.failures,
+                openUntil: cb.openUntil || null,
+              }
+            : null,
+        };
+      });
+
+      res.json(results);
+    } catch (error: any) {
+      logger.child("routes").error("Failed to fetch connector health status", { error: String(error) });
+      res.status(500).json({ message: "Failed to fetch connector health status" });
+    }
+  });
+
+  // Reset circuit breaker for a specific connector
+  app.post(
+    "/api/connectors/:id/circuit-breaker/reset",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const connector = await storage.getConnector(p(req.params.id));
+        if (!connector || connector.orgId !== orgId) {
+          return res.status(404).json({ message: "Connector not found" });
+        }
+
+        resetConnectorCircuitBreaker(connector.id);
+        const newState = getCircuitBreakerState(connector.id);
+
+        await storage.createAuditLog({
+          orgId,
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Admin",
+          action: "circuit_breaker_reset",
+          resourceType: "connector",
+          resourceId: connector.id,
+          details: { connectorName: connector.name, connectorType: connector.type },
+        });
+
+        res.json({
+          connectorId: connector.id,
+          circuitBreaker: {
+            state: newState.state,
+            failures: newState.failures,
+            openUntil: newState.openUntil || null,
+          },
+        });
+      } catch (error: any) {
+        logger.child("routes").error("Failed to reset circuit breaker", { error: String(error) });
+        res.status(500).json({ message: "Failed to reset circuit breaker" });
       }
     },
   );

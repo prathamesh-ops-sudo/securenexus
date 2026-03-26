@@ -32,6 +32,7 @@ import { startStaleSlotReaper, stopStaleSlotReaper } from "./distributed-concurr
 import { startBudgetResetScheduler, stopBudgetResetScheduler } from "./ai/budget";
 import { bootstrapSuperAdmin } from "./bootstrap-super-admin";
 import { errorTrackingMiddleware, trackError } from "./error-tracker";
+import { startConnectorHealthLoop, stopConnectorHealthLoop } from "./connector-health-loop";
 
 const startedAt = Date.now();
 
@@ -218,7 +219,9 @@ export function log(message: string, source = "express") {
       startDrillScheduler();
       startStaleSlotReaper();
       startBudgetResetScheduler();
+      startConnectorHealthLoop();
       registerShutdownHandler("job-worker", stopJobWorker);
+      registerShutdownHandler("connector-health-loop", async () => stopConnectorHealthLoop());
       registerShutdownHandler("dr-drill-scheduler", async () => stopDrillScheduler());
       registerShutdownHandler("stale-slot-reaper", stopStaleSlotReaper);
       registerShutdownHandler("budget-reset-scheduler", stopBudgetResetScheduler);
