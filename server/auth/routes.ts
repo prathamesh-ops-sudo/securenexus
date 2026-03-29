@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import passport from "passport";
+import { randomBytes } from "crypto";
 import { authStorage } from "./storage";
 import { isAuthenticated, hashPassword, invalidateDeserializeCache, type SessionUser } from "./session";
 import { checkAndPromoteSuperAdmin } from "../bootstrap-super-admin";
@@ -18,7 +19,10 @@ import {
 } from "../api-response";
 import { logger } from "../logger";
 import { sendEmail } from "../email-service";
-import { welcomeEmail } from "../email-templates";
+import { welcomeEmail, emailVerificationEmail } from "../email-templates";
+import { users } from "@shared/models/auth";
+import { db } from "../db";
+import { eq } from "drizzle-orm";
 import {
   loginRateLimitPre,
   recordFailedLogin,
@@ -307,6 +311,7 @@ export function registerAuthRoutes(app: Express): void {
         );
       }
 
+      const verificationToken = randomBytes(32).toString("hex");
       const hashedPw = await hashPassword(password);
       const user = await authStorage.upsertUser({
         email,
@@ -314,33 +319,153 @@ export function registerAuthRoutes(app: Express): void {
         firstName: firstName || null,
         lastName: lastName || null,
         passwordChangedAt: new Date(),
+        emailVerified: false,
+        emailVerificationToken: verificationToken,
+        emailVerificationSentAt: new Date(),
       });
 
-      req.login(user, async (err) => {
-        if (err) return next(err);
-        await ensureOrgMembership(user);
-
-        const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
-        const emailContent = welcomeEmail({
-          firstName: firstName || undefined,
-          email,
-          loginUrl: appBaseUrl,
-        });
-        sendEmail({
-          to: email,
-          subject: emailContent.subject,
-          html: emailContent.html,
-          text: emailContent.text,
-        }).catch((emailErr) => {
-          logger.child("auth").error("Failed to send welcome email", { error: String(emailErr), email });
-        });
-
-        const { passwordHash: _, ...safeUser } = user;
-        return reply(res, safeUser, {}, 201);
+      // Send verification email instead of auto-login
+      const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
+      const verifyUrl = `${appBaseUrl}/verify-email?token=${verificationToken}`;
+      const emailContent = emailVerificationEmail({
+        firstName: firstName || undefined,
+        email,
+        verifyUrl,
       });
+      sendEmail({
+        to: email,
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
+      }).catch((emailErr) => {
+        logger.child("auth").error("Failed to send verification email", { error: String(emailErr), email });
+      });
+
+      const { passwordHash: _, ...safeUser } = user;
+      return reply(res, { ...safeUser, emailVerificationRequired: true }, {}, 201);
     } catch (error) {
       logger.child("routes").error("Error registering user", { error: String(error) });
       return replyInternal(res, "Registration failed");
+    }
+  });
+
+  // ─── Email verification endpoint ───
+  app.post("/api/auth/verify-email", async (req, res) => {
+    try {
+      const { token } = req.body;
+      if (!token || typeof token !== "string") {
+        return replyValidation(res, [{ message: "Verification token is required", field: "token" }]);
+      }
+
+      const [user] = await db.select().from(users).where(eq(users.emailVerificationToken, token)).limit(1);
+
+      if (!user) {
+        return replyNotFound(res, "Invalid or expired verification token");
+      }
+
+      // Check token expiry (24 hours from when it was sent)
+      if (user.emailVerificationSentAt) {
+        const expiresAt = new Date(user.emailVerificationSentAt.getTime() + 24 * 60 * 60 * 1000);
+        if (new Date() > expiresAt) {
+          return replyValidation(res, [
+            { message: "Verification link has expired. Please request a new one.", field: "token" },
+          ]);
+        }
+      }
+
+      if (user.emailVerified) {
+        return reply(res, { message: "Email already verified", alreadyVerified: true });
+      }
+
+      // Mark email as verified and clear the token
+      await db
+        .update(users)
+        .set({
+          emailVerified: true,
+          emailVerificationToken: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, user.id));
+
+      // Send welcome email now that the email is verified
+      const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
+      const welcomeContent = welcomeEmail({
+        firstName: user.firstName || undefined,
+        email: user.email!,
+        loginUrl: appBaseUrl,
+      });
+      sendEmail({
+        to: user.email!,
+        subject: welcomeContent.subject,
+        html: welcomeContent.html,
+        text: welcomeContent.text,
+      }).catch((emailErr) => {
+        logger.child("auth").error("Failed to send welcome email after verification", {
+          error: String(emailErr),
+          email: user.email,
+        });
+      });
+
+      logger.child("auth").info("Email verified successfully", { userId: user.id, email: user.email });
+      return reply(res, { message: "Email verified successfully", verified: true });
+    } catch (error) {
+      logger.child("auth").error("Email verification failed", { error: String(error) });
+      return replyInternal(res, "Email verification failed");
+    }
+  });
+
+  // ─── Resend verification email ───
+  app.post("/api/auth/resend-verification", registerRateLimit, async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email || typeof email !== "string") {
+        return replyValidation(res, [{ message: "Email is required", field: "email" }]);
+      }
+
+      const user = await authStorage.getUserByEmail(email);
+      if (!user) {
+        // Don't reveal whether account exists
+        return reply(res, { message: "If an account exists with that email, a verification link has been sent." });
+      }
+
+      if (user.emailVerified) {
+        return reply(res, { message: "Email is already verified. You can log in." });
+      }
+
+      // Generate new token
+      const newToken = randomBytes(32).toString("hex");
+      await db
+        .update(users)
+        .set({
+          emailVerificationToken: newToken,
+          emailVerificationSentAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, user.id));
+
+      const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
+      const verifyUrl = `${appBaseUrl}/verify-email?token=${newToken}`;
+      const emailContent = emailVerificationEmail({
+        firstName: user.firstName || undefined,
+        email: user.email!,
+        verifyUrl,
+      });
+      sendEmail({
+        to: user.email!,
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
+      }).catch((emailErr) => {
+        logger.child("auth").error("Failed to resend verification email", {
+          error: String(emailErr),
+          email: user.email,
+        });
+      });
+
+      return reply(res, { message: "If an account exists with that email, a verification link has been sent." });
+    } catch (error) {
+      logger.child("auth").error("Resend verification failed", { error: String(error) });
+      return replyInternal(res, "Failed to resend verification email");
     }
   });
 
@@ -374,6 +499,15 @@ export function registerAuthRoutes(app: Express): void {
           }
           return replyUnauthenticated(res, info?.message || "Invalid credentials");
         }
+        // Block login for users who haven't verified their email
+        if (!user.emailVerified) {
+          return replyForbidden(
+            res,
+            "Please verify your email address before logging in. Check your inbox for the verification link.",
+            "EMAIL_NOT_VERIFIED",
+          );
+        }
+
         clearLoginBuckets(user.email!);
         clearLockout(user.email!).catch((err) =>
           log.warn("Failed to clear lockout", { error: String(err), email: user.email }),

@@ -133,6 +133,35 @@ export function welcomeEmail(params: { firstName?: string; email: string; loginU
   return { subject: "Welcome to SecureNexus", html, text };
 }
 
+export function emailVerificationEmail(params: { firstName?: string; email: string; verifyUrl: string }): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const greeting = params.firstName ? `Hi ${esc(params.firstName)},` : "Hi,";
+
+  const html = baseLayout(`
+    <h1 style="margin:0 0 16px;font-size:22px;color:${TEXT_COLOR};">Verify your email address</h1>
+    <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
+      ${greeting}
+    </p>
+    <p style="margin:0 0 16px;font-size:15px;color:${TEXT_COLOR};line-height:1.6;">
+      Thanks for creating a SecureNexus account. Please verify your email address to activate your account and get started.
+    </p>
+    ${button("Verify Email Address", params.verifyUrl)}
+    <p style="margin:0 0 8px;font-size:13px;color:${MUTED_COLOR};">
+      This link expires in 24 hours. If you didn't create this account, you can safely ignore this email.
+    </p>
+    <p style="margin:0;font-size:13px;color:${MUTED_COLOR};">
+      Account: ${esc(params.email)}
+    </p>
+  `);
+
+  const text = `${greeting}\n\nVerify your email address to activate your SecureNexus account.\n\nVerify: ${params.verifyUrl}\n\nThis link expires in 24 hours. If you didn't create this account, ignore this email.\n\nAccount: ${params.email}`;
+
+  return { subject: "Verify your SecureNexus email address", html, text };
+}
+
 export function passwordResetEmail(params: { firstName?: string; resetUrl: string; expiresInMinutes: number }): {
   subject: string;
   html: string;

@@ -85,26 +85,31 @@ const STEP_CONFIG = [
 function StepProgressBar({
   currentStep,
   completedSteps,
+  skippedSteps,
   totalSteps,
 }: {
   currentStep: number;
   completedSteps: string[];
+  skippedSteps: string[];
   totalSteps: number;
 }) {
-  const percent = totalSteps > 0 ? (completedSteps.length / totalSteps) * 100 : 0;
+  // Only count steps that were genuinely completed (not skipped)
+  const actuallyCompleted = completedSteps.filter((s) => !skippedSteps.includes(s));
+  const percent = totalSteps > 0 ? (actuallyCompleted.length / totalSteps) * 100 : 0;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between text-sm">
         <span className="text-muted-foreground">Setup Progress</span>
         <span className="font-medium">
-          {completedSteps.length} of {totalSteps} steps
+          {actuallyCompleted.length} of {totalSteps} steps
         </span>
       </div>
       <Progress value={percent} className="h-2" />
       <div className="flex items-center gap-1">
         {STEP_CONFIG.map((step, index) => {
-          const isCompleted = completedSteps.includes(step.key);
+          const isCompleted = completedSteps.includes(step.key) && !skippedSteps.includes(step.key);
+          const isSkipped = skippedSteps.includes(step.key);
           const isCurrent = index === currentStep;
           const Icon = step.icon;
 
@@ -115,12 +120,20 @@ function StepProgressBar({
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-xs transition-all ${
                     isCompleted
                       ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30"
-                      : isCurrent
-                        ? "bg-primary/20 text-primary border border-primary/30 ring-2 ring-primary/20"
-                        : "bg-muted/50 text-muted-foreground border border-border/50"
+                      : isSkipped
+                        ? "bg-amber-500/20 text-amber-500 border border-amber-500/30"
+                        : isCurrent
+                          ? "bg-primary/20 text-primary border border-primary/30 ring-2 ring-primary/20"
+                          : "bg-muted/50 text-muted-foreground border border-border/50"
                   }`}
                 >
-                  {isCompleted ? <Check className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5" />}
+                  {isCompleted ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : isSkipped ? (
+                    <SkipForward className="h-3.5 w-3.5" />
+                  ) : (
+                    <Icon className="h-3.5 w-3.5" />
+                  )}
                 </div>
                 <span
                   className={`text-[10px] mt-1 text-center leading-tight ${isCurrent ? "text-primary font-medium" : "text-muted-foreground"}`}
@@ -801,6 +814,7 @@ export default function OnboardingWizardPage() {
             <StepProgressBar
               currentStep={activeStep}
               completedSteps={status?.completedSteps ?? []}
+              skippedSteps={status?.skippedSteps ?? []}
               totalSteps={status?.totalSteps ?? STEP_CONFIG.length}
             />
           </CardContent>

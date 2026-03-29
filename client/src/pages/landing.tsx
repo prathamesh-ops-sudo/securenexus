@@ -248,6 +248,7 @@ const integrations = [
 export default function LandingPage() {
   const { login, register, loginError, registerError, isLoggingIn, isRegistering } = useAuth();
   const [authMode, setAuthMode] = useState<"login" | "register" | null>(null);
+  const [emailVerificationSent, setEmailVerificationSent] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -345,7 +346,10 @@ export default function LandingPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (authMode === "register") {
-      await register({ email, password, firstName, lastName });
+      const result = await register({ email, password, firstName, lastName });
+      if (result.emailVerificationRequired) {
+        setEmailVerificationSent(true);
+      }
     } else {
       await login({ email, password });
     }
@@ -409,207 +413,236 @@ export default function LandingPage() {
                 </div>
                 <span className="font-semibold text-xl tracking-tight font-display">SecureNexus</span>
               </div>
-              <h2 className="text-2xl font-bold mb-2 font-display tracking-[-0.02em]">
-                {authMode === "register" ? "Start your free trial" : "Welcome back"}
-              </h2>
-              <p className="text-sm text-muted-foreground mb-6">
-                {authMode === "register" ? "14 days free. No credit card required." : "Log in to your account"}
-              </p>
-              {authError && (
-                <div className="mb-4 p-3 rounded-lg border border-destructive/30 bg-destructive/10 text-destructive text-sm">
-                  {authError.message}
-                </div>
-              )}
-              <div className="space-y-3 mb-6">
-                {oauthError && (
-                  <div className="mb-2 p-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs">
-                    {oauthError}
+              {emailVerificationSent ? (
+                <>
+                  <h2 className="text-2xl font-bold mb-2 font-display tracking-[-0.02em]">Check your email</h2>
+                  <div className="mb-4 p-4 rounded-lg border border-primary/30 bg-primary/10 text-sm space-y-2">
+                    <p className="font-medium">
+                      We sent a verification link to <strong>{email}</strong>.
+                    </p>
+                    <p className="text-muted-foreground">
+                      Click the link in the email to activate your account. The link expires in 24 hours.
+                    </p>
                   </div>
-                )}
-                <button
-                  className="w-full h-10 flex items-center justify-center gap-2 text-sm font-medium rounded-lg bg-white/5 hover:bg-white/10 border border-border transition-colors duration-150"
-                  disabled={oauthLoading === "google"}
-                  onClick={() => handleOAuth("google")}
-                >
-                  <FaGoogle className="h-4 w-4 text-[#4285F4]" />
-                  {oauthLoading === "google" ? "Connecting..." : "Continue with Google"}
-                </button>
-                <button
-                  className="w-full h-10 flex items-center justify-center gap-2 text-sm font-medium rounded-lg bg-white/5 hover:bg-white/10 border border-border transition-colors duration-150"
-                  disabled={oauthLoading === "github"}
-                  onClick={() => handleOAuth("github")}
-                >
-                  <FaGithub className="h-4 w-4" />
-                  {oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
-                </button>
-                <div className="relative my-3">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-border" />
-                  </div>
-                  <div className="relative flex justify-center text-xs">
-                    <span className="bg-card px-3 text-muted-foreground">or continue with email</span>
-                  </div>
-                </div>
-              </div>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {authMode === "register" && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label
-                        htmlFor="firstName"
-                        className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-                      >
-                        First name
-                      </Label>
-                      <Input
-                        id="firstName"
-                        value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
-                        placeholder="John"
-                        className="border border-border rounded-lg h-10 focus:border-blue-500 dark:focus:border-blue-400"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label
-                        htmlFor="lastName"
-                        className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-                      >
-                        Last name
-                      </Label>
-                      <Input
-                        id="lastName"
-                        value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
-                        placeholder="Doe"
-                        className="border border-border rounded-lg h-10 focus:border-blue-500 dark:focus:border-blue-400"
-                      />
-                    </div>
-                  </div>
-                )}
-                <div className="space-y-1.5">
-                  <Label htmlFor="email" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Email
-                  </Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@company.com"
-                    required
-                    className="border border-border rounded-lg h-10 focus:border-blue-500 dark:focus:border-blue-400"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label
-                      htmlFor="password"
-                      className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-                    >
-                      Password
-                    </Label>
-                    {authMode === "login" && (
-                      <a
-                        href="/forgot-password"
-                        className="text-xs font-medium text-blue-500 hover:text-blue-400 hover:underline transition-colors"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setAuthMode(null);
-                          window.location.href = "/forgot-password";
-                        }}
-                      >
-                        Forgot password?
-                      </a>
-                    )}
-                  </div>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Min 6 characters"
-                    required
-                    minLength={6}
-                    className="border border-border rounded-lg h-10 focus:border-blue-500 dark:focus:border-blue-400"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full h-11 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-[0_1px_2px_rgba(0,0,0,0.1),0_4px_12px_rgba(37,99,235,0.25)] hover:shadow-[0_1px_2px_rgba(0,0,0,0.1),0_8px_20px_rgba(37,99,235,0.3)] transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? "Please wait..." : authMode === "register" ? "Start Free Trial" : "Log In"}
-                </button>
-              </form>
-              <p className="text-sm text-center text-muted-foreground mt-4">
-                {authMode === "register" ? (
-                  <>
-                    Already have an account?{" "}
-                    <button
-                      onClick={() => setAuthMode("login")}
-                      className="text-blue-500 font-semibold hover:underline"
-                    >
-                      Log in
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    Don&apos;t have an account?{" "}
-                    <button
-                      onClick={() => setAuthMode("register")}
-                      className="text-blue-500 font-semibold hover:underline"
-                    >
-                      Sign up
-                    </button>
-                  </>
-                )}
-              </p>
-              {authMode === "login" && !ssoMode && (
-                <div className="mt-3 pt-3 border-t border-border">
                   <button
-                    onClick={() => setSsoMode(true)}
-                    className="w-full text-sm font-medium text-muted-foreground hover:text-blue-500 transition-colors duration-150 flex items-center justify-center gap-1.5"
+                    type="button"
+                    className="w-full h-10 text-sm font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                    onClick={() => {
+                      setEmailVerificationSent(false);
+                      setAuthMode("login");
+                    }}
                   >
-                    <Lock className="h-3.5 w-3.5" />
-                    Sign in with SSO
+                    Go to Login
                   </button>
-                </div>
-              )}
-              {ssoMode && (
-                <div className="mt-3 pt-3 border-t border-border">
-                  <form onSubmit={handleSsoLogin} className="space-y-2">
-                    <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Organization Slug
-                    </Label>
-                    <Input
-                      value={ssoSlug}
-                      onChange={(e) => setSsoSlug(e.target.value)}
-                      placeholder="your-org-slug"
-                      required
-                      className="border border-border rounded-lg h-10 focus:border-blue-500 dark:focus:border-blue-400"
-                    />
-                    {ssoError && <p className="text-xs text-red-500">{ssoError}</p>}
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSsoMode(false);
-                          setSsoError(null);
-                        }}
-                        className="flex-1 h-9 rounded-lg text-sm font-medium border border-border hover:bg-white/5 transition-colors duration-150"
+                </>
+              ) : (
+                <>
+                  <h2 className="text-2xl font-bold mb-2 font-display tracking-[-0.02em]">
+                    {authMode === "register" ? "Start your free trial" : "Welcome back"}
+                  </h2>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    {authMode === "register" ? "14 days free. No credit card required." : "Log in to your account"}
+                  </p>
+                  {authError && (
+                    <div className="mb-4 p-3 rounded-lg border border-destructive/30 bg-destructive/10 text-destructive text-sm">
+                      {authError.message}
+                    </div>
+                  )}
+                  <div className="space-y-3 mb-6">
+                    {oauthError && (
+                      <div className="mb-2 p-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs">
+                        {oauthError}
+                      </div>
+                    )}
+                    <button
+                      className="w-full h-10 flex items-center justify-center gap-2 text-sm font-medium rounded-lg bg-white/5 hover:bg-white/10 border border-border transition-colors duration-150"
+                      disabled={oauthLoading === "google"}
+                      onClick={() => handleOAuth("google")}
+                    >
+                      <FaGoogle className="h-4 w-4 text-[#4285F4]" />
+                      {oauthLoading === "google" ? "Connecting..." : "Continue with Google"}
+                    </button>
+                    <button
+                      className="w-full h-10 flex items-center justify-center gap-2 text-sm font-medium rounded-lg bg-white/5 hover:bg-white/10 border border-border transition-colors duration-150"
+                      disabled={oauthLoading === "github"}
+                      onClick={() => handleOAuth("github")}
+                    >
+                      <FaGithub className="h-4 w-4" />
+                      {oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
+                    </button>
+                    <div className="relative my-3">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-border" />
+                      </div>
+                      <div className="relative flex justify-center text-xs">
+                        <span className="bg-card px-3 text-muted-foreground">or continue with email</span>
+                      </div>
+                    </div>
+                  </div>
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    {authMode === "register" && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label
+                            htmlFor="firstName"
+                            className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+                          >
+                            First name
+                          </Label>
+                          <Input
+                            id="firstName"
+                            value={firstName}
+                            onChange={(e) => setFirstName(e.target.value)}
+                            placeholder="John"
+                            className="border border-border rounded-lg h-10 focus:border-blue-500 dark:focus:border-blue-400"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label
+                            htmlFor="lastName"
+                            className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+                          >
+                            Last name
+                          </Label>
+                          <Input
+                            id="lastName"
+                            value={lastName}
+                            onChange={(e) => setLastName(e.target.value)}
+                            placeholder="Doe"
+                            className="border border-border rounded-lg h-10 focus:border-blue-500 dark:focus:border-blue-400"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
+                      <Label
+                        htmlFor="email"
+                        className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
                       >
-                        Back
-                      </button>
+                        Email
+                      </Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="you@company.com"
+                        required
+                        className="border border-border rounded-lg h-10 focus:border-blue-500 dark:focus:border-blue-400"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label
+                          htmlFor="password"
+                          className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+                        >
+                          Password
+                        </Label>
+                        {authMode === "login" && (
+                          <a
+                            href="/forgot-password"
+                            className="text-xs font-medium text-blue-500 hover:text-blue-400 hover:underline transition-colors"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setAuthMode(null);
+                              window.location.href = "/forgot-password";
+                            }}
+                          >
+                            Forgot password?
+                          </a>
+                        )}
+                      </div>
+                      <Input
+                        id="password"
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Min 6 characters"
+                        required
+                        minLength={6}
+                        className="border border-border rounded-lg h-10 focus:border-blue-500 dark:focus:border-blue-400"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="w-full h-11 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-[0_1px_2px_rgba(0,0,0,0.1),0_4px_12px_rgba(37,99,235,0.25)] hover:shadow-[0_1px_2px_rgba(0,0,0,0.1),0_8px_20px_rgba(37,99,235,0.3)] transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? "Please wait..." : authMode === "register" ? "Start Free Trial" : "Log In"}
+                    </button>
+                  </form>
+                  <p className="text-sm text-center text-muted-foreground mt-4">
+                    {authMode === "register" ? (
+                      <>
+                        Already have an account?{" "}
+                        <button
+                          onClick={() => setAuthMode("login")}
+                          className="text-blue-500 font-semibold hover:underline"
+                        >
+                          Log in
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        Don&apos;t have an account?{" "}
+                        <button
+                          onClick={() => setAuthMode("register")}
+                          className="text-blue-500 font-semibold hover:underline"
+                        >
+                          Sign up
+                        </button>
+                      </>
+                    )}
+                  </p>
+                  {authMode === "login" && !ssoMode && (
+                    <div className="mt-3 pt-3 border-t border-border">
                       <button
-                        type="submit"
-                        disabled={ssoLoading || !ssoSlug.trim()}
-                        className="flex-1 h-9 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none"
+                        onClick={() => setSsoMode(true)}
+                        className="w-full text-sm font-medium text-muted-foreground hover:text-blue-500 transition-colors duration-150 flex items-center justify-center gap-1.5"
                       >
-                        {ssoLoading ? "Checking..." : "Continue with SSO"}
+                        <Lock className="h-3.5 w-3.5" />
+                        Sign in with SSO
                       </button>
                     </div>
-                  </form>
-                </div>
+                  )}
+                  {ssoMode && (
+                    <div className="mt-3 pt-3 border-t border-border">
+                      <form onSubmit={handleSsoLogin} className="space-y-2">
+                        <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Organization Slug
+                        </Label>
+                        <Input
+                          value={ssoSlug}
+                          onChange={(e) => setSsoSlug(e.target.value)}
+                          placeholder="your-org-slug"
+                          required
+                          className="border border-border rounded-lg h-10 focus:border-blue-500 dark:focus:border-blue-400"
+                        />
+                        {ssoError && <p className="text-xs text-red-500">{ssoError}</p>}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSsoMode(false);
+                              setSsoError(null);
+                            }}
+                            className="flex-1 h-9 rounded-lg text-sm font-medium border border-border hover:bg-white/5 transition-colors duration-150"
+                          >
+                            Back
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={ssoLoading || !ssoSlug.trim()}
+                            className="flex-1 h-9 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none"
+                          >
+                            {ssoLoading ? "Checking..." : "Continue with SSO"}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

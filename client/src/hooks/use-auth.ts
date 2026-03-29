@@ -34,12 +34,17 @@ async function loginFn(data: { email: string; password: string }): Promise<User>
   return body.data;
 }
 
+export interface RegisterResult {
+  user: User;
+  emailVerificationRequired?: boolean;
+}
+
 async function registerFn(data: {
   email: string;
   password: string;
   firstName?: string;
   lastName?: string;
-}): Promise<User> {
+}): Promise<RegisterResult> {
   const response = await fetch("/api/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -51,7 +56,10 @@ async function registerFn(data: {
     throw new Error(extractApiError(err, "Registration failed"));
   }
   const body = await response.json();
-  return body.data;
+  return {
+    user: body.data,
+    emailVerificationRequired: body.data?.emailVerificationRequired ?? false,
+  };
 }
 
 async function logoutFn(): Promise<void> {
@@ -77,8 +85,12 @@ export function useAuth() {
 
   const registerMutation = useMutation({
     mutationFn: registerFn,
-    onSuccess: (user) => {
-      queryClient.setQueryData(["/api/auth/user"], user);
+    onSuccess: (result) => {
+      // Don't set user data if email verification is required —
+      // the user is NOT logged in until they verify.
+      if (!result.emailVerificationRequired) {
+        queryClient.setQueryData(["/api/auth/user"], result.user);
+      }
     },
   });
 

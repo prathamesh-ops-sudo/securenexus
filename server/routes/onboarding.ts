@@ -480,7 +480,8 @@ export function registerOnboardingRoutes(app: Express): void {
 
       const skippedSteps = [...existingSkipped];
       if (!skippedSteps.includes(stepName)) skippedSteps.push(stepName);
-      if (!completedSteps.includes(stepName)) completedSteps.push(stepName);
+      // Do NOT add skipped steps to completedSteps — they are tracked
+      // separately so the progress bar only counts genuinely completed work.
 
       const nextStep = Math.min(stepIndex + 1, WIZARD_STEPS.length - 1);
 

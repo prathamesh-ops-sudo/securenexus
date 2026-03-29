@@ -60,6 +60,7 @@ const BillingPage = lazy(() => import("@/pages/billing"));
 const ForgotPasswordPage = lazy(() => import("@/pages/forgot-password"));
 const ResetPasswordPage = lazy(() => import("@/pages/reset-password"));
 const AcceptInvitationPage = lazy(() => import("@/pages/accept-invitation"));
+const VerifyEmailPage = lazy(() => import("@/pages/verify-email"));
 const PlatformAdminPage = lazy(() => import("@/pages/platform-admin"));
 const MsspDashboardPage = lazy(() => import("@/pages/mssp-dashboard"));
 const DevPortalPage = lazy(() => import("@/pages/dev-portal"));
@@ -462,6 +463,7 @@ function AppContent() {
           <Route path="/forgot-password" component={ForgotPasswordPage} />
           <Route path="/reset-password" component={ResetPasswordPage} />
           <Route path="/accept-invitation" component={AcceptInvitationPage} />
+          <Route path="/verify-email" component={VerifyEmailPage} />
           <Route path="/product/agentic-soc" component={AgenticSocPage} />
           <Route path="/product/ai-soc-analyst" component={AiSocAnalystPage} />
           <Route path="/blog/automated-secops" component={AutomatedSecopsPage} />
