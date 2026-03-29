@@ -22,6 +22,7 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let collectorManager: CollectorManager | null = null;
 let apiClient: ApiClient | null = null;
+let isQuitting = false;
 
 // Prevent multiple instances
 const gotLock = app.requestSingleInstanceLock();
@@ -160,8 +161,7 @@ function updateTrayMenu(status: "online" | "offline" | "error" | "connecting"): 
     {
       label: "Quit ATS Sensor",
       click: () => {
-        stopAgent();
-        app.exit(0);
+        app.quit();
       },
     },
   ]);
@@ -380,8 +380,11 @@ app.on("activate", () => {
   }
 });
 
-app.on("before-quit", async () => {
-  await stopAgent();
+app.on("before-quit", (event) => {
+  if (isQuitting) return;
+  event.preventDefault();
+  isQuitting = true;
+  stopAgent().finally(() => app.quit());
 });
 
 // Handle uncaught errors
