@@ -548,7 +548,7 @@ function useRecentPages(currentPath: string) {
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
-  const { currentOrg, currentOrgId, memberships, switchOrg, currentRole } = useOrgContext();
+  const { currentOrg, currentOrgId, memberships, switchOrg, currentRole, isLoading: orgLoading } = useOrgContext();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const recentPages = useRecentPages(location);
   const [enabledModules, setEnabledModules] = useState<Set<string>>(loadEnabledModules);
@@ -617,8 +617,14 @@ export function AppSidebar() {
     setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
   };
 
-  const userRole = currentRole || "analyst";
-  const roleLabel = userRole === "read_only" ? "Read-only" : userRole[0].toUpperCase() + userRole.slice(1);
+  // Don't default to "analyst" while org context is still loading — this causes
+  // a visible flicker ("Analyst" → "Owner") once the real role arrives.
+  const userRole = orgLoading ? null : currentRole || "analyst";
+  const roleLabel = !userRole
+    ? ""
+    : userRole === "read_only"
+      ? "Read-only"
+      : userRole[0].toUpperCase() + userRole.slice(1);
 
   const initials = user ? `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() || "U" : "U";
 

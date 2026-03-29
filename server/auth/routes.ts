@@ -255,93 +255,14 @@ export function registerAuthRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/register", registerRateLimit, async (req, res, next) => {
-    try {
-      const { email, password, firstName, lastName } = req.body;
-      if (!email || !password) {
-        return replyValidation(res, [
-          { message: "Email and password are required", field: !email ? "email" : "password" },
-        ]);
-      }
-
-      const existing = await authStorage.getUserByEmail(email);
-      if (existing) {
-        await hashPassword("timing-safe-dummy-password");
-        return replyConflict(res, "An account with this email already exists");
-      }
-
-      if (isConsumerEmailDomain(email)) {
-        const invited = await hasActiveInvitation(email);
-        if (!invited) {
-          logger.child("auth").warn("Registration blocked: consumer email domain without invitation", {
-            email,
-            domain: email.split("@")[1]?.toLowerCase(),
-          });
-          return replyValidation(res, [
-            {
-              message:
-                "Please use your corporate email address to register. Consumer email domains (gmail, yahoo, hotmail, etc.) are not permitted unless you have been invited by an organization admin.",
-              field: "email",
-            },
-          ]);
-        }
-      }
-
-      const pendingInvitations = await storage.getPendingInvitationsByEmail(email.toLowerCase()).catch(() => []);
-      let registrationOrgId: string | null = null;
-      if (pendingInvitations.length > 0) {
-        registrationOrgId = pendingInvitations[0].orgId;
-      } else {
-        const emailDomain = email.split("@")[1]?.toLowerCase();
-        if (emailDomain) {
-          const domainMatch = await storage.getVerifiedAutoJoinDomain(emailDomain).catch(() => null);
-          if (domainMatch) registrationOrgId = domainMatch.orgId;
-        }
-      }
-
-      const complexity = await validatePasswordComplexity(password, registrationOrgId);
-      if (!complexity.valid) {
-        return replyValidation(
-          res,
-          complexity.errors.map((msg) => ({ message: msg, field: "password" })),
-        );
-      }
-
-      const hashedPw = await hashPassword(password);
-      const user = await authStorage.upsertUser({
-        email,
-        passwordHash: hashedPw,
-        firstName: firstName || null,
-        lastName: lastName || null,
-        passwordChangedAt: new Date(),
-      });
-
-      req.login(user, async (err) => {
-        if (err) return next(err);
-        await ensureOrgMembership(user);
-
-        const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
-        const emailContent = welcomeEmail({
-          firstName: firstName || undefined,
-          email,
-          loginUrl: appBaseUrl,
-        });
-        sendEmail({
-          to: email,
-          subject: emailContent.subject,
-          html: emailContent.html,
-          text: emailContent.text,
-        }).catch((emailErr) => {
-          logger.child("auth").error("Failed to send welcome email", { error: String(emailErr), email });
-        });
-
-        const { passwordHash: _, ...safeUser } = user;
-        return reply(res, safeUser, {}, 201);
-      });
-    } catch (error) {
-      logger.child("routes").error("Error registering user", { error: String(error) });
-      return replyInternal(res, "Registration failed");
-    }
+  // Self-service registration is disabled.
+  // Only platform admins can create user accounts via the admin panel.
+  app.post("/api/register", registerRateLimit, async (_req, res) => {
+    return replyForbidden(
+      res,
+      "Registration is disabled. Please contact your platform administrator to get access.",
+      "REGISTRATION_DISABLED",
+    );
   });
 
   app.post("/api/login", loginRateLimitPre, (req, res, next) => {

@@ -155,71 +155,19 @@ export function registerOnboardingRoutes(app: Express): void {
     });
   });
 
-  app.post("/api/wizard/create-org", isAuthenticated, async (req, res) => {
-    try {
-      const userId = getUser(req)?.id;
-      const userEmail = getUser(req)?.email;
-      if (!userId)
-        return sendEnvelope(res, null, {
-          status: 401,
-          errors: [{ code: "AUTH_REQUIRED", message: "Not authenticated" }],
-        });
-
-      const existingProgress = await storage.getWizardProgress(userId);
-      if (existingProgress?.orgId) {
-        const existingOrg = await storage.getOrganization(existingProgress.orgId);
-        if (existingOrg) {
-          return sendEnvelope(res, { organization: existingOrg, alreadyCreated: true });
-        }
-      }
-
-      const { name, industry, companySize } = req.body;
-      if (!name || typeof name !== "string" || name.trim().length < 2 || name.trim().length > 100) {
-        return sendEnvelope(res, null, {
-          status: 400,
-          errors: [{ code: "INVALID_ORG_NAME", message: "Organization name must be between 2 and 100 characters" }],
-        });
-      }
-
-      const trimmedName = name.trim();
-      const slug = `${trimmedName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "")}-${Date.now()}`;
-
-      const newOrg = await storage.createOrganization({
-        name: trimmedName,
-        slug,
-        industry: industry || null,
-        companySize: companySize || null,
-        contactEmail: userEmail || undefined,
-      });
-
-      const membership = await storage.createOrgMembership({
-        orgId: newOrg.id,
-        userId,
-        role: "owner",
-        status: "active",
-        joinedAt: new Date(),
-      });
-
-      await storage.upsertWizardProgress({
-        userId,
-        orgId: newOrg.id,
-        currentStep: 1,
-        completedSteps: ["create_org"],
-        skippedSteps: [],
-      });
-
-      return sendEnvelope(res, { organization: newOrg, membership });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.child("wizard").error("Failed to create org via wizard", { error: message });
-      return sendEnvelope(res, null, {
-        status: 500,
-        errors: [{ code: "WIZARD_CREATE_ORG_FAILED", message: "Failed to create organization" }],
-      });
-    }
+  // Self-service org creation is disabled.
+  // Only platform admins can create organizations via the admin panel.
+  app.post("/api/wizard/create-org", isAuthenticated, async (_req, res) => {
+    return sendEnvelope(res, null, {
+      status: 403,
+      errors: [
+        {
+          code: "ORG_CREATION_DISABLED",
+          message:
+            "Organization creation is managed by the platform administrator. Please contact your admin to be added to an organization.",
+        },
+      ],
+    });
   });
 
   app.post("/api/wizard/select-plan", isAuthenticated, async (req, res) => {
