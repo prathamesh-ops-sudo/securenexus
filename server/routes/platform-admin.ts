@@ -1586,7 +1586,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
   <li>Configure security features</li>
 </ul>
 <p><a href="${process.env.APP_BASE_URL || "https://staging.aricatech.xyz"}">Log in to SecureNexus</a></p>`,
-        text: `Hi ${adminFirstName || "there"}, you have been added as admin of ${trimmedName} on SecureNexus. ${isNewUser ? "Please reset your password to get started." : "Log in with your existing account."} Visit: ${process.env.APP_BASE_URL || "https://staging.aricatech.xyz"}`,
+        text: `Hi ${adminFirstName || "there"}, you have been added as owner of ${trimmedName} on SecureNexus. ${isNewUser ? "Please reset your password to get started." : "Log in with your existing account."} Visit: ${process.env.APP_BASE_URL || "https://staging.aricatech.xyz"}`,
       }).catch((err) =>
         log.error("Failed to send tenant welcome email", { error: String(err), email: normalizedEmail }),
       );
