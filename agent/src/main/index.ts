@@ -184,6 +184,9 @@ async function startAgent(): Promise<void> {
   log.info(`Server: ${config.serverUrl}`);
   log.info(`Sensor ID: ${config.sensorId}`);
 
+  // Stop any existing agent before re-initializing
+  await stopAgent();
+
   // Initialize API client
   apiClient = new ApiClient(config);
 
@@ -208,9 +211,9 @@ async function startAgent(): Promise<void> {
   log.info("Agent started successfully — monitoring active");
 }
 
-function stopAgent(): void {
+async function stopAgent(): Promise<void> {
   log.info("Stopping ATS Sensor agent...");
-  collectorManager?.stop();
+  await collectorManager?.stop();
   apiClient?.stopHeartbeat();
   log.info("Agent stopped");
 }
@@ -377,8 +380,8 @@ app.on("activate", () => {
   }
 });
 
-app.on("before-quit", () => {
-  stopAgent();
+app.on("before-quit", async () => {
+  await stopAgent();
 });
 
 // Handle uncaught errors

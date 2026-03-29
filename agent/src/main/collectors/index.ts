@@ -94,7 +94,7 @@ export class CollectorManager {
     log.info(`${this.collectors.length} collectors active`);
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     if (!this.running) return;
 
     if (this.collectTimer) {
@@ -115,7 +115,7 @@ export class CollectorManager {
     }
 
     // Final flush
-    this.flushEvents();
+    await this.flushEvents();
 
     this.collectors = [];
     this.running = false;

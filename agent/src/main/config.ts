@@ -72,7 +72,11 @@ export function loadConfig(): AgentConfig {
     if (fs.existsSync(configPath)) {
       const raw = fs.readFileSync(configPath, "utf-8");
       const parsed = JSON.parse(raw);
-      return { ...DEFAULT_CONFIG, ...parsed };
+      return {
+        ...DEFAULT_CONFIG,
+        ...parsed,
+        collectors: { ...DEFAULT_CONFIG.collectors, ...(parsed.collectors || {}) },
+      };
     }
   } catch {
     // Fall through to default
@@ -82,7 +86,7 @@ export function loadConfig(): AgentConfig {
 
 export function saveConfig(partial: Partial<AgentConfig>): void {
   const current = loadConfig();
-  const merged = { ...current, ...partial };
+  const merged = { ...current, ...partial, collectors: { ...current.collectors, ...(partial.collectors || {}) } };
   const configPath = getConfigPath();
   fs.writeFileSync(configPath, JSON.stringify(merged, null, 2), { mode: 0o600 });
 }

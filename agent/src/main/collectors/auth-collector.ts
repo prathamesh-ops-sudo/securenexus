@@ -11,6 +11,7 @@ const log = new AgentLogger("auth-collector");
 export class AuthCollector implements Collector {
   name = "auth";
   private lastCheckTime = new Date(Date.now() - 60000); // Start from 1 min ago
+  private seenLines = new Set<string>(); // Deduplication: track already-reported lines
 
   async collect(): Promise<SensorEvent[]> {
     const events: SensorEvent[] = [];
@@ -37,28 +38,47 @@ export class AuthCollector implements Collector {
     const now = new Date().toISOString();
 
     try {
-      // Check auth.log / secure log for recent entries
-      const logFiles = ["/var/log/auth.log", "/var/log/secure"];
-      for (const logFile of logFiles) {
-        try {
-          const sinceStr = since.toISOString().split("T")[0];
-          const output = execSync(`grep -E '(sshd|sudo|su|login|pam)' ${logFile} 2>/dev/null | tail -50`, {
-            timeout: 5000,
-            encoding: "utf-8",
-          });
+      // Use journalctl for time-based filtering (avoids re-scanning static files)
+      try {
+        const sinceStr = since.toISOString();
+        const output = execSync(
+          `journalctl _COMM=sshd _COMM=sudo _COMM=su _COMM=login --since "${sinceStr}" --no-pager -o short-iso 2>/dev/null | tail -50`,
+          { timeout: 5000, encoding: "utf-8" },
+        );
 
-          for (const line of output.trim().split("\n")) {
-            if (!line.trim()) continue;
+        for (const line of output.trim().split("\n")) {
+          if (!line.trim()) continue;
+          if (this.seenLines.has(line)) continue;
+          this.seenLines.add(line);
 
-            const event = this.parseAuthLogLine(line, now);
-            if (event) events.push(event);
+          const event = this.parseAuthLogLine(line, now);
+          if (event) events.push(event);
+        }
+      } catch {
+        // journalctl not available — fallback to grepping log files with dedup
+        const logFiles = ["/var/log/auth.log", "/var/log/secure"];
+        for (const logFile of logFiles) {
+          try {
+            const output = execSync(`grep -E '(sshd|sudo|su|login|pam)' ${logFile} 2>/dev/null | tail -50`, {
+              timeout: 5000,
+              encoding: "utf-8",
+            });
+
+            for (const line of output.trim().split("\n")) {
+              if (!line.trim()) continue;
+              if (this.seenLines.has(line)) continue;
+              this.seenLines.add(line);
+
+              const event = this.parseAuthLogLine(line, now);
+              if (event) events.push(event);
+            }
+          } catch {
+            // File may not exist or not readable
           }
-        } catch {
-          // File may not exist or not readable
         }
       }
 
-      // Check lastlog for recent logins
+      // Check lastlog for recent logins (with deduplication)
       try {
         const output = execSync("last -n 10 -F 2>/dev/null | head -10", {
           timeout: 5000,
@@ -66,6 +86,9 @@ export class AuthCollector implements Collector {
         });
         for (const line of output.trim().split("\n")) {
           if (!line.trim() || line.includes("wtmp begins") || line.includes("reboot")) continue;
+          if (this.seenLines.has(line)) continue;
+          this.seenLines.add(line);
+
           const parts = line.trim().split(/\s+/);
           if (parts.length < 3) continue;
 
@@ -84,6 +107,12 @@ export class AuthCollector implements Collector {
       } catch {
         // Ignore
       }
+
+      // Prune seen-lines set to prevent unbounded memory growth (keep last 5000)
+      if (this.seenLines.size > 5000) {
+        const entries = Array.from(this.seenLines);
+        this.seenLines = new Set(entries.slice(entries.length - 2500));
+      }
     } catch (err) {
       log.warn(`Linux auth collection error: ${err}`);
     }
@@ -99,12 +128,15 @@ export class AuthCollector implements Collector {
       // Use log show for macOS unified logging
       const sinceStr = since.toISOString().replace("T", " ").split(".")[0];
       const output = execSync(
-        `log show --predicate 'subsystem == "com.apple.securityd" OR subsystem == "com.apple.Authorization"' --last 1m 2>/dev/null | head -20`,
+        `log show --predicate 'subsystem == "com.apple.securityd" OR subsystem == "com.apple.Authorization"' --start "${sinceStr}" 2>/dev/null | head -20`,
         { timeout: 10000, encoding: "utf-8" },
       );
 
       for (const line of output.trim().split("\n")) {
         if (!line.trim() || line.startsWith("Timestamp")) continue;
+        if (this.seenLines.has(line)) continue;
+        this.seenLines.add(line);
+
         events.push({
           eventType: "auth_event",
           timestamp: now,
@@ -122,14 +154,15 @@ export class AuthCollector implements Collector {
     return events;
   }
 
-  private collectWindows(_since: Date): SensorEvent[] {
+  private collectWindows(since: Date): SensorEvent[] {
     const events: SensorEvent[] = [];
     const now = new Date().toISOString();
 
     try {
       // Windows: use wevtutil to query Security event log
+      const timeDiffMs = Date.now() - since.getTime();
       const output = execSync(
-        'wevtutil qe Security /c:20 /q:"*[System[(EventID=4624 or EventID=4625 or EventID=4634 or EventID=4648 or EventID=4672) and TimeCreated[timediff(@SystemTime) <= 60000]]]" /f:text 2>nul',
+        `wevtutil qe Security /c:20 /q:"*[System[(EventID=4624 or EventID=4625 or EventID=4634 or EventID=4648 or EventID=4672) and TimeCreated[timediff(@SystemTime) <= ${timeDiffMs}]]]" /f:text 2>nul`,
         { timeout: 10000, encoding: "utf-8" },
       );
 
