@@ -20,7 +20,7 @@ import { isStripeEnabled, createCheckoutSession } from "../stripe-service";
 import { sendEmail } from "../email-service";
 import { invitationEmail } from "../email-templates";
 import { resolveOrgContext, requireOrgId } from "../rbac";
-import { getAllPlanTiers } from "../tiered-packaging-engine";
+import { getAllPlanTiers, getPlanTierById } from "../tiered-packaging-engine";
 
 const INDUSTRY_OPTIONS = [
   "Technology",
@@ -232,7 +232,7 @@ export function registerOnboardingRoutes(app: Express): void {
         });
 
       const { planId } = req.body;
-      const validPlans = ["free", "pro", "enterprise"];
+      const validPlans = PLAN_OPTIONS.map((p: { id: string }) => p.id);
       if (!planId || !validPlans.includes(planId)) {
         return sendEnvelope(res, null, {
           status: 400,
@@ -248,14 +248,22 @@ export function registerOnboardingRoutes(app: Express): void {
         });
       }
 
+      const tier = getPlanTierById(planId);
+      if (!tier) {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "INVALID_PLAN", message: "Unknown plan tier" }],
+        });
+      }
+
       await storage.upsertOrgPlanLimit({
         orgId: progress.orgId,
         planTier: planId,
-        eventsPerMonth: planId === "free" ? 10000 : planId === "pro" ? 500000 : 9999999,
-        maxConnectors: planId === "free" ? 3 : planId === "pro" ? 20 : 999,
-        aiTokensPerMonth: planId === "free" ? 5000 : planId === "pro" ? 100000 : 9999999,
-        automationRunsPerMonth: planId === "free" ? 100 : planId === "pro" ? 5000 : 999999,
-        storageGb: planId === "free" ? 5 : planId === "pro" ? 50 : 500,
+        eventsPerMonth: tier.limits.eventsPerMonth,
+        maxConnectors: tier.limits.dataSources,
+        aiTokensPerMonth: tier.limits.aiTokensPerMonth,
+        automationRunsPerMonth: tier.limits.automationRunsPerMonth,
+        storageGb: tier.limits.storageGb,
       });
 
       const completedSteps = Array.isArray(progress.completedSteps) ? [...(progress.completedSteps as string[])] : [];
