@@ -87,8 +87,7 @@ agent/
 │   └── entitlements.mac.plist
 ├── electron-vite.config.ts
 ├── package.json
-├── tsconfig.json
-└── sign.js             # Code signing hook
+└── tsconfig.json
 ```
 
 ## Security
