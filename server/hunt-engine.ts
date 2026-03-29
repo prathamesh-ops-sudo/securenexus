@@ -72,7 +72,7 @@ async function queryTable(compiled: CompiledFilter, orgId: string, limit: number
     return [];
   }
 
-  await db.execute(sql`SET statement_timeout = ${`${QUERY_TIMEOUT_MS}ms`}`);
+  await db.execute(sql.raw(`SET statement_timeout = '${QUERY_TIMEOUT_MS}ms'`));
 
   try {
     // Use Drizzle's sql tagged template with proper parameter binding.
@@ -94,7 +94,9 @@ async function queryTable(compiled: CompiledFilter, orgId: string, limit: number
     throw error;
   } finally {
     // Reset statement timeout
-    await db.execute(sql`SET statement_timeout = ${"0"}`).catch((err) => log.warn("Failed to reset statement_timeout", { error: String(err) }));
+    await db
+      .execute(sql.raw("SET statement_timeout = '0'"))
+      .catch((err) => log.warn("Failed to reset statement_timeout", { error: String(err) }));
   }
 }
 

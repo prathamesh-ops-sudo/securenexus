@@ -29,7 +29,8 @@ pool.on("error", (err) => {
 const STATEMENT_TIMEOUT_MS = isProd ? 30000 : 60000;
 
 pool.on("connect", (client) => {
-  client.query("SET statement_timeout = $1", [String(STATEMENT_TIMEOUT_MS)]).catch((err: unknown) => {
+  // PostgreSQL SET does not support parameterized values ($1) — use a literal.
+  client.query(`SET statement_timeout = '${STATEMENT_TIMEOUT_MS}ms'`).catch((err: unknown) => {
     log.warn("Failed to set statement_timeout on new connection", {
       error: String(err),
     });

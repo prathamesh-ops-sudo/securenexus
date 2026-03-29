@@ -277,16 +277,26 @@ function ChoosePlanStep({
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">{plan.name}</CardTitle>
-                {plan.id === "pro" && (
+                {plan.id === "growth" && (
                   <Badge variant="secondary" className="text-[10px]">
-                    Popular
+                    Most Popular
                   </Badge>
                 )}
               </div>
               <CardDescription>
-                <span className="text-2xl font-bold text-foreground">${plan.price}</span>
-                {plan.price > 0 && <span className="text-xs">/mo per user</span>}
-                {plan.price === 0 && <span className="text-xs"> forever</span>}
+                {plan.price === 0 ? (
+                  <>
+                    <span className="text-2xl font-bold text-foreground">Free</span>
+                    <span className="text-xs"> forever</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-2xl font-bold text-foreground">
+                      ₹{(plan.price / 100).toLocaleString("en-IN")}
+                    </span>
+                    <span className="text-xs">/month</span>
+                  </>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
