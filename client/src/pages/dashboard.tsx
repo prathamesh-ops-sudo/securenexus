@@ -338,12 +338,20 @@ type AnalyticsData = {
   ingestionRate: { date: string; created: number; deduped: number; failed: number }[];
 };
 
-function CustomTooltip({ active, payload, label }: any) {
+function CustomTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ color?: string; name?: string; value?: number }>;
+  label?: string;
+}) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-popover border border-border rounded-md px-3 py-2 text-xs shadow-lg">
       {label && <p className="text-muted-foreground mb-1">{label}</p>}
-      {payload.map((entry: any, i: number) => (
+      {payload.map((entry, i: number) => (
         <p key={i} style={{ color: entry.color }} className="font-medium">
           {entry.name}: {entry.value}
         </p>
@@ -352,7 +360,13 @@ function CustomTooltip({ active, payload, label }: any) {
   );
 }
 
-function PieTooltip({ active, payload }: any) {
+function PieTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number; payload?: { fill?: string } }>;
+}) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-popover border border-border rounded-md px-3 py-2 text-xs shadow-lg">
@@ -1092,6 +1106,24 @@ interface CircuitAlert {
 }
 
 function DeceptionHitsWidget() {
+  /* Only show the widget if deception is actually configured (has tokens or honeypots) */
+  const { data: statsData, isLoading: statsLoading } = useQuery<{
+    totalTokens?: number;
+    totalHoneypots?: number;
+    activeTokens?: number;
+    activeHoneypots?: number;
+  }>({
+    queryKey: ["/api/deception/stats"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/deception/stats");
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const isConfigured =
+    !statsLoading && statsData && ((statsData.totalTokens ?? 0) > 0 || (statsData.totalHoneypots ?? 0) > 0);
+
   const { data: hitsData } = useQuery<{
     hits: Array<{
       id: string;
@@ -1108,7 +1140,11 @@ function DeceptionHitsWidget() {
       return res.json();
     },
     refetchInterval: 60000,
+    enabled: !!isConfigured,
   });
+
+  /* Hide the widget entirely if deception is not configured */
+  if (!isConfigured) return null;
 
   // Filter to last 24h client-side
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
