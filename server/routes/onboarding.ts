@@ -1,13 +1,26 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { getOrgId, sendEnvelope, storage, logger, randomBytes } from "./shared";
 import { isAuthenticated } from "../auth";
 import { WIZARD_STEPS, nativeSensors } from "@shared/schema";
+
+/** Typed accessor for the user object attached by passport/auth middleware. */
+interface AuthenticatedUser {
+  id: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  orgId?: string;
+}
+function getUser(req: Request): AuthenticatedUser | undefined {
+  return (req as Record<string, unknown>).user as AuthenticatedUser | undefined;
+}
 import { db } from "../db";
 import { eq, count } from "drizzle-orm";
 import { isStripeEnabled, createCheckoutSession } from "../stripe-service";
 import { sendEmail } from "../email-service";
 import { invitationEmail } from "../email-templates";
 import { resolveOrgContext, requireOrgId } from "../rbac";
+import { getAllPlanTiers, getPlanTierById } from "../tiered-packaging-engine";
 
 const INDUSTRY_OPTIONS = [
   "Technology",
@@ -25,39 +38,23 @@ const INDUSTRY_OPTIONS = [
 
 const COMPANY_SIZE_OPTIONS = ["1-10", "11-50", "51-200", "201-1000", "1001-5000", "5000+"] as const;
 
-const PLAN_OPTIONS = [
-  {
-    id: "free",
-    name: "Free",
-    price: 0,
-    features: ["Up to 5 users", "Basic alerting", "Community support", "7-day data retention"],
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price: 49,
-    features: [
-      "Up to 50 users",
-      "Advanced analytics",
-      "Priority support",
-      "90-day data retention",
-      "Custom integrations",
-    ],
-  },
-  {
-    id: "enterprise",
-    name: "Enterprise",
-    price: 199,
-    features: [
-      "Unlimited users",
-      "Full platform access",
-      "Dedicated support",
-      "1-year data retention",
-      "SSO & SCIM",
-      "Custom SLAs",
-    ],
-  },
-] as const;
+// Derive wizard plan options from the canonical PLAN_TIERS (INR source of truth)
+// so pricing is always consistent with the landing page and billing engine.
+function buildPlanOptions() {
+  const tiers = getAllPlanTiers();
+  // Exclude "government" tier (contact-sales only) from onboarding wizard
+  return tiers
+    .filter((t) => t.id !== "government")
+    .map((t) => ({
+      id: t.id,
+      name: t.displayName,
+      price: t.monthlyPriceCents,
+      currency: t.currency,
+      features: t.features.slice(0, 6), // show first 6 features in wizard card
+    }));
+}
+
+const PLAN_OPTIONS = buildPlanOptions();
 
 export function registerOnboardingRoutes(app: Express): void {
   app.get("/api/v1/onboarding/status", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -111,7 +108,7 @@ export function registerOnboardingRoutes(app: Express): void {
 
   app.get("/api/wizard/status", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user?.id;
+      const userId = getUser(req)?.id;
       if (!userId)
         return sendEnvelope(res, null, {
           status: 401,
@@ -160,8 +157,8 @@ export function registerOnboardingRoutes(app: Express): void {
 
   app.post("/api/wizard/create-org", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user?.id;
-      const userEmail = (req as any).user?.email;
+      const userId = getUser(req)?.id;
+      const userEmail = getUser(req)?.email;
       if (!userId)
         return sendEnvelope(res, null, {
           status: 401,
@@ -227,7 +224,7 @@ export function registerOnboardingRoutes(app: Express): void {
 
   app.post("/api/wizard/select-plan", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user?.id;
+      const userId = getUser(req)?.id;
       if (!userId)
         return sendEnvelope(res, null, {
           status: 401,
@@ -235,7 +232,7 @@ export function registerOnboardingRoutes(app: Express): void {
         });
 
       const { planId } = req.body;
-      const validPlans = ["free", "pro", "enterprise"];
+      const validPlans = PLAN_OPTIONS.map((p: { id: string }) => p.id);
       if (!planId || !validPlans.includes(planId)) {
         return sendEnvelope(res, null, {
           status: 400,
@@ -251,14 +248,23 @@ export function registerOnboardingRoutes(app: Express): void {
         });
       }
 
+      const tier = getPlanTierById(planId);
+      if (!tier) {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "INVALID_PLAN", message: "Unknown plan tier" }],
+        });
+      }
+
       await storage.upsertOrgPlanLimit({
         orgId: progress.orgId,
         planTier: planId,
-        eventsPerMonth: planId === "free" ? 10000 : planId === "pro" ? 500000 : 9999999,
-        maxConnectors: planId === "free" ? 3 : planId === "pro" ? 20 : 999,
-        aiTokensPerMonth: planId === "free" ? 5000 : planId === "pro" ? 100000 : 9999999,
-        automationRunsPerMonth: planId === "free" ? 100 : planId === "pro" ? 5000 : 999999,
-        storageGb: planId === "free" ? 5 : planId === "pro" ? 50 : 500,
+        eventsPerMonth: tier.limits.eventsPerMonth,
+        maxConnectors: tier.limits.dataSources,
+        aiTokensPerMonth: tier.limits.aiTokensPerMonth,
+        automationRunsPerMonth: tier.limits.automationRunsPerMonth,
+        apiCallsPerMonth: tier.limits.apiCallsPerMonth,
+        storageGb: tier.limits.storageGb,
       });
 
       const completedSteps = Array.isArray(progress.completedSteps) ? [...(progress.completedSteps as string[])] : [];
@@ -278,7 +284,7 @@ export function registerOnboardingRoutes(app: Express): void {
       if (planId !== "free") {
         if (isStripeEnabled()) {
           try {
-            const user = (req as any).user;
+            const user = getUser(req);
             const appBaseUrl = process.env.APP_BASE_URL || "https://nexus.aricatech.xyz";
             const result = await createCheckoutSession({
               orgId: progress.orgId,
@@ -321,7 +327,7 @@ export function registerOnboardingRoutes(app: Express): void {
 
   app.post("/api/wizard/invite-team", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user?.id;
+      const userId = getUser(req)?.id;
       if (!userId)
         return sendEnvelope(res, null, {
           status: 401,
@@ -346,7 +352,7 @@ export function registerOnboardingRoutes(app: Express): void {
         const seen = new Set<string>();
 
         const org = await storage.getOrganization(progress.orgId);
-        const inviterUser = (req as any).user;
+        const inviterUser = getUser(req);
         const inviterName = inviterUser?.firstName
           ? `${inviterUser.firstName} ${inviterUser.lastName || ""}`.trim()
           : "An administrator";
@@ -425,7 +431,7 @@ export function registerOnboardingRoutes(app: Express): void {
 
   app.post("/api/wizard/skip-step", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user?.id;
+      const userId = getUser(req)?.id;
       if (!userId)
         return sendEnvelope(res, null, {
           status: 401,
@@ -497,7 +503,7 @@ export function registerOnboardingRoutes(app: Express): void {
 
   app.post("/api/wizard/connect-integration", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user?.id;
+      const userId = getUser(req)?.id;
       if (!userId)
         return sendEnvelope(res, null, {
           status: 401,
@@ -533,7 +539,7 @@ export function registerOnboardingRoutes(app: Express): void {
 
   app.post("/api/wizard/complete-tour", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user?.id;
+      const userId = getUser(req)?.id;
       if (!userId)
         return sendEnvelope(res, null, {
           status: 401,
@@ -571,7 +577,7 @@ export function registerOnboardingRoutes(app: Express): void {
 
   app.post("/api/wizard/complete", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req as any).user?.id;
+      const userId = getUser(req)?.id;
       if (!userId)
         return sendEnvelope(res, null, {
           status: 401,
