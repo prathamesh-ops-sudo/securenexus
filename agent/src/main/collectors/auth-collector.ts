@@ -30,6 +30,12 @@ export class AuthCollector implements Collector {
       log.warn(`Auth collection error: ${err}`);
     }
 
+    // Prune seen-lines set to prevent unbounded memory growth (keep last 2500)
+    if (this.seenLines.size > 5000) {
+      const entries = Array.from(this.seenLines);
+      this.seenLines = new Set(entries.slice(entries.length - 2500));
+    }
+
     return events;
   }
 
@@ -106,12 +112,6 @@ export class AuthCollector implements Collector {
         }
       } catch {
         // Ignore
-      }
-
-      // Prune seen-lines set to prevent unbounded memory growth (keep last 5000)
-      if (this.seenLines.size > 5000) {
-        const entries = Array.from(this.seenLines);
-        this.seenLines = new Set(entries.slice(entries.length - 2500));
       }
     } catch (err) {
       log.warn(`Linux auth collection error: ${err}`);

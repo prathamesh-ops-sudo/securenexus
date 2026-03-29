@@ -70,8 +70,8 @@ function createMainWindow(): void {
   }
 
   mainWindow.on("close", (e) => {
-    // Minimize to tray instead of quitting
-    if (isConfigured()) {
+    // Minimize to tray instead of quitting (unless app is shutting down)
+    if (!isQuitting && isConfigured()) {
       e.preventDefault();
       mainWindow?.hide();
     }
@@ -260,6 +260,7 @@ function registerIpcHandlers(): void {
             platform: data.platform,
             osVersion: `${process.platform} ${process.arch}`,
           }),
+          signal: AbortSignal.timeout(15000),
         });
 
         if (!response.ok) {
