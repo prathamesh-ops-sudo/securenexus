@@ -72,32 +72,28 @@ async function queryTable(compiled: CompiledFilter, orgId: string, limit: number
     return [];
   }
 
-  await db.execute(sql.raw(`SET statement_timeout = '${QUERY_TIMEOUT_MS}ms'`));
+  // Use a transaction so SET LOCAL scopes the timeout to this transaction only,
+  // preventing connection contamination across the shared pool.
+  return await db.transaction(async (tx) => {
+    await tx.execute(sql.raw(`SET LOCAL statement_timeout = '${QUERY_TIMEOUT_MS}ms'`));
 
-  try {
-    // Use Drizzle's sql tagged template with proper parameter binding.
-    // The whereClause from the compiler uses $N placeholders with separate params,
-    // so we build a fully parameterised query using sql.raw for the static WHERE
-    // fragment and sql`` for the dynamic org/limit values.
-    const whereFragment = compiled.whereClause || "1=1";
-    const rows = await db.execute(
-      sql`SELECT * FROM ${sql.raw('"' + compiled.targetTable + '"')} WHERE org_id = ${orgId} AND (${sql.raw(whereFragment)}) ORDER BY created_at DESC LIMIT ${limit}`,
-    );
-    const wrapped = rows as unknown as { rows?: Record<string, unknown>[] };
-    return Array.isArray(rows) ? (rows as unknown as Record<string, unknown>[]) : wrapped.rows || [];
-  } catch (error) {
-    // If the table doesn't exist yet (e.g. sensor_events), return empty
-    const msg = String(error);
-    if (msg.includes("does not exist") || msg.includes("relation")) {
-      return [];
+    try {
+      const whereFragment = compiled.whereClause || "1=1";
+      const rows = await tx.execute(
+        sql`SELECT * FROM ${sql.raw('"' + compiled.targetTable + '"')} WHERE org_id = ${orgId} AND (${sql.raw(whereFragment)}) ORDER BY created_at DESC LIMIT ${limit}`,
+      );
+      const wrapped = rows as unknown as { rows?: Record<string, unknown>[] };
+      return Array.isArray(rows) ? (rows as unknown as Record<string, unknown>[]) : wrapped.rows || [];
+    } catch (error) {
+      // If the table doesn't exist yet (e.g. sensor_events), return empty
+      const msg = String(error);
+      if (msg.includes("does not exist") || msg.includes("relation")) {
+        return [];
+      }
+      throw error;
     }
-    throw error;
-  } finally {
-    // Reset statement timeout
-    await db
-      .execute(sql.raw("SET statement_timeout = '0'"))
-      .catch((err) => log.warn("Failed to reset statement_timeout", { error: String(err) }));
-  }
+    // No finally-reset needed: SET LOCAL automatically resets at transaction end
+  });
 }
 
 /**

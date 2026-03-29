@@ -263,6 +263,7 @@ export function registerOnboardingRoutes(app: Express): void {
         maxConnectors: tier.limits.dataSources,
         aiTokensPerMonth: tier.limits.aiTokensPerMonth,
         automationRunsPerMonth: tier.limits.automationRunsPerMonth,
+        apiCallsPerMonth: tier.limits.apiCallsPerMonth,
         storageGb: tier.limits.storageGb,
       });
 
