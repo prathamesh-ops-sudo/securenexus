@@ -338,12 +338,20 @@ type AnalyticsData = {
   ingestionRate: { date: string; created: number; deduped: number; failed: number }[];
 };
 
-function CustomTooltip({ active, payload, label }: any) {
+function CustomTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ color?: string; name?: string; value?: number }>;
+  label?: string;
+}) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-popover border border-border rounded-md px-3 py-2 text-xs shadow-lg">
       {label && <p className="text-muted-foreground mb-1">{label}</p>}
-      {payload.map((entry: any, i: number) => (
+      {payload.map((entry, i: number) => (
         <p key={i} style={{ color: entry.color }} className="font-medium">
           {entry.name}: {entry.value}
         </p>
@@ -352,11 +360,17 @@ function CustomTooltip({ active, payload, label }: any) {
   );
 }
 
-function PieTooltip({ active, payload }: any) {
+function PieTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number; payload?: { fill?: string } }>;
+}) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-popover border border-border rounded-md px-3 py-2 text-xs shadow-lg">
-      <p className="font-medium" style={{ color: payload[0].payload.fill }}>
+      <p className="font-medium" style={{ color: payload[0]?.payload?.fill }}>
         {payload[0].name}: {payload[0].value}
       </p>
     </div>
@@ -1092,6 +1106,24 @@ interface CircuitAlert {
 }
 
 function DeceptionHitsWidget() {
+  /* Only show the widget if deception is actually configured (has tokens or honeypots) */
+  const { data: statsData, isLoading: statsLoading } = useQuery<{
+    totalTokens?: number;
+    totalHoneypots?: number;
+    activeTokens?: number;
+    activeHoneypots?: number;
+  }>({
+    queryKey: ["/api/deception/stats"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/deception/stats");
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const isConfigured =
+    !statsLoading && statsData && ((statsData.totalTokens ?? 0) > 0 || (statsData.totalHoneypots ?? 0) > 0);
+
   const { data: hitsData } = useQuery<{
     hits: Array<{
       id: string;
@@ -1108,7 +1140,11 @@ function DeceptionHitsWidget() {
       return res.json();
     },
     refetchInterval: 60000,
+    enabled: !!isConfigured,
   });
+
+  /* Hide the widget entirely if deception is not configured */
+  if (!isConfigured) return null;
 
   // Filter to last 24h client-side
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
@@ -1474,12 +1510,20 @@ export default function Dashboard() {
   const securityScore = useMemo(() => {
     if (!stats) return null;
 
+    /* If the org has zero data across the board the score is meaningless */
+    const totalActivity =
+      stats.totalAlerts + stats.openIncidents + stats.criticalAlerts + stats.resolvedIncidents + stats.newAlertsToday;
+    if (totalActivity === 0) return null; // "not enough data"
+
     const criticalPenalty = Math.min(stats.criticalAlerts, 6) * 5;
     const incidentPenalty = Math.min(stats.openIncidents, 5) * 3;
     const recovery = Math.min(stats.resolvedIncidents, 5) * 2;
 
     return clampNumber(100 - criticalPenalty - incidentPenalty + recovery, 0, 100);
   }, [stats]);
+
+  /** True when we have stats but not enough data to compute a meaningful score */
+  const insufficientData = !statsLoading && !statsError && stats && securityScore === null;
 
   const showSecurityScore = securityScore !== null && !statsLoading && !statsError;
 
@@ -1507,6 +1551,31 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-2">
             {showSecurityScore && <SecurityScorePill score={securityScore} />}
+            {insufficientData && (
+              <div className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border bg-muted/30">
+                <div className="relative h-10 w-10">
+                  <svg className="h-10 w-10 -rotate-90" viewBox="0 0 40 40" aria-hidden="true">
+                    <circle cx="20" cy="20" r={14} stroke="rgba(148,163,184,0.18)" strokeWidth="5" fill="none" />
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r={14}
+                      stroke="rgba(148,163,184,0.25)"
+                      strokeWidth="5"
+                      fill="none"
+                      strokeDasharray="4 4"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-[11px] font-bold text-muted-foreground/50">—</span>
+                  </div>
+                </div>
+                <div className="leading-tight">
+                  <div className="text-[10px] font-medium text-muted-foreground tracking-wider">Security score</div>
+                  <div className="text-[11px] font-semibold text-muted-foreground/60">Set up required</div>
+                </div>
+              </div>
+            )}
 
             {/* (1.3) Time Range Selector */}
             <div className="relative" ref={timeRangeRef}>

@@ -36,6 +36,20 @@ const log = logger.child("platform-admin");
 
 const IMPERSONATION_TTL_MS = 60 * 60 * 1000;
 
+/** Authenticated user attached to the request by passport. */
+interface ReqUser {
+  id: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  isSuperAdmin?: boolean;
+}
+
+/** Extract the authenticated user from a request (passport attaches it as req.user). */
+function getReqUser(req: Request): ReqUser {
+  return (req as Request & { user: ReqUser }).user;
+}
+
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
@@ -108,9 +122,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
 
         const conditions = [isNull(organizations.deletedAt)];
         if (search) {
-          conditions.push(
-            or(ilike(organizations.name, `%${search}%`), ilike(organizations.slug, `%${search}%`)) as any,
-          );
+          conditions.push(or(ilike(organizations.name, `%${search}%`), ilike(organizations.slug, `%${search}%`))!);
         }
         if (status === "suspended") {
           conditions.push(sql`${organizations.deletedAt} IS NOT NULL`);
@@ -253,7 +265,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
           });
         }
 
-        const updated = await storage.updateOrganization(orgId, updates as any);
+        const updated = await storage.updateOrganization(orgId, updates as Partial<typeof organizations.$inferInsert>);
         if (!updated) {
           return sendEnvelope(res, null, {
             status: 404,
@@ -262,8 +274,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
         }
 
         await storage.createAuditLog({
-          userId: (req as any).user.id,
-          userName: (req as any).user.email,
+          userId: getReqUser(req).id,
+          userName: getReqUser(req).email,
           action: "platform_admin_org_update",
           resourceType: "organization",
           resourceId: orgId,
@@ -304,8 +316,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
         }
 
         await storage.createAuditLog({
-          userId: (req as any).user.id,
-          userName: (req as any).user.email,
+          userId: getReqUser(req).id,
+          userName: getReqUser(req).email,
           action: "platform_admin_org_suspended",
           resourceType: "organization",
           resourceId: orgId,
@@ -336,7 +348,9 @@ export function registerPlatformAdminRoutes(app: Express): void {
           });
         }
 
-        const updated = await storage.updateOrganization(orgId, { deletedAt: null } as any);
+        const updated = await storage.updateOrganization(orgId, { deletedAt: null } as Partial<
+          typeof organizations.$inferInsert
+        >);
         if (!updated) {
           return sendEnvelope(res, null, {
             status: 404,
@@ -345,8 +359,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
         }
 
         await storage.createAuditLog({
-          userId: (req as any).user.id,
-          userName: (req as any).user.email,
+          userId: getReqUser(req).id,
+          userName: getReqUser(req).email,
           action: "platform_admin_org_activated",
           resourceType: "organization",
           resourceId: orgId,
@@ -507,7 +521,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
           });
         }
 
-        if (userId === (req as any).user.id) {
+        if (userId === getReqUser(req).id) {
           return sendEnvelope(res, null, {
             status: 400,
             errors: [{ code: "SELF_DISABLE", message: "Cannot disable your own account" }],
@@ -536,8 +550,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
           .returning();
 
         await storage.createAuditLog({
-          userId: (req as any).user.id,
-          userName: (req as any).user.email,
+          userId: getReqUser(req).id,
+          userName: getReqUser(req).email,
           action: "platform_admin_user_disabled",
           resourceType: "user",
           resourceId: userId,
@@ -584,8 +598,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
         }
 
         await storage.createAuditLog({
-          userId: (req as any).user.id,
-          userName: (req as any).user.email,
+          userId: getReqUser(req).id,
+          userName: getReqUser(req).email,
           action: "platform_admin_user_enabled",
           resourceType: "user",
           resourceId: userId,
@@ -629,8 +643,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
         await db.update(users).set({ passwordHash: null, updatedAt: new Date() }).where(eq(users.id, userId));
 
         await storage.createAuditLog({
-          userId: (req as any).user.id,
-          userName: (req as any).user.email,
+          userId: getReqUser(req).id,
+          userName: getReqUser(req).email,
           action: "platform_admin_force_password_reset",
           resourceType: "user",
           resourceId: userId,
@@ -856,7 +870,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
 
         await storage.createAuditLog({
           userId: session.superAdminId,
-          userName: (req as any).user.email,
+          userName: getReqUser(req).email,
           action: "impersonation_ended",
           resourceType: "user",
           resourceId: session.targetUserId,
@@ -936,7 +950,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
           });
         }
 
-        const adminUser = (req as any).user;
+        const adminUser = getReqUser(req);
 
         if (targetUserId === adminUser.id) {
           return sendEnvelope(res, null, {
@@ -1022,7 +1036,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
 
   app.get("/api/platform-admin/me", isAuthenticated, requireSuperAdmin, async (req: Request, res: Response) => {
     try {
-      const user = (req as any).user;
+      const user = getReqUser(req);
       return sendEnvelope(res, {
         id: user.id,
         email: user.email,
@@ -1053,7 +1067,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
           });
         }
 
-        if (targetId === (req as any).user.id) {
+        if (targetId === getReqUser(req).id) {
           return sendEnvelope(res, null, {
             status: 400,
             errors: [{ code: "SELF_GRANT", message: "Cannot grant super-admin to yourself" }],
@@ -1082,8 +1096,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
           .returning();
 
         await storage.createAuditLog({
-          userId: (req as any).user.id,
-          userName: (req as any).user.email,
+          userId: getReqUser(req).id,
+          userName: getReqUser(req).email,
           action: "platform_admin_grant_super_admin",
           resourceType: "user",
           resourceId: targetId,
@@ -1116,7 +1130,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
           });
         }
 
-        if (targetId === (req as any).user.id) {
+        if (targetId === getReqUser(req).id) {
           return sendEnvelope(res, null, {
             status: 400,
             errors: [{ code: "SELF_REVOKE", message: "Cannot revoke your own super-admin access" }],
@@ -1153,8 +1167,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
           .returning();
 
         await storage.createAuditLog({
-          userId: (req as any).user.id,
-          userName: (req as any).user.email,
+          userId: getReqUser(req).id,
+          userName: getReqUser(req).email,
           action: "platform_admin_revoke_super_admin",
           resourceType: "user",
           resourceId: targetId,
@@ -1239,11 +1253,11 @@ export function registerPlatformAdminRoutes(app: Express): void {
         }
 
         updates.updatedAt = new Date();
-        const updated = await storage.updateFeatureFlag(flagKey, updates as any);
+        const updated = await storage.updateFeatureFlag(flagKey, updates as Partial<typeof featureFlags.$inferInsert>);
 
         await storage.createAuditLog({
-          userId: (req as any).user.id,
-          userName: (req as any).user.email,
+          userId: getReqUser(req).id,
+          userName: getReqUser(req).email,
           action: "platform_admin_update_feature_flag",
           resourceType: "feature_flag",
           resourceId: flagKey,
@@ -1336,7 +1350,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
             errors: [{ code: "USER_NOT_FOUND", message: "User not found" }],
           });
         }
-        const admin = (req as any).user;
+        const admin = getReqUser(req);
         await storage
           .createAuditLog({
             userId: admin?.id,
@@ -1391,8 +1405,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
         await db.update(users).set({ isSuperAdmin: true, updatedAt: new Date() }).where(eq(users.id, userId));
 
         await storage.createAuditLog({
-          userId: (req as any).user.id,
-          userName: (req as any).user.email,
+          userId: getReqUser(req).id,
+          userName: getReqUser(req).email,
           action: "platform_admin_promote_super_admin",
           resourceType: "user",
           resourceId: userId,
@@ -1400,7 +1414,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
         });
 
         invalidateDeserializeCache(userId);
-        log.info("User promoted to super admin", { promotedBy: (req as any).user.id, targetUserId: userId });
+        log.info("User promoted to super admin", { promotedBy: getReqUser(req).id, targetUserId: userId });
         return sendEnvelope(res, { id: target.id, email: target.email, isSuperAdmin: true });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1426,7 +1440,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
           });
         }
 
-        if (userId === (req as any).user.id) {
+        if (userId === getReqUser(req).id) {
           return sendEnvelope(res, null, {
             status: 400,
             errors: [{ code: "SELF_DEMOTE", message: "Cannot demote your own super admin status" }],
@@ -1451,8 +1465,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
         await db.update(users).set({ isSuperAdmin: false, updatedAt: new Date() }).where(eq(users.id, userId));
 
         await storage.createAuditLog({
-          userId: (req as any).user.id,
-          userName: (req as any).user.email,
+          userId: getReqUser(req).id,
+          userName: getReqUser(req).email,
           action: "platform_admin_demote_super_admin",
           resourceType: "user",
           resourceId: userId,
@@ -1460,7 +1474,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
         });
 
         invalidateDeserializeCache(userId);
-        log.info("User demoted from super admin", { demotedBy: (req as any).user.id, targetUserId: userId });
+        log.info("User demoted from super admin", { demotedBy: getReqUser(req).id, targetUserId: userId });
         return sendEnvelope(res, { id: target.id, email: target.email, isSuperAdmin: false });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1527,14 +1541,14 @@ export function registerPlatformAdminRoutes(app: Express): void {
           createdNew = true;
         }
 
-        // 3. Create membership as admin
+        // 3. Create membership as owner (first user in org is always owner)
         await storage.createOrgMembership({
           orgId: newOrg.id,
           userId: foundUser.id,
-          role: "admin",
+          role: "owner",
           status: "active",
           joinedAt: new Date(),
-          invitedBy: (req as any).user.id,
+          invitedBy: getReqUser(req).id,
         });
 
         return { org: newOrg, adminUser: foundUser, isNewUser: createdNew };
@@ -1545,8 +1559,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
 
       // 5. Audit log
       await storage.createAuditLog({
-        userId: (req as any).user.id,
-        userName: (req as any).user.email,
+        userId: getReqUser(req).id,
+        userName: getReqUser(req).email,
         action: "platform_admin_tenant_created",
         resourceType: "organization",
         resourceId: org.id,
@@ -1561,18 +1575,18 @@ export function registerPlatformAdminRoutes(app: Express): void {
       // 6. Send welcome/invitation email
       sendEmail({
         to: normalizedEmail,
-        subject: `You've been added as admin of ${trimmedName} on SecureNexus`,
+        subject: `You've been added as owner of ${trimmedName} on SecureNexus`,
         html: `<p>Hi ${escapeHtml(adminFirstName || "there")},</p>
-<p>You have been added as the <strong>admin</strong> of <strong>${escapeHtml(trimmedName)}</strong> on SecureNexus by the platform team.</p>
+<p>You have been added as the <strong>owner</strong> of <strong>${escapeHtml(trimmedName)}</strong> on SecureNexus by the platform team.</p>
 <p>${isNewUser ? "An account has been created for you. Please reset your password to get started." : "You can log in with your existing account."}</p>
-<p>As an admin, you can:</p>
+<p>As the owner, you can:</p>
 <ul>
   <li>Invite team members to your organization</li>
   <li>Manage roles and permissions</li>
   <li>Configure security features</li>
 </ul>
 <p><a href="${process.env.APP_BASE_URL || "https://staging.aricatech.xyz"}">Log in to SecureNexus</a></p>`,
-        text: `Hi ${adminFirstName || "there"}, you have been added as admin of ${trimmedName} on SecureNexus. ${isNewUser ? "Please reset your password to get started." : "Log in with your existing account."} Visit: ${process.env.APP_BASE_URL || "https://staging.aricatech.xyz"}`,
+        text: `Hi ${adminFirstName || "there"}, you have been added as owner of ${trimmedName} on SecureNexus. ${isNewUser ? "Please reset your password to get started." : "Log in with your existing account."} Visit: ${process.env.APP_BASE_URL || "https://staging.aricatech.xyz"}`,
       }).catch((err) =>
         log.error("Failed to send tenant welcome email", { error: String(err), email: normalizedEmail }),
       );
@@ -1581,7 +1595,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
         orgId: org.id,
         orgName: trimmedName,
         adminEmail: normalizedEmail,
-        createdBy: (req as any).user.email,
+        createdBy: getReqUser(req).email,
       });
 
       return sendEnvelope(

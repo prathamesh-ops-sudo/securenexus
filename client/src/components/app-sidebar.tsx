@@ -90,7 +90,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useOrgContext } from "@/hooks/use-org-context";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -125,6 +125,8 @@ type NavGroup = {
   icon: React.ElementType;
   color: string;
   sections: NavSection[];
+  /** If true, this group is always visible and cannot be disabled */
+  core?: boolean;
 };
 
 const coreItems: NavItem[] = [
@@ -133,11 +135,32 @@ const coreItems: NavItem[] = [
   { title: "Incidents", url: "/incidents", icon: FileWarning },
 ];
 
+/* ── Module visibility persistence ─────────────────────────────────── */
+const ENABLED_MODULES_KEY = "securenexus.enabledModules.v1";
+
+/** Groups shown by default for every new user */
+const DEFAULT_ENABLED_MODULES = new Set(["Watch & Recon", "Investigate", "Respond", "Posture", "Data & Integrations"]);
+
+function loadEnabledModules(): Set<string> {
+  try {
+    const raw = localStorage.getItem(ENABLED_MODULES_KEY);
+    if (raw) return new Set(JSON.parse(raw) as string[]);
+  } catch {
+    /* use defaults */
+  }
+  return new Set(DEFAULT_ENABLED_MODULES);
+}
+
+function saveEnabledModules(modules: Set<string>) {
+  localStorage.setItem(ENABLED_MODULES_KEY, JSON.stringify(Array.from(modules)));
+}
+
 const navGroups: NavGroup[] = [
   {
     label: "Watch & Recon",
     icon: Globe,
     color: "text-cyan-400",
+    core: true,
     sections: [
       {
         label: "Intelligence Collection",
@@ -162,6 +185,7 @@ const navGroups: NavGroup[] = [
     label: "Investigate",
     icon: Microscope,
     color: "text-violet-400",
+    core: true,
     sections: [
       {
         label: "Graph Analysis",
@@ -188,6 +212,7 @@ const navGroups: NavGroup[] = [
     label: "Respond",
     icon: Zap,
     color: "text-emerald-400",
+    core: true,
     sections: [
       {
         label: "Automation",
@@ -210,6 +235,7 @@ const navGroups: NavGroup[] = [
     label: "Posture",
     icon: ShieldCheck,
     color: "text-blue-400",
+    core: true,
     sections: [
       {
         label: "Cloud & Infrastructure",
@@ -256,6 +282,7 @@ const navGroups: NavGroup[] = [
     label: "Data & Integrations",
     icon: Database,
     color: "text-sky-400",
+    core: true,
     sections: [
       {
         label: "Connectivity",
@@ -521,13 +548,45 @@ function useRecentPages(currentPath: string) {
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
-  const { currentOrg, currentOrgId, memberships, switchOrg, currentRole } = useOrgContext();
+  const { currentOrg, currentOrgId, memberships, switchOrg, currentRole, isLoading: orgLoading } = useOrgContext();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const recentPages = useRecentPages(location);
+  const [enabledModules, setEnabledModules] = useState<Set<string>>(loadEnabledModules);
+  const [showModuleManager, setShowModuleManager] = useState(false);
+
+  /** Which nav groups to actually render (core groups + user-enabled groups) */
+  const visibleNavGroups = useMemo(
+    () => navGroups.filter((g) => g.core || enabledModules.has(g.label)),
+    [enabledModules],
+  );
+
+  /** Advanced (non-core) groups the user can toggle on/off */
+  const advancedGroups = useMemo(() => navGroups.filter((g) => !g.core), []);
+
+  const toggleModule = useCallback((label: string) => {
+    setEnabledModules((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      saveEnabledModules(next);
+      return next;
+    });
+  }, []);
+
+  const enableAllModules = useCallback(() => {
+    const all = new Set(navGroups.map((g) => g.label));
+    setEnabledModules(all);
+    saveEnabledModules(all);
+  }, []);
+
+  const resetModulesToDefault = useCallback(() => {
+    setEnabledModules(new Set(DEFAULT_ENABLED_MODULES));
+    saveEnabledModules(new Set(DEFAULT_ENABLED_MODULES));
+  }, []);
 
   useEffect(() => {
     const initial: Record<string, boolean> = {};
-    [...navGroups, adminGroup].forEach((g) => {
+    [...visibleNavGroups, adminGroup].forEach((g) => {
       const flatItems = g.sections.flatMap((s) => s.items);
       if (flatItems.some((i) => (i.url === "/" ? location === "/" : location.startsWith(i.url)))) {
         initial[g.label] = true;
@@ -536,12 +595,36 @@ export function AppSidebar() {
     setOpenGroups((prev) => ({ ...prev, ...initial }));
   }, []);
 
+  /* Auto-enable a module if the user navigates directly to one of its pages */
+  useEffect(() => {
+    for (const g of navGroups) {
+      if (g.core || enabledModules.has(g.label)) continue;
+      const flatItems = g.sections.flatMap((s) => s.items);
+      if (flatItems.some((i) => location.startsWith(i.url))) {
+        setEnabledModules((prev) => {
+          const next = new Set(prev);
+          next.add(g.label);
+          saveEnabledModules(next);
+          return next;
+        });
+        setOpenGroups((prev) => ({ ...prev, [g.label]: true }));
+        break;
+      }
+    }
+  }, [location, enabledModules]);
+
   const toggleGroup = (label: string) => {
     setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
   };
 
-  const userRole = currentRole || "analyst";
-  const roleLabel = userRole === "read_only" ? "Read-only" : userRole[0].toUpperCase() + userRole.slice(1);
+  // Don't default to "analyst" while org context is still loading — this causes
+  // a visible flicker ("Analyst" → "Owner") once the real role arrives.
+  const userRole = orgLoading ? null : currentRole || "analyst";
+  const roleLabel = !userRole
+    ? ""
+    : userRole === "read_only"
+      ? "Read-only"
+      : userRole[0].toUpperCase() + userRole.slice(1);
 
   const initials = user ? `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() || "U" : "U";
 
@@ -738,9 +821,97 @@ export function AppSidebar() {
 
         <SidebarGroup className="px-2 py-0.5">
           <SidebarGroupContent>
-            <SidebarMenu className="space-y-0">{navGroups.map(renderCollapsibleGroup)}</SidebarMenu>
+            <SidebarMenu className="space-y-0">{visibleNavGroups.map(renderCollapsibleGroup)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {/* Module manager toggle */}
+        <div className="px-3 py-1.5">
+          <button
+            type="button"
+            onClick={() => setShowModuleManager((v) => !v)}
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[11px] font-medium text-muted-foreground/60 hover:text-muted-foreground hover:bg-sidebar-accent/30 border border-dashed border-sidebar-border/40 hover:border-sidebar-border/60 transition-all duration-200"
+          >
+            <Layers className="h-3.5 w-3.5 shrink-0" />
+            <span>Manage Modules</span>
+            {advancedGroups.length -
+              Array.from(enabledModules).filter((m) => advancedGroups.some((g) => g.label === m)).length >
+              0 && (
+              <span className="ml-auto text-[9px] bg-blue-500/15 text-blue-400 rounded-full px-1.5 py-0.5 tabular-nums">
+                +
+                {advancedGroups.length -
+                  Array.from(enabledModules).filter((m) => advancedGroups.some((g) => g.label === m)).length}{" "}
+                hidden
+              </span>
+            )}
+          </button>
+        </div>
+
+        {showModuleManager && (
+          <div className="px-3 pb-2 animate-fade-in">
+            <div className="rounded-lg border border-sidebar-border/60 bg-sidebar-accent/20 p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Security Modules
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={enableAllModules}
+                    className="text-[9px] font-medium text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    Enable all
+                  </button>
+                  <span className="text-muted-foreground/30">|</span>
+                  <button
+                    type="button"
+                    onClick={resetModulesToDefault}
+                    className="text-[9px] font-medium text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1">
+                {advancedGroups.map((g) => {
+                  const itemCount = g.sections.reduce((sum, s) => sum + s.items.length, 0);
+                  const enabled = enabledModules.has(g.label);
+                  return (
+                    <button
+                      key={g.label}
+                      type="button"
+                      onClick={() => toggleModule(g.label)}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[11px] transition-all duration-150 ${
+                        enabled
+                          ? "bg-sidebar-accent/40 text-sidebar-foreground"
+                          : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-sidebar-accent/20"
+                      }`}
+                    >
+                      <g.icon className={`h-3.5 w-3.5 shrink-0 ${enabled ? g.color : "opacity-40"}`} />
+                      <span className="truncate text-left flex-1">{g.label}</span>
+                      <span className="text-[9px] text-muted-foreground/40 tabular-nums">{itemCount}</span>
+                      <div
+                        className={`w-6 h-3.5 rounded-full relative transition-colors duration-200 ${
+                          enabled ? "bg-blue-500" : "bg-zinc-700"
+                        }`}
+                      >
+                        <div
+                          className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-transform duration-200 ${
+                            enabled ? "translate-x-3" : "translate-x-0.5"
+                          }`}
+                        />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[9px] text-muted-foreground/40 leading-relaxed">
+                Enable modules as your team needs them. Core modules (Watch & Recon, Investigate, Respond, Posture, Data
+                & Integrations) are always visible.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="px-3 py-1">
           <div className="h-px bg-sidebar-border/60" />
