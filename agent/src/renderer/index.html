@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <title>ATS Sensor — Setup</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e4e5e9;
+      --text-muted: #8b8d98;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      -webkit-app-region: drag;
+      user-select: none;
+    }
+    .titlebar {
+      height: 32px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      background: rgba(0,0,0,0.3);
+      -webkit-app-region: drag;
+    }
+    .content {
+      flex: 1;
+      padding: 32px;
+      overflow-y: auto;
+      -webkit-app-region: no-drag;
+    }
+
+    /* Logo */
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .logo-icon {
+      width: 48px;
+      height: 48px;
+      background: var(--primary);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: 700;
+      color: white;
+    }
+    .logo h1 {
+      font-size: 22px;
+      font-weight: 600;
+    }
+    .logo p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    /* Steps */
+    .steps {
+      display: flex;
+      gap: 8px;
+      margin: 24px 0;
+    }
+    .step-dot {
+      width: 32px;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border);
+      transition: background 0.3s;
+    }
+    .step-dot.active { background: var(--primary); }
+    .step-dot.done { background: var(--success); }
+
+    /* Form */
+    .form-group { margin-bottom: 16px; }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: var(--text-muted);
+    }
+    input[type="text"], input[type="password"], input[type="url"] {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus { border-color: var(--primary); }
+    .hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: var(--border); }
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+    }
+
+    /* Status */
+    .status-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+    }
+    .status-label { color: var(--text-muted); font-size: 13px; }
+    .status-value { font-size: 13px; font-weight: 500; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .badge-success { background: rgba(34,197,94,0.15); color: var(--success); }
+    .badge-danger { background: rgba(239,68,68,0.15); color: var(--danger); }
+    .badge-warning { background: rgba(245,158,11,0.15); color: var(--warning); }
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .dot-green { background: var(--success); }
+    .dot-red { background: var(--danger); }
+    .dot-yellow { background: var(--warning); }
+
+    /* Permissions */
+    .perm-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    .perm-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+    .perm-granted { background: rgba(34,197,94,0.15); }
+    .perm-denied { background: rgba(239,68,68,0.15); }
+    .perm-text { flex: 1; }
+    .perm-text strong { display: block; font-size: 14px; }
+    .perm-text span { font-size: 12px; color: var(--text-muted); }
+
+    /* Toggle */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    .toggle-label strong { display: block; font-size: 14px; }
+    .toggle-label span { font-size: 12px; color: var(--text-muted); }
+    .toggle {
+      position: relative;
+      width: 44px;
+      height: 24px;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: var(--border);
+      border-radius: 12px;
+      transition: 0.3s;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: 0.3s;
+    }
+    .toggle input:checked + .toggle-slider { background: var(--primary); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
+
+    /* Spinner */
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Section title */
+    .section-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .section-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    /* Hide sections */
+    .hidden { display: none !important; }
+
+    /* Alert */
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .alert-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--danger); }
+    .alert-success { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: var(--success); }
+  </style>
+</head>
+<body>
+  <div class="titlebar">ATS Sensor Agent</div>
+
+  <div class="content">
+    <!-- Logo -->
+    <div class="logo">
+      <div class="logo-icon">A</div>
+      <div>
+        <h1>ATS Sensor</h1>
+        <p>SecureNexus Security Monitor</p>
+      </div>
+    </div>
+
+    <!-- Progress steps -->
+    <div class="steps" id="steps">
+      <div class="step-dot active" data-step="0"></div>
+      <div class="step-dot" data-step="1"></div>
+      <div class="step-dot" data-step="2"></div>
+      <div class="step-dot" data-step="3"></div>
+    </div>
+
+    <!-- Step 0: Server Connection -->
+    <div id="step-0" class="step-content">
+      <h2 class="section-title">Connect to SecureNexus</h2>
+      <p class="section-desc">Enter your SecureNexus server URL and sensor credentials.</p>
+
+      <div id="error-0" class="alert alert-error hidden"></div>
+
+      <div class="form-group">
+        <label for="serverUrl">Server URL</label>
+        <input type="url" id="serverUrl" placeholder="https://staging.aricatech.xyz" />
+        <p class="hint">Your SecureNexus instance URL</p>
+      </div>
+
+      <div class="form-group">
+        <label for="sensorId">Sensor ID</label>
+        <input type="text" id="sensorId" placeholder="Enter your sensor ID" />
+        <p class="hint">Found in Settings &rarr; Native Sensors after creating a sensor</p>
+      </div>
+
+      <div class="form-group">
+        <label for="apiKey">API Key</label>
+        <input type="password" id="apiKey" placeholder="Enter your sensor API key" />
+        <p class="hint">The API key shown when you registered the sensor</p>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-test" onclick="testConnection()">
+          Test Connection
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 1: Permissions -->
+    <div id="step-1" class="step-content hidden">
+      <h2 class="section-title">Permissions</h2>
+      <p class="section-desc">ATS Sensor needs these permissions to monitor your system.</p>
+
+      <div id="perm-list"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="goToStep(0)">Back</button>
+        <button class="btn btn-primary" onclick="goToStep(2)">Continue</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Collectors -->
+    <div id="step-2" class="step-content hidden">
+      <h2 class="section-title">Monitoring Options</h2>
+      <p class="section-desc">Choose which system activities to monitor.</p>
+
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Process Monitoring</strong>
+          <span>Track new processes, suspicious executables, process trees</span>
+        </div>
+        <label class="toggle"><input type="checkbox" id="col-process" checked /><span class="toggle-slider"></span></label>
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Network Connections</strong>
+          <span>Monitor active connections, suspicious ports, traffic patterns</span>
+        </div>
+        <label class="toggle"><input type="checkbox" id="col-network" checked /><span class="toggle-slider"></span></label>
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>File System Changes</strong>
+          <span>Watch sensitive files, detect unauthorized modifications</span>
+        </div>
+        <label class="toggle"><input type="checkbox" id="col-file" checked /><span class="toggle-slider"></span></label>
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Authentication Events</strong>
+          <span>Track logins, failures, privilege escalation attempts</span>
+        </div>
+        <label class="toggle"><input type="checkbox" id="col-auth" checked /><span class="toggle-slider"></span></label>
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>USB Device Monitoring</strong>
+          <span>Detect USB device connections and removals</span>
+        </div>
+        <label class="toggle"><input type="checkbox" id="col-usb" checked /><span class="toggle-slider"></span></label>
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>DNS Query Monitoring</strong>
+          <span>Monitor DNS lookups for suspicious domains</span>
+        </div>
+        <label class="toggle"><input type="checkbox" id="col-dns" checked /><span class="toggle-slider"></span></label>
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>System Logs</strong>
+          <span>Collect kernel, firewall, and service warnings/errors</span>
+        </div>
+        <label class="toggle"><input type="checkbox" id="col-syslog" checked /><span class="toggle-slider"></span></label>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="goToStep(1)">Back</button>
+        <button class="btn btn-primary" onclick="saveAndStart()">Start Monitoring</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Running Status -->
+    <div id="step-3" class="step-content hidden">
+      <h2 class="section-title">Agent Active</h2>
+      <p class="section-desc">ATS Sensor is monitoring your system and sending events to SecureNexus.</p>
+
+      <div class="status-card">
+        <div class="status-row">
+          <span class="status-label">Status</span>
+          <span id="status-badge" class="badge badge-success"><span class="dot dot-green"></span> Connected</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Events Collected</span>
+          <span class="status-value" id="events-collected">0</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Events Sent</span>
+          <span class="status-value" id="events-sent">0</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Last Heartbeat</span>
+          <span class="status-value" id="last-heartbeat">—</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Version</span>
+          <span class="status-value" id="agent-version">1.0.0</span>
+        </div>
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Start on Boot</strong>
+          <span>Automatically start ATS Sensor when your computer starts</span>
+        </div>
+        <label class="toggle"><input type="checkbox" id="auto-start" checked onchange="toggleAutoStart(this.checked)" /><span class="toggle-slider"></span></label>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="openDashboard()">Open Dashboard</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const agent = window.atsAgent;
+    let currentStep = 0;
+
+    // Initialize
+    (async function init() {
+      const config = await agent.getConfig();
+      if (config.serverUrl) {
+        document.getElementById('serverUrl').value = config.serverUrl;
+      }
+      if (config.sensorId) {
+        document.getElementById('sensorId').value = config.sensorId;
+      }
+
+      const status = await agent.getStatus();
+      if (status.configured && status.connected) {
+        goToStep(3);
+        startStatusPolling();
+      }
+    })();
+
+    function goToStep(step) {
+      // Hide all steps
+      document.querySelectorAll('.step-content').forEach(el => el.classList.add('hidden'));
+      document.getElementById('step-' + step).classList.remove('hidden');
+
+      // Update dots
+      document.querySelectorAll('.step-dot').forEach((el, i) => {
+        el.classList.remove('active', 'done');
+        if (i < step) el.classList.add('done');
+        if (i === step) el.classList.add('active');
+      });
+
+      currentStep = step;
+
+      if (step === 1) loadPermissions();
+    }
+
+    async function testConnection() {
+      const btn = document.getElementById('btn-test');
+      const errEl = document.getElementById('error-0');
+      errEl.classList.add('hidden');
+
+      const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/+$/, '');
+      const sensorId = document.getElementById('sensorId').value.trim();
+      const apiKey = document.getElementById('apiKey').value.trim();
+
+      if (!serverUrl || !sensorId || !apiKey) {
+        errEl.textContent = 'Please fill in all fields.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Testing...';
+
+      const result = await agent.testConnection({ serverUrl, sensorId, apiKey });
+
+      if (result.success) {
+        await agent.saveConfig({ serverUrl, sensorId, apiKey });
+        goToStep(1);
+      } else {
+        errEl.textContent = result.error || 'Connection failed. Check your server URL and credentials.';
+        errEl.classList.remove('hidden');
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Test Connection';
+    }
+
+    async function loadPermissions() {
+      const perms = await agent.requestPermissions();
+      const container = document.getElementById('perm-list');
+
+      const items = [
+        { name: 'Administrator Access', desc: 'Required to read system logs and monitor processes', granted: perms.admin, icon: '🔒' },
+        { name: 'Network Monitoring', desc: 'Monitor active network connections and DNS queries', granted: perms.network, icon: '🌐' },
+        { name: 'File System Access', desc: 'Watch sensitive files for unauthorized changes', granted: perms.fullDisk, icon: '📁' },
+      ];
+
+      container.innerHTML = items.map(item => `
+        <div class="perm-item">
+          <div class="perm-icon ${item.granted ? 'perm-granted' : 'perm-denied'}">${item.icon}</div>
+          <div class="perm-text">
+            <strong>${item.name}</strong>
+            <span>${item.desc}</span>
+          </div>
+          <span class="badge ${item.granted ? 'badge-success' : 'badge-warning'}">${item.granted ? 'Granted' : 'Limited'}</span>
+        </div>
+      `).join('');
+    }
+
+    async function saveAndStart() {
+      const collectors = {
+        process: document.getElementById('col-process').checked,
+        network: document.getElementById('col-network').checked,
+        file: document.getElementById('col-file').checked,
+        auth: document.getElementById('col-auth').checked,
+        usb: document.getElementById('col-usb').checked,
+        dns: document.getElementById('col-dns').checked,
+        syslog: document.getElementById('col-syslog').checked,
+      };
+
+      await agent.saveConfig({ collectors, autoStart: true });
+      await agent.setAutoStart(true);
+      await agent.startAgent();
+
+      goToStep(3);
+      startStatusPolling();
+    }
+
+    function startStatusPolling() {
+      setInterval(async () => {
+        const status = await agent.getStatus();
+        document.getElementById('events-collected').textContent = status.eventsCollected.toLocaleString();
+        document.getElementById('events-sent').textContent = status.eventsSent.toLocaleString();
+        document.getElementById('agent-version').textContent = status.version || '1.0.0';
+
+        const badge = document.getElementById('status-badge');
+        if (status.connected) {
+          badge.className = 'badge badge-success';
+          badge.innerHTML = '<span class="dot dot-green"></span> Connected';
+        } else {
+          badge.className = 'badge badge-danger';
+          badge.innerHTML = '<span class="dot dot-red"></span> Disconnected';
+        }
+
+        if (status.lastHeartbeat) {
+          const ago = Math.round((Date.now() - new Date(status.lastHeartbeat).getTime()) / 1000);
+          document.getElementById('last-heartbeat').textContent = ago < 5 ? 'Just now' : `${ago}s ago`;
+        }
+      }, 3000);
+    }
+
+    async function toggleAutoStart(enabled) {
+      await agent.setAutoStart(enabled);
+    }
+
+    async function openDashboard() {
+      const config = await agent.getConfig();
+      if (config.serverUrl) {
+        agent.openExternal(config.serverUrl);
+      }
+    }
+  </script>
+</body>
+</html>
