@@ -462,7 +462,10 @@ function ConnectIntegrationStep({
   onSkip: () => void;
   isLoading: boolean;
 }) {
+  const [, navigate] = useLocation();
+  const [ingestionPath, setIngestionPath] = useState<"connector" | "logs" | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+
   const connectorTypes = [
     { name: "Splunk", category: "SIEM", icon: "S" },
     { name: "CrowdStrike", category: "EDR", icon: "C" },
@@ -474,13 +477,171 @@ function ConnectIntegrationStep({
     { name: "Jira", category: "Ticketing", icon: "J" },
   ];
 
+  const logIngestionOptions = [
+    {
+      id: "syslog",
+      name: "Syslog Forwarding",
+      description: "Forward syslog (RFC 5424 / CEF / LEEF) from firewalls, routers, or servers.",
+      link: "/log-sources",
+    },
+    {
+      id: "agent",
+      name: "Install Lightweight Agent",
+      description: "Deploy our native sensor agent on endpoints for real-time log collection.",
+      link: "/native-sensors",
+    },
+    {
+      id: "upload",
+      name: "Upload Log Files",
+      description: "Upload CSV, JSON, or raw log files for one-time or recurring analysis.",
+      link: "/log-sources",
+    },
+    {
+      id: "webhook",
+      name: "Webhook / HTTP Endpoint",
+      description: "Send logs via HTTP POST from any application or script.",
+      link: "/log-sources",
+    },
+  ];
+
+  /* Top-level choice: connector vs log ingestion */
+  if (ingestionPath === null) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-xl font-semibold">How Would You Like to Get Data In?</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            SecureNexus works with any company that has logs. Choose the path that fits your setup.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card
+            data-testid="onboarding-wizard-card-path-connector"
+            className="cursor-pointer transition-all hover:shadow-sm hover:border-primary/50 group"
+            onClick={() => setIngestionPath("connector")}
+          >
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                  <Plug className="h-5 w-5 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">Connect a Security Tool</p>
+                  <p className="text-[10px] text-muted-foreground">SIEM, EDR, SOAR, Cloud, Ticketing</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Already using Splunk, CrowdStrike, Sentinel, or similar? Connect them directly.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card
+            data-testid="onboarding-wizard-card-path-logs"
+            className="cursor-pointer transition-all hover:shadow-sm hover:border-primary/50 group"
+            onClick={() => setIngestionPath("logs")}
+          >
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                  <Scan className="h-5 w-5 text-emerald-500" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">Send Logs Directly</p>
+                  <p className="text-[10px] text-muted-foreground">Syslog, Agent, Upload, Webhook</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Forward syslog, install our lightweight agent, upload log files, or push via webhook.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={onSkip} disabled={isLoading} className="mx-auto">
+            <SkipForward className="h-4 w-4 mr-1" /> Skip &mdash; I&rsquo;ll set this up later
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  /* Path B: Log ingestion options */
+  if (ingestionPath === "logs") {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setIngestionPath(null)} className="h-7 px-2">
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </Button>
+          <div>
+            <h2 className="text-xl font-semibold">Send Logs Directly</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Choose how you want to get your logs into SecureNexus.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-3">
+          {logIngestionOptions.map((opt) => (
+            <Card
+              data-testid={`onboarding-wizard-card-log-${opt.id}`}
+              key={opt.id}
+              className={`cursor-pointer transition-all hover:shadow-sm group ${
+                selected === opt.id ? "border-primary ring-2 ring-primary/20" : "hover:border-primary/50"
+              }`}
+              onClick={() => setSelected(opt.id)}
+            >
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
+                  <Scan className="h-4.5 w-4.5 text-emerald-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{opt.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{opt.description}</p>
+                </div>
+                {selected === opt.id && <Check className="h-4 w-4 text-primary shrink-0" />}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={() => {
+              const opt = logIngestionOptions.find((o) => o.id === selected);
+              onConnect();
+              if (opt) navigate(opt.link);
+            }}
+            disabled={isLoading || !selected}
+            className="flex-1"
+          >
+            {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <PlayCircle className="h-4 w-4 mr-2" />}
+            {selected ? `Set Up ${logIngestionOptions.find((o) => o.id === selected)?.name ?? ""}` : "Select an option"}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onSkip} disabled={isLoading}>
+            <SkipForward className="h-4 w-4 mr-1" /> Skip
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  /* Path A: Connector selection (existing flow) */
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold">Connect Your First Integration</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Connect a SIEM, EDR, or collaboration tool to start flowing security data into SecureNexus.
-        </p>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={() => setIngestionPath(null)} className="h-7 px-2">
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </Button>
+        <div>
+          <h2 className="text-xl font-semibold">Connect a Security Tool</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Select a SIEM, EDR, or collaboration tool to start flowing security data into SecureNexus.
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

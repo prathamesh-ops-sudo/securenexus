@@ -370,7 +370,7 @@ function PieTooltip({
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-popover border border-border rounded-md px-3 py-2 text-xs shadow-lg">
-      <p className="font-medium" style={{ color: payload[0].payload.fill }}>
+      <p className="font-medium" style={{ color: payload[0]?.payload?.fill }}>
         {payload[0].name}: {payload[0].value}
       </p>
     </div>
@@ -1510,12 +1510,20 @@ export default function Dashboard() {
   const securityScore = useMemo(() => {
     if (!stats) return null;
 
+    /* If the org has zero data across the board the score is meaningless */
+    const totalActivity =
+      stats.totalAlerts + stats.openIncidents + stats.criticalAlerts + stats.resolvedIncidents + stats.newAlertsToday;
+    if (totalActivity === 0) return null; // "not enough data"
+
     const criticalPenalty = Math.min(stats.criticalAlerts, 6) * 5;
     const incidentPenalty = Math.min(stats.openIncidents, 5) * 3;
     const recovery = Math.min(stats.resolvedIncidents, 5) * 2;
 
     return clampNumber(100 - criticalPenalty - incidentPenalty + recovery, 0, 100);
   }, [stats]);
+
+  /** True when we have stats but not enough data to compute a meaningful score */
+  const insufficientData = !statsLoading && !statsError && stats && securityScore === null;
 
   const showSecurityScore = securityScore !== null && !statsLoading && !statsError;
 
@@ -1543,6 +1551,31 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-2">
             {showSecurityScore && <SecurityScorePill score={securityScore} />}
+            {insufficientData && (
+              <div className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border bg-muted/30">
+                <div className="relative h-10 w-10">
+                  <svg className="h-10 w-10 -rotate-90" viewBox="0 0 40 40" aria-hidden="true">
+                    <circle cx="20" cy="20" r={14} stroke="rgba(148,163,184,0.18)" strokeWidth="5" fill="none" />
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r={14}
+                      stroke="rgba(148,163,184,0.25)"
+                      strokeWidth="5"
+                      fill="none"
+                      strokeDasharray="4 4"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-[11px] font-bold text-muted-foreground/50">—</span>
+                  </div>
+                </div>
+                <div className="leading-tight">
+                  <div className="text-[10px] font-medium text-muted-foreground tracking-wider">Security score</div>
+                  <div className="text-[11px] font-semibold text-muted-foreground/60">Set up required</div>
+                </div>
+              </div>
+            )}
 
             {/* (1.3) Time Range Selector */}
             <div className="relative" ref={timeRangeRef}>
