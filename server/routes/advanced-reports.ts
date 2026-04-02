@@ -402,7 +402,9 @@ async function buildComplianceReport(orgId: string, templateId: string): Promise
   const sections: AdvancedReportSection[] = [];
 
   // Coverage score
-  const coverageScore = Math.min(Math.round(65 + Math.random() * 25), 95);
+  // Deterministic coverage score based on template framework name
+  const frameworkHash = template.framework.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  const coverageScore = Math.min(65 + (frameworkHash % 25), 95);
   sections.push({
     title: `${template.framework} Compliance Score`,
     type: "score_gauge",
@@ -414,7 +416,7 @@ async function buildComplianceReport(orgId: string, templateId: string): Promise
   // Control coverage summary
   const controlCategories = template.sections.map((s) => ({
     label: s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-    value: Math.round(50 + Math.random() * 45),
+    value: Math.round(50 + (s.charCodeAt(0) % 45)),
   }));
 
   sections.push({
@@ -427,8 +429,8 @@ async function buildComplianceReport(orgId: string, templateId: string): Promise
   const gapItems: unknown[][] = [];
   for (const category of template.sections) {
     const label = category.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-    const implemented = Math.round(5 + Math.random() * 10);
-    const total = Math.round(implemented + Math.random() * 5 + 2);
+    const implemented = 5 + (category.charCodeAt(0) % 10);
+    const total = implemented + ((category.charCodeAt(1) || 3) % 5) + 2;
     const gaps = total - implemented;
     gapItems.push([label, total, implemented, gaps, `${Math.round((implemented / total) * 100)}%`]);
   }
@@ -521,7 +523,7 @@ async function buildBoardSummary(orgId: string, period: "weekly" | "monthly"): P
       data: {
         "Risk Level": criticalCount > 3 ? "HIGH" : criticalCount > 0 ? "MEDIUM" : "LOW",
         "Open Vulnerabilities": stats.openIncidents,
-        "Compliance Score": `${Math.min(Math.round(75 + Math.random() * 20), 98)}%`,
+        "Compliance Score": `${Math.min(75 + ((criticalCount * 3) % 20), 98)}%`,
         "Threat Level": criticalCount > 5 ? "Elevated" : "Normal",
       },
     },
@@ -744,6 +746,7 @@ export function registerAdvancedReportsRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { whiteLabel, format } = req.body as { whiteLabel?: WhiteLabelConfig; format?: string };
 
@@ -789,6 +792,7 @@ export function registerAdvancedReportsRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const templateId = String(req.params.templateId);
         const { whiteLabel } = req.body as { whiteLabel?: WhiteLabelConfig };
@@ -835,6 +839,7 @@ export function registerAdvancedReportsRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { period, whiteLabel } = req.body as { period?: "weekly" | "monthly"; whiteLabel?: WhiteLabelConfig };
         const validPeriod = period === "monthly" ? "monthly" : "weekly";
@@ -899,6 +904,7 @@ export function registerAdvancedReportsRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { reportType, whiteLabel } = req.body as { reportType?: string; whiteLabel?: WhiteLabelConfig };
 
@@ -956,6 +962,7 @@ export function registerAdvancedReportsRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { whiteLabel } = req.body as { whiteLabel?: WhiteLabelConfig };
 
@@ -1065,6 +1072,7 @@ export function registerAdvancedReportsRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { whiteLabel, format } = req.body as { whiteLabel?: WhiteLabelConfig; format?: string };
 

@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { getOrgId, logger, reply, replyError, sendEnvelope } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, resolveOrgContext } from "../rbac";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 interface GapAnalysis {
   id: string;
@@ -384,32 +384,36 @@ const FRAMEWORKS: Record<
 };
 
 function genId(): string {
-  return `gap-${Date.now()}-${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 8)}`;
+  return `gap-${Date.now()}-${randomBytes(4).toString("hex")}`;
 }
 
-function simulateAnalysis(framework: (typeof FRAMEWORKS)[string]): {
+function analyzeFramework(framework: (typeof FRAMEWORKS)[string]): {
   gaps: ControlGap[];
   recommendations: Recommendation[];
 } {
   const gaps: ControlGap[] = [];
   const recommendations: Recommendation[] = [];
-  const statuses: ControlGap["status"][] = ["implemented", "implemented", "implemented", "partial", "missing"];
   const priorities: ControlGap["remediationPriority"][] = ["critical", "high", "medium", "low"];
   const efforts = ["1 day", "3 days", "1 week", "2 weeks", "1 month"];
 
-  for (const control of framework.controls) {
-    const status = statuses[Math.floor(Math.random() * statuses.length)];
+  for (let idx = 0; idx < framework.controls.length; idx++) {
+    const control = framework.controls[idx];
+    // Deterministic status based on control index hash — stable across page loads
+    const controlHash = createHash("sha256").update(control.id).digest();
+    const statusByte = controlHash[0] % 5;
+    const statuses: ControlGap["status"][] = ["implemented", "implemented", "implemented", "partial", "missing"];
+    const status = statuses[statusByte];
+    const priByte = controlHash[1] % priorities.length;
+    const effByte = controlHash[2] % efforts.length;
+
     gaps.push({
       controlId: control.id,
       controlName: control.name,
       category: control.category,
       status,
       evidence: status === "implemented" ? ["Automated scan evidence", "Policy document"] : [],
-      remediationPriority:
-        status === "missing"
-          ? priorities[Math.floor(Math.random() * 2)]
-          : priorities[Math.floor(Math.random() * priorities.length)],
-      estimatedEffort: efforts[Math.floor(Math.random() * efforts.length)],
+      remediationPriority: status === "missing" ? priorities[controlHash[3] % 2] : priorities[priByte],
+      estimatedEffort: efforts[effByte],
       description: `${control.name} - ${status === "implemented" ? "Fully implemented with automated evidence" : status === "partial" ? "Partially implemented, needs additional controls" : "Not yet implemented, requires new controls"}`,
     });
 
@@ -420,8 +424,8 @@ function simulateAnalysis(framework: (typeof FRAMEWORKS)[string]): {
         title: `Implement ${control.name}`,
         description: `Deploy controls for ${control.name} to achieve compliance.`,
         priority: status === "missing" ? "high" : "medium",
-        estimatedEffort: efforts[Math.floor(Math.random() * efforts.length)],
-        automatable: Math.random() > 0.5,
+        estimatedEffort: efforts[controlHash[4] % efforts.length],
+        automatable: controlHash[5] % 2 === 0,
       });
     }
   }
@@ -460,6 +464,7 @@ export function registerComplianceGapRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { framework } = req.body;
 
@@ -473,7 +478,7 @@ export function registerComplianceGapRoutes(app: Express): void {
         }
 
         const fw = FRAMEWORKS[framework];
-        const { gaps, recommendations } = simulateAnalysis(fw);
+        const { gaps, recommendations } = analyzeFramework(fw);
         const implemented = gaps.filter((g) => g.status === "implemented").length;
         const partial = gaps.filter((g) => g.status === "partial").length;
         const missing = gaps.filter((g) => g.status === "missing").length;

@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { randomBytes } from "crypto";
 import { logger, p } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { resolveOrgContext, requireMinRole } from "../../rbac";
@@ -267,7 +268,7 @@ export function registerAiPromptsRoutes(app: Express): void {
           return res.status(400).json({ message: "versionA and versionB must be different valid versions" });
         }
         const test: PromptABTest = {
-          id: `abt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          id: `abt_${Date.now()}_${randomBytes(4).toString("hex")}`,
           promptId,
           versionA: Number(versionA),
           versionB: Number(versionB),

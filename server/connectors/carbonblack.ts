@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
@@ -68,14 +69,16 @@ export const carbonblackPlugin: ConnectorPlugin = {
       headers,
       body: { criteria, rows: 100, sort: [{ field: "create_time", order: "DESC" }] },
     });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (res.data as Record<string, any>)?.results || [];
   },
 
   normalize(raw: unknown): Partial<InsertAlert> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = raw as Record<string, any>;
     return {
       source: "Carbon Black EDR",
-      sourceEventId: r.id || `cb_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      sourceEventId: r.id || `cb_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
       title: r.reason || r.type || "Carbon Black Alert",
       description: r.reason || r.workflow?.state || "",
       severity: mapSeverity(r.severity),

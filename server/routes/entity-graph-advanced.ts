@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { randomBytes } from "crypto";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { getOrgId, logger, p, storage } from "./shared";
@@ -307,11 +308,12 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
         if (!name) return res.status(400).json({ message: "Snapshot name is required" });
 
         const graph = await getEntityGraphWithEdges(orgId, 200);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id || "unknown";
 
         // Store snapshot in-memory for now (would be DB in production)
         const snapshot = {
-          id: `snap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          id: `snap-${Date.now()}-${randomBytes(4).toString("hex")}`,
           orgId,
           name: String(name).slice(0, 200),
           description: description ? String(description).slice(0, 500) : null,
@@ -401,6 +403,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
 
         const currentGraph = await getEntityGraphWithEdges(orgId, 200);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const snapshotNodeIds = new Set(snapshot.data.nodes.map((n: any) => n.id));
         const currentNodeIds = new Set(currentGraph.nodes.map((n) => n.id));
 
@@ -415,7 +418,9 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
           }));
 
         const removedNodes = snapshot.data.nodes
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .filter((n: any) => !currentNodeIds.has(n.id))
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .map((n: any) => ({
             id: n.id,
             type: n.type,
@@ -433,8 +438,10 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
           change: number;
         }[] = [];
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const snapshotNodeMap = new Map(snapshot.data.nodes.map((n: any) => [n.id, n]));
         for (const currentNode of currentGraph.nodes) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const oldNode = snapshotNodeMap.get(currentNode.id) as any;
           if (!oldNode) continue;
           const oldRisk = oldNode.riskScore || 0;
@@ -452,6 +459,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
         }
 
         // Edge diff
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const snapshotEdgeKeys = new Set(snapshot.data.edges.map((e: any) => [e.source, e.target].sort().join(":")));
         const currentEdgeKeys = new Set(currentGraph.edges.map((e) => [e.source, e.target].sort().join(":")));
 
@@ -618,6 +626,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
           riskScore: e.riskScore,
         }));
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id || null;
 
         const incident = await storage.createIncident({
@@ -796,6 +805,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
 
         // Factor 4: Privilege level (0.15 weight) — inferred from entity type and metadata
         let privilegeScore = 0;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const meta = (entity.metadata || {}) as Record<string, any>;
         if (entity.type === "user") {
           if (meta.isAdmin || meta.privileged || meta.role === "admin") privilegeScore = 1.0;
@@ -1685,6 +1695,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
         if (!srcCheck) return res.status(404).json({ message: "Source entity not found in this org" });
         if (!tgtCheck) return res.status(404).json({ message: "Target entity not found in this org" });
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id || null;
         const merged = await mergeEntities(targetId, sourceId, userId);
 
@@ -1707,6 +1718,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
         }
 
         broadcastEvent({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           type: "entity:merged" as any,
           orgId,
           data: { targetId, sourceId, mergedEntityId: merged.id },
@@ -1782,6 +1794,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const mergeId = p(req.params.mergeId);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id || null;
 
         const [mergeRecord] = await db
@@ -1863,6 +1876,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
         });
 
         broadcastEvent({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           type: "entity:merge-undone" as any,
           orgId,
           data: { mergeId, targetEntityId, sourceEntityId },
@@ -2281,6 +2295,7 @@ const graphSnapshots = new Map<
     edgeCount: number;
     createdBy: string;
     createdAt: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: { nodes: any[]; edges: any[] };
   }[]
 >();

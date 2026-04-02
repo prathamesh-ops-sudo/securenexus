@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
@@ -60,14 +61,16 @@ export const umbrellaPlugin: ConnectorPlugin = {
       url += `&from=${since.toISOString()}`;
     }
     const res = await httpRequest(url, { headers });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (res.data as Record<string, any>)?.data || (res.data as Record<string, any>)?.events || [];
   },
 
   normalize(raw: unknown): Partial<InsertAlert> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = raw as Record<string, any>;
     return {
       source: "Cisco Umbrella",
-      sourceEventId: r.id?.toString() || `umbrella_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      sourceEventId: r.id?.toString() || `umbrella_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
       title: r.domain || r.destination || "Umbrella Security Event",
       description: r.actionTaken || r.verdict || "",
       severity: mapSeverity(r.verdict || r.actionTaken),

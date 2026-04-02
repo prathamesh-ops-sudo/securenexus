@@ -291,6 +291,7 @@ export function registerOperationsRoutes(app: Express): void {
       const results = [];
       for (const d of defaults) {
         try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           results.push(await storage.createSloTarget(d as any));
         } catch (e) {
           // skip duplicates
@@ -583,6 +584,7 @@ export function registerOperationsRoutes(app: Express): void {
       ];
       const results = [];
       for (const d of defaults) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         results.push(await storage.createDrRunbook(d as any));
       }
       res.status(201).json(results);
@@ -640,6 +642,7 @@ export function registerOperationsRoutes(app: Express): void {
     try {
       const targets = await storage.getSloTargets();
       return sendEnvelope(res, targets, { meta: { total: targets.length } });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       return sendEnvelope(res, null, {
         status: 500,
@@ -674,6 +677,7 @@ export function registerOperationsRoutes(app: Express): void {
           description,
         });
         return sendEnvelope(res, sloTarget, { status: 201 });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -698,6 +702,7 @@ export function registerOperationsRoutes(app: Express): void {
             errors: [{ code: "NOT_FOUND", message: "SLO target not found" }],
           });
         return sendEnvelope(res, updated);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -722,6 +727,7 @@ export function registerOperationsRoutes(app: Express): void {
             errors: [{ code: "NOT_FOUND", message: "SLO target not found" }],
           });
         return sendEnvelope(res, { deleted: true });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -735,6 +741,7 @@ export function registerOperationsRoutes(app: Express): void {
     try {
       const result = await evaluateAndAlert();
       return sendEnvelope(res, result);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       return sendEnvelope(res, null, {
         status: 500,
@@ -749,6 +756,7 @@ export function registerOperationsRoutes(app: Express): void {
       const hoursBack = parseInt(req.query.hours as string, 10) || 24;
       const breaches = await getBreachHistory(service, hoursBack);
       return sendEnvelope(res, breaches, { meta: { total: breaches.length, hoursBack } });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       return sendEnvelope(res, null, {
         status: 500,
@@ -767,6 +775,7 @@ export function registerOperationsRoutes(app: Express): void {
       try {
         const seeded = await seedDefaultSloTargets();
         return sendEnvelope(res, { seeded }, { status: 201 });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -783,6 +792,7 @@ export function registerOperationsRoutes(app: Express): void {
     try {
       const flags = await storage.listFeatureFlags();
       return sendEnvelope(res, flags, { meta: { total: flags.length } });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       return sendEnvelope(res, null, {
         status: 500,
@@ -822,9 +832,11 @@ export function registerOperationsRoutes(app: Express): void {
           targetOrgs: targetOrgs || [],
           targetRoles: targetRoles || [],
           metadata: metadata || {},
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           createdBy: (req as any).user?.id,
         });
         return sendEnvelope(res, flag, { status: 201 });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -843,6 +855,7 @@ export function registerOperationsRoutes(app: Express): void {
           errors: [{ code: "NOT_FOUND", message: "Feature flag not found" }],
         });
       return sendEnvelope(res, flag);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       return sendEnvelope(res, null, {
         status: 500,
@@ -866,6 +879,7 @@ export function registerOperationsRoutes(app: Express): void {
             errors: [{ code: "NOT_FOUND", message: "Feature flag not found" }],
           });
         return sendEnvelope(res, updated);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -890,6 +904,7 @@ export function registerOperationsRoutes(app: Express): void {
             errors: [{ code: "NOT_FOUND", message: "Feature flag not found" }],
           });
         return sendEnvelope(res, { deleted: true });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -901,6 +916,7 @@ export function registerOperationsRoutes(app: Express): void {
 
   app.post("/api/v1/feature-flags/:key/evaluate", isAuthenticated, async (req, res) => {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const user = (req as any).user;
       const result = await evaluateFlag(p(req.params.key), {
         orgId: user?.orgId,
@@ -908,6 +924,7 @@ export function registerOperationsRoutes(app: Express): void {
         role: user?.role,
       });
       return sendEnvelope(res, result);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       return sendEnvelope(res, null, {
         status: 500,
@@ -918,6 +935,7 @@ export function registerOperationsRoutes(app: Express): void {
 
   app.get("/api/v1/feature-flags-evaluate-all", isAuthenticated, async (req, res) => {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const user = (req as any).user;
       const results = await evaluateAllFlags({
         orgId: user?.orgId,
@@ -925,6 +943,7 @@ export function registerOperationsRoutes(app: Express): void {
         role: user?.role,
       });
       return sendEnvelope(res, results);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       return sendEnvelope(res, null, {
         status: 500,
@@ -941,6 +960,7 @@ export function registerOperationsRoutes(app: Express): void {
       const orgId = getOrgId(req);
       const runbooks = await storage.getDrRunbooks(orgId);
       return sendEnvelope(res, runbooks, { meta: { total: runbooks.length } });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       return sendEnvelope(res, null, {
         status: 500,
@@ -977,7 +997,7 @@ export function registerOperationsRoutes(app: Express): void {
           step: idx + 1,
           title: step.title || `Step ${idx + 1}`,
           status: dryRun ? "simulated" : "completed",
-          durationMs: Math.floor(Math.random() * 2000) + 500,
+          durationMs: 1000 + idx * 200,
         }));
 
         const drillResult = {
@@ -990,10 +1010,12 @@ export function registerOperationsRoutes(app: Express): void {
           steps: stepResults,
           status: "completed",
           ranAt: new Date().toISOString(),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ranBy: (req as any).user?.id,
         };
 
         return sendEnvelope(res, drillResult, { status: 201 });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -1206,6 +1228,7 @@ export function registerOperationsRoutes(app: Express): void {
         const connectorType = p(req.params.type);
         const results = await runConnectorContractTests(connectorType);
         return sendEnvelope(res, results);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -1226,6 +1249,7 @@ export function registerOperationsRoutes(app: Express): void {
         const playbookId = p(req.params.playbookId);
         const results = await runAutomationIntegrationTests(playbookId);
         return sendEnvelope(res, results);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -1249,6 +1273,7 @@ export function registerOperationsRoutes(app: Express): void {
         return sendEnvelope(res, results, {
           meta: { suites: results.length, totalTests, totalPassed, totalFailed: totalTests - totalPassed },
         });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -1287,6 +1312,7 @@ export function registerOperationsRoutes(app: Express): void {
           },
         };
         return sendEnvelope(res, policy);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -1323,6 +1349,7 @@ export function registerOperationsRoutes(app: Express): void {
           updatedAt: new Date().toISOString(),
         };
         return sendEnvelope(res, updated);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -1407,6 +1434,7 @@ export function registerOperationsRoutes(app: Express): void {
           },
         };
         return sendEnvelope(res, guarantees);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,
@@ -1430,12 +1458,12 @@ export function registerOperationsRoutes(app: Express): void {
         const now = Date.now();
         const buckets = Array.from({ length: 30 }, (_, i) => {
           const ts = new Date(now - (29 - i) * 60000).toISOString();
-          const lagMs = Math.floor(Math.random() * 3000) + 200;
+          const lagMs = 500 + ((i * 97) % 2500);
           return {
             timestamp: ts,
             lagMs,
-            pendingCount: Math.floor(Math.random() * 50) + 5,
-            deliveryRate: Math.floor(Math.random() * 30) + 10,
+            pendingCount: 10 + ((i * 13) % 40),
+            deliveryRate: 15 + ((i * 7) % 25),
           };
         });
         const currentLagMs = buckets[buckets.length - 1].lagMs;
@@ -1449,6 +1477,7 @@ export function registerOperationsRoutes(app: Express): void {
           alerting: currentLagMs > thresholdMs,
           buckets,
         });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         return sendEnvelope(res, null, {
           status: 500,

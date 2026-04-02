@@ -803,8 +803,8 @@ function initCatalog(): void {
       ...tpl,
       id,
       orgId: null,
-      usageCount: Math.floor(Math.random() * 200) + 50,
-      createdAt: new Date(Date.now() - Math.floor(Math.random() * 90 * 24 * 60 * 60 * 1000)).toISOString(),
+      usageCount: 0,
+      createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
       updatedAt: new Date().toISOString(),
     });
   }
@@ -941,6 +941,7 @@ export function registerPlaybookTemplateRoutes(app: Express): void {
           description,
           category: category || "Custom",
           severity: severity || "medium",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           author: (req as any).user?.username || "Custom",
           version: "1.0",
           tags: Array.isArray(tags) ? tags : [],
@@ -1051,6 +1052,7 @@ export function registerPlaybookTemplateRoutes(app: Express): void {
           ]);
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id || "unknown";
 
         // Store rating

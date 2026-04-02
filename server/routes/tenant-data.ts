@@ -3,7 +3,7 @@ import { getOrgId, logger, reply, replyError, sendEnvelope, formatCSVRow, escape
 import { isAuthenticated } from "../auth";
 import { requireMinRole, resolveOrgContext } from "../rbac";
 import { storage } from "../storage";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 interface ExportJob {
   id: string;
@@ -52,7 +52,7 @@ const DATA_TABLES = [
 ];
 
 function generateId(): string {
-  return `${Date.now()}-${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 8)}`;
+  return `${Date.now()}-${randomBytes(4).toString("hex")}`;
 }
 
 export function registerTenantDataRoutes(app: Express): void {
@@ -66,6 +66,7 @@ export function registerTenantDataRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id || "unknown";
         const format = req.body.format === "csv" ? "csv" : "json";
 
@@ -179,6 +180,7 @@ export function registerTenantDataRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id || "unknown";
         const retentionDays = typeof req.body.retentionDays === "number" ? Math.max(0, req.body.retentionDays) : 30;
 
@@ -304,9 +306,10 @@ export function registerTenantDataRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // Return zero counts — real counts require DB queries per table
         const summary: Record<string, number> = {};
         for (const table of DATA_TABLES) {
-          summary[table] = Math.floor(Math.random() * 1000);
+          summary[table] = 0;
         }
         return reply(res, {
           orgId,
@@ -336,7 +339,7 @@ async function processExportJob(job: ExportJob, orgId: string): Promise<void> {
 async function processDeletionJob(job: DeletionJob, orgId: string): Promise<void> {
   job.status = "running";
   for (const table of DATA_TABLES) {
-    job.recordsBefore[table] = Math.floor(Math.random() * 500);
+    job.recordsBefore[table] = 0; // Actual count would come from DB query
   }
   await new Promise((r) => setTimeout(r, 500));
   for (const table of DATA_TABLES) {

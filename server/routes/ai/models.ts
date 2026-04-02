@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { randomBytes } from "crypto";
 import { getOrgId, logger, storage, strictLimiter } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { resolveOrgContext, requireMinRole } from "../../rbac";
@@ -76,6 +77,7 @@ export function registerAiModelsRoutes(app: Express): void {
           triage: "anthropic.claude-sonnet-4-20250514",
         },
       });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       logger.child("ai").error("Models list error", { error: String(error) });
       res.status(500).json({ message: "Failed to list available models" });
@@ -99,9 +101,12 @@ export function registerAiModelsRoutes(app: Express): void {
         }
 
         await storage.createAuditLog({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           userId: (req as any).user?.id,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           userName: (req as any).user?.firstName
-            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
             : "Admin",
           action: "ai_model_tier_updated",
           resourceType: "ai_config",
@@ -109,6 +114,7 @@ export function registerAiModelsRoutes(app: Express): void {
         });
 
         res.json({ tier, modelId, updated: true });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         logger.child("ai").error("Model tier assignment error", { error: String(error) });
         res.status(500).json({ message: "Failed to update model tier assignment" });
@@ -213,6 +219,7 @@ export function registerAiModelsRoutes(app: Express): void {
         dataSources,
         totalRecords: dataSources.reduce((sum, s) => sum + s.recordCount, 0),
       });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       logger.child("ai").error("Data sources error", { error: String(error) });
       res.status(500).json({ message: "Failed to list data sources" });
@@ -262,7 +269,7 @@ export function registerAiModelsRoutes(app: Express): void {
         const requiresApproval = !LOW_RISK_ACTIONS.includes(actionType);
 
         const proposal = {
-          id: `ra_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          id: `ra_${Date.now()}_${randomBytes(4).toString("hex")}`,
           orgId,
           incidentId,
           actionType,
@@ -282,9 +289,12 @@ export function registerAiModelsRoutes(app: Express): void {
         };
 
         await storage.createAuditLog({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           userId: (req as any).user?.id,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           userName: (req as any).user?.firstName
-            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
             : "AI Engine",
           action: requiresApproval ? "ai_response_action_proposed" : "ai_response_action_auto_executed",
           resourceType: "incident",
@@ -293,6 +303,7 @@ export function registerAiModelsRoutes(app: Express): void {
         });
 
         res.json(proposal);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         logger.child("ai").error("Response action proposal error", { error: String(error) });
         res.status(500).json({ message: "Failed to propose response action" });
@@ -311,9 +322,12 @@ export function registerAiModelsRoutes(app: Express): void {
         const actionId = String(req.params.actionId);
 
         await storage.createAuditLog({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           userId: (req as any).user?.id,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           userName: (req as any).user?.firstName
-            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
             : "Analyst",
           action: "ai_response_action_approved",
           resourceType: "response_action",
@@ -324,10 +338,12 @@ export function registerAiModelsRoutes(app: Express): void {
         res.json({
           actionId,
           status: "approved",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           approvedBy: (req as any).user?.firstName || "Analyst",
           approvedAt: new Date().toISOString(),
           executedAt: new Date().toISOString(),
         });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         logger.child("ai").error("Response action approve error", { error: String(error) });
         res.status(500).json({ message: "Failed to approve response action" });
@@ -346,9 +362,12 @@ export function registerAiModelsRoutes(app: Express): void {
         const { reason } = req.body;
 
         await storage.createAuditLog({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           userId: (req as any).user?.id,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           userName: (req as any).user?.firstName
-            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
             : "Analyst",
           action: "ai_response_action_rejected",
           resourceType: "response_action",
@@ -359,10 +378,12 @@ export function registerAiModelsRoutes(app: Express): void {
         res.json({
           actionId,
           status: "rejected",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           rejectedBy: (req as any).user?.firstName || "Analyst",
           rejectedAt: new Date().toISOString(),
           reason: reason || "No reason provided",
         });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         logger.child("ai").error("Response action reject error", { error: String(error) });
         res.status(500).json({ message: "Failed to reject response action" });

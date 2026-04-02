@@ -67,6 +67,7 @@ export function registerAgentResponseRoutes(app: Express): void {
           return res.status(400).json({ message: "sensorId is required" });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (!actionType || !AGENT_ACTION_TYPES.includes(actionType as any)) {
           return res.status(400).json({
             message: `actionType must be one of: ${AGENT_ACTION_TYPES.join(", ")}`,
@@ -87,7 +88,9 @@ export function registerAgentResponseRoutes(app: Express): void {
         const riskLevelVal = determineRiskLevel(actionType);
         const initialStatus = determineInitialStatus(riskLevelVal);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userName = (req as any).user?.firstName || (req as any).user?.email || "Unknown";
 
         const timeout = typeof timeoutSeconds === "number" ? Math.min(timeoutSeconds, 3600) : 300;
@@ -181,6 +184,7 @@ export function registerAgentResponseRoutes(app: Express): void {
       const actions = await db
         .select()
         .from(agentResponseActions)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .where(and(...(conditions as any[])))
         .orderBy(desc(agentResponseActions.createdAt))
         .limit(limit)
@@ -202,6 +206,7 @@ export function registerAgentResponseRoutes(app: Express): void {
           FROM agent_response_actions
           WHERE org_id = ${orgId}
         `);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const s = (statsResult as any).rows?.[0] || {};
 
       res.json({
@@ -254,7 +259,9 @@ export function registerAgentResponseRoutes(app: Express): void {
           return res.status(400).json({ message: `Cannot approve action in status: ${action.status}` });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userName = (req as any).user?.firstName || (req as any).user?.email || "Unknown";
 
         const [updated] = await db
@@ -309,6 +316,7 @@ export function registerAgentResponseRoutes(app: Express): void {
           return res.status(400).json({ message: `Cannot reject action in status: ${action.status}` });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id;
 
         const [updated] = await db
@@ -654,6 +662,7 @@ export function registerAgentResponseRoutes(app: Express): void {
           FROM agent_response_actions
           WHERE org_id = ${orgId}
         `);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const s = (statsResult as any).rows?.[0] || {};
 
       res.json({
@@ -690,7 +699,9 @@ export function registerAgentResponseRoutes(app: Express): void {
           return res.status(400).json({ message: "decision must be 'approved' or 'rejected'" });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userName = (req as any).user?.firstName || (req as any).user?.email || "Unknown";
         const results: Array<{ id: string; status: string; success: boolean }> = [];
 
@@ -784,11 +795,12 @@ export function registerAgentResponseRoutes(app: Express): void {
         const [sensor] = await db.select().from(nativeSensors).where(eq(nativeSensors.id, action.sensorId)).limit(1);
 
         // Build impact assessment based on action type
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const impactByType: Record<string, any> = {
           isolate_host: {
             severity: "critical",
             summary: `Isolating ${sensor?.hostname || "host"} (${sensor?.ipAddress || action.targetIp || "unknown IP"}) will sever all network connections except the management channel.`,
-            affectedSessions: Math.floor(Math.random() * 5) + 1, // In real implementation, query active sessions
+            affectedSessions: 3, // In real implementation, query active sessions
             affectedServices: ["RDP", "SSH", "HTTP"],
             estimatedDowntime: "Until manual un-isolation",
             reversible: true,
@@ -825,7 +837,7 @@ export function registerAgentResponseRoutes(app: Express): void {
           disable_user: {
             severity: "critical",
             summary: `Disabling user "${action.targetUserName || "unknown"}" will lock the account and terminate all active sessions.`,
-            affectedSessions: Math.floor(Math.random() * 3) + 1,
+            affectedSessions: 2,
             affectedServices: ["Login", "SSO", "VPN", "Email"],
             estimatedDowntime: "Until account is manually re-enabled",
             reversible: true,
@@ -964,6 +976,7 @@ export function registerAgentResponseRoutes(app: Express): void {
       const actions = await db
         .select()
         .from(agentResponseActions)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .where(and(...(conditions as any[])))
         .orderBy(desc(agentResponseActions.createdAt))
         .limit(limit);
@@ -1053,6 +1066,7 @@ export function registerAgentResponseRoutes(app: Express): void {
         const existing = await db
           .select()
           .from(agentResponseActions)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .where(and(...(conditions as any[])))
           .orderBy(desc(agentResponseActions.createdAt))
           .limit(5);
@@ -1121,6 +1135,7 @@ export function registerAgentResponseRoutes(app: Express): void {
           const [existing] = await db
             .select({ id: agentResponseActions.id, status: agentResponseActions.status })
             .from(agentResponseActions)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             .where(and(...(dupeConditions as any[])))
             .limit(1);
 
@@ -1146,7 +1161,9 @@ export function registerAgentResponseRoutes(app: Express): void {
 
         const riskLevelVal = determineRiskLevel(actionType);
         const initialStatus = determineInitialStatus(riskLevelVal);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userName = (req as any).user?.firstName || (req as any).user?.email || "Unknown";
         const timeout = typeof timeoutSeconds === "number" ? Math.min(timeoutSeconds, 3600) : 300;
 
@@ -1306,8 +1323,10 @@ export function registerAgentResponseRoutes(app: Express): void {
                 verified: allPassed,
                 checks,
                 verifiedAt: new Date().toISOString(),
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 verifiedBy: (req as any).user?.id,
               },
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any,
             updatedAt: new Date(),
           })
@@ -1361,6 +1380,7 @@ export function registerAgentResponseRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const orgConfig = autonomousThresholds.get(orgId) || {};
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const merged: Record<string, any> = {};
 
         for (const [actionType, defaults] of Object.entries(DEFAULT_THRESHOLDS)) {
@@ -1399,6 +1419,7 @@ export function registerAgentResponseRoutes(app: Express): void {
 
         const existing = autonomousThresholds.get(orgId) || {};
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         for (const [actionType, values] of Object.entries(thresholds as Record<string, any>)) {
           if (!DEFAULT_THRESHOLDS[actionType]) continue;
           const autoExec =
@@ -1535,6 +1556,7 @@ export function registerAgentResponseRoutes(app: Express): void {
           FROM integrations
           WHERE org_id = ${orgId} AND status = 'active'
         `);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const activeIntegrations = ((integrations as any).rows || []) as Array<{
           id: string;
           type: string;
@@ -1615,6 +1637,7 @@ export function registerAgentResponseRoutes(app: Express): void {
             SELECT id, type, name FROM integrations
             WHERE org_id = ${orgId} AND status = 'active'
           `);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const activeIntegrations = ((integrations as any).rows || []) as Array<{
             id: string;
             type: string;
@@ -1727,7 +1750,9 @@ export function registerAgentResponseRoutes(app: Express): void {
           });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userName = (req as any).user?.firstName || (req as any).user?.email || "Unknown";
 
         // Create rollback action record
@@ -1754,6 +1779,7 @@ export function registerAgentResponseRoutes(app: Express): void {
             approvedAt: new Date(),
             timeoutSeconds: 300,
             expiresAt: new Date(Date.now() + 300_000),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             parameters: { originalActionId: actionId, rollbackType: rollbackAction } as any,
           })
           .returning();

@@ -135,8 +135,11 @@ function genId(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
 }
 
+let _agentSeed = 0;
 function randomBetween(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  _agentSeed++;
+  const h = (_agentSeed * 2654435761) >>> 0;
+  return min + (h % (max - min + 1));
 }
 
 const { publicKey: SIGNING_PUBLIC_KEY, privateKey: SIGNING_PRIVATE_KEY } = generateKeyPairSync("ed25519");
@@ -451,7 +454,7 @@ function seedInvocations(orgId: string): void {
       outputHash: verdict === "allowed" ? hashInput(`output-${i}-${tool.id}`) : null,
       verdict,
       verdictReason: reasons[verdict][randomBetween(0, reasons[verdict].length - 1)],
-      attestationPassed: verdict !== "denied" || Math.random() > 0.3,
+      attestationPassed: verdict !== "denied" || i % 3 !== 0,
       riskScore,
       durationMs: randomBetween(12, 2500),
       chainId,
@@ -530,7 +533,7 @@ function seedAnomalies(orgId: string): void {
       description: def.desc,
       evidence: def.evidence,
       chainId: def.type === "unusual_chaining" ? genId("chain") : null,
-      acknowledged: Math.random() > 0.6,
+      acknowledged: anomalies.length % 3 !== 0,
       detectedAt: new Date(now - randomBetween(0, 5 * 24 * 60 * 60 * 1000)).toISOString(),
     });
   }

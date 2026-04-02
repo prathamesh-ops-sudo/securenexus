@@ -850,8 +850,11 @@ function genId(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
 }
 
+let _chaosSeed = 0;
 function randomBetween(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  _chaosSeed++;
+  const h = (_chaosSeed * 2654435761) >>> 0;
+  return min + (h % (max - min + 1));
 }
 
 export interface SimulationResult {
@@ -995,7 +998,7 @@ function seedSimulations(orgId: string): SimulationResult[] {
   const techniques = MITRE_TECHNIQUE_LIBRARY.slice(0, 30);
   for (let i = 0; i < techniques.length; i++) {
     const t = techniques[i];
-    const passed = Math.random() > 0.3;
+    const passed = i % 10 < 7;
     results.push({
       id: genId("sim"),
       orgId,
@@ -1006,7 +1009,7 @@ function seedSimulations(orgId: string): SimulationResult[] {
       platform: t.platform[0],
       severity: t.severity,
       status: passed ? "passed" : "failed",
-      verdict: passed ? (Math.random() > 0.4 ? "blocked" : "detected") : "bypassed",
+      verdict: passed ? (i % 3 !== 0 ? "blocked" : "detected") : "bypassed",
       durationMs: randomBetween(100, 5000),
       output: passed
         ? `Technique ${t.id} (${t.name}) was correctly detected/blocked by security controls`
@@ -1050,7 +1053,7 @@ function seedControls(orgId: string): ControlScore[] {
       mitreIds: Array.from(data.mitreIds),
       status: score >= 80 ? "effective" : score >= 50 ? "partial" : total === 0 ? "untested" : "failing",
       lastTestedAt: data.lastAt,
-      trend: Math.random() > 0.3 ? "stable" : Math.random() > 0.5 ? "improving" : "declining",
+      trend: scores.length % 3 === 0 ? "stable" : scores.length % 3 === 1 ? "improving" : "declining",
     });
   });
   return scores.sort((a, b) => a.effectivenessScore - b.effectivenessScore);
@@ -1259,7 +1262,9 @@ export function runSimulation(orgId: string, techniqueId: string, trigger: strin
   const technique = MITRE_TECHNIQUE_LIBRARY.find((t) => t.id === techniqueId);
   if (!technique) throw new Error("TECHNIQUE_NOT_FOUND");
 
-  const passed = Math.random() > 0.25;
+  const passHash = (techniqueId.charCodeAt(0) + techniqueId.length) % 4;
+  const passed = passHash !== 0;
+  const actionWord = passHash % 3 !== 0 ? "blocked" : "detected";
   const result: SimulationResult = {
     id: genId("sim"),
     orgId,
@@ -1270,10 +1275,10 @@ export function runSimulation(orgId: string, techniqueId: string, trigger: strin
     platform: technique.platform[0],
     severity: technique.severity,
     status: passed ? "passed" : "failed",
-    verdict: passed ? (Math.random() > 0.4 ? "blocked" : "detected") : "bypassed",
+    verdict: passed ? (passHash % 3 !== 0 ? "blocked" : "detected") : "bypassed",
     durationMs: randomBetween(100, 5000),
     output: passed
-      ? `Technique ${technique.id} (${technique.name}) was correctly ${Math.random() > 0.4 ? "blocked" : "detected"} by security controls (${technique.controlMappings.join(", ")})`
+      ? `Technique ${technique.id} (${technique.name}) was correctly ${actionWord} by security controls (${technique.controlMappings.join(", ")})`
       : `ALERT: Technique ${technique.id} (${technique.name}) bypassed all detection controls — immediate remediation required. Expected: ${technique.expectedDetection}`,
     controlsTested: technique.controlMappings,
     trigger,

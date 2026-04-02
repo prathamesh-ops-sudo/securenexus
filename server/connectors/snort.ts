@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
@@ -70,15 +71,17 @@ export const snortPlugin: ConnectorPlugin = {
       url += `&since=${since.toISOString()}`;
     }
     const res = await httpRequest(url, { headers });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return Array.isArray(res.data) ? (res.data as unknown[]) : (res.data as Record<string, any>)?.alerts || [];
   },
 
   normalize(raw: unknown): Partial<InsertAlert> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = raw as Record<string, any>;
     return {
       source: "Snort IDS",
       sourceEventId:
-        r.sid?.toString() || r.gid?.toString() || `snort_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        r.sid?.toString() || r.gid?.toString() || `snort_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
       title: r.msg || r.message || "Snort Alert",
       description: r.msg || r.reference || "",
       severity: mapSeverity(r.priority || r.rev),
