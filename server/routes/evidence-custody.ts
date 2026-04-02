@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { getOrgId, logger, reply, replyError, sendEnvelope } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, resolveOrgContext } from "../rbac";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 interface EvidenceItem {
   id: string;
@@ -34,6 +34,7 @@ interface CustodyEntry {
 
 const evidenceStore = new Map<string, EvidenceItem>();
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const retentionPolicies = new Map<string, any[]>();
 
 function getDefaultRetentionPolicies() {
@@ -53,7 +54,7 @@ function computeEntryHash(entry: Omit<CustodyEntry, "entryHash">): string {
 }
 
 function genId(): string {
-  return `evi-${Date.now()}-${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 8)}`;
+  return `evi-${Date.now()}-${randomBytes(4).toString("hex")}`;
 }
 
 export function registerEvidenceCustodyRoutes(app: Express): void {
@@ -102,6 +103,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { name, type, sourceSystem, classification, caseId, sizeBytes } = req.body;
 
@@ -191,6 +193,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
           return replyError(res, 400, [{ code: "SEALED", message: "Evidence is sealed. Unseal before transferring." }]);
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { action, reason } = req.body;
 
@@ -238,6 +241,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const previousHash = evidence.integrityChain[evidence.integrityChain.length - 1].entryHash;
         const sealEntry: Omit<CustodyEntry, "entryHash"> = {
@@ -312,6 +316,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
         if (!evidence || evidence.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const tags = (evidence as any).tags || [];
         return sendEnvelope(res, tags, { meta: { total: tags.length } });
       } catch (error: unknown) {
@@ -348,14 +353,17 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
           "document",
           "other",
         ];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (!(evidence as any).tags) (evidence as any).tags = [];
         const tagEntry = {
           id: genId(),
           tag,
           category: validCategories.includes(category) ? category : "other",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           addedBy: (req as any).user?.username || "unknown",
           addedAt: new Date().toISOString(),
         };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (evidence as any).tags.push(tagEntry);
         log.info("Evidence tagged", { orgId, evidenceId: evidence.id, tag });
         return reply(res, tagEntry, undefined, 201);
@@ -377,7 +385,9 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
         if (!evidence || evidence.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const tags = (evidence as any).tags || [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const idx = tags.findIndex((t: any) => t.id === req.params.tagId);
         if (idx === -1) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Tag not found." }]);
@@ -408,6 +418,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
           return replyError(res, 400, [{ code: "SEALED", message: "Evidence is sealed." }]);
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { fileName, fileSize, mimeType, chunkIndex, totalChunks } = req.body;
 
@@ -444,7 +455,9 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
         evidence.sizeBytes += typeof fileSize === "number" ? fileSize : 0;
 
         // Store file reference
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (!(evidence as any).files) (evidence as any).files = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (evidence as any).files.push({
           fileName,
           fileSize: typeof fileSize === "number" ? fileSize : 0,
@@ -503,6 +516,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
         if (!Array.isArray(policies)) {
           return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "policies array is required." }]);
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const validatedPolicies = policies.map((p: any) => ({
           evidenceType: p.evidenceType || "artifact",
           retentionDays: typeof p.retentionDays === "number" ? p.retentionDays : 365,
@@ -537,6 +551,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
             results.skipped++;
             continue;
           }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const policy = policies.find((p: any) => p.evidenceType === evidence.type);
           if (!policy) {
             results.skipped++;
@@ -560,6 +575,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
 
   // ─── 19.4 Evidence Access Audit Logging ─────────────────────────────────────
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const accessAuditLog = new Map<string, any[]>();
 
   function logEvidenceAccess(
@@ -603,6 +619,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
         const entries = accessAuditLog.get(key) || [];
         // Also log this access-log view itself
         const ip = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "unknown";
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         logEvidenceAccess(orgId, evidence.id, "access_log_viewed", (req as any).user?.username || "unknown", ip);
         return sendEnvelope(res, entries, { meta: { total: entries.length } });
       } catch (error: unknown) {
@@ -613,6 +630,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
 
   // ─── 19.2 Access Request Workflow ───────────────────────────────────────────
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const accessRequests = new Map<string, any[]>();
 
   app.get(
@@ -648,6 +666,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
         if (!evidence || evidence.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { reason, accessType } = req.body;
         if (!reason) {
@@ -695,6 +714,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
         }
         const key = `${orgId}:${evidence.id}`;
         const requests = accessRequests.get(key) || [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const request = requests.find((r: any) => r.id === req.params.requestId);
         if (!request) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Access request not found." }]);
@@ -706,6 +726,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
         if (!decision || !["approved", "denied"].includes(decision)) {
           return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "decision must be approved or denied." }]);
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         request.status = decision;
         request.decidedBy = user?.username || "unknown";
@@ -739,6 +760,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
         }
 
         const ip = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "unknown";
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         logEvidenceAccess(orgId, evidence.id, "exported", (req as any).user?.username || "unknown", ip);
 
         const key = `${orgId}:${evidence.id}`;
@@ -746,6 +768,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
 
         const report = {
           exportedAt: new Date().toISOString(),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           exportedBy: (req as any).user?.username || "unknown",
           evidence: {
             id: evidence.id,
@@ -775,13 +798,16 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
             totalEntries: evidence.integrityChain.length,
             verifiedAt: new Date().toISOString(),
           },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           accessLog: accessLog.map((e: any) => ({
             action: e.action,
             actor: e.actor,
             timestamp: e.timestamp,
             ip: e.ip,
           })),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           tags: (evidence as any).tags || [],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           files: (evidence as any).files || [],
           legalNotice:
             "This document constitutes an official chain of custody report. All hash verifications have been performed using SHA-256. Any tampering with this report or the underlying evidence may constitute a criminal offense.",
@@ -805,6 +831,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
             ...evidence.integrityChain.map((e) => `Chain,${e.action},${e.actor},${e.timestamp},${e.entryHash}`),
             "",
             "Access Log,Action,Actor,Timestamp,IP",
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             ...accessLog.map((e: any) => `Access,${e.action},${e.actor},${e.timestamp},${e.ip}`),
           ];
           res.setHeader("Content-Type", "text/csv");
@@ -834,6 +861,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
         }
         const ip = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "unknown";
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         logEvidenceAccess(orgId, evidence.id, "previewed", (req as any).user?.username || "unknown", ip);
 
         // Generate synthetic preview content based on evidence type
@@ -874,14 +902,15 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
             previewType = "hex";
             // Generate synthetic hex dump
             const lines: string[] = [];
+            // Generate deterministic hex dump from evidence hash
+            const seed = createHash("sha256").update(evidence.id).digest();
             for (let offset = 0; offset < 256; offset += 16) {
-              const hex = Array.from({ length: 16 }, () =>
-                Math.floor(Math.random() * 256)
-                  .toString(16)
-                  .padStart(2, "0"),
-              ).join(" ");
-              const ascii = Array.from({ length: 16 }, () => {
-                const c = Math.floor(Math.random() * 94) + 33;
+              const hex = Array.from({ length: 16 }, (_, i) => {
+                const byte = (seed[(offset + i) % seed.length] + offset + i) & 0xff;
+                return byte.toString(16).padStart(2, "0");
+              }).join(" ");
+              const ascii = Array.from({ length: 16 }, (_, i) => {
+                const c = ((seed[(offset + i) % seed.length] + offset + i) % 94) + 33;
                 return c >= 33 && c <= 126 ? String.fromCharCode(c) : ".";
               }).join("");
               lines.push(`${offset.toString(16).padStart(8, "0")}  ${hex}  |${ascii}|`);

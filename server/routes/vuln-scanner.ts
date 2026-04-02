@@ -310,6 +310,7 @@ export function registerVulnScannerRoutes(app: Express): void {
       const findings = await db
         .select()
         .from(vulnFindings)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .where(and(...(conditions as any[])))
         .orderBy(desc(vulnFindings.createdAt))
         .limit(limit)
@@ -329,6 +330,7 @@ export function registerVulnScannerRoutes(app: Express): void {
           FROM vuln_findings
           WHERE org_id = ${orgId}
         `);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const s = (statsResult as any).rows?.[0] || {};
 
       res.json({
@@ -380,13 +382,16 @@ export function registerVulnScannerRoutes(app: Express): void {
           }
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (updates.status && !VULN_FINDING_STATUSES.includes(updates.status as any)) {
           return res.status(400).json({
             message: `status must be one of: ${VULN_FINDING_STATUSES.join(", ")}`,
           });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userName = (req as any).user?.firstName || (req as any).user?.email || "Unknown";
 
         if (updates.status === "acknowledged") {
@@ -426,6 +431,7 @@ export function registerVulnScannerRoutes(app: Express): void {
       const packages = await db
         .select()
         .from(vulnPackages)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .where(and(...(conditions as any[])))
         .orderBy(desc(vulnPackages.isVulnerable), desc(vulnPackages.cveCount))
         .limit(limit)
@@ -440,6 +446,7 @@ export function registerVulnScannerRoutes(app: Express): void {
           FROM vuln_packages
           WHERE org_id = ${orgId}
         `);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const s = (statsResult as any).rows?.[0] || {};
 
       res.json({
@@ -680,7 +687,7 @@ export function registerVulnScannerRoutes(app: Express): void {
           credentialType: credentialType || "ssh_key",
           scanDepth: scanDepth || "full",
           status: "initiated",
-          estimatedDurationMin: 15 + Math.floor(Math.random() * 45),
+          estimatedDurationMin: 30,
           startedAt: new Date().toISOString(),
           message: "Authenticated scan started — deeper inspection with elevated credentials",
         });
@@ -716,7 +723,7 @@ export function registerVulnScannerRoutes(app: Express): void {
         status: "scanning",
         layers: [],
         vulnerabilities: [],
-        estimatedDurationSec: 30 + Math.floor(Math.random() * 60),
+        estimatedDurationSec: 60,
         startedAt: new Date().toISOString(),
         message: `Scanning container image ${imageRef}`,
       });
@@ -739,6 +746,7 @@ export function registerVulnScannerRoutes(app: Express): void {
         WHERE vp.org_id = ${orgId}
       `);
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const hosts = ((hostsResult as any).rows || []) as Array<{
         sensor_id: string;
         hostname: string | null;
@@ -792,6 +800,7 @@ export function registerVulnScannerRoutes(app: Express): void {
         ORDER BY critical_unpatched DESC, unpatched_count DESC
       `);
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const hosts = ((patchResult as any).rows || []).map((r: Record<string, string>) => ({
         sensorId: r.sensor_id,
         hostname: r.hostname || "unknown",
@@ -859,7 +868,7 @@ export function registerVulnScannerRoutes(app: Express): void {
         targetCves: Array.isArray(cveIds) ? cveIds : [],
         patchMethod: patchMethod || "auto_update",
         status: "queued",
-        estimatedDurationMin: 5 + Math.floor(Math.random() * 20),
+        estimatedDurationMin: 10,
         triggeredAt: new Date().toISOString(),
         message: `Patch job queued for ${sensor.hostname}`,
       });

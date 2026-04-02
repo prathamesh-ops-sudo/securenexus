@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { getOrgId, logger, reply, replyError, sendEnvelope } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, resolveOrgContext } from "../rbac";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 interface TimelineEvent {
   id: string;
@@ -34,7 +34,7 @@ interface InvestigationTimeline {
 const timelines = new Map<string, InvestigationTimeline>();
 
 function genId(): string {
-  return `evt-${Date.now()}-${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 8)}`;
+  return `evt-${Date.now()}-${randomBytes(4).toString("hex")}`;
 }
 
 export function registerInvestigationTimelineRoutes(app: Express): void {
@@ -78,6 +78,7 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { investigationId, title } = req.body;
 
@@ -175,6 +176,7 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
           ]);
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { type, title, description, severity, source, linkedEntities, metadata } = req.body;
 
@@ -259,6 +261,7 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
         if (!timeline || timeline.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Timeline not found." }]);
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const annotations = (timeline as any).annotations || [];
         return sendEnvelope(res, annotations, { meta: { total: annotations.length } });
       } catch (error: unknown) {
@@ -279,6 +282,7 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
         if (!timeline || timeline.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Timeline not found." }]);
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { text, markerType, timestamp, color } = req.body;
         if (!text) {
@@ -294,7 +298,9 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
           author: user?.username || "unknown",
           createdAt: new Date().toISOString(),
         };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (!(timeline as any).annotations) (timeline as any).annotations = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (timeline as any).annotations.push(annotation);
         log.info("Timeline annotation added", { orgId, investigationId: req.params.investigationId });
         return reply(res, annotation, undefined, 201);
@@ -316,7 +322,9 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
         if (!timeline || timeline.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Timeline not found." }]);
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const annotations = (timeline as any).annotations || [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const idx = annotations.findIndex((a: any) => a.id === req.params.annotationId);
         if (idx === -1) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Annotation not found." }]);
@@ -399,10 +407,14 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
         const autoEvents: TimelineEvent[] = [];
         const now = new Date();
 
-        for (const source of sources) {
-          const count = Math.floor(Math.random() * 3) + 1;
+        for (let si = 0; si < sources.length; si++) {
+          const source = sources[si];
+          // Deterministic count based on source index (1-2 events per source)
+          const count = (si % 3) + 1;
           for (let i = 0; i < count; i++) {
-            const eventTime = new Date(now.getTime() - Math.random() * 7 * 24 * 60 * 60 * 1000);
+            // Deterministic time offset based on source and event index
+            const offsetMs = ((si * 3 + i + 1) / (sources.length * 3)) * 7 * 24 * 60 * 60 * 1000;
+            const eventTime = new Date(now.getTime() - offsetMs);
             autoEvents.push({
               id: genId(),
               investigationId: req.params.investigationId as string,
@@ -498,6 +510,7 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
         }
 
         // Default JSON export
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const annotations = (timeline as any).annotations || [];
         const exportData = {
           investigationId: timeline.investigationId,

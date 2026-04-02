@@ -1,16 +1,26 @@
+import { createHash } from "crypto";
 import { storage } from "./storage";
 import type { EndpointAsset, EndpointTelemetry } from "@shared/schema";
 
+let seedCounter = 0;
+function deterministicInt(min: number, max: number): number {
+  seedCounter++;
+  const hash = createHash("sha256").update(`seed-${seedCounter}`).digest();
+  return min + (hash.readUInt32BE(0) % (max - min + 1));
+}
+
 function randInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  return deterministicInt(min, max);
 }
 
 function randFloat(min: number, max: number, decimals = 1): number {
-  return parseFloat((Math.random() * (max - min) + min).toFixed(decimals));
+  const range = max - min;
+  const val = min + deterministicInt(0, Math.round(range * Math.pow(10, decimals))) / Math.pow(10, decimals);
+  return parseFloat(val.toFixed(decimals));
 }
 
 function pick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+  return arr[deterministicInt(0, arr.length - 1)];
 }
 
 function recentDate(hoursBack: number): string {
@@ -85,20 +95,20 @@ export async function seedEndpointAssets(orgId: string): Promise<EndpointAsset[]
   if (existing.length > 0) return existing;
 
   const count = randInt(8, 12);
-  const shuffled = [...ENDPOINT_TEMPLATES].sort(() => Math.random() - 0.5).slice(0, count);
+  const shuffled = [...ENDPOINT_TEMPLATES].slice(0, count);
 
   const assets: EndpointAsset[] = [];
   for (const template of shuffled) {
-    const statusRoll = Math.random();
-    const agentStatus = statusRoll < 0.7 ? "online" : statusRoll < 0.9 ? "offline" : "degraded";
+    const statusIdx = assets.length % 10;
+    const agentStatus = statusIdx < 7 ? "online" : statusIdx < 9 ? "offline" : "degraded";
 
-    const riskRoll = Math.random();
-    const riskScore = riskRoll < 0.6 ? randInt(0, 30) : riskRoll < 0.85 ? randInt(31, 60) : randInt(61, 100);
+    const riskScore =
+      assets.length % 3 === 0 ? randInt(0, 30) : assets.length % 3 === 1 ? randInt(31, 60) : randInt(61, 100);
 
     const octet2 = randInt(0, 255);
     const octet3 = randInt(0, 255);
     const octet4 = randInt(1, 254);
-    const ipAddress = Math.random() < 0.7 ? `10.${octet2}.${octet3}.${octet4}` : `192.168.${octet3}.${octet4}`;
+    const ipAddress = assets.length % 3 !== 0 ? `10.${octet2}.${octet3}.${octet4}` : `192.168.${octet3}.${octet4}`;
 
     const asset = await storage.createEndpointAsset({
       orgId,
@@ -136,7 +146,7 @@ export async function generateTelemetry(orgId: string, assetId: string): Promise
     pid: randInt(1000, 65535),
   }));
 
-  const avOutdated = Math.random() < 0.2;
+  const avOutdated = assetId.charCodeAt(0) % 5 === 0;
   const criticalPending = randInt(0, 3);
 
   const metrics: Array<{ type: string; value: unknown }> = [
@@ -206,6 +216,7 @@ export async function calculateEndpointRisk(assetId: string): Promise<number> {
   let risk = 0;
 
   for (const t of telemetry) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const val = t.metricValue as Record<string, any>;
 
     switch (t.metricType) {

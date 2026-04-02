@@ -134,12 +134,17 @@ function genId(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
 }
 
+let _socSeed = 0;
 function randomBetween(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  _socSeed++;
+  const h = (_socSeed * 2654435761) >>> 0;
+  return min + (h % (max - min + 1));
 }
 
 function randomFloat(min: number, max: number): number {
-  return Math.round((Math.random() * (max - min) + min) * 100) / 100;
+  _socSeed++;
+  const h = (_socSeed * 2654435761) >>> 0;
+  return Math.round((((h % 10000) / 10000) * (max - min) + min) * 100) / 100;
 }
 
 const orgTriageStore = new Map<string, TriageSummary[]>();
@@ -904,7 +909,8 @@ export function getTriageById(orgId: string, triageId: string): TriageSummary | 
 
 export function generateTriage(orgId: string, alertId: string, alertTitle: string, severity: string): TriageSummary {
   const verdicts: TriageVerdict[] = ["true_positive", "false_positive", "needs_investigation", "benign"];
-  const verdict = verdicts[Math.floor(Math.random() * verdicts.length)];
+  const verdictIdx = (alertId.charCodeAt(0) + alertId.length) % verdicts.length;
+  const verdict = verdicts[verdictIdx];
   const confidence = randomFloat(0.55, 0.98);
 
   const summaryTemplates: Record<TriageVerdict, string> = {

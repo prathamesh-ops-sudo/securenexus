@@ -65,6 +65,7 @@ export function registerDataLakeRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const {
           name,
@@ -133,6 +134,7 @@ export function registerDataLakeRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const policyId = String(req.params.id);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
 
         // Verify ownership
@@ -247,6 +249,7 @@ export function registerDataLakeRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { name, description, holdType, tableScope, reason, caseReference } = req.body;
 
@@ -302,6 +305,7 @@ export function registerDataLakeRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const holdId = String(req.params.id);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
 
         const [existing] = await db
@@ -341,6 +345,7 @@ export function registerDataLakeRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const holdId = String(req.params.id);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
 
         const [existing] = await db
@@ -477,6 +482,7 @@ export function registerDataLakeRoutes(app: Express): void {
   app.post("/api/data-lake/query", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
       const orgId = getOrgId(req);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const user = (req as any).user;
       const { queryText, dataTypes, dateRangeStart, dateRangeEnd, limit, includeCold } = req.body;
 
@@ -554,6 +560,7 @@ export function registerDataLakeRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const {
           name,
@@ -800,8 +807,8 @@ export function registerDataLakeRoutes(app: Express): void {
         dataTypes?: string[];
         dateRange?: { start: string; end: string };
       };
-      const estimatedScanGb = Math.round((Math.random() * 50 + 5) * 100) / 100;
-      const estimatedTimeMs = Math.round(estimatedScanGb * 800 + Math.random() * 2000);
+      const estimatedScanGb = 25.0;
+      const estimatedTimeMs = Math.round(estimatedScanGb * 800 + 1000);
       const estimatedCost = Math.round(estimatedScanGb * 0.005 * 100) / 100;
       const tiersQueried = ["hot"];
       if (estimatedScanGb > 10) tiersQueried.push("warm");

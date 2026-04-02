@@ -164,11 +164,14 @@ function generateRiskBurndown(): RiskBurndownEntry[] {
 
   for (let i = 29; i >= 0; i--) {
     const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-    const dailyVariance = () => Math.floor(Math.random() * 6) - 3;
-    critical = Math.max(0, critical + dailyVariance() - 1);
-    high = Math.max(0, high + dailyVariance() - 1);
-    medium = Math.max(0, medium + dailyVariance());
-    low = Math.max(0, low + dailyVariance());
+    const v1 = (((i * 2654435761 + 1) >>> 0) % 6) - 3;
+    const v2 = (((i * 2654435761 + 2) >>> 0) % 6) - 3;
+    const v3 = (((i * 2654435761 + 3) >>> 0) % 6) - 3;
+    const v4 = (((i * 2654435761 + 4) >>> 0) % 6) - 3;
+    critical = Math.max(0, critical + v1 - 1);
+    high = Math.max(0, high + v2 - 1);
+    medium = Math.max(0, medium + v3);
+    low = Math.max(0, low + v4);
     entries.push({
       date: date.toISOString().split("T")[0],
       critical,

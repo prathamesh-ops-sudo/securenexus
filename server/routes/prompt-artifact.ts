@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { randomBytes } from "crypto";
 import { z } from "zod";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
@@ -468,7 +469,7 @@ export function registerPromptArtifactRoutes(app: Express): void {
         return res.status(403).json({ message: "Artifact requires approval before deployment" });
       }
 
-      const deployId = `deploy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const deployId = `deploy-${Date.now()}-${randomBytes(4).toString("hex")}`;
       const deployment: DeploymentRecord = {
         id: deployId,
         artifactId: artifact.id,

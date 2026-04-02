@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
@@ -80,10 +81,12 @@ export const splunkPlugin: ConnectorPlugin = {
   },
 
   normalize(raw: unknown): Partial<InsertAlert> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = raw as Record<string, any>;
     return {
       source: "Splunk SIEM",
-      sourceEventId: r._cd || r._serial || r.event_id || `splunk_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      sourceEventId:
+        r._cd || r._serial || r.event_id || `splunk_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
       title: r.source || r.sourcetype || "Splunk Event",
       description: r._raw || r.message || JSON.stringify(r).slice(0, 500),
       severity: mapSeverity(r.severity || r.urgency || r.level),

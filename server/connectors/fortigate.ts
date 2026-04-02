@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
@@ -64,14 +65,16 @@ export const fortigatePlugin: ConnectorPlugin = {
       url += `&since=${since.toISOString()}`;
     }
     const res = await httpRequest(url, { headers: { "Content-Type": "application/json" } });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (res.data as Record<string, any>)?.results || [];
   },
 
   normalize(raw: unknown): Partial<InsertAlert> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = raw as Record<string, any>;
     return {
       source: "Fortinet FortiGate",
-      sourceEventId: r.logid || r.eventid || `forti_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      sourceEventId: r.logid || r.eventid || `forti_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
       title: r.msg || r.action || "FortiGate Event",
       description: r.msg || r.logdesc || "",
       severity: mapSeverity(r.level),

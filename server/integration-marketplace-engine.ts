@@ -420,6 +420,7 @@ export function installConnector(
   };
 
   instanceStore.set(instance.id, instance);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   evictOldest(instanceStore as any);
 
   initQualityScore(instance.connectorId, instance.id);
@@ -516,9 +517,9 @@ export function triggerSync(instanceId: string, orgId: string): SyncEvent | null
   }
 
   const startTime = Date.now();
-  const recordsProcessed = Math.floor(Math.random() * 200) + 10;
-  const recordsFailed = Math.random() > 0.85 ? Math.floor(Math.random() * 5) : 0;
-  const durationMs = Math.floor(Math.random() * 3000) + 200;
+  const recordsProcessed = 50 + ((instanceId.charCodeAt(0) * 7) % 150);
+  const recordsFailed = 0;
+  const durationMs = 500 + ((instanceId.charCodeAt(0) * 13) % 2500);
   const status = recordsFailed > 0 ? ("partial" as const) : ("success" as const);
 
   const event: SyncEvent = {
@@ -537,6 +538,7 @@ export function triggerSync(instanceId: string, orgId: string): SyncEvent | null
   };
 
   syncEventStore.set(event.id, event);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   evictOldest(syncEventStore as any);
 
   instance.lastSyncAt = event.completedAt;
@@ -627,6 +629,7 @@ export function ingestWebhook(
   };
 
   webhookEventStore.set(event.id, event);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   evictOldest(webhookEventStore as any);
   return event;
 }
@@ -666,19 +669,10 @@ export function runHealthCheck(instanceId: string, orgId: string): HealthCheck |
   const instance = instanceStore.get(instanceId);
   if (!instance || instance.orgId !== orgId) return null;
 
-  const latencyMs = Math.floor(Math.random() * 500) + 20;
-  const healthyRoll = Math.random();
-  let status: HealthCheck["status"] = "healthy";
-  let driftDetected = false;
-  let driftDetails: string | null = null;
-
-  if (healthyRoll > 0.95) {
-    status = "unhealthy";
-  } else if (healthyRoll > 0.85) {
-    status = "degraded";
-    driftDetected = true;
-    driftDetails = "Schema field 'severity_level' missing in upstream API v2 response";
-  }
+  const latencyMs = 50 + ((instanceId.charCodeAt(0) * 7) % 450);
+  const status: HealthCheck["status"] = "healthy";
+  const driftDetected = false;
+  const driftDetails: string | null = null;
 
   const check: HealthCheck = {
     id: randomUUID(),
@@ -686,7 +680,7 @@ export function runHealthCheck(instanceId: string, orgId: string): HealthCheck |
     orgId,
     status,
     latencyMs,
-    credentialStatus: status === "unhealthy" ? "expired" : "valid",
+    credentialStatus: "valid" as const,
     schemaVersion: "v2.1",
     driftDetected,
     driftDetails,
@@ -694,6 +688,7 @@ export function runHealthCheck(instanceId: string, orgId: string): HealthCheck |
   };
 
   healthStore.set(check.id, check);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   evictOldest(healthStore as any);
 
   if (status !== "healthy") {

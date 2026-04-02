@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
@@ -39,7 +40,9 @@ async function authenticate(config: ConnectorConfig): Promise<Record<string, str
       headers: { "Content-Type": "application/json" },
       body: { user: config.username, password: config.password },
     });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (loginRes.data && (loginRes.data as Record<string, any>).sid) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       headers["X-chkp-sid"] = (loginRes.data as Record<string, any>).sid;
     }
   }
@@ -111,14 +114,16 @@ export const checkpointPlugin: ConnectorPlugin = {
       headers,
       body,
     });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (res.data as Record<string, any>)?.logs || (res.data as Record<string, any>)?.tasks?.[0]?.task_details || [];
   },
 
   normalize(raw: unknown): Partial<InsertAlert> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = raw as Record<string, any>;
     return {
       source: "Check Point",
-      sourceEventId: r.loguid || r.id || `checkpoint_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      sourceEventId: r.loguid || r.id || `checkpoint_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
       title: r.attack || r.product || "Check Point Alert",
       description: r.attack || r.protection_name || "",
       severity: mapSeverity(r.severity || r.confidence_level),

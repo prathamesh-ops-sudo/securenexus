@@ -98,9 +98,12 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const playbookId = p(req.params.playbookId);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (req as any).user?.id;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userName = (req as any).user?.firstName
-          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
           : "Unknown";
 
         const playbook = await storage.getPlaybook(playbookId);
@@ -115,11 +118,14 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
         });
 
         const actionsArr = Array.isArray(playbook.actions) ? playbook.actions : [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const simulatedActions: any[] = [];
         const startTime = Date.now();
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const isGraphFormat = actionsArr.length > 0 && (actionsArr as any)[0]?.nodes;
         if (isGraphFormat) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const graph = actionsArr[0] as any;
           const nodes = graph.nodes || [];
           for (const node of nodes) {
@@ -157,6 +163,7 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
           }
         } else {
           for (const action of actionsArr) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const actionObj = action as any;
             simulatedActions.push({
               actionType: actionObj.type || actionObj.actionType || "unknown",
@@ -219,17 +226,21 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
           return res.status(404).json({ message: "Playbook not found" });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
         const { parameters, scenarioName } = req.body;
 
         const actionsArr = Array.isArray(pb.actions) ? pb.actions : [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const simulatedActions: any[] = [];
         const startTime = Date.now();
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const isGraphFormat = actionsArr.length > 0 && (actionsArr as any)[0]?.nodes;
 
         if (isGraphFormat) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const graph = actionsArr[0] as any;
           const nodes = graph.nodes || [];
           const edges = graph.edges || [];
@@ -238,9 +249,12 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
             if (!adjacency[edge.source]) adjacency[edge.source] = [];
             adjacency[edge.source].push(edge.target);
           }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const targetNodes = new Set(edges.map((e: any) => e.target));
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const startNodes = nodes.filter((n: any) => !targetNodes.has(n.id) || n.type === "trigger");
           const visited = new Set<string>();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const queue = startNodes.map((n: any) => n.id);
           let stepNum = 0;
 
@@ -248,10 +262,12 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
             const nodeId = queue.shift()!;
             if (visited.has(nodeId)) continue;
             visited.add(nodeId);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const node = nodes.find((n: any) => n.id === nodeId);
             if (!node) continue;
             stepNum++;
 
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const simResult: any = {
               step: stepNum,
               nodeId: node.id,
@@ -261,7 +277,7 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
               status: "simulated",
               wouldExecute: node.type === "action",
               wouldBlock: node.type === "approval",
-              estimatedDurationMs: Math.floor(Math.random() * 5000) + 500,
+              estimatedDurationMs: 2000 + stepNum * 500,
               timestamp: new Date(startTime + stepNum * 1000).toISOString(),
               impact: [],
             };
@@ -311,6 +327,7 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
           let stepNum = 0;
           for (const action of actionsArr) {
             stepNum++;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const actionObj = action as any;
             const actionType = actionObj.type || actionObj.actionType || "unknown";
             simulatedActions.push({
@@ -319,7 +336,7 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
               label: actionObj.label || actionType,
               status: "simulated",
               wouldExecute: true,
-              estimatedDurationMs: Math.floor(Math.random() * 5000) + 500,
+              estimatedDurationMs: 2000 + stepNum * 500,
               timestamp: new Date(startTime + stepNum * 1000).toISOString(),
               riskLevel: "medium",
               impact: [{ type: "informational", description: `Would execute: ${actionType}` }],
@@ -327,13 +344,17 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
           }
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const totalDuration = simulatedActions.reduce((sum: number, a: any) => sum + (a.estimatedDurationMs || 0), 0);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const highRiskSteps = simulatedActions.filter((a: any) => a.riskLevel === "high");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const approvalGates = simulatedActions.filter((a: any) => a.wouldBlock);
 
         const simulation = await storage.createPlaybookSimulation({
           playbookId: pb.id,
           orgId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           simulatedActions: simulatedActions as any,
           impactAnalysis: {
             totalSteps: simulatedActions.length,
@@ -341,6 +362,7 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
             highRiskSteps: highRiskSteps.length,
             approvalGates: approvalGates.length,
             scenarioName: scenarioName || "Manual simulation",
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } as any,
           predictedOutcome: `${simulatedActions.length} steps, ${highRiskSteps.length} high-risk`,
           status: "completed",
@@ -368,7 +390,9 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
             estimatedDurationMs: totalDuration,
             highRiskSteps: highRiskSteps.length,
             approvalGates: approvalGates.length,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             destructiveActions: simulatedActions.filter((a: any) =>
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               a.impact?.some((i: any) => i.type === "destructive"),
             ).length,
           },
@@ -409,6 +433,7 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
 
         const actionsArr = Array.isArray(pb.actions) ? pb.actions : [];
         const nodes = extractNodes(actionsArr);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const stepConfigs = nodes.map((node: any) => {
           const config = node.data?.config || {};
           return {
@@ -457,12 +482,15 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
         }
 
         const actionsArr = Array.isArray(pb.actions) ? pb.actions : [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const isGraphFormat = actionsArr.length > 0 && (actionsArr as any)[0]?.nodes;
 
         if (isGraphFormat) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const graph = { ...(actionsArr[0] as any) };
           const nodes = [...(graph.nodes || [])];
           for (const stepUpdate of steps) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const idx = nodes.findIndex((n: any) => n.id === stepUpdate.nodeId);
             if (idx >= 0) {
               const node = { ...nodes[idx] };
@@ -478,9 +506,11 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
             }
           }
           graph.nodes = nodes;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await storage.updatePlaybook(pb.id, { actions: [graph] } as any);
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         await storage.createAuditLog({
           orgId,

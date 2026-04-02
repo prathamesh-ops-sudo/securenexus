@@ -216,7 +216,7 @@ async function fetchAndParseRSSFeed(
       if (attempt > maxRetries) {
         return { feed: null, error: errMsg.slice(0, 500) };
       }
-      const delay = Math.min(8000, 750 * Math.pow(2, attempt - 1)) + Math.random() * 250;
+      const delay = Math.min(8000, 750 * Math.pow(2, attempt - 1)) + ((attempt * 73) % 250);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }

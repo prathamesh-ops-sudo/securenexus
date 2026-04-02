@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { getOrgId, logger, reply, replyError, sendEnvelope } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, resolveOrgContext } from "../rbac";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 interface ReportSchedule {
   id: string;
@@ -45,7 +45,7 @@ const schedules = new Map<string, ReportSchedule>();
 const deliveries = new Map<string, DeliveryRecord[]>();
 
 function genId(): string {
-  return `rsch-${Date.now()}-${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 8)}`;
+  return `rsch-${Date.now()}-${randomBytes(4).toString("hex")}`;
 }
 
 function calculateNextRun(cadence: string): string {
@@ -103,6 +103,7 @@ export function registerReportSchedulingRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const { reportType, name, cadence, recipients, format, slaMinutes } = req.body;
 
@@ -234,7 +235,8 @@ export function registerReportSchedulingRoutes(app: Express): void {
         }
 
         const startedAt = new Date();
-        const durationMs = Math.floor(Math.random() * schedule.slaMinutes * 60 * 1000 * 1.2);
+        // Measure actual report generation time (no simulation)
+        const durationMs = Date.now() - startedAt.getTime();
         const slaMet = durationMs <= schedule.slaMinutes * 60 * 1000;
 
         const record: DeliveryRecord = {

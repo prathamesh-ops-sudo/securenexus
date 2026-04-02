@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { randomBytes } from "crypto";
 import { getOrgId, logger, p, storage } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../../rbac";
@@ -77,6 +78,7 @@ export function registerPlaybooksSchedulingRoutes(app: Express): void {
           });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const trackings: any[] = [];
         executionTracking.forEach((t, key) => {
           if (t.playbookId === pb.id) {
@@ -115,12 +117,14 @@ export function registerPlaybooksSchedulingRoutes(app: Express): void {
           return res.status(404).json({ message: "Playbook not found" });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
         const actionsArr = Array.isArray(pb.actions) ? pb.actions : [];
         const nodes = extractNodes(actionsArr);
 
-        const executionId = `track-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const executionId = `track-${Date.now()}-${randomBytes(4).toString("hex")}`;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const steps = nodes.map((node: any, idx: number) => ({
           nodeId: node.id || `step-${idx}`,
           label: node.data?.label || node.type || `Step ${idx + 1}`,
@@ -307,6 +311,7 @@ export function registerPlaybooksSchedulingRoutes(app: Express): void {
         }
 
         if (Array.isArray(checklistItems)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           step.checklistItems = checklistItems.map((item: any, i: number) => ({
             id: item.id || `cl-${i}`,
             label: item.label || `Item ${i + 1}`,
@@ -354,6 +359,7 @@ export function registerPlaybooksSchedulingRoutes(app: Express): void {
         const nodes = extractNodes(actionsArr);
 
         const stepsHtml = nodes
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .map((node: any, idx: number) => {
             const label = node.data?.label || node.type || `Step ${idx + 1}`;
             const type = node.type || "action";
@@ -408,6 +414,7 @@ ${stepsHtml || "<p>No steps defined</p>"}
 </div>
 </body></html>`;
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         await storage.createAuditLog({
           orgId,
@@ -485,6 +492,7 @@ ${stepsHtml || "<p>No steps defined</p>"}
           stat.totalExecutions++;
           if (exec.status === "completed") {
             stat.completedExecutions++;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const execAny = exec as any;
             if (execAny.startedAt && execAny.completedAt) {
               const dur = new Date(execAny.completedAt).getTime() - new Date(execAny.startedAt).getTime();
@@ -615,6 +623,7 @@ ${stepsHtml || "<p>No steps defined</p>"}
         const actionsArr = Array.isArray(pb.actions) ? pb.actions : [];
         const nodes = extractNodes(actionsArr);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const suggestions = nodes.map((node: any, idx: number) => {
           const actionType = node.data?.actionType || node.type || "";
           const isAutomatable = AUTOMATABLE_ACTIONS.has(actionType);

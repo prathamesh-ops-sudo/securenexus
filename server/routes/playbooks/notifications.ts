@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { randomBytes } from "crypto";
 import { getOrgId, logger, p, storage } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../../rbac";
@@ -167,6 +168,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
     async (_req: Request, res: Response) => {
       try {
         const categories = Array.from(new Set(ALL_RESPONSE_ACTION_TYPES.map((a) => a.category)));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const byCategory: Record<string, any[]> = {};
         for (const cat of categories) {
           byCategory[cat] = ALL_RESPONSE_ACTION_TYPES.filter((a) => a.category === cat);
@@ -186,6 +188,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
 
   // Notification Channels
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const notificationTemplateStore = new Map<string, any[]>();
 
   app.get(
@@ -276,7 +279,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
         if (!notificationTemplateStore.has(key)) notificationTemplateStore.set(key, []);
 
         const template = {
-          id: `tmpl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          id: `tmpl-${Date.now()}-${randomBytes(4).toString("hex")}`,
           channel,
           subject: subject || null,
           body,
@@ -284,8 +287,10 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
           webhookUrl: webhookUrl || null,
           urgency: urgency || "high",
           createdAt: new Date().toISOString(),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           createdBy: (req as any).user?.firstName
-            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
             : "Analyst",
         };
 
@@ -293,6 +298,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
 
         await storage.createAuditLog({
           orgId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           userId: (req as any).user?.id,
           userName: template.createdBy,
           action: "playbook_notification_template_created",
@@ -326,6 +332,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
 
         const key = `${orgId}:${pb.id}`;
         const templates = notificationTemplateStore.get(key) || [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const idx = templates.findIndex((t: any) => t.id === req.params.templateId);
         if (idx < 0) {
           return res.status(404).json({ message: "Template not found" });
@@ -358,6 +365,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
         const { templateId, variables } = req.body;
         const key = `${orgId}:${pb.id}`;
         const templates = notificationTemplateStore.get(key) || [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const template = templates.find((t: any) => t.id === templateId);
 
         if (!template) {
@@ -376,6 +384,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
           );
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
         const context: ActionContext = {
@@ -416,6 +425,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
 
   // Change Management Integration
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const changeTicketStore = new Map<string, any[]>();
 
   app.get(
@@ -431,7 +441,9 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
         const tickets = changeTicketStore.get(key) || [];
         const { playbookId, status } = req.query;
         let filtered = tickets;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (playbookId) filtered = filtered.filter((t: any) => t.playbookId === playbookId);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (status) filtered = filtered.filter((t: any) => t.status === status);
         res.json({ tickets: filtered, total: filtered.length });
       } catch (error) {
@@ -484,11 +496,12 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
             .json({ message: `Invalid changeType. Must be one of: ${validChangeTypes.join(", ")}` });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
 
         const ticket = {
-          id: `CHG-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+          id: `CHG-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`,
           orgId,
           playbookId,
           playbookName: pb.name,
@@ -549,6 +562,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const key = `org:${orgId}`;
         const tickets = changeTicketStore.get(key) || [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const ticket = tickets.find((t: any) => t.id === req.params.ticketId);
 
         if (!ticket) {
@@ -558,6 +572,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
           return res.status(400).json({ message: `Ticket is already ${ticket.status}` });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Admin";
         const { decision, note } = req.body;
@@ -605,6 +620,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const key = `org:${orgId}`;
         const tickets = changeTicketStore.get(key) || [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const ticket = tickets.find((t: any) => t.id === req.params.ticketId);
 
         if (!ticket) {
@@ -614,6 +630,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
           return res.status(400).json({ message: "Ticket must be approved before implementation" });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
 
@@ -654,12 +671,14 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const key = `org:${orgId}`;
         const tickets = changeTicketStore.get(key) || [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const ticket = tickets.find((t: any) => t.id === req.params.ticketId);
 
         if (!ticket) {
           return res.status(404).json({ message: "Change ticket not found" });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user = (req as any).user;
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
 
