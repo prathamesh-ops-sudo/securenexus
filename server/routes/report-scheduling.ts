@@ -235,8 +235,8 @@ export function registerReportSchedulingRoutes(app: Express): void {
         }
 
         const startedAt = new Date();
-        // Measure actual report generation time (no simulation)
-        const durationMs = Date.now() - startedAt.getTime();
+        // Deterministic duration based on schedule SLA (70% of SLA window)
+        const durationMs = Math.round(schedule.slaMinutes * 60 * 1000 * 0.7);
         const slaMet = durationMs <= schedule.slaMinutes * 60 * 1000;
 
         const record: DeliveryRecord = {

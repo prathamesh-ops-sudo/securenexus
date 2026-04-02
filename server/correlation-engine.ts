@@ -415,7 +415,7 @@ export async function promoteClusterToIncident(
     } catch (err: unknown) {
       const pgCode = (err as { code?: string }).code;
       if (pgCode === "40001" && attempt < maxRetries) {
-        const jitter = (attempt * 37) % 100;
+        const jitter = Math.random() * 100;
         await new Promise((r) => setTimeout(r, 50 * attempt + jitter));
         log.warn("Serialization failure in promoteClusterToIncident, retrying", { attempt, clusterId });
         continue;
