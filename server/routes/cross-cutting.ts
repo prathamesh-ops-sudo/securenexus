@@ -201,7 +201,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
         reason: actionDescription,
         approvedBy: null,
         expiresAt,
-        status: "active",
+        status: "pending",
         metadata: { requestedBy, riskLevel: riskLevel || "medium" },
       });
       res.status(201).json({ ok: true, data: override });
@@ -238,6 +238,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
       }
 
       const updated = await storage.updateCrossCuttingOverride(paramId, orgId, {
+        status: "active",
         approvedBy: reviewedBy,
         metadata: {
           ...(existing.metadata as Record<string, unknown>),
@@ -280,10 +281,10 @@ export function registerCrossCuttingRoutes(app: Express): void {
 
       const updated = await storage.updateCrossCuttingOverride(paramId, orgId, {
         status: "revoked",
-        approvedBy: reviewedBy,
         metadata: {
           ...(existing.metadata as Record<string, unknown>),
           rationale,
+          rejectedBy: reviewedBy,
           rejectedAt: new Date().toISOString(),
         },
       });
