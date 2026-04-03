@@ -95,19 +95,13 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : 100;
-      const invocations = await storage.getAgentToolInvocations(orgId, limit);
-      // Apply client-side filters
-      let filtered = invocations;
-      if (typeof req.query.toolId === "string") {
-        filtered = filtered.filter((i) => i.toolId === req.query.toolId);
-      }
-      if (typeof req.query.agentId === "string") {
-        filtered = filtered.filter((i) => i.agentId === req.query.agentId);
-      }
-      if (typeof req.query.verdict === "string" && VALID_VERDICTS.includes(req.query.verdict as InvocationVerdict)) {
-        filtered = filtered.filter((i) => i.verdict === req.query.verdict);
-      }
-      res.json(filtered);
+      const filters: { toolId?: string; agentId?: string; verdict?: string } = {};
+      if (typeof req.query.toolId === "string") filters.toolId = req.query.toolId;
+      if (typeof req.query.agentId === "string") filters.agentId = req.query.agentId;
+      if (typeof req.query.verdict === "string" && VALID_VERDICTS.includes(req.query.verdict as InvocationVerdict))
+        filters.verdict = req.query.verdict;
+      const invocations = await storage.getAgentToolInvocations(orgId, limit, filters);
+      res.json(invocations);
     } catch (error) {
       logger.child("routes").error("List invocations error", { error: String(error) });
       res.status(500).json({ message: "Failed to list invocations" });

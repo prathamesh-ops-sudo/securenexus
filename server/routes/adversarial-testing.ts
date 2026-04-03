@@ -95,22 +95,16 @@ export function registerAdversarialTestingRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : 100;
-      const executions = await storage.getAdversarialExecutions(orgId, limit);
-      // Apply client-side filters if provided
-      let filtered = executions;
-      if (typeof req.query.testCaseId === "string") {
-        filtered = filtered.filter((e) => e.testCaseId === req.query.testCaseId);
-      }
-      if (typeof req.query.status === "string" && VALID_STATUSES.includes(req.query.status as TestStatus)) {
-        filtered = filtered.filter((e) => e.status === req.query.status);
-      }
-      if (typeof req.query.domain === "string" && VALID_DOMAINS.includes(req.query.domain as AttackDomain)) {
-        filtered = filtered.filter((e) => e.domain === req.query.domain);
-      }
-      if (typeof req.query.category === "string" && VALID_CATEGORIES.includes(req.query.category as AttackCategory)) {
-        filtered = filtered.filter((e) => e.category === req.query.category);
-      }
-      res.json(filtered);
+      const filters: { testCaseId?: string; status?: string; domain?: string; category?: string } = {};
+      if (typeof req.query.testCaseId === "string") filters.testCaseId = req.query.testCaseId;
+      if (typeof req.query.status === "string" && VALID_STATUSES.includes(req.query.status as TestStatus))
+        filters.status = req.query.status;
+      if (typeof req.query.domain === "string" && VALID_DOMAINS.includes(req.query.domain as AttackDomain))
+        filters.domain = req.query.domain;
+      if (typeof req.query.category === "string" && VALID_CATEGORIES.includes(req.query.category as AttackCategory))
+        filters.category = req.query.category;
+      const executions = await storage.getAdversarialExecutions(orgId, limit, filters);
+      res.json(executions);
     } catch (error) {
       logger.child("routes").error("List executions error", { error: String(error) });
       res.status(500).json({ message: "Failed to list test executions" });

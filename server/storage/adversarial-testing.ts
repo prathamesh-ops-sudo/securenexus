@@ -14,11 +14,20 @@ import { and, count, desc, eq } from "drizzle-orm";
 
 // ─── Executions ──────────────────────────────────────────────────────────────
 
-export async function getAdversarialExecutions(orgId: string, limit = 100): Promise<AdversarialTestExecution[]> {
+export async function getAdversarialExecutions(
+  orgId: string,
+  limit = 100,
+  filters?: { testCaseId?: string; status?: string; domain?: string; category?: string },
+): Promise<AdversarialTestExecution[]> {
+  const conditions = [eq(adversarialTestExecutions.orgId, orgId)];
+  if (filters?.testCaseId) conditions.push(eq(adversarialTestExecutions.testCaseId, filters.testCaseId));
+  if (filters?.status) conditions.push(eq(adversarialTestExecutions.status, filters.status));
+  if (filters?.domain) conditions.push(eq(adversarialTestExecutions.domain, filters.domain));
+  if (filters?.category) conditions.push(eq(adversarialTestExecutions.category, filters.category));
   return db
     .select()
     .from(adversarialTestExecutions)
-    .where(eq(adversarialTestExecutions.orgId, orgId))
+    .where(and(...conditions))
     .orderBy(desc(adversarialTestExecutions.createdAt))
     .limit(limit);
 }

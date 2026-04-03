@@ -17,11 +17,19 @@ import { and, count, desc, eq } from "drizzle-orm";
 
 // ─── Invocations ─────────────────────────────────────────────────────────────
 
-export async function getAgentToolInvocations(orgId: string, limit = 100): Promise<AgentToolInvocation[]> {
+export async function getAgentToolInvocations(
+  orgId: string,
+  limit = 100,
+  filters?: { toolId?: string; agentId?: string; verdict?: string },
+): Promise<AgentToolInvocation[]> {
+  const conditions = [eq(agentToolInvocations.orgId, orgId)];
+  if (filters?.toolId) conditions.push(eq(agentToolInvocations.toolId, filters.toolId));
+  if (filters?.agentId) conditions.push(eq(agentToolInvocations.agentId, filters.agentId));
+  if (filters?.verdict) conditions.push(eq(agentToolInvocations.verdict, filters.verdict));
   return db
     .select()
     .from(agentToolInvocations)
-    .where(eq(agentToolInvocations.orgId, orgId))
+    .where(and(...conditions))
     .orderBy(desc(agentToolInvocations.createdAt))
     .limit(limit);
 }
