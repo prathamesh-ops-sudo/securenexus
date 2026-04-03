@@ -379,7 +379,7 @@ export function registerChaosEngineeringRoutes(app: Express): void {
           }
           updates.frequency = body.frequency;
         }
-        if (body.enabled !== undefined) updates.enabled = body.enabled;
+        if (body.enabled !== undefined) updates.enabled = body.enabled === true;
         if (body.techniqueIds !== undefined) {
           if (!Array.isArray(body.techniqueIds)) {
             return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "techniqueIds must be an array" }]);
