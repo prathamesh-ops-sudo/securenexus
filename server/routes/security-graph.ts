@@ -428,7 +428,7 @@ export function registerSecurityGraphRoutes(app: Express): void {
       }
 
       const neighbors = [];
-      for (const nId of neighborIds) {
+      for (const nId of Array.from(neighborIds)) {
         const neighbor = await storage.getSecurityGraphAsset(nId, orgId);
         if (neighbor) neighbors.push(neighbor);
       }

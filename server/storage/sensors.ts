@@ -133,7 +133,7 @@ export async function getDetectionAlerts(orgId: string, limit = 100, offset = 0)
     .select()
     .from(detectionAlerts)
     .where(eq(detectionAlerts.orgId, orgId))
-    .orderBy(desc(detectionAlerts.firedAt))
+    .orderBy(desc(detectionAlerts.createdAt))
     .limit(limit)
     .offset(offset);
 }
@@ -143,7 +143,7 @@ export async function getDetectionAlertsByRule(ruleId: string): Promise<Detectio
     .select()
     .from(detectionAlerts)
     .where(eq(detectionAlerts.ruleId, ruleId))
-    .orderBy(desc(detectionAlerts.firedAt));
+    .orderBy(desc(detectionAlerts.createdAt));
 }
 
 export async function createDetectionAlert(alert: InsertDetectionAlert): Promise<DetectionAlert> {

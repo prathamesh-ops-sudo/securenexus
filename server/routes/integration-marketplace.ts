@@ -107,7 +107,6 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
         const instance = await storage.createMarketplaceInstance({
           orgId,
           connectorSlug: parsed.data.connectorSlug,
-          connectorName: connector.name,
           authMethod: parsed.data.authMethod,
           syncDirection: parsed.data.syncDirection,
           config: parsed.data.config,
@@ -340,7 +339,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
             const successfulSyncs = history.filter((h) => h.status === "success").length;
             return {
               instanceId: inst.id,
-              instanceName: inst.connectorName,
+              instanceName: inst.connectorSlug,
               totalSyncs,
               successfulSyncs,
               failedSyncs: history.filter((h) => h.status === "error").length,
@@ -587,7 +586,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
         const instances = await storage.getMarketplaceInstances(orgId);
         const summary = instances.map((inst) => ({
           instanceId: inst.id,
-          name: inst.connectorName,
+          name: inst.connectorSlug,
           connectorId: inst.connectorSlug,
           status: inst.status,
           lastSyncAt: inst.lastSyncAt,
@@ -623,7 +622,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
             if (!connector) return null;
             return {
               instanceId: inst.id,
-              instanceName: inst.connectorName,
+              instanceName: inst.connectorSlug,
               connectorId: inst.connectorSlug,
               connectorName: connector.name,
               currentVersion: connector.version || "1.0.0",

@@ -468,7 +468,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
         }
 
-        await storage.deleteEvidenceItem(req.params.id);
+        await storage.deleteEvidenceItem(String(req.params.id));
         return reply(res, { deleted: true });
       } catch (error: unknown) {
         log.error("Failed to delete evidence", { error });

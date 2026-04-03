@@ -80,7 +80,6 @@ export function registerReportSchedulingRoutes(app: Express): void {
           timezone: timezone || "UTC",
           deliveryTargets: Array.isArray(deliveryTargets) ? JSON.stringify(deliveryTargets) : deliveryTargets || null,
           enabled: true,
-          nextRunAt: calculateNextRun(resolvedCadence),
           createdBy: user?.id || user?.username || null,
         });
 
@@ -134,7 +133,7 @@ export function registerReportSchedulingRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const schedule = await storage.getReportSchedule(req.params.id);
+        const schedule = await storage.getReportSchedule(String(req.params.id));
         if (!schedule || schedule.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Schedule not found." }]);
         }
@@ -155,7 +154,7 @@ export function registerReportSchedulingRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const existing = await storage.getReportSchedule(req.params.id);
+        const existing = await storage.getReportSchedule(String(req.params.id));
         if (!existing || existing.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Schedule not found." }]);
         }
@@ -177,7 +176,7 @@ export function registerReportSchedulingRoutes(app: Express): void {
         }
         if (req.body.timezone) updates.timezone = req.body.timezone;
 
-        const updated = await storage.updateReportSchedule(req.params.id, updates);
+        const updated = await storage.updateReportSchedule(String(req.params.id), updates);
         return reply(res, updated);
       } catch (error: unknown) {
         log.error("Failed to update schedule", { error });
@@ -195,11 +194,11 @@ export function registerReportSchedulingRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const existing = await storage.getReportSchedule(req.params.id);
+        const existing = await storage.getReportSchedule(String(req.params.id));
         if (!existing || existing.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Schedule not found." }]);
         }
-        await storage.deleteReportSchedule(req.params.id);
+        await storage.deleteReportSchedule(String(req.params.id));
         return reply(res, { message: "Schedule deleted." });
       } catch (error: unknown) {
         log.error("Failed to delete schedule", { error });
@@ -218,7 +217,7 @@ export function registerReportSchedulingRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const user = (req as any).user;
-        const schedule = await storage.getReportSchedule(req.params.id);
+        const schedule = await storage.getReportSchedule(String(req.params.id));
         if (!schedule || schedule.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Schedule not found." }]);
         }
@@ -230,7 +229,6 @@ export function registerReportSchedulingRoutes(app: Express): void {
           scheduleId: schedule.id,
           status: "queued",
           format: "pdf",
-          startedAt: new Date(),
           createdBy: user?.id || user?.username || null,
         });
 
@@ -258,12 +256,12 @@ export function registerReportSchedulingRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const schedule = await storage.getReportSchedule(req.params.id);
+        const schedule = await storage.getReportSchedule(String(req.params.id));
         if (!schedule || schedule.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Schedule not found." }]);
         }
 
-        const runs = await storage.getReportRuns(orgId, schedule.templateId);
+        const runs = await storage.getReportRuns(orgId, String(schedule.templateId));
         const scheduleRuns = runs.filter((r) => r.scheduleId === schedule.id);
         return sendEnvelope(res, scheduleRuns, { meta: { total: scheduleRuns.length } });
       } catch (error: unknown) {

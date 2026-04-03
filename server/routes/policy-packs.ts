@@ -170,7 +170,7 @@ export function registerPolicyPacksRoutes(app: Express): void {
         const disabledRules = new Set(activation?.disabledRuleIds || []);
 
         // Return pack rules with org-level enable/disable overlay
-        const rules = pack.rules.map((rule: { id: string; [key: string]: unknown }) => ({
+        const rules = (pack.rules as unknown as Array<{ id: string; [key: string]: unknown }>).map((rule) => ({
           ...rule,
           enabled: !disabledRules.has(rule.id),
           orgOverride: disabledRules.has(rule.id) ? "disabled" : null,

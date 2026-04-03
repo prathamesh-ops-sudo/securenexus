@@ -61,7 +61,7 @@ export async function getCollectorEvents(orgId: string, limit = 100, offset = 0)
     .select()
     .from(collectorEvents)
     .where(eq(collectorEvents.orgId, orgId))
-    .orderBy(desc(collectorEvents.receivedAt))
+    .orderBy(desc(collectorEvents.createdAt))
     .limit(limit)
     .offset(offset);
 }
@@ -70,8 +70,8 @@ export async function getCollectorEventsByInstance(instanceId: string, limit = 1
   return db
     .select()
     .from(collectorEvents)
-    .where(eq(collectorEvents.instanceId, instanceId))
-    .orderBy(desc(collectorEvents.receivedAt))
+    .where(eq(collectorEvents.collectorId, instanceId))
+    .orderBy(desc(collectorEvents.createdAt))
     .limit(limit);
 }
 

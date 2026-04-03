@@ -211,7 +211,7 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
         }
         if (req.body.summary) updates.summary = req.body.summary;
 
-        const updated = await storage.updateInvestigationRun(req.params.investigationId, updates);
+        const updated = await storage.updateInvestigationRun(String(req.params.investigationId), updates);
         return reply(res, updated);
       } catch (error: unknown) {
         log.error("Failed to update timeline", { error });
@@ -260,7 +260,9 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
         }
 
         const allEvents = overlayTimelines.flatMap((t) => t.events);
-        allEvents.sort((a, b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
+        allEvents.sort(
+          (a, b) => new Date(String(a.createdAt ?? "")).getTime() - new Date(String(b.createdAt ?? "")).getTime(),
+        );
         const timeRange = {
           start: allEvents.length > 0 ? allEvents[0].createdAt : null,
           end: allEvents.length > 0 ? allEvents[allEvents.length - 1].createdAt : null,

@@ -205,7 +205,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
         config: parsed.data.config,
         tags: parsed.data.tags,
         status: "pending_install",
-        version: template.version || "1.0.0",
+        version: "1.0.0",
       });
 
       res.status(201).json(redactInstanceConfig(instance));

@@ -48,7 +48,7 @@ export function registerChaosEngineeringRoutes(app: Express): void {
         running,
         pending: total - passed - failed - running,
         coveragePercent: total > 0 ? Math.round((passed / total) * 100) : 0,
-        activeSchedules: schedules.filter((s) => s.status === "active").length,
+        activeSchedules: schedules.filter((s) => s.enabled).length,
         purpleTeamExercises: simulations.filter((s) => s.trigger === "purple_team").length,
         byTactic,
       });
@@ -134,14 +134,14 @@ export function registerChaosEngineeringRoutes(app: Express): void {
         orgId,
         name: technique.name || techniqueId,
         description: technique.description || "",
-        mitreId: technique.mitreId || techniqueId,
-        mitreTactic: technique.tactic || "unknown",
-        mitreTechnique: technique.technique || techniqueId,
-        domain: technique.domain || "endpoint",
-        platform: technique.platform || "windows",
+        mitreId: technique.id,
+        mitreTactic: technique.tacticName || "unknown",
+        mitreTechnique: technique.name || techniqueId,
+        domain: "endpoint",
+        platform: technique.platform[0] || "windows",
         severity: technique.severity || "medium",
-        payload: technique.payload || null,
-        expectedOutcome: technique.expectedOutcome || null,
+        payload: technique.simulationPayload || null,
+        expectedOutcome: technique.expectedDetection || null,
         status: "pending",
         trigger: trigger || "manual",
         executedBy: (req as RequestWithUser).user?.id || null,
@@ -151,7 +151,7 @@ export function registerChaosEngineeringRoutes(app: Express): void {
       // Simulate execution asynchronously — update status after short delay
       setTimeout(async () => {
         try {
-          const verdict = technique.expectedOutcome === "blocked" ? "passed" : "failed";
+          const verdict = technique.expectedDetection ? "passed" : "failed";
           await storage.updateChaosSimulation(simulation.id, {
             status: verdict,
             verdict,
@@ -198,11 +198,11 @@ export function registerChaosEngineeringRoutes(app: Express): void {
             orgId,
             name: technique.name || tid,
             description: technique.description || "",
-            mitreId: technique.mitreId || tid,
-            mitreTactic: technique.tactic || "unknown",
-            mitreTechnique: technique.technique || tid,
-            domain: technique.domain || "endpoint",
-            platform: technique.platform || "windows",
+            mitreId: technique.id,
+            mitreTactic: technique.tacticName || "unknown",
+            mitreTechnique: technique.name || tid,
+            domain: "endpoint",
+            platform: technique.platform[0] || "windows",
             severity: technique.severity || "medium",
             status: "pending",
             trigger: trigger || "manual",
@@ -337,8 +337,8 @@ export function registerChaosEngineeringRoutes(app: Express): void {
         name: body.name,
         description: body.description || "",
         frequency: body.frequency,
-        techniqueIds: body.techniqueIds,
-        status: body.enabled !== false ? "active" : "paused",
+        mitreIds: body.techniqueIds,
+        enabled: body.enabled !== false,
       });
       res.status(201).json(schedule);
     } catch (error) {
@@ -365,7 +365,8 @@ export function registerChaosEngineeringRoutes(app: Express): void {
           description: string;
           frequency: string;
           status: string;
-          techniqueIds: string[];
+          mitreIds: string[];
+          enabled: boolean;
         }> = {};
         if (body.name !== undefined) updates.name = String(body.name);
         if (body.description !== undefined) updates.description = String(body.description);
@@ -377,12 +378,12 @@ export function registerChaosEngineeringRoutes(app: Express): void {
           }
           updates.frequency = body.frequency;
         }
-        if (body.enabled !== undefined) updates.status = body.enabled ? "active" : "paused";
+        if (body.enabled !== undefined) updates.enabled = body.enabled;
         if (body.techniqueIds !== undefined) {
           if (!Array.isArray(body.techniqueIds)) {
             return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "techniqueIds must be an array" }]);
           }
-          updates.techniqueIds = body.techniqueIds;
+          updates.mitreIds = body.techniqueIds;
         }
 
         const updated = await storage.updateChaosSchedule(id, updates);
@@ -428,7 +429,7 @@ export function registerChaosEngineeringRoutes(app: Express): void {
         }
 
         const library = getAttackLibrary();
-        const techniqueIds = (schedule.techniqueIds as string[]) || [];
+        const techniqueIds = (schedule.mitreIds as string[]) || [];
         const results = [];
         for (const tid of techniqueIds) {
           const technique = library.find((t: { id: string }) => t.id === tid);
@@ -437,11 +438,11 @@ export function registerChaosEngineeringRoutes(app: Express): void {
             orgId,
             name: technique.name || tid,
             description: technique.description || "",
-            mitreId: technique.mitreId || tid,
-            mitreTactic: technique.tactic || "unknown",
-            mitreTechnique: technique.technique || tid,
-            domain: technique.domain || "endpoint",
-            platform: technique.platform || "windows",
+            mitreId: technique.id,
+            mitreTactic: technique.tacticName || "unknown",
+            mitreTechnique: technique.name || tid,
+            domain: "endpoint",
+            platform: technique.platform[0] || "windows",
             severity: technique.severity || "medium",
             status: "pending",
             trigger: "scheduled",
@@ -514,12 +515,12 @@ export function registerChaosEngineeringRoutes(app: Express): void {
           orgId,
           name: `Purple Team: ${scenario.name}`,
           description: scenario.description || "",
-          mitreId: scenario.mitreId || scenarioId,
-          mitreTactic: scenario.tactic || "unknown",
-          mitreTechnique: scenario.technique || scenarioId,
+          mitreId: scenario.mitreChain?.[0] || scenarioId,
+          mitreTactic: "purple_team",
+          mitreTechnique: scenario.name || scenarioId,
           domain: "purple_team",
           platform: "multi",
-          severity: scenario.severity || "high",
+          severity: "high",
           status: "running",
           trigger: "purple_team",
           executedBy: (req as RequestWithUser).user?.id || null,
@@ -561,8 +562,8 @@ export function registerChaosEngineeringRoutes(app: Express): void {
         name,
         description: description || "",
         frequency: "manual",
-        techniqueIds,
-        status: "active",
+        mitreIds: techniqueIds,
+        enabled: true,
       });
 
       res.status(201).json({
