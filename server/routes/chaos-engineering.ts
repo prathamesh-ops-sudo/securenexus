@@ -354,10 +354,11 @@ export function registerChaosEngineeringRoutes(app: Express): void {
     requireOrgId,
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
         const id = String(req.params.id);
         const body = req.body;
 
-        const existing = await storage.getChaosSchedule(id);
+        const existing = await storage.getChaosSchedule(id, orgId);
         if (!existing) return replyError(res, 404, [{ code: "NOT_FOUND", message: "Schedule not found" }]);
 
         const updates: Partial<{
@@ -386,7 +387,7 @@ export function registerChaosEngineeringRoutes(app: Express): void {
           updates.mitreIds = body.techniqueIds;
         }
 
-        const updated = await storage.updateChaosSchedule(id, updates);
+        const updated = await storage.updateChaosSchedule(id, updates, orgId);
         if (!updated) return replyError(res, 404, [{ code: "NOT_FOUND", message: "Schedule not found" }]);
         reply(res, updated);
       } catch (error) {
@@ -403,8 +404,9 @@ export function registerChaosEngineeringRoutes(app: Express): void {
     requireOrgId,
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
         const id = String(req.params.id);
-        const deleted = await storage.deleteChaosSchedule(id);
+        const deleted = await storage.deleteChaosSchedule(id, orgId);
         if (!deleted) return replyError(res, 404, [{ code: "NOT_FOUND", message: "Schedule not found" }]);
         reply(res, { message: "Schedule deleted" });
       } catch (error) {
@@ -423,7 +425,7 @@ export function registerChaosEngineeringRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const id = String(req.params.id);
-        const schedule = await storage.getChaosSchedule(id);
+        const schedule = await storage.getChaosSchedule(id, orgId);
         if (!schedule) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Schedule not found" }]);
         }
@@ -453,7 +455,7 @@ export function registerChaosEngineeringRoutes(app: Express): void {
         }
 
         // Update schedule last run time
-        await storage.updateChaosSchedule(id, {});
+        await storage.updateChaosSchedule(id, {}, orgId);
 
         res.status(201).json({ count: results.length, results });
       } catch (error) {

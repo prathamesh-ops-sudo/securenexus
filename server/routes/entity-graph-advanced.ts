@@ -446,7 +446,9 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
         }
 
         // Edge diff
-        const snapshotEdgeKeys = new Set(snapshotData.edges.map((e: any) => [e.source, e.target].sort().join(":")));
+        const snapshotEdgeKeys = new Set<string>(
+          snapshotData.edges.map((e: any) => [e.source, e.target].sort().join(":")),
+        );
         const currentEdgeKeys = new Set(currentGraph.edges.map((e) => [e.source, e.target].sort().join(":")));
 
         const addedEdgeCount = Array.from(currentEdgeKeys).filter((k) => !snapshotEdgeKeys.has(k)).length;

@@ -337,13 +337,16 @@ export function registerAdversarialTestingRoutes(app: Express): void {
       const remediation = await storage.getAdversarialRemediation(id, orgId);
       if (!remediation) return res.status(404).json({ message: "Remediation not found" });
 
+      // Look up original execution to get correct testCaseId, domain, and category
+      const originalExecution = await storage.getAdversarialExecution(remediation.executionId, orgId);
+
       // Create a new execution for the retest
       const execution = await storage.createAdversarialExecution({
         orgId,
-        testCaseId: remediation.executionId,
+        testCaseId: originalExecution?.testCaseId || remediation.executionId,
         testCaseName: remediation.testCaseName,
-        domain: "application",
-        category: "auth_bypass",
+        domain: originalExecution?.domain || "application",
+        category: originalExecution?.category || "general",
         phase: "post_fix",
         status: "running",
         trigger: "post_fix",

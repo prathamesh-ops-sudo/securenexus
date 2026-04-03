@@ -570,7 +570,7 @@ export async function countTableRows(tableName: string, orgId: string): Promise<
     return 0;
   }
   const result = await db.execute(
-    sql.raw(`SELECT COUNT(*)::int AS ct FROM "${tableName}" WHERE org_id = '${orgId.replace(/'/g, "''")}'`),
+    sql`SELECT COUNT(*)::int AS ct FROM ${sql.raw(`"${tableName}"`)} WHERE org_id = ${orgId}`,
   );
   return parseInt((result as any).rows?.[0]?.ct || "0", 10);
 }

@@ -7,7 +7,7 @@ import {
   chaosSchedules,
 } from "@shared/schema";
 import { db } from "../db";
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 
 // ── Chaos Simulations ──
 
@@ -61,8 +61,11 @@ export async function getChaosSchedules(orgId: string): Promise<ChaosSchedule[]>
     .orderBy(desc(chaosSchedules.createdAt));
 }
 
-export async function getChaosSchedule(id: string): Promise<ChaosSchedule | undefined> {
-  const [sched] = await db.select().from(chaosSchedules).where(eq(chaosSchedules.id, id));
+export async function getChaosSchedule(id: string, orgId?: string): Promise<ChaosSchedule | undefined> {
+  const conditions = orgId
+    ? and(eq(chaosSchedules.id, id), eq(chaosSchedules.orgId, orgId))
+    : eq(chaosSchedules.id, id);
+  const [sched] = await db.select().from(chaosSchedules).where(conditions);
   return sched;
 }
 
@@ -74,16 +77,23 @@ export async function createChaosSchedule(sched: InsertChaosSchedule): Promise<C
 export async function updateChaosSchedule(
   id: string,
   updates: Partial<InsertChaosSchedule>,
+  orgId?: string,
 ): Promise<ChaosSchedule | undefined> {
+  const conditions = orgId
+    ? and(eq(chaosSchedules.id, id), eq(chaosSchedules.orgId, orgId))
+    : eq(chaosSchedules.id, id);
   const [updated] = await db
     .update(chaosSchedules)
     .set({ ...updates, updatedAt: new Date() })
-    .where(eq(chaosSchedules.id, id))
+    .where(conditions)
     .returning();
   return updated;
 }
 
-export async function deleteChaosSchedule(id: string): Promise<boolean> {
-  const result = await db.delete(chaosSchedules).where(eq(chaosSchedules.id, id));
+export async function deleteChaosSchedule(id: string, orgId?: string): Promise<boolean> {
+  const conditions = orgId
+    ? and(eq(chaosSchedules.id, id), eq(chaosSchedules.orgId, orgId))
+    : eq(chaosSchedules.id, id);
+  const result = await db.delete(chaosSchedules).where(conditions);
   return (result.rowCount ?? 0) > 0;
 }
