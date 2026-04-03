@@ -1,15 +1,11 @@
 import type { Express } from "express";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
+import { storage } from "../storage";
 import {
   getSecrets,
   getSecretById,
   registerSecret,
-  requestAccess,
-  approveAccessRequest,
-  denyAccessRequest,
-  releaseAccess,
-  getAccessRequests,
   createShare,
   consumeShare,
   getShares,
@@ -20,7 +16,6 @@ import {
   reviewBreakGlass,
   getBreakGlassEntries,
   getAuditLog,
-  getStats,
 } from "../jit-secret-access-engine";
 import type { SecretType, SecretClassification } from "../jit-secret-access-engine";
 
@@ -48,6 +43,8 @@ function isValidClassification(val: string): val is SecretClassification {
 }
 
 export function registerJitSecretAccessRoutes(app: Express): void {
+  // ─── Secrets Registry — engine (no DB table yet) ───────────────────────────
+
   app.get("/api/jit-secrets/secrets", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -128,10 +125,12 @@ export function registerJitSecretAccessRoutes(app: Express): void {
     }
   });
 
+  // ─── Access Requests — DB persisted ────────────────────────────────────────
+
   app.get("/api/jit-secrets/access-requests", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const requests = getAccessRequests(orgId);
+      const requests = await storage.getJitAccessRequests(orgId);
       res.json(requests);
     } catch (error) {
       logger.child("routes").error("Get access requests error", { error: String(error) });
@@ -164,28 +163,33 @@ export function registerJitSecretAccessRoutes(app: Express): void {
         return res.status(400).json({ message: `approverRole must be: ${VALID_APPROVER_ROLES.join(", ")}` });
       }
 
-      const request = requestAccess(orgId, {
-        secretId: String(secretId),
+      // Verify secret exists in registry
+      const secret = getSecretById(orgId, String(secretId));
+      if (!secret) {
+        return res.status(404).json({ message: "Secret not found" });
+      }
+
+      const request = await storage.createJitAccessRequest({
+        orgId,
         requesterId: String(requesterId),
-        requesterName: String(requesterName),
+        requesterEmail: String(requesterName),
+        secretPath: secret.name,
+        secretProvider: secret.secretType || "other",
         reason: String(reason).trim(),
         durationMinutes,
-        approverRole,
+        status: "pending",
+        metadata: {
+          secretId: String(secretId),
+          secretName: secret.name,
+          requesterName: String(requesterName),
+          approverRole,
+          classification: secret.classification,
+        },
       });
 
       res.status(201).json(request);
     } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("SECRET_NOT_FOUND")) {
-        return res.status(404).json({ message: "Secret not found" });
-      }
-      if (errMsg.includes("INVALID_DURATION")) {
-        return res.status(400).json({ message: "Duration must be 1-1440 minutes" });
-      }
-      if (errMsg.includes("REASON_TOO_SHORT")) {
-        return res.status(400).json({ message: "Reason must be at least 10 characters" });
-      }
-      logger.child("routes").error("Request access error", { error: errMsg });
+      logger.child("routes").error("Request access error", { error: String(error) });
       res.status(500).json({ message: "Failed to request access" });
     }
   });
@@ -198,17 +202,25 @@ export function registerJitSecretAccessRoutes(app: Express): void {
       if (!approverName || typeof approverName !== "string") {
         return res.status(400).json({ message: "approverName is required" });
       }
-      const request = approveAccessRequest(orgId, id, String(approverName));
-      res.json(request);
-    } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("REQUEST_NOT_FOUND")) {
+
+      const existing = await storage.getJitAccessRequest(id, orgId);
+      if (!existing) {
         return res.status(404).json({ message: "Access request not found" });
       }
-      if (errMsg.includes("REQUEST_NOT_PENDING")) {
+      if (existing.status !== "pending") {
         return res.status(400).json({ message: "Request is not in pending status" });
       }
-      logger.child("routes").error("Approve access error", { error: errMsg });
+
+      const expiresAt = new Date(Date.now() + existing.durationMinutes * 60 * 1000);
+      const updated = await storage.updateJitAccessRequest(id, orgId, {
+        status: "approved",
+        approvedBy: String(approverName),
+        approvedAt: new Date(),
+        expiresAt,
+      });
+      res.json(updated);
+    } catch (error) {
+      logger.child("routes").error("Approve access error", { error: String(error) });
       res.status(500).json({ message: "Failed to approve access request" });
     }
   });
@@ -224,17 +236,23 @@ export function registerJitSecretAccessRoutes(app: Express): void {
       if (!reason || typeof reason !== "string") {
         return res.status(400).json({ message: "reason is required" });
       }
-      const request = denyAccessRequest(orgId, id, String(denierName), String(reason));
-      res.json(request);
-    } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("REQUEST_NOT_FOUND")) {
+
+      const existing = await storage.getJitAccessRequest(id, orgId);
+      if (!existing) {
         return res.status(404).json({ message: "Access request not found" });
       }
-      if (errMsg.includes("REQUEST_NOT_PENDING")) {
+      if (existing.status !== "pending") {
         return res.status(400).json({ message: "Request is not in pending status" });
       }
-      logger.child("routes").error("Deny access error", { error: errMsg });
+
+      const updated = await storage.updateJitAccessRequest(id, orgId, {
+        status: "denied",
+        approvedBy: String(denierName),
+        metadata: { ...(existing.metadata as Record<string, unknown>), denyReason: String(reason) },
+      });
+      res.json(updated);
+    } catch (error) {
+      logger.child("routes").error("Deny access error", { error: String(error) });
       res.status(500).json({ message: "Failed to deny access request" });
     }
   });
@@ -247,20 +265,28 @@ export function registerJitSecretAccessRoutes(app: Express): void {
       if (!releaserName || typeof releaserName !== "string") {
         return res.status(400).json({ message: "releaserName is required" });
       }
-      const request = releaseAccess(orgId, id, String(releaserName));
-      res.json(request);
-    } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("REQUEST_NOT_FOUND")) {
+
+      const existing = await storage.getJitAccessRequest(id, orgId);
+      if (!existing) {
         return res.status(404).json({ message: "Access request not found" });
       }
-      if (errMsg.includes("REQUEST_NOT_ACTIVE")) {
+      if (existing.status !== "approved") {
         return res.status(400).json({ message: "Request is not active" });
       }
-      logger.child("routes").error("Release access error", { error: errMsg });
+
+      const updated = await storage.updateJitAccessRequest(id, orgId, {
+        status: "revoked",
+        revokedAt: new Date(),
+        metadata: { ...(existing.metadata as Record<string, unknown>), releasedBy: String(releaserName) },
+      });
+      res.json(updated);
+    } catch (error) {
+      logger.child("routes").error("Release access error", { error: String(error) });
       res.status(500).json({ message: "Failed to release access" });
     }
   });
+
+  // ─── Shares — engine (no DB table yet) ─────────────────────────────────────
 
   app.get("/api/jit-secrets/shares", isAuthenticated, async (req, res) => {
     try {
@@ -342,6 +368,8 @@ export function registerJitSecretAccessRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to consume share" });
     }
   });
+
+  // ─── Break Glass — engine (no DB table yet) ────────────────────────────────
 
   app.post("/api/jit-secrets/break-glass", isAuthenticated, async (req, res) => {
     try {
@@ -427,6 +455,8 @@ export function registerJitSecretAccessRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to get break-glass entries" });
     }
   });
+
+  // ─── Ownership Transfers — engine (no DB table yet) ────────────────────────
 
   app.post("/api/jit-secrets/ownership/transfer", isAuthenticated, async (req, res) => {
     try {
@@ -528,22 +558,43 @@ export function registerJitSecretAccessRoutes(app: Express): void {
     }
   });
 
+  // ─── Audit Log — engine (no DB table yet) ──────────────────────────────────
+
   app.get("/api/jit-secrets/audit-log", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const log = getAuditLog(orgId);
-      res.json(log);
+      const auditLog = getAuditLog(orgId);
+      res.json(auditLog);
     } catch (error) {
       logger.child("routes").error("Get audit log error", { error: String(error) });
       res.status(500).json({ message: "Failed to get audit log" });
     }
   });
 
+  // ─── Stats — computed from DB + engine ─────────────────────────────────────
+
   app.get("/api/jit-secrets/stats", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const stats = getStats(orgId);
-      res.json(stats);
+      const [totalRequests, pendingRequests] = await Promise.all([
+        storage.countJitAccessRequests(orgId),
+        storage.countPendingJitAccessRequests(orgId),
+      ]);
+      const secrets = getSecrets(orgId);
+      const shares = getShares(orgId);
+      const breakGlassEntries = getBreakGlassEntries(orgId);
+      const transfers = getTransfers(orgId);
+
+      res.json({
+        totalSecrets: secrets.length,
+        totalRequests,
+        pendingRequests,
+        totalShares: shares.length,
+        activeShares: shares.filter((s: { status: string }) => s.status === "active").length,
+        totalBreakGlass: breakGlassEntries.length,
+        unreviewedBreakGlass: breakGlassEntries.filter((b: { status: string }) => b.status === "active").length,
+        totalTransfers: transfers.length,
+      });
     } catch (error) {
       logger.child("routes").error("Get stats error", { error: String(error) });
       res.status(500).json({ message: "Failed to get stats" });
@@ -556,7 +607,6 @@ export function registerJitSecretAccessRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const secrets = getSecrets(orgId);
-      // Build target system list from secrets
       const systems = secrets.map(
         (s: {
           id: string;
@@ -591,60 +641,46 @@ export function registerJitSecretAccessRoutes(app: Express): void {
     }
   });
 
-  // ─── 28.2 Active Session Monitoring ────────────────────────────────────────
+  // ─── 28.2 Active Session Monitoring — DB persisted ─────────────────────────
 
   app.get("/api/jit-secrets/active-sessions", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const requests = getAccessRequests(orgId);
+      const requests = await storage.getJitAccessRequests(orgId);
       const now = Date.now();
 
       const activeSessions = requests
-        .filter(
-          (r: { status: string; tokenExpiresAt: string | null }) =>
-            (r.status === "active" || r.status === "approved") && r.tokenExpiresAt,
-        )
-        .map(
-          (r: {
-            id: string;
-            secretName: string;
-            requesterName: string;
-            approverRole: string;
-            approvedBy: string | null;
-            tokenExpiresAt: string | null;
-            durationMinutes: number;
-            createdAt: string;
-            reason: string;
-          }) => {
-            const expiresAt = r.tokenExpiresAt ? new Date(r.tokenExpiresAt).getTime() : now;
-            const timeRemainingMs = Math.max(0, expiresAt - now);
-            const timeRemainingMinutes = Math.round(timeRemainingMs / 60000);
-            const totalMs = r.durationMinutes * 60000;
-            const elapsedMs = totalMs - timeRemainingMs;
-            const progressPercent = totalMs > 0 ? Math.min(100, Math.round((elapsedMs / totalMs) * 100)) : 0;
+        .filter((r) => r.status === "approved" && r.expiresAt)
+        .map((r) => {
+          const expiresAt = r.expiresAt ? new Date(r.expiresAt).getTime() : now;
+          const timeRemainingMs = Math.max(0, expiresAt - now);
+          const timeRemainingMinutes = Math.round(timeRemainingMs / 60000);
+          const totalMs = r.durationMinutes * 60000;
+          const elapsedMs = totalMs - timeRemainingMs;
+          const progressPercent = totalMs > 0 ? Math.min(100, Math.round((elapsedMs / totalMs) * 100)) : 0;
+          const meta = (r.metadata || {}) as Record<string, unknown>;
 
-            return {
-              sessionId: r.id,
-              secretName: r.secretName,
-              user: r.requesterName,
-              permissions: r.approverRole,
-              approvedBy: r.approvedBy,
-              startedAt: r.createdAt,
-              expiresAt: r.tokenExpiresAt,
-              timeRemainingMinutes,
-              durationMinutes: r.durationMinutes,
-              progressPercent,
-              isExpiringSoon: timeRemainingMinutes < 10,
-              reason: r.reason,
-            };
-          },
-        )
-        .filter((s: { timeRemainingMinutes: number }) => s.timeRemainingMinutes > 0);
+          return {
+            sessionId: r.id,
+            secretName: r.secretPath,
+            user: meta.requesterName || r.requesterId,
+            permissions: meta.approverRole || "owner",
+            approvedBy: r.approvedBy,
+            startedAt: r.approvedAt ? r.approvedAt.toISOString() : r.createdAt?.toISOString(),
+            expiresAt: r.expiresAt ? r.expiresAt.toISOString() : null,
+            timeRemainingMinutes,
+            durationMinutes: r.durationMinutes,
+            progressPercent,
+            isExpiringSoon: timeRemainingMinutes < 10,
+            reason: r.reason,
+          };
+        })
+        .filter((s) => s.timeRemainingMinutes > 0);
 
       res.json({
         sessions: activeSessions,
         totalActive: activeSessions.length,
-        expiringSoon: activeSessions.filter((s: { isExpiringSoon: boolean }) => s.isExpiringSoon).length,
+        expiringSoon: activeSessions.filter((s) => s.isExpiringSoon).length,
       });
     } catch (error) {
       logger.child("routes").error("Get active sessions error", { error: String(error) });
@@ -663,78 +699,81 @@ export function registerJitSecretAccessRoutes(app: Express): void {
       if (!reason || typeof reason !== "string") {
         return res.status(400).json({ message: "reason is required" });
       }
-      // Use releaseAccess to revoke
-      try {
-        const request = releaseAccess(orgId, id, String(revokerName));
-        logger.child("routes").info("Emergency session revocation", {
-          orgId,
-          sessionId: id,
-          revokerName,
-          reason,
-        });
-        res.json({ ...request, revocationReason: reason, revokedAt: new Date().toISOString() });
-      } catch (innerErr) {
-        const errMsg = String(innerErr);
-        if (errMsg.includes("REQUEST_NOT_FOUND")) {
-          return res.status(404).json({ message: "Session not found" });
-        }
-        throw innerErr;
+
+      const existing = await storage.getJitAccessRequest(id, orgId);
+      if (!existing) {
+        return res.status(404).json({ message: "Session not found" });
       }
+
+      const updated = await storage.updateJitAccessRequest(id, orgId, {
+        status: "revoked",
+        revokedAt: new Date(),
+        metadata: {
+          ...(existing.metadata as Record<string, unknown>),
+          revokedBy: String(revokerName),
+          revocationReason: String(reason),
+        },
+      });
+
+      logger.child("routes").info("Emergency session revocation", {
+        orgId,
+        sessionId: id,
+        revokerName,
+        reason,
+      });
+
+      res.json({ ...updated, revocationReason: reason, revokedAt: new Date().toISOString() });
     } catch (error) {
       logger.child("routes").error("Revoke session error", { error: String(error) });
       res.status(500).json({ message: "Failed to revoke session" });
     }
   });
 
-  // ─── 28.3 Access Request History with Analytics ────────────────────────────
+  // ─── 28.3 Access Request History with Analytics — DB persisted ─────────────
 
   app.get("/api/jit-secrets/access-analytics", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const requests = getAccessRequests(orgId);
+      const requests = await storage.getJitAccessRequests(orgId, 500);
       const now = Date.now();
       const thirtyDaysAgo = now - 30 * 86400000;
 
-      const recentRequests = requests.filter(
-        (r: { createdAt: string }) => new Date(r.createdAt).getTime() > thirtyDaysAgo,
-      );
+      const recentRequests = requests.filter((r) => r.createdAt && new Date(r.createdAt).getTime() > thirtyDaysAgo);
 
       // Frequency by user
       const userFrequency: Record<string, number> = {};
       for (const r of recentRequests) {
-        const name = (r as { requesterName: string }).requesterName;
+        const name = r.requesterId;
         userFrequency[name] = (userFrequency[name] || 0) + 1;
       }
       const topRequesters = Object.entries(userFrequency)
-        .map(([user, count]) => ({ user, count }))
+        .map(([user, reqCount]) => ({ user, count: reqCount }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 10);
 
       // Most requested systems
       const systemFrequency: Record<string, number> = {};
       for (const r of recentRequests) {
-        const name = (r as { secretName: string }).secretName;
+        const name = r.secretPath;
         systemFrequency[name] = (systemFrequency[name] || 0) + 1;
       }
       const topSystems = Object.entries(systemFrequency)
-        .map(([system, count]) => ({ system, count }))
+        .map(([system, reqCount]) => ({ system, count: reqCount }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 10);
 
       // Average duration
-      const durations = recentRequests.map((r: { durationMinutes: number }) => r.durationMinutes);
+      const durations = recentRequests.map((r) => r.durationMinutes);
       const avgDuration =
-        durations.length > 0 ? Math.round(durations.reduce((s: number, d: number) => s + d, 0) / durations.length) : 0;
+        durations.length > 0 ? Math.round(durations.reduce((s, d) => s + d, 0) / durations.length) : 0;
 
       // Approval rates
-      const approved = recentRequests.filter((r: { status: string }) =>
-        ["approved", "active", "released", "expired"].includes(r.status),
-      ).length;
-      const denied = recentRequests.filter((r: { status: string }) => r.status === "denied").length;
-      const pending = recentRequests.filter((r: { status: string }) => r.status === "pending").length;
+      const approved = recentRequests.filter((r) => ["approved", "expired", "revoked"].includes(r.status)).length;
+      const denied = recentRequests.filter((r) => r.status === "denied").length;
+      const pending = recentRequests.filter((r) => r.status === "pending").length;
       const approvalRate = approved + denied > 0 ? Math.round((approved / (approved + denied)) * 100) : 0;
 
-      // Unusual patterns: users requesting >3x average
+      // Unusual patterns
       const avgRequestsPerUser =
         topRequesters.length > 0 ? topRequesters.reduce((s, u) => s + u.count, 0) / topRequesters.length : 0;
       const unusualPatterns = topRequesters
@@ -765,33 +804,31 @@ export function registerJitSecretAccessRoutes(app: Express): void {
     }
   });
 
-  // ─── 28.4 Automatic Access Revocation ──────────────────────────────────────
+  // ─── 28.4 Automatic Access Revocation — DB persisted ───────────────────────
 
   app.post("/api/jit-secrets/enforce-expiration", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const requests = getAccessRequests(orgId);
+      const requests = await storage.getJitAccessRequests(orgId, 500);
       const now = Date.now();
       const revoked: string[] = [];
       const failed: string[] = [];
 
       for (const r of requests) {
-        const req2 = r as { id: string; status: string; tokenExpiresAt: string | null; secretName: string };
-        if (
-          (req2.status === "active" || req2.status === "approved") &&
-          req2.tokenExpiresAt &&
-          new Date(req2.tokenExpiresAt).getTime() < now
-        ) {
+        if (r.status === "approved" && r.expiresAt && new Date(r.expiresAt).getTime() < now) {
           try {
-            releaseAccess(orgId, req2.id, "system-auto-revocation");
-            revoked.push(req2.id);
+            await storage.updateJitAccessRequest(r.id, orgId, {
+              status: "expired",
+              revokedAt: new Date(),
+            });
+            revoked.push(r.id);
             logger.child("routes").info("Auto-revoked expired JIT access", {
               orgId,
-              requestId: req2.id,
-              secretName: req2.secretName,
+              requestId: r.id,
+              secretPath: r.secretPath,
             });
           } catch {
-            failed.push(req2.id);
+            failed.push(r.id);
           }
         }
       }
@@ -813,54 +850,49 @@ export function registerJitSecretAccessRoutes(app: Express): void {
     }
   });
 
-  // ─── 28.5 Session Recording During JIT Access ─────────────────────────────
+  // ─── 28.5 Session Recording During JIT Access — DB persisted ───────────────
 
   app.get("/api/jit-secrets/session-recordings", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const requests = getAccessRequests(orgId);
-      const auditEntries = getAuditLog(orgId);
+      const requests = await storage.getJitAccessRequests(orgId, 500);
 
-      // Build session recordings from completed/released requests + audit trail
       const recordings = requests
-        .filter((r: { status: string }) => ["released", "expired", "revoked"].includes(r.status))
-        .map(
-          (r: {
-            id: string;
-            secretName: string;
-            requesterName: string;
-            durationMinutes: number;
-            createdAt: string;
-            releasedAt: string | null;
-            status: string;
-            reason: string;
-          }) => {
-            const relatedAudit = auditEntries.filter(
-              (a: { details?: string; action: string }) =>
-                a.details?.includes(r.id) || a.details?.includes(r.secretName),
-            );
+        .filter((r) => ["expired", "revoked"].includes(r.status))
+        .map((r) => {
+          const meta = (r.metadata || {}) as Record<string, unknown>;
+          const startTime = r.approvedAt
+            ? new Date(r.approvedAt).getTime()
+            : r.createdAt
+              ? new Date(r.createdAt).getTime()
+              : Date.now();
+          const endTime = r.revokedAt
+            ? new Date(r.revokedAt).getTime()
+            : r.expiresAt
+              ? new Date(r.expiresAt).getTime()
+              : startTime + r.durationMinutes * 60000;
+          const actualDuration = Math.round((endTime - startTime) / 60000);
 
-            const startTime = new Date(r.createdAt).getTime();
-            const endTime = r.releasedAt ? new Date(r.releasedAt).getTime() : startTime + r.durationMinutes * 60000;
-            const actualDuration = Math.round((endTime - startTime) / 60000);
-
-            return {
-              recordingId: `rec-${r.id}`,
-              sessionId: r.id,
-              secretName: r.secretName,
-              user: r.requesterName,
-              status: r.status,
-              reason: r.reason,
-              startedAt: r.createdAt,
-              endedAt: r.releasedAt || new Date(endTime).toISOString(),
-              actualDurationMinutes: actualDuration,
-              requestedDurationMinutes: r.durationMinutes,
-              earlyRelease: r.releasedAt ? actualDuration < r.durationMinutes : false,
-              auditEvents: relatedAudit.length,
-              actions: relatedAudit.slice(0, 20),
-            };
-          },
-        );
+          return {
+            recordingId: `rec-${r.id}`,
+            sessionId: r.id,
+            secretName: r.secretPath,
+            user: meta.requesterName || r.requesterId,
+            status: r.status,
+            reason: r.reason,
+            startedAt: r.approvedAt ? r.approvedAt.toISOString() : r.createdAt?.toISOString(),
+            endedAt: r.revokedAt
+              ? r.revokedAt.toISOString()
+              : r.expiresAt
+                ? r.expiresAt.toISOString()
+                : new Date(endTime).toISOString(),
+            actualDurationMinutes: actualDuration,
+            requestedDurationMinutes: r.durationMinutes,
+            earlyRelease: r.revokedAt ? actualDuration < r.durationMinutes : false,
+            auditEvents: 0,
+            actions: [],
+          };
+        });
 
       res.json({
         recordings,
@@ -872,7 +904,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
     }
   });
 
-  // ─── 28.6 Multi-Level Approval Workflow ────────────────────────────────────
+  // ─── 28.6 Multi-Level Approval Workflow — engine ───────────────────────────
 
   app.get("/api/jit-secrets/approval-chains", isAuthenticated, async (req, res) => {
     try {
@@ -932,7 +964,6 @@ export function registerJitSecretAccessRoutes(app: Express): void {
         return res.status(404).json({ message: "Secret not found" });
       }
 
-      // Validate levels
       for (const level of approvalLevels) {
         if (!level.role || !["manager", "security", "owner"].includes(level.role)) {
           return res.status(400).json({ message: "Each level must have a valid role: manager, security, owner" });
