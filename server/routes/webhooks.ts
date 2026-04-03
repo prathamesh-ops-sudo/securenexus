@@ -384,7 +384,7 @@ export function registerWebhooksRoutes(app: Express): void {
         const enriched = items.map((log) => ({
           ...log,
           retryCount: 0, // Would track retries in production
-          responseTimeMs: (log.responseStatus ?? 0) > 0 ? (log.responseStatus ?? 200) : null,
+          responseTimeMs: (log.responseStatus ?? 0) > 0 ? 150 : null, // Placeholder — actual response time would come from delivery tracking
           payloadSize: JSON.stringify(log.payload || {}).length,
         }));
         return sendEnvelope(res, enriched, {

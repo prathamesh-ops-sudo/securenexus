@@ -167,7 +167,7 @@ export function registerAdversarialTestingRoutes(app: Express): void {
       const executions = await Promise.all(
         testCaseIds.map(async (tcId) => {
           const tc = getTestCaseById(tcId);
-          if (!tc) return null;
+          if (!tc || !tc.enabled) return null;
           return storage.createAdversarialExecution({
             orgId,
             testCaseId: tcId,
