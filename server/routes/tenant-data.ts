@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
-import { getOrgId, logger, reply, replyError, sendEnvelope, formatCSVRow, escapeCSVField } from "./shared";
+import { getOrgId, logger, reply, replyError, sendEnvelope } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, resolveOrgContext } from "../rbac";
 import { storage } from "../storage";
@@ -124,7 +124,7 @@ export function registerTenantDataRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const job = exportJobs.get(req.params.jobId as string);
+        const job = exportJobs.get(String(req.params.jobId));
         if (!job || job.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Export job not found." }]);
         }
@@ -232,7 +232,7 @@ export function registerTenantDataRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const job = deletionJobs.get(req.params.jobId as string);
+        const job = deletionJobs.get(String(req.params.jobId));
         if (!job || job.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Deletion job not found." }]);
         }
@@ -277,7 +277,7 @@ export function registerTenantDataRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const job = deletionJobs.get(req.params.jobId as string);
+        const job = deletionJobs.get(String(req.params.jobId));
         if (!job || job.orgId !== orgId) {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Deletion job not found." }]);
         }
@@ -342,7 +342,7 @@ export function registerTenantDataRoutes(app: Express): void {
   );
 }
 
-async function processExportJob(job: ExportJob, orgId: string): Promise<void> {
+async function processExportJob(job: ExportJob, _orgId: string): Promise<void> {
   job.status = "running";
   for (let i = 0; i < DATA_TABLES.length; i++) {
     await new Promise((r) => setTimeout(r, 100));

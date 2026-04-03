@@ -6,24 +6,6 @@ import { requireMinRole, resolveOrgContext } from "../rbac";
 import { randomBytes } from "crypto";
 import { getComplianceControls, getComplianceControlMappings } from "../storage/compliance";
 
-interface GapAnalysis {
-  id: string;
-  orgId: string;
-  framework: string;
-  version: string;
-  status: "pending" | "running" | "completed" | "failed";
-  totalControls: number;
-  implementedControls: number;
-  partialControls: number;
-  missingControls: number;
-  complianceScore: number;
-  gaps: ControlGap[];
-  recommendations: Recommendation[];
-  createdAt: string;
-  completedAt: string | null;
-  requestedBy: string;
-}
-
 interface ControlGap {
   controlId: string;
   controlName: string;
@@ -44,8 +26,6 @@ interface Recommendation {
   estimatedEffort: string;
   automatable: boolean;
 }
-
-const analyses = new Map<string, GapAnalysis>();
 
 const FRAMEWORKS: Record<
   string,
@@ -79,208 +59,134 @@ const FRAMEWORKS: Record<
       { id: "A.5.2", name: "Information Security Roles", category: "Organizational" },
       { id: "A.6.1", name: "Screening", category: "People" },
       { id: "A.6.2", name: "Terms of Employment", category: "People" },
-      { id: "A.7.1", name: "Physical Security Perimeter", category: "Physical" },
+      { id: "A.7.1", name: "Physical Security Perimeters", category: "Physical" },
       { id: "A.8.1", name: "User Endpoint Devices", category: "Technological" },
       { id: "A.8.2", name: "Privileged Access Rights", category: "Technological" },
       { id: "A.8.3", name: "Information Access Restriction", category: "Technological" },
+      { id: "A.8.4", name: "Access to Source Code", category: "Technological" },
       { id: "A.8.5", name: "Secure Authentication", category: "Technological" },
-      { id: "A.8.8", name: "Management of Technical Vulnerabilities", category: "Technological" },
-      { id: "A.8.9", name: "Configuration Management", category: "Technological" },
-      { id: "A.8.15", name: "Logging", category: "Technological" },
-      { id: "A.8.16", name: "Monitoring Activities", category: "Technological" },
+      { id: "A.8.6", name: "Capacity Management", category: "Technological" },
+      { id: "A.8.7", name: "Protection Against Malware", category: "Technological" },
     ],
   },
   "nist-csf": {
-    name: "NIST CSF 2.0",
+    name: "NIST CSF",
     version: "2.0",
     controls: [
-      { id: "GV.OC-01", name: "Organizational Context", category: "Govern" },
-      { id: "GV.RM-01", name: "Risk Management Strategy", category: "Govern" },
-      { id: "ID.AM-01", name: "Asset Inventory", category: "Identify" },
-      { id: "ID.RA-01", name: "Vulnerability Identification", category: "Identify" },
-      { id: "PR.AA-01", name: "Identity Management", category: "Protect" },
-      { id: "PR.AA-03", name: "Multi-Factor Authentication", category: "Protect" },
-      { id: "PR.DS-01", name: "Data-at-Rest Protection", category: "Protect" },
-      { id: "PR.DS-02", name: "Data-in-Transit Protection", category: "Protect" },
-      { id: "DE.CM-01", name: "Networks Monitored", category: "Detect" },
-      { id: "DE.AE-02", name: "Anomaly Detection", category: "Detect" },
-      { id: "RS.MA-01", name: "Incident Management", category: "Respond" },
-      { id: "RC.RP-01", name: "Recovery Plan", category: "Recover" },
+      { id: "GV.OC", name: "Organizational Context", category: "Govern" },
+      { id: "GV.RM", name: "Risk Management Strategy", category: "Govern" },
+      { id: "GV.RR", name: "Roles, Responsibilities", category: "Govern" },
+      { id: "ID.AM", name: "Asset Management", category: "Identify" },
+      { id: "ID.RA", name: "Risk Assessment", category: "Identify" },
+      { id: "PR.AA", name: "Identity & Access Management", category: "Protect" },
+      { id: "PR.AT", name: "Awareness & Training", category: "Protect" },
+      { id: "PR.DS", name: "Data Security", category: "Protect" },
+      { id: "PR.PS", name: "Platform Security", category: "Protect" },
+      { id: "DE.CM", name: "Continuous Monitoring", category: "Detect" },
+      { id: "DE.AE", name: "Adverse Event Analysis", category: "Detect" },
+      { id: "RS.MA", name: "Incident Management", category: "Respond" },
+      { id: "RS.AN", name: "Incident Analysis", category: "Respond" },
+      { id: "RC.RP", name: "Incident Recovery Plan Execution", category: "Recover" },
+    ],
+  },
+  hipaa: {
+    name: "HIPAA",
+    version: "2013",
+    controls: [
+      { id: "164.308(a)(1)", name: "Security Management Process", category: "Administrative" },
+      { id: "164.308(a)(3)", name: "Workforce Security", category: "Administrative" },
+      { id: "164.308(a)(4)", name: "Information Access Management", category: "Administrative" },
+      { id: "164.308(a)(5)", name: "Security Awareness Training", category: "Administrative" },
+      { id: "164.308(a)(6)", name: "Security Incident Procedures", category: "Administrative" },
+      { id: "164.308(a)(7)", name: "Contingency Plan", category: "Administrative" },
+      { id: "164.310(a)", name: "Facility Access Controls", category: "Physical" },
+      { id: "164.310(b)", name: "Workstation Use", category: "Physical" },
+      { id: "164.312(a)", name: "Access Control", category: "Technical" },
+      { id: "164.312(b)", name: "Audit Controls", category: "Technical" },
+      { id: "164.312(c)", name: "Integrity Controls", category: "Technical" },
+      { id: "164.312(d)", name: "Person Authentication", category: "Technical" },
+      { id: "164.312(e)", name: "Transmission Security", category: "Technical" },
+    ],
+  },
+  gdpr: {
+    name: "GDPR",
+    version: "2016/2018",
+    controls: [
+      { id: "GDPR-5", name: "Principles of Processing", category: "Principles" },
+      { id: "GDPR-6", name: "Lawful Basis for Processing", category: "Legal Basis" },
+      { id: "GDPR-7", name: "Conditions for Consent", category: "Consent" },
+      { id: "GDPR-12", name: "Transparent Communication", category: "Data Subject Rights" },
+      { id: "GDPR-15", name: "Right of Access", category: "Data Subject Rights" },
+      { id: "GDPR-17", name: "Right to Erasure", category: "Data Subject Rights" },
+      { id: "GDPR-20", name: "Right to Data Portability", category: "Data Subject Rights" },
+      { id: "GDPR-25", name: "Data Protection by Design & Default", category: "Security" },
+      { id: "GDPR-30", name: "Records of Processing Activities", category: "Accountability" },
+      { id: "GDPR-32", name: "Security of Processing", category: "Security" },
+      { id: "GDPR-33", name: "Breach Notification", category: "Breach" },
+      { id: "GDPR-35", name: "DPIA", category: "Impact Assessment" },
+      { id: "GDPR-37", name: "DPO Designation", category: "Governance" },
+    ],
+  },
+  pci_dss: {
+    name: "PCI DSS",
+    version: "4.0",
+    controls: [
+      { id: "PCI-1", name: "Network Security Controls", category: "Network" },
+      { id: "PCI-2", name: "Secure Configurations", category: "Configuration" },
+      { id: "PCI-3", name: "Protect Stored Account Data", category: "Data Protection" },
+      { id: "PCI-4", name: "Protect Cardholder Data in Transit", category: "Encryption" },
+      { id: "PCI-5", name: "Protect from Malicious Software", category: "Anti-Malware" },
+      { id: "PCI-6", name: "Secure Systems & Software", category: "Development" },
+      { id: "PCI-7", name: "Restrict Access by Business Need", category: "Access Control" },
+      { id: "PCI-8", name: "Identify Users & Authenticate", category: "Authentication" },
+      { id: "PCI-9", name: "Restrict Physical Access", category: "Physical" },
+      { id: "PCI-10", name: "Log & Monitor All Access", category: "Logging" },
+      { id: "PCI-11", name: "Test Security Regularly", category: "Testing" },
+      { id: "PCI-12", name: "Organizational Policies & Programs", category: "Policy" },
     ],
   },
   nis2: {
-    name: "NIS2 Directive",
-    version: "2022/2555",
+    name: "NIS2",
+    version: "2022",
     controls: [
       { id: "NIS2-RM-01", name: "Risk Management Measures", category: "Risk Management" },
-      { id: "NIS2-RM-02", name: "Supply Chain Security", category: "Risk Management" },
-      { id: "NIS2-IR-01", name: "Incident Handling", category: "Incident Response" },
-      { id: "NIS2-IR-02", name: "Incident Reporting (24h/72h)", category: "Incident Response" },
+      { id: "NIS2-IR-01", name: "Incident Handling & Reporting", category: "Incident Response" },
       { id: "NIS2-BC-01", name: "Business Continuity", category: "Business Continuity" },
-      { id: "NIS2-BC-02", name: "Crisis Management", category: "Business Continuity" },
-      { id: "NIS2-AC-01", name: "Access Control Policies", category: "Access Control" },
-      { id: "NIS2-AC-02", name: "Multi-Factor Authentication", category: "Access Control" },
-      { id: "NIS2-CR-01", name: "Cryptography & Encryption", category: "Cryptography" },
+      { id: "NIS2-SC-01", name: "Supply Chain Security", category: "Supply Chain" },
+      { id: "NIS2-NS-01", name: "Network & Information System Security", category: "Network Security" },
       { id: "NIS2-VD-01", name: "Vulnerability Disclosure", category: "Vulnerability Management" },
-      { id: "NIS2-HR-01", name: "Human Resources Security", category: "Human Resources" },
-      { id: "NIS2-AS-01", name: "Asset Management", category: "Asset Management" },
-      { id: "NIS2-GV-01", name: "Governance & Accountability", category: "Governance" },
-      { id: "NIS2-GV-02", name: "Board-Level Cybersecurity Training", category: "Governance" },
+      { id: "NIS2-CR-01", name: "Cryptography & Encryption", category: "Cryptography" },
+      { id: "NIS2-HR-01", name: "Human Resources Security", category: "Personnel" },
+      { id: "NIS2-AC-01", name: "Access Control & Asset Management", category: "Access Control" },
+      { id: "NIS2-MF-01", name: "Multi-Factor Authentication", category: "Authentication" },
     ],
   },
   dora: {
     name: "DORA",
-    version: "2022/2554",
+    version: "2022",
     controls: [
-      { id: "DORA-ICT-01", name: "ICT Risk Management Framework", category: "ICT Risk Management" },
-      { id: "DORA-ICT-02", name: "ICT Systems Identification & Classification", category: "ICT Risk Management" },
-      { id: "DORA-ICT-03", name: "ICT Business Continuity Policy", category: "ICT Risk Management" },
-      { id: "DORA-IR-01", name: "ICT Incident Classification", category: "Incident Reporting" },
-      { id: "DORA-IR-02", name: "Major ICT Incident Reporting", category: "Incident Reporting" },
-      { id: "DORA-IR-03", name: "Voluntary Cyber Threat Notification", category: "Incident Reporting" },
+      { id: "DORA-ICT-01", name: "ICT Risk Management Framework", category: "ICT Risk" },
+      { id: "DORA-ICT-02", name: "ICT Systems, Protocols & Tools", category: "ICT Risk" },
+      { id: "DORA-IR-01", name: "ICT-related Incident Management", category: "Incident Management" },
+      { id: "DORA-IR-02", name: "Major ICT Incident Classification", category: "Incident Management" },
       { id: "DORA-RT-01", name: "Digital Operational Resilience Testing", category: "Resilience Testing" },
-      { id: "DORA-RT-02", name: "Threat-Led Penetration Testing (TLPT)", category: "Resilience Testing" },
-      { id: "DORA-TP-01", name: "ICT Third-Party Risk Management", category: "Third-Party Risk" },
-      { id: "DORA-TP-02", name: "Critical ICT Provider Oversight", category: "Third-Party Risk" },
-      { id: "DORA-TP-03", name: "Concentration Risk Assessment", category: "Third-Party Risk" },
+      { id: "DORA-RT-02", name: "Threat-Led Penetration Testing", category: "Resilience Testing" },
+      { id: "DORA-TP-01", name: "ICT Third-Party Risk Management", category: "Third-Party" },
+      { id: "DORA-TP-02", name: "Contractual Arrangements", category: "Third-Party" },
       { id: "DORA-IS-01", name: "Information Sharing Arrangements", category: "Information Sharing" },
+      { id: "DORA-OV-01", name: "Oversight of Critical ICT Providers", category: "Oversight" },
     ],
   },
   cbest: {
     name: "CBEST",
     version: "3.0",
     controls: [
-      { id: "CBEST-TI-01", name: "Threat Intelligence Gathering", category: "Threat Intelligence" },
-      { id: "CBEST-TI-02", name: "Threat Scenario Development", category: "Threat Intelligence" },
-      { id: "CBEST-PT-01", name: "Penetration Testing Execution", category: "Penetration Testing" },
-      { id: "CBEST-PT-02", name: "Red Team Operations", category: "Penetration Testing" },
-      { id: "CBEST-PT-03", name: "Social Engineering Assessment", category: "Penetration Testing" },
-      { id: "CBEST-RM-01", name: "Remediation Planning", category: "Remediation" },
-      { id: "CBEST-RM-02", name: "Control Improvement Tracking", category: "Remediation" },
-      { id: "CBEST-GV-01", name: "Board Reporting & Governance", category: "Governance" },
-      { id: "CBEST-GV-02", name: "Regulatory Communication", category: "Governance" },
-      { id: "CBEST-SC-01", name: "Scope & Critical Functions", category: "Scoping" },
-    ],
-  },
-  "mas-trm": {
-    name: "MAS TRM",
-    version: "2021",
-    controls: [
-      { id: "MAS-TRM-3.1", name: "Technology Risk Governance", category: "Governance" },
-      { id: "MAS-TRM-3.2", name: "Board & Senior Management Oversight", category: "Governance" },
-      { id: "MAS-TRM-4.1", name: "IT Project Management", category: "Technology Operations" },
-      { id: "MAS-TRM-5.1", name: "System Reliability & Availability", category: "Technology Operations" },
-      { id: "MAS-TRM-6.1", name: "IT Service Management", category: "Technology Operations" },
-      { id: "MAS-TRM-7.1", name: "IT Resilience", category: "Resilience" },
-      { id: "MAS-TRM-7.2", name: "Disaster Recovery", category: "Resilience" },
-      { id: "MAS-TRM-8.1", name: "Access Control", category: "Security" },
-      { id: "MAS-TRM-9.1", name: "Cyber Security", category: "Security" },
-      { id: "MAS-TRM-9.2", name: "Cyber Surveillance", category: "Security" },
-      { id: "MAS-TRM-10.1", name: "Data Management", category: "Data" },
-      { id: "MAS-TRM-11.1", name: "IT Audit", category: "Audit" },
-      { id: "MAS-TRM-12.1", name: "Online Financial Services", category: "Online Services" },
-    ],
-  },
-  ifsca: {
-    name: "IFSCA Cybersecurity",
-    version: "2024",
-    controls: [
-      { id: "IFSCA-GV-01", name: "Cybersecurity Governance Framework", category: "Governance" },
-      { id: "IFSCA-GV-02", name: "CISO Appointment", category: "Governance" },
-      { id: "IFSCA-RA-01", name: "Risk Assessment & Classification", category: "Risk Assessment" },
-      { id: "IFSCA-AC-01", name: "Access Control & Identity Management", category: "Access Control" },
-      { id: "IFSCA-NW-01", name: "Network Security", category: "Network Security" },
-      { id: "IFSCA-DP-01", name: "Data Protection & Privacy", category: "Data Protection" },
-      { id: "IFSCA-IR-01", name: "Incident Response & Reporting", category: "Incident Response" },
-      { id: "IFSCA-BC-01", name: "Business Continuity Planning", category: "Business Continuity" },
-      { id: "IFSCA-VA-01", name: "Vulnerability Assessment & Penetration Testing", category: "Testing" },
-      { id: "IFSCA-TP-01", name: "Third-Party Risk Management", category: "Third-Party" },
-      { id: "IFSCA-AT-01", name: "Security Awareness Training", category: "Training" },
-    ],
-  },
-  pdpa: {
-    name: "PDPA",
-    version: "2012/2020",
-    controls: [
-      { id: "PDPA-CN-01", name: "Consent Management", category: "Consent" },
-      { id: "PDPA-CN-02", name: "Purpose Limitation", category: "Consent" },
-      { id: "PDPA-PP-01", name: "Protection of Personal Data", category: "Protection" },
-      { id: "PDPA-PP-02", name: "Retention Limitation", category: "Protection" },
-      { id: "PDPA-PP-03", name: "Transfer Limitation", category: "Protection" },
-      { id: "PDPA-AC-01", name: "Access & Correction Rights", category: "Data Subject Rights" },
-      { id: "PDPA-AC-02", name: "Data Portability", category: "Data Subject Rights" },
-      { id: "PDPA-DP-01", name: "Data Protection Officer Appointment", category: "Governance" },
-      { id: "PDPA-DB-01", name: "Data Breach Notification", category: "Breach Notification" },
-      { id: "PDPA-DB-02", name: "72-Hour Notification Requirement", category: "Breach Notification" },
-      { id: "PDPA-EN-01", name: "Enforcement & Penalties", category: "Enforcement" },
-    ],
-  },
-  popia: {
-    name: "POPIA",
-    version: "2013",
-    controls: [
-      { id: "POPIA-AC-01", name: "Accountability", category: "Conditions" },
-      { id: "POPIA-PL-01", name: "Processing Limitation", category: "Conditions" },
-      { id: "POPIA-PS-01", name: "Purpose Specification", category: "Conditions" },
-      { id: "POPIA-FL-01", name: "Further Processing Limitation", category: "Conditions" },
-      { id: "POPIA-IQ-01", name: "Information Quality", category: "Conditions" },
-      { id: "POPIA-OP-01", name: "Openness", category: "Conditions" },
-      { id: "POPIA-SS-01", name: "Security Safeguards", category: "Conditions" },
-      { id: "POPIA-DS-01", name: "Data Subject Participation", category: "Conditions" },
-      { id: "POPIA-IO-01", name: "Information Officer Registration", category: "Governance" },
-      { id: "POPIA-CB-01", name: "Cross-Border Transfer Restrictions", category: "Transfers" },
-      { id: "POPIA-BN-01", name: "Breach Notification", category: "Breach" },
-    ],
-  },
-  lgpd: {
-    name: "LGPD",
-    version: "2018",
-    controls: [
-      { id: "LGPD-LB-01", name: "Legal Basis for Processing", category: "Legal Basis" },
-      { id: "LGPD-CN-01", name: "Consent Management", category: "Consent" },
-      {
-        id: "LGPD-DS-01",
-        name: "Data Subject Rights (Access, Deletion, Portability)",
-        category: "Data Subject Rights",
-      },
-      { id: "LGPD-DPO-01", name: "Data Protection Officer (Encarregado)", category: "Governance" },
-      { id: "LGPD-IA-01", name: "Privacy Impact Assessment (RIPD)", category: "Impact Assessment" },
-      { id: "LGPD-IT-01", name: "International Data Transfer", category: "Transfers" },
-      { id: "LGPD-SM-01", name: "Security Measures", category: "Security" },
-      { id: "LGPD-BN-01", name: "Breach Notification to ANPD", category: "Breach Notification" },
-      { id: "LGPD-RR-01", name: "Records of Processing Activities", category: "Records" },
-      { id: "LGPD-DP-01", name: "Data Protection by Design & Default", category: "Privacy by Design" },
-    ],
-  },
-  pipeda: {
-    name: "PIPEDA",
-    version: "2000/2018",
-    controls: [
-      { id: "PIPEDA-P1", name: "Accountability", category: "Fair Information Principles" },
-      { id: "PIPEDA-P2", name: "Identifying Purposes", category: "Fair Information Principles" },
-      { id: "PIPEDA-P3", name: "Consent", category: "Fair Information Principles" },
-      { id: "PIPEDA-P4", name: "Limiting Collection", category: "Fair Information Principles" },
-      { id: "PIPEDA-P5", name: "Limiting Use, Disclosure, and Retention", category: "Fair Information Principles" },
-      { id: "PIPEDA-P6", name: "Accuracy", category: "Fair Information Principles" },
-      { id: "PIPEDA-P7", name: "Safeguards", category: "Fair Information Principles" },
-      { id: "PIPEDA-P8", name: "Openness", category: "Fair Information Principles" },
-      { id: "PIPEDA-P9", name: "Individual Access", category: "Fair Information Principles" },
-      { id: "PIPEDA-P10", name: "Challenging Compliance", category: "Fair Information Principles" },
-      { id: "PIPEDA-BR-01", name: "Mandatory Breach Reporting", category: "Breach Reporting" },
-    ],
-  },
-  "asd-essential8": {
-    name: "ASD Essential Eight",
-    version: "2023",
-    controls: [
-      { id: "E8-AC-01", name: "Application Control", category: "Prevent Malware" },
-      { id: "E8-PA-01", name: "Patch Applications", category: "Prevent Malware" },
-      { id: "E8-MM-01", name: "Configure Microsoft Office Macro Settings", category: "Prevent Malware" },
-      { id: "E8-UA-01", name: "User Application Hardening", category: "Prevent Malware" },
-      { id: "E8-RA-01", name: "Restrict Administrative Privileges", category: "Limit Impact" },
-      { id: "E8-PO-01", name: "Patch Operating Systems", category: "Limit Impact" },
-      { id: "E8-MF-01", name: "Multi-Factor Authentication", category: "Limit Impact" },
-      { id: "E8-DB-01", name: "Regular Backups", category: "Recovery" },
+      { id: "CBEST-TI-01", name: "Threat Intelligence Phase", category: "Threat Intelligence" },
+      { id: "CBEST-PT-01", name: "Penetration Testing Phase", category: "Penetration Testing" },
+      { id: "CBEST-RM-01", name: "Remediation Phase", category: "Remediation" },
+      { id: "CBEST-SC-01", name: "Scope Definition", category: "Scoping" },
+      { id: "CBEST-GP-01", name: "Governance & Process", category: "Governance" },
+      { id: "CBEST-RP-01", name: "Reporting", category: "Reporting" },
     ],
   },
   ccpa: {
@@ -320,74 +226,7 @@ const FRAMEWORKS: Record<
       { id: "CMMC-SI", name: "System & Information Integrity", category: "Integrity" },
     ],
   },
-  "nerc-cip": {
-    name: "NERC CIP",
-    version: "v7",
-    controls: [
-      { id: "CIP-002", name: "BES Cyber System Categorization", category: "Asset Identification" },
-      { id: "CIP-003", name: "Security Management Controls", category: "Security Management" },
-      { id: "CIP-004", name: "Personnel & Training", category: "Personnel" },
-      { id: "CIP-005", name: "Electronic Security Perimeters", category: "Network Security" },
-      { id: "CIP-006", name: "Physical Security of BES Cyber Systems", category: "Physical Security" },
-      { id: "CIP-007", name: "System Security Management", category: "System Security" },
-      { id: "CIP-008", name: "Incident Reporting & Response Planning", category: "Incident Response" },
-      { id: "CIP-009", name: "Recovery Plans for BES Cyber Systems", category: "Recovery" },
-      {
-        id: "CIP-010",
-        name: "Configuration Change Management & Vulnerability Assessments",
-        category: "Change Management",
-      },
-      { id: "CIP-011", name: "Information Protection", category: "Information Protection" },
-      { id: "CIP-013", name: "Supply Chain Risk Management", category: "Supply Chain" },
-      { id: "CIP-014", name: "Physical Security", category: "Physical Security" },
-    ],
-  },
-  "swift-csp": {
-    name: "SWIFT CSP",
-    version: "2024",
-    controls: [
-      { id: "SWIFT-1.1", name: "SWIFT Environment Protection", category: "Secure Your Environment" },
-      { id: "SWIFT-1.2", name: "Operating System Privileged Account Control", category: "Secure Your Environment" },
-      { id: "SWIFT-1.3", name: "Virtualisation Platform Protection", category: "Secure Your Environment" },
-      { id: "SWIFT-2.1", name: "Internal Data Flow Security", category: "Know & Limit Access" },
-      { id: "SWIFT-2.2", name: "Security Updates", category: "Know & Limit Access" },
-      { id: "SWIFT-2.3", name: "System Hardening", category: "Know & Limit Access" },
-      { id: "SWIFT-3.1", name: "Physical Security", category: "Detect & Respond" },
-      { id: "SWIFT-4.1", name: "Password Policy", category: "Know & Limit Access" },
-      { id: "SWIFT-5.1", name: "Logical Access Control", category: "Know & Limit Access" },
-      { id: "SWIFT-6.1", name: "Malware Protection", category: "Detect & Respond" },
-      { id: "SWIFT-6.2", name: "Software Integrity", category: "Detect & Respond" },
-      { id: "SWIFT-6.3", name: "Database Integrity", category: "Detect & Respond" },
-      { id: "SWIFT-6.4", name: "Logging & Monitoring", category: "Detect & Respond" },
-      { id: "SWIFT-7.1", name: "Cyber Incident Response Planning", category: "Plan for Response" },
-    ],
-  },
-  "iec-62443": {
-    name: "IEC 62443",
-    version: "2018",
-    controls: [
-      { id: "IEC-1.1", name: "Security Management System", category: "General" },
-      { id: "IEC-2.1", name: "Security Policy", category: "Policies & Procedures" },
-      { id: "IEC-2.2", name: "Organization Security", category: "Policies & Procedures" },
-      { id: "IEC-2.3", name: "Staff Security", category: "Policies & Procedures" },
-      { id: "IEC-2.4", name: "Risk Assessment", category: "Policies & Procedures" },
-      { id: "IEC-3.1", name: "System Security Architecture", category: "System" },
-      { id: "IEC-3.2", name: "Defense in Depth Strategy", category: "System" },
-      { id: "IEC-3.3", name: "Zones & Conduits Model", category: "System" },
-      { id: "IEC-4.1", name: "Identification & Authentication Control", category: "Component" },
-      { id: "IEC-4.2", name: "Use Control", category: "Component" },
-      { id: "IEC-4.3", name: "System Integrity", category: "Component" },
-      { id: "IEC-4.4", name: "Data Confidentiality", category: "Component" },
-      { id: "IEC-4.5", name: "Restricted Data Flow", category: "Component" },
-      { id: "IEC-4.6", name: "Timely Response to Events", category: "Component" },
-      { id: "IEC-4.7", name: "Resource Availability", category: "Component" },
-    ],
-  },
 };
-
-function genId(): string {
-  return `gap-${Date.now()}-${randomBytes(4).toString("hex")}`;
-}
 
 async function analyzeCompliance(
   orgId: string,
@@ -419,7 +258,6 @@ async function analyzeCompliance(
     if (!existing) {
       controlStatusMap.set(textId, { status: m.status, evidence: notes });
     } else {
-      // Keep the best status (implemented > partial > not_assessed)
       if (m.status === "implemented" && existing.status !== "implemented") {
         existing.status = "implemented";
       } else if (m.status === "partial" && existing.status === "not_assessed") {
@@ -512,6 +350,7 @@ export function registerComplianceGapRoutes(app: Express): void {
     },
   );
 
+  // Run a fresh compliance gap analysis against real DB data
   app.post(
     "/api/compliance-gap/analyze",
     isAuthenticated,
@@ -538,17 +377,18 @@ export function registerComplianceGapRoutes(app: Express): void {
         const partial = gaps.filter((g) => g.status === "partial").length;
         const missing = gaps.filter((g) => g.status === "missing").length;
 
-        const analysis: GapAnalysis = {
-          id: genId(),
+        const analysis = {
+          id: `gap-${Date.now()}-${randomBytes(4).toString("hex")}`,
           orgId,
           framework: fw.name,
+          frameworkKey: framework,
           version: fw.version,
-          status: "completed",
+          status: "completed" as const,
           totalControls: fw.controls.length,
           implementedControls: implemented,
           partialControls: partial,
           missingControls: missing,
-          complianceScore: Math.round((implemented / fw.controls.length) * 100),
+          complianceScore: fw.controls.length > 0 ? Math.round((implemented / fw.controls.length) * 100) : 0,
           gaps,
           recommendations,
           createdAt: new Date().toISOString(),
@@ -556,15 +396,16 @@ export function registerComplianceGapRoutes(app: Express): void {
           requestedBy: user?.username || "unknown",
         };
 
-        analyses.set(analysis.id, analysis);
         log.info("Compliance gap analysis completed", { orgId, framework, score: analysis.complianceScore });
         return reply(res, analysis, undefined, 201);
       } catch (error: unknown) {
+        log.error("Compliance gap analysis failed", { error });
         return replyError(res, 500, [{ code: "GAP_ERROR", message: "Failed to run gap analysis." }]);
       }
     },
   );
 
+  // Get analysis summary for a specific framework (computed from live DB data)
   app.get(
     "/api/compliance-gap/analyses",
     isAuthenticated,
@@ -573,41 +414,77 @@ export function registerComplianceGapRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const results = Array.from(analyses.values())
-          .filter((a) => a.orgId === orgId)
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-          .map((a) => ({
-            id: a.id,
-            framework: a.framework,
-            version: a.version,
-            status: a.status,
-            complianceScore: a.complianceScore,
-            totalControls: a.totalControls,
-            implementedControls: a.implementedControls,
-            missingControls: a.missingControls,
-            createdAt: a.createdAt,
-          }));
+        const frameworkFilter = req.query.framework as string | undefined;
+
+        const frameworkKeys = frameworkFilter ? [frameworkFilter] : Object.keys(FRAMEWORKS);
+        const results = [];
+
+        for (const key of frameworkKeys) {
+          const fw = FRAMEWORKS[key];
+          if (!fw) continue;
+
+          const { gaps } = await analyzeCompliance(orgId, fw, key);
+          const implemented = gaps.filter((g) => g.status === "implemented").length;
+          const partial = gaps.filter((g) => g.status === "partial").length;
+          const missing = gaps.filter((g) => g.status === "missing").length;
+
+          results.push({
+            id: key,
+            framework: fw.name,
+            frameworkKey: key,
+            version: fw.version,
+            status: "completed",
+            totalControls: fw.controls.length,
+            implementedControls: implemented,
+            partialControls: partial,
+            missingControls: missing,
+            complianceScore: fw.controls.length > 0 ? Math.round((implemented / fw.controls.length) * 100) : 0,
+          });
+        }
+
         return sendEnvelope(res, results, { meta: { total: results.length } });
       } catch (error: unknown) {
+        log.error("Failed to list analyses", { error });
         return replyError(res, 500, [{ code: "GAP_ERROR", message: "Failed to list analyses." }]);
       }
     },
   );
 
+  // Get detailed analysis for a specific framework (computed from live DB data)
   app.get(
-    "/api/compliance-gap/analyses/:id",
+    "/api/compliance-gap/analyses/:framework",
     isAuthenticated,
     resolveOrgContext,
     requireMinRole("analyst"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const analysis = analyses.get(req.params.id as string);
-        if (!analysis || analysis.orgId !== orgId) {
-          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Analysis not found." }]);
+        const frameworkKey = String(req.params.framework);
+        const fw = FRAMEWORKS[frameworkKey];
+        if (!fw) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Framework not found." }]);
         }
-        return reply(res, analysis);
+
+        const { gaps, recommendations } = await analyzeCompliance(orgId, fw, frameworkKey);
+        const implemented = gaps.filter((g) => g.status === "implemented").length;
+        const partial = gaps.filter((g) => g.status === "partial").length;
+        const missing = gaps.filter((g) => g.status === "missing").length;
+
+        return reply(res, {
+          framework: fw.name,
+          frameworkKey,
+          version: fw.version,
+          totalControls: fw.controls.length,
+          implementedControls: implemented,
+          partialControls: partial,
+          missingControls: missing,
+          complianceScore: fw.controls.length > 0 ? Math.round((implemented / fw.controls.length) * 100) : 0,
+          gaps,
+          recommendations,
+          analyzedAt: new Date().toISOString(),
+        });
       } catch (error: unknown) {
+        log.error("Failed to get analysis", { error });
         return replyError(res, 500, [{ code: "GAP_ERROR", message: "Failed to get analysis." }]);
       }
     },
