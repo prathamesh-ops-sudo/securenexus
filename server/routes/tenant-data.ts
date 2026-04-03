@@ -4,39 +4,8 @@ import { getOrgId, logger, reply, replyError, sendEnvelope } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, resolveOrgContext } from "../rbac";
 import { storage } from "../storage";
-import { randomBytes, createHash } from "crypto";
-
-interface ExportJob {
-  id: string;
-  orgId: string;
-  status: "pending" | "running" | "completed" | "failed";
-  progress: number;
-  totalTables: number;
-  completedTables: number;
-  format: "json" | "csv";
-  downloadUrl: string | null;
-  error: string | null;
-  requestedBy: string;
-  createdAt: Date;
-  completedAt: Date | null;
-}
-
-interface DeletionJob {
-  id: string;
-  orgId: string;
-  status: "pending" | "confirmed" | "running" | "completed" | "failed";
-  confirmationToken: string | null;
-  confirmedAt: Date | null;
-  retentionDays: number;
-  recordsBefore: Record<string, number>;
-  recordsAfter: Record<string, number>;
-  requestedBy: string;
-  createdAt: Date;
-  completedAt: Date | null;
-}
-
-const exportJobs = new Map<string, ExportJob>();
-const deletionJobs = new Map<string, DeletionJob>();
+import { createHash } from "crypto";
+import * as tenantDataStorage from "../storage/tenant-data";
 
 const DATA_TABLES = [
   "alerts",
@@ -52,10 +21,6 @@ const DATA_TABLES = [
   "investigations",
 ];
 
-function generateId(): string {
-  return `${Date.now()}-${randomBytes(4).toString("hex")}`;
-}
-
 export function registerTenantDataRoutes(app: Express): void {
   const log = logger.child("tenant-data");
 
@@ -70,42 +35,39 @@ export function registerTenantDataRoutes(app: Express): void {
         const userId = (req as any).user?.id || "unknown";
         const format = req.body.format === "csv" ? "csv" : "json";
 
-        const existingRunning = Array.from(exportJobs.values()).find(
-          (j) => j.orgId === orgId && (j.status === "pending" || j.status === "running"),
-        );
-        if (existingRunning) {
+        // Check for existing running export
+        const existing = await tenantDataStorage.getTenantDataJobsByType(orgId, "export");
+        const running = existing.find((j) => j.status === "pending" || j.status === "running");
+        if (running) {
           return replyError(res, 409, [
             { code: "EXPORT_IN_PROGRESS", message: "An export is already running for this organization." },
           ]);
         }
 
-        const jobId = generateId();
-        const job: ExportJob = {
-          id: jobId,
+        const job = await tenantDataStorage.createTenantDataJob({
           orgId,
+          jobType: "export",
           status: "pending",
-          progress: 0,
-          totalTables: DATA_TABLES.length,
-          completedTables: 0,
           format,
-          downloadUrl: null,
-          error: null,
+          totalRecords: DATA_TABLES.length,
+          processedRecords: 0,
+          progress: 0,
           requestedBy: userId,
-          createdAt: new Date(),
-          completedAt: null,
-        };
-        exportJobs.set(jobId, job);
+        });
 
-        log.info("Tenant data export requested", { orgId, jobId, format });
+        log.info("Tenant data export requested", { orgId, jobId: job.id, format });
 
-        processExportJob(job, orgId).catch((err) => {
-          job.status = "failed";
-          job.error = err instanceof Error ? err.message : String(err);
-          log.error("Export job failed", { orgId, jobId, error: job.error });
+        // Process in background
+        processExportJob(job.id).catch((err) => {
+          tenantDataStorage.updateTenantDataJob(job.id, {
+            status: "failed",
+            error: err instanceof Error ? err.message : String(err),
+          });
+          log.error("Export job failed", { orgId, jobId: job.id, error: String(err) });
         });
 
         return reply(res, {
-          jobId,
+          jobId: job.id,
           status: "pending",
           message: "Data export started. Poll GET /api/tenant-data/export/:jobId for progress.",
         });
@@ -124,21 +86,21 @@ export function registerTenantDataRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const job = exportJobs.get(String(req.params.jobId));
-        if (!job || job.orgId !== orgId) {
+        const job = await tenantDataStorage.getTenantDataJob(String(req.params.jobId));
+        if (!job || job.orgId !== orgId || job.jobType !== "export") {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Export job not found." }]);
         }
         return reply(res, {
           id: job.id,
           status: job.status,
           progress: job.progress,
-          totalTables: job.totalTables,
-          completedTables: job.completedTables,
+          totalTables: job.totalRecords,
+          completedTables: job.processedRecords,
           format: job.format,
           downloadUrl: job.downloadUrl,
           error: job.error,
-          createdAt: job.createdAt.toISOString(),
-          completedAt: job.completedAt?.toISOString() || null,
+          createdAt: job.createdAt ? new Date(job.createdAt).toISOString() : null,
+          completedAt: job.completedAt ? new Date(job.completedAt).toISOString() : null,
         });
       } catch (error: unknown) {
         return replyError(res, 500, [{ code: "EXPORT_ERROR", message: "Failed to get export status." }]);
@@ -154,18 +116,16 @@ export function registerTenantDataRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const jobs = Array.from(exportJobs.values())
-          .filter((j) => j.orgId === orgId)
-          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-          .map((j) => ({
-            id: j.id,
-            status: j.status,
-            progress: j.progress,
-            format: j.format,
-            createdAt: j.createdAt.toISOString(),
-            completedAt: j.completedAt?.toISOString() || null,
-          }));
-        return sendEnvelope(res, jobs, { meta: { total: jobs.length } });
+        const jobs = await tenantDataStorage.getTenantDataJobsByType(orgId, "export");
+        const mapped = jobs.map((j) => ({
+          id: j.id,
+          status: j.status,
+          progress: j.progress,
+          format: j.format,
+          createdAt: j.createdAt ? new Date(j.createdAt).toISOString() : null,
+          completedAt: j.completedAt ? new Date(j.completedAt).toISOString() : null,
+        }));
+        return sendEnvelope(res, mapped, { meta: { total: mapped.length } });
       } catch (error: unknown) {
         return replyError(res, 500, [{ code: "EXPORT_ERROR", message: "Failed to list exports." }]);
       }
@@ -183,31 +143,20 @@ export function registerTenantDataRoutes(app: Express): void {
         const userId = (req as any).user?.id || "unknown";
         const retentionDays = typeof req.body.retentionDays === "number" ? Math.max(0, req.body.retentionDays) : 30;
 
-        const jobId = generateId();
-        const confirmationToken = createHash("sha256")
-          .update(`${orgId}-${jobId}-${Date.now()}`)
-          .digest("hex")
-          .slice(0, 32);
+        const confirmationToken = createHash("sha256").update(`${orgId}-${Date.now()}`).digest("hex").slice(0, 32);
 
-        const job: DeletionJob = {
-          id: jobId,
+        const job = await tenantDataStorage.createTenantDataJob({
           orgId,
+          jobType: "deletion",
           status: "pending",
-          confirmationToken,
-          confirmedAt: null,
-          retentionDays,
-          recordsBefore: {},
-          recordsAfter: {},
+          scope: { retentionDays, confirmationToken },
           requestedBy: userId,
-          createdAt: new Date(),
-          completedAt: null,
-        };
-        deletionJobs.set(jobId, job);
+        });
 
-        log.info("Tenant data deletion requested", { orgId, jobId, retentionDays });
+        log.info("Tenant data deletion requested", { orgId, jobId: job.id, retentionDays });
 
         return reply(res, {
-          jobId,
+          jobId: job.id,
           status: "pending",
           confirmationToken,
           retentionDays,
@@ -232,30 +181,30 @@ export function registerTenantDataRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const job = deletionJobs.get(String(req.params.jobId));
-        if (!job || job.orgId !== orgId) {
+        const job = await tenantDataStorage.getTenantDataJob(String(req.params.jobId));
+        if (!job || job.orgId !== orgId || job.jobType !== "deletion") {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Deletion job not found." }]);
         }
         if (job.status !== "pending") {
           return replyError(res, 400, [{ code: "INVALID_STATE", message: `Deletion job is already ${job.status}.` }]);
         }
         const token = req.body.confirmationToken;
-        if (!token || token !== job.confirmationToken) {
+        const storedToken = (job.scope as Record<string, unknown>)?.confirmationToken;
+        if (!token || token !== storedToken) {
           return replyError(res, 403, [{ code: "INVALID_TOKEN", message: "Invalid confirmation token." }]);
         }
 
-        job.status = "confirmed";
-        job.confirmedAt = new Date();
+        await tenantDataStorage.updateTenantDataJob(job.id, { status: "confirmed" });
 
         log.info("Tenant data deletion confirmed", { orgId, jobId: job.id });
 
-        processDeletionJob(job, orgId).catch((err) => {
-          job.status = "failed";
-          log.error("Deletion job failed", {
-            orgId,
-            jobId: job.id,
+        // Process in background
+        processDeletionJob(job.id, orgId).catch((err) => {
+          tenantDataStorage.updateTenantDataJob(job.id, {
+            status: "failed",
             error: err instanceof Error ? err.message : String(err),
           });
+          log.error("Deletion job failed", { orgId, jobId: job.id, error: String(err) });
         });
 
         return reply(res, {
@@ -277,19 +226,17 @@ export function registerTenantDataRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const job = deletionJobs.get(String(req.params.jobId));
-        if (!job || job.orgId !== orgId) {
+        const job = await tenantDataStorage.getTenantDataJob(String(req.params.jobId));
+        if (!job || job.orgId !== orgId || job.jobType !== "deletion") {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Deletion job not found." }]);
         }
+        const scope = (job.scope as Record<string, unknown>) || {};
         return reply(res, {
           id: job.id,
           status: job.status,
-          retentionDays: job.retentionDays,
-          recordsBefore: job.recordsBefore,
-          recordsAfter: job.recordsAfter,
-          createdAt: job.createdAt.toISOString(),
-          confirmedAt: job.confirmedAt?.toISOString() || null,
-          completedAt: job.completedAt?.toISOString() || null,
+          retentionDays: scope.retentionDays ?? 30,
+          createdAt: job.createdAt ? new Date(job.createdAt).toISOString() : null,
+          completedAt: job.completedAt ? new Date(job.completedAt).toISOString() : null,
         });
       } catch (error: unknown) {
         return replyError(res, 500, [{ code: "DELETION_ERROR", message: "Failed to get deletion status." }]);
@@ -305,7 +252,6 @@ export function registerTenantDataRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        // Query real row counts per tenant table
         const summary: Record<string, number> = {};
         const tableToQuery: Record<string, string> = {
           alerts: "alerts",
@@ -342,31 +288,36 @@ export function registerTenantDataRoutes(app: Express): void {
   );
 }
 
-async function processExportJob(job: ExportJob, _orgId: string): Promise<void> {
-  job.status = "running";
+async function processExportJob(jobId: string): Promise<void> {
+  await tenantDataStorage.updateTenantDataJob(jobId, { status: "running" });
   for (let i = 0; i < DATA_TABLES.length; i++) {
     await new Promise((r) => setTimeout(r, 100));
-    job.completedTables = i + 1;
-    job.progress = Math.round(((i + 1) / DATA_TABLES.length) * 100);
+    await tenantDataStorage.updateTenantDataJob(jobId, {
+      processedRecords: i + 1,
+      progress: Math.round(((i + 1) / DATA_TABLES.length) * 100),
+    });
   }
-  job.status = "completed";
-  job.completedAt = new Date();
-  job.downloadUrl = `/api/tenant-data/export/${job.id}/download`;
+  await tenantDataStorage.updateTenantDataJob(jobId, {
+    status: "completed",
+    completedAt: new Date(),
+    downloadUrl: `/api/tenant-data/export/${jobId}/download`,
+  });
 }
 
-async function processDeletionJob(job: DeletionJob, orgId: string): Promise<void> {
-  job.status = "running";
+async function processDeletionJob(jobId: string, orgId: string): Promise<void> {
+  await tenantDataStorage.updateTenantDataJob(jobId, { status: "running" });
+  const scope: Record<string, number> = {};
   for (const table of DATA_TABLES) {
     try {
-      job.recordsBefore[table] = await storage.countTableRows(table, orgId);
+      scope[table] = await storage.countTableRows(table, orgId);
     } catch {
-      job.recordsBefore[table] = 0;
+      scope[table] = 0;
     }
   }
   await new Promise((r) => setTimeout(r, 500));
-  for (const table of DATA_TABLES) {
-    job.recordsAfter[table] = 0;
-  }
-  job.status = "completed";
-  job.completedAt = new Date();
+  await tenantDataStorage.updateTenantDataJob(jobId, {
+    status: "completed",
+    completedAt: new Date(),
+    scope: { ...scope, processed: true },
+  });
 }

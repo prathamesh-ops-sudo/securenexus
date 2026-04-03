@@ -13637,3 +13637,1062 @@ export const runtimeGuardrailOverrides = pgTable(
 
 export type RuntimeGuardrailOverride = typeof runtimeGuardrailOverrides.$inferSelect;
 export type InsertRuntimeGuardrailOverride = typeof runtimeGuardrailOverrides.$inferInsert;
+
+// ─── Executive Risk ──────────────────────────────────────────────────────────
+export const boardSummaries = pgTable(
+  "board_summaries",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    period: text("period").notNull().default("monthly"),
+    title: text("title").notNull(),
+    executiveSynopsis: text("executive_synopsis"),
+    keyFindings: jsonb("key_findings").default([]),
+    riskPosture: jsonb("risk_posture").default({}),
+    recommendations: jsonb("recommendations").default([]),
+    mttr: jsonb("mttr").default({}),
+    exploitability: jsonb("exploitability").default({}),
+    remediationThroughput: jsonb("remediation_throughput").default({}),
+    automationSavings: jsonb("automation_savings").default({}),
+    generatedBy: text("generated_by"),
+    generatedAt: timestamp("generated_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_board_org").on(table.orgId), index("idx_board_period").on(table.orgId, table.period)],
+);
+
+export type BoardSummary = typeof boardSummaries.$inferSelect;
+export type InsertBoardSummary = typeof boardSummaries.$inferInsert;
+
+export const executiveMetrics = pgTable(
+  "executive_metrics",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    category: text("category").notNull().default("action"),
+    value: doublePrecision("value").notNull().default(0),
+    unit: text("unit").notNull().default("count"),
+    trend: text("trend").notNull().default("stable"),
+    changePercent: doublePrecision("change_percent").default(0),
+    target: doublePrecision("target"),
+    targetMet: boolean("target_met").default(false),
+    sparkline: jsonb("sparkline").default([]),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_execmetric_org").on(table.orgId), index("idx_execmetric_cat").on(table.orgId, table.category)],
+);
+
+export type ExecutiveMetric = typeof executiveMetrics.$inferSelect;
+export type InsertExecutiveMetric = typeof executiveMetrics.$inferInsert;
+
+// ─── SOC Copilot ─────────────────────────────────────────────────────────────
+export const copilotTriages = pgTable(
+  "copilot_triages",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    alertId: text("alert_id"),
+    alertTitle: text("alert_title"),
+    severity: text("severity").notNull().default("medium"),
+    verdict: text("verdict").notNull().default("needs_investigation"),
+    confidence: doublePrecision("confidence").default(0),
+    reasoning: text("reasoning"),
+    suggestedActions: jsonb("suggested_actions").default([]),
+    contextSummary: text("context_summary"),
+    relatedAlerts: jsonb("related_alerts").default([]),
+    analystNotes: text("analyst_notes"),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_triage_org").on(table.orgId),
+    index("idx_triage_verdict").on(table.orgId, table.verdict),
+    index("idx_triage_alert").on(table.orgId, table.alertId),
+  ],
+);
+
+export type CopilotTriage = typeof copilotTriages.$inferSelect;
+export type InsertCopilotTriage = typeof copilotTriages.$inferInsert;
+
+export const copilotActions = pgTable(
+  "copilot_actions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    triageId: text("triage_id"),
+    actionClass: text("action_class").notNull().default("SUGGEST"),
+    actionType: text("action_type").notNull(),
+    description: text("description"),
+    target: text("target"),
+    parameters: jsonb("parameters").default({}),
+    status: text("status").notNull().default("pending_approval"),
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    executedAt: timestamp("executed_at"),
+    result: jsonb("result"),
+    rollbackInfo: jsonb("rollback_info"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_copact_org").on(table.orgId),
+    index("idx_copact_status").on(table.orgId, table.status),
+    index("idx_copact_triage").on(table.orgId, table.triageId),
+  ],
+);
+
+export type CopilotAction = typeof copilotActions.$inferSelect;
+export type InsertCopilotAction = typeof copilotActions.$inferInsert;
+
+export const copilotHypotheses = pgTable(
+  "copilot_hypotheses",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    incidentId: text("incident_id"),
+    hypothesis: text("hypothesis").notNull(),
+    confidence: text("confidence").notNull().default("medium"),
+    status: text("status").notNull().default("active"),
+    supportingEvidence: jsonb("supporting_evidence").default([]),
+    contradictingEvidence: jsonb("contradicting_evidence").default([]),
+    suggestedInvestigations: jsonb("suggested_investigations").default([]),
+    analystVerdict: text("analyst_verdict"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_cophyp_org").on(table.orgId), index("idx_cophyp_status").on(table.orgId, table.status)],
+);
+
+export type CopilotHypothesis = typeof copilotHypotheses.$inferSelect;
+export type InsertCopilotHypothesis = typeof copilotHypotheses.$inferInsert;
+
+export const copilotFeedback = pgTable(
+  "copilot_feedback",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    domain: text("domain").notNull(),
+    referenceId: text("reference_id"),
+    outcome: text("outcome").notNull(),
+    analystId: text("analyst_id"),
+    comment: text("comment"),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_copfb_org").on(table.orgId), index("idx_copfb_domain").on(table.orgId, table.domain)],
+);
+
+export type CopilotFeedbackRecord = typeof copilotFeedback.$inferSelect;
+export type InsertCopilotFeedback = typeof copilotFeedback.$inferInsert;
+
+// ─── Finding Lineage ─────────────────────────────────────────────────────────
+export const findingLineageRecords = pgTable(
+  "finding_lineage_records",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    severity: text("severity").notNull().default("medium"),
+    source: text("source").notNull(),
+    status: text("status").notNull().default("open"),
+    riskScore: doublePrecision("risk_score").default(0),
+    cweId: text("cwe_id"),
+    cveId: text("cve_id"),
+    sourceLocation: jsonb("source_location").default({}),
+    deployedAsset: jsonb("deployed_asset").default({}),
+    owner: jsonb("owner").default({}),
+    evidence: jsonb("evidence").default([]),
+    remediations: jsonb("remediations").default([]),
+    lineage: jsonb("lineage").default([]),
+    firstDetectedAt: timestamp("first_detected_at").defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").defaultNow(),
+    resolvedAt: timestamp("resolved_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_flr_org").on(table.orgId),
+    index("idx_flr_severity").on(table.orgId, table.severity),
+    index("idx_flr_status").on(table.orgId, table.status),
+    index("idx_flr_source").on(table.orgId, table.source),
+  ],
+);
+
+export type FindingLineageRecord = typeof findingLineageRecords.$inferSelect;
+export type InsertFindingLineageRecord = typeof findingLineageRecords.$inferInsert;
+
+// ─── Compliance Gap ──────────────────────────────────────────────────────────
+export const complianceGapAssessments = pgTable(
+  "compliance_gap_assessments",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    frameworkId: text("framework_id").notNull(),
+    frameworkName: text("framework_name"),
+    controlId: text("control_id").notNull(),
+    controlName: text("control_name"),
+    category: text("category"),
+    status: text("status").notNull().default("missing"),
+    evidence: jsonb("evidence").default([]),
+    remediationPriority: text("remediation_priority").default("medium"),
+    estimatedEffort: text("estimated_effort"),
+    description: text("description"),
+    assessedBy: text("assessed_by"),
+    assessedAt: timestamp("assessed_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_cga_org").on(table.orgId),
+    index("idx_cga_framework").on(table.orgId, table.frameworkId),
+    index("idx_cga_status").on(table.orgId, table.status),
+  ],
+);
+
+export type ComplianceGapAssessment = typeof complianceGapAssessments.$inferSelect;
+export type InsertComplianceGapAssessment = typeof complianceGapAssessments.$inferInsert;
+
+// ─── Vulnerability Scanner (Scans — vulnFindings already defined above) ──────
+export const vulnScans = pgTable(
+  "vuln_scans",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    scanType: text("scan_type").notNull().default("full"),
+    targets: jsonb("targets").default([]),
+    status: text("status").notNull().default("pending"),
+    progress: integer("progress").default(0),
+    findingsCount: integer("findings_count").default(0),
+    criticalCount: integer("critical_count").default(0),
+    highCount: integer("high_count").default(0),
+    mediumCount: integer("medium_count").default(0),
+    lowCount: integer("low_count").default(0),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    scheduledBy: text("scheduled_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_vscan_org").on(table.orgId), index("idx_vscan_status").on(table.orgId, table.status)],
+);
+
+export type VulnScan = typeof vulnScans.$inferSelect;
+export type InsertVulnScan = typeof vulnScans.$inferInsert;
+
+// ─── Identity Governance ─────────────────────────────────────────────────────
+export const accessReviews = pgTable(
+  "access_reviews",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    reviewType: text("review_type").notNull().default("periodic"),
+    scope: text("scope"),
+    status: text("status").notNull().default("pending"),
+    reviewerId: text("reviewer_id"),
+    reviewerName: text("reviewer_name"),
+    totalEntitlements: integer("total_entitlements").default(0),
+    reviewedCount: integer("reviewed_count").default(0),
+    approvedCount: integer("approved_count").default(0),
+    revokedCount: integer("revoked_count").default(0),
+    dueDate: timestamp("due_date"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_accessrev_org").on(table.orgId), index("idx_accessrev_status").on(table.orgId, table.status)],
+);
+
+export type AccessReview = typeof accessReviews.$inferSelect;
+export type InsertAccessReview = typeof accessReviews.$inferInsert;
+
+export const identityEntitlements = pgTable(
+  "identity_entitlements",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    userName: text("user_name"),
+    resourceType: text("resource_type").notNull(),
+    resourceName: text("resource_name").notNull(),
+    accessLevel: text("access_level").notNull(),
+    riskLevel: text("risk_level").default("low"),
+    lastUsedAt: timestamp("last_used_at"),
+    grantedAt: timestamp("granted_at").defaultNow(),
+    expiresAt: timestamp("expires_at"),
+    status: text("status").notNull().default("active"),
+    reviewId: text("review_id"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ident_org").on(table.orgId),
+    index("idx_ident_user").on(table.orgId, table.userId),
+    index("idx_ident_review").on(table.orgId, table.reviewId),
+  ],
+);
+
+export type IdentityEntitlement = typeof identityEntitlements.$inferSelect;
+export type InsertIdentityEntitlement = typeof identityEntitlements.$inferInsert;
+
+// ─── TPRM (Third-Party Risk Management) ─────────────────────────────────────
+export const tprmVendors = pgTable(
+  "tprm_vendors",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    category: text("category"),
+    tier: text("tier").notNull().default("standard"),
+    riskRating: text("risk_rating").default("medium"),
+    overallScore: doublePrecision("overall_score").default(0),
+    securityScore: doublePrecision("security_score").default(0),
+    complianceScore: doublePrecision("compliance_score").default(0),
+    dataAccess: jsonb("data_access").default([]),
+    integrations: jsonb("integrations").default([]),
+    contactName: text("contact_name"),
+    contactEmail: text("contact_email"),
+    contractExpiry: timestamp("contract_expiry"),
+    lastAssessedAt: timestamp("last_assessed_at"),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_tprm_org").on(table.orgId),
+    index("idx_tprm_tier").on(table.orgId, table.tier),
+    index("idx_tprm_risk").on(table.orgId, table.riskRating),
+  ],
+);
+
+export type TprmVendor = typeof tprmVendors.$inferSelect;
+export type InsertTprmVendor = typeof tprmVendors.$inferInsert;
+
+export const tprmAssessments = pgTable(
+  "tprm_assessments",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    vendorId: text("vendor_id").notNull(),
+    assessmentType: text("assessment_type").notNull().default("security"),
+    status: text("status").notNull().default("pending"),
+    score: doublePrecision("score").default(0),
+    findings: jsonb("findings").default([]),
+    questionnaire: jsonb("questionnaire").default({}),
+    assessorId: text("assessor_id"),
+    dueDate: timestamp("due_date"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_tprma_org").on(table.orgId),
+    index("idx_tprma_vendor").on(table.orgId, table.vendorId),
+    index("idx_tprma_status").on(table.orgId, table.status),
+  ],
+);
+
+export type TprmAssessment = typeof tprmAssessments.$inferSelect;
+export type InsertTprmAssessment = typeof tprmAssessments.$inferInsert;
+
+// ─── Deception Technology ────────────────────────────────────────────────────
+export const deceptionAssets = pgTable(
+  "deception_assets",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    assetType: text("asset_type").notNull(),
+    decoyType: text("decoy_type"),
+    network: text("network"),
+    ipAddress: text("ip_address"),
+    status: text("status").notNull().default("active"),
+    interactions: integer("interactions").default(0),
+    lastInteractionAt: timestamp("last_interaction_at"),
+    config: jsonb("config").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_decep_org").on(table.orgId),
+    index("idx_decep_type").on(table.orgId, table.assetType),
+    index("idx_decep_status").on(table.orgId, table.status),
+  ],
+);
+
+export type DeceptionAsset = typeof deceptionAssets.$inferSelect;
+export type InsertDeceptionAsset = typeof deceptionAssets.$inferInsert;
+
+export const deceptionInteractions = pgTable(
+  "deception_interactions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    assetId: text("asset_id").notNull(),
+    sourceIp: text("source_ip"),
+    sourceHostname: text("source_hostname"),
+    interactionType: text("interaction_type").notNull(),
+    protocol: text("protocol"),
+    details: jsonb("details").default({}),
+    severity: text("severity").default("medium"),
+    attackStage: text("attack_stage"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_decepint_org").on(table.orgId), index("idx_decepint_asset").on(table.orgId, table.assetId)],
+);
+
+export type DeceptionInteraction = typeof deceptionInteractions.$inferSelect;
+export type InsertDeceptionInteraction = typeof deceptionInteractions.$inferInsert;
+
+// ─── Email Security ──────────────────────────────────────────────────────────
+export const emailSecurityEvents = pgTable(
+  "email_security_events",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    direction: text("direction").notNull().default("inbound"),
+    sender: text("sender"),
+    recipient: text("recipient"),
+    subject: text("subject"),
+    verdict: text("verdict").notNull().default("clean"),
+    threatType: text("threat_type"),
+    confidence: doublePrecision("confidence").default(0),
+    quarantined: boolean("quarantined").default(false),
+    details: jsonb("details").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_emailsec_org").on(table.orgId), index("idx_emailsec_verdict").on(table.orgId, table.verdict)],
+);
+
+export type EmailSecurityEvent = typeof emailSecurityEvents.$inferSelect;
+export type InsertEmailSecurityEvent = typeof emailSecurityEvents.$inferInsert;
+
+// ─── DNS Security ────────────────────────────────────────────────────────────
+export const dnsSecurityEvents = pgTable(
+  "dns_security_events",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    queryDomain: text("query_domain").notNull(),
+    queryType: text("query_type"),
+    sourceIp: text("source_ip"),
+    verdict: text("verdict").notNull().default("allowed"),
+    threatCategory: text("threat_category"),
+    blocked: boolean("blocked").default(false),
+    policyId: text("policy_id"),
+    details: jsonb("details").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_dnssec_org").on(table.orgId), index("idx_dnssec_verdict").on(table.orgId, table.verdict)],
+);
+
+export type DnsSecurityEvent = typeof dnsSecurityEvents.$inferSelect;
+export type InsertDnsSecurityEvent = typeof dnsSecurityEvents.$inferInsert;
+
+export const dnsSecurityPolicies = pgTable(
+  "dns_security_policies",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    action: text("action").notNull().default("block"),
+    categories: jsonb("categories").default([]),
+    customDomains: jsonb("custom_domains").default([]),
+    enabled: boolean("enabled").default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_dnspol_org").on(table.orgId)],
+);
+
+export type DnsSecurityPolicy = typeof dnsSecurityPolicies.$inferSelect;
+export type InsertDnsSecurityPolicy = typeof dnsSecurityPolicies.$inferInsert;
+
+// ─── API Security ────────────────────────────────────────────────────────────
+export const apiSecurityEndpoints = pgTable(
+  "api_security_endpoints",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    method: text("method").notNull(),
+    path: text("path").notNull(),
+    serviceName: text("service_name"),
+    authType: text("auth_type"),
+    riskScore: doublePrecision("risk_score").default(0),
+    sensitiveDataExposed: boolean("sensitive_data_exposed").default(false),
+    lastCalledAt: timestamp("last_called_at"),
+    totalCalls: integer("total_calls").default(0),
+    errorRate: doublePrecision("error_rate").default(0),
+    avgLatencyMs: doublePrecision("avg_latency_ms").default(0),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_apisec_org").on(table.orgId), index("idx_apisec_risk").on(table.orgId, table.riskScore)],
+);
+
+export type ApiSecurityEndpoint = typeof apiSecurityEndpoints.$inferSelect;
+export type InsertApiSecurityEndpoint = typeof apiSecurityEndpoints.$inferInsert;
+
+export const apiSecurityThreats = pgTable(
+  "api_security_threats",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    endpointId: text("endpoint_id"),
+    threatType: text("threat_type").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    sourceIp: text("source_ip"),
+    description: text("description"),
+    blocked: boolean("blocked").default(false),
+    details: jsonb("details").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_apithreat_org").on(table.orgId),
+    index("idx_apithreat_severity").on(table.orgId, table.severity),
+  ],
+);
+
+export type ApiSecurityThreat = typeof apiSecurityThreats.$inferSelect;
+export type InsertApiSecurityThreat = typeof apiSecurityThreats.$inferInsert;
+
+// ─── Supply Chain Security ───────────────────────────────────────────────────
+export const supplyChainComponents = pgTable(
+  "supply_chain_components",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    version: text("version"),
+    componentType: text("component_type").notNull(),
+    ecosystem: text("ecosystem"),
+    license: text("license"),
+    riskScore: doublePrecision("risk_score").default(0),
+    vulnerabilities: integer("vulnerabilities").default(0),
+    directDependency: boolean("direct_dependency").default(true),
+    maintainerScore: doublePrecision("maintainer_score").default(0),
+    lastUpdatedUpstream: timestamp("last_updated_upstream"),
+    status: text("status").notNull().default("monitored"),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_scc_org").on(table.orgId),
+    index("idx_scc_type").on(table.orgId, table.componentType),
+    index("idx_scc_risk").on(table.orgId, table.riskScore),
+  ],
+);
+
+export type SupplyChainComponent = typeof supplyChainComponents.$inferSelect;
+export type InsertSupplyChainComponent = typeof supplyChainComponents.$inferInsert;
+
+// ─── Ransomware Defense ──────────────────────────────────────────────────────
+export const ransomwareIndicators = pgTable(
+  "ransomware_indicators",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    indicatorType: text("indicator_type").notNull(),
+    value: text("value").notNull(),
+    threatFamily: text("threat_family"),
+    confidence: doublePrecision("confidence").default(0),
+    severity: text("severity").notNull().default("high"),
+    source: text("source"),
+    status: text("status").notNull().default("active"),
+    details: jsonb("details").default({}),
+    firstSeenAt: timestamp("first_seen_at").defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ransom_org").on(table.orgId),
+    index("idx_ransom_type").on(table.orgId, table.indicatorType),
+    index("idx_ransom_family").on(table.orgId, table.threatFamily),
+  ],
+);
+
+export type RansomwareIndicator = typeof ransomwareIndicators.$inferSelect;
+export type InsertRansomwareIndicator = typeof ransomwareIndicators.$inferInsert;
+
+// ─── Community Intel ─────────────────────────────────────────────────────────
+export const communityIntelFeeds = pgTable(
+  "community_intel_feeds",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    feedType: text("feed_type").notNull(),
+    source: text("source"),
+    description: text("description"),
+    enabled: boolean("enabled").default(true),
+    lastSyncAt: timestamp("last_sync_at"),
+    indicatorCount: integer("indicator_count").default(0),
+    reliability: doublePrecision("reliability").default(0),
+    config: jsonb("config").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_cif_org").on(table.orgId), index("idx_cif_type").on(table.orgId, table.feedType)],
+);
+
+export type CommunityIntelFeed = typeof communityIntelFeeds.$inferSelect;
+export type InsertCommunityIntelFeed = typeof communityIntelFeeds.$inferInsert;
+
+export const communityIntelIndicators = pgTable(
+  "community_intel_indicators",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    feedId: text("feed_id"),
+    indicatorType: text("indicator_type").notNull(),
+    value: text("value").notNull(),
+    threatType: text("threat_type"),
+    confidence: doublePrecision("confidence").default(0),
+    severity: text("severity").default("medium"),
+    tags: jsonb("tags").default([]),
+    firstSeenAt: timestamp("first_seen_at").defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").defaultNow(),
+    expiresAt: timestamp("expires_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_cii_org").on(table.orgId),
+    index("idx_cii_feed").on(table.orgId, table.feedId),
+    index("idx_cii_type").on(table.orgId, table.indicatorType),
+  ],
+);
+
+export type CommunityIntelIndicator = typeof communityIntelIndicators.$inferSelect;
+export type InsertCommunityIntelIndicator = typeof communityIntelIndicators.$inferInsert;
+
+// ─── Security Awareness ──────────────────────────────────────────────────────
+export const awarenessPrograms = pgTable(
+  "awareness_programs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    programType: text("program_type").notNull().default("training"),
+    status: text("status").notNull().default("active"),
+    targetAudience: jsonb("target_audience").default([]),
+    completionRate: doublePrecision("completion_rate").default(0),
+    participantCount: integer("participant_count").default(0),
+    passRate: doublePrecision("pass_rate").default(0),
+    startDate: timestamp("start_date"),
+    endDate: timestamp("end_date"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_awprog_org").on(table.orgId), index("idx_awprog_type").on(table.orgId, table.programType)],
+);
+
+export type AwarenessProgram = typeof awarenessPrograms.$inferSelect;
+export type InsertAwarenessProgram = typeof awarenessPrograms.$inferInsert;
+
+export const phishingSimulations = pgTable(
+  "phishing_simulations",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    campaignName: text("campaign_name").notNull(),
+    templateType: text("template_type"),
+    status: text("status").notNull().default("draft"),
+    sentCount: integer("sent_count").default(0),
+    openedCount: integer("opened_count").default(0),
+    clickedCount: integer("clicked_count").default(0),
+    reportedCount: integer("reported_count").default(0),
+    submittedCredentials: integer("submitted_credentials").default(0),
+    launchedAt: timestamp("launched_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_phishsim_org").on(table.orgId), index("idx_phishsim_status").on(table.orgId, table.status)],
+);
+
+export type PhishingSimulation = typeof phishingSimulations.$inferSelect;
+export type InsertPhishingSimulation = typeof phishingSimulations.$inferInsert;
+
+// ─── Prompt-to-Artifact Investigations ───────────────────────────────────────
+export const promptInvestigations = pgTable(
+  "prompt_investigations",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    prompt: text("prompt").notNull(),
+    intent: text("intent").notNull().default(""),
+    status: text("status").notNull().default("pending"),
+    summary: text("summary"),
+    steps: jsonb("steps").default([]),
+    artifacts: jsonb("artifacts").default([]),
+    citations: jsonb("citations").default([]),
+    createdAt: timestamp("created_at").defaultNow(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [index("idx_promptinv_org").on(table.orgId), index("idx_promptinv_status").on(table.orgId, table.status)],
+);
+
+export type PromptInvestigation = typeof promptInvestigations.$inferSelect;
+export type InsertPromptInvestigation = typeof promptInvestigations.$inferInsert;
+
+// ─── Prompt History ──────────────────────────────────────────────────────────
+export const promptHistory = pgTable(
+  "prompt_history",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    prompt: text("prompt").notNull(),
+    artifactType: text("artifact_type").notNull(),
+    isFavorite: boolean("is_favorite").default(false),
+    sharedWith: jsonb("shared_with").default([]),
+    usedAt: timestamp("used_at").defaultNow(),
+    resultId: text("result_id"),
+  },
+  (table) => [
+    index("idx_prompthist_org").on(table.orgId),
+    index("idx_prompthist_fav").on(table.orgId, table.isFavorite),
+  ],
+);
+
+export type PromptHistoryEntry = typeof promptHistory.$inferSelect;
+export type InsertPromptHistoryEntry = typeof promptHistory.$inferInsert;
+
+// ─── Artifact Approvals ──────────────────────────────────────────────────────
+export const artifactApprovals = pgTable(
+  "artifact_approvals",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    artifactId: text("artifact_id").notNull(),
+    investigationId: text("investigation_id").notNull(),
+    reason: text("reason").notNull(),
+    requiredRole: text("required_role").notNull().default("admin"),
+    status: text("status").notNull().default("pending_approval"),
+    requestedBy: text("requested_by").notNull(),
+    requestedAt: timestamp("requested_at").defaultNow(),
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at"),
+    reviewNotes: text("review_notes"),
+  },
+  (table) => [index("idx_artappr_org").on(table.orgId), index("idx_artappr_status").on(table.orgId, table.status)],
+);
+
+export type ArtifactApproval = typeof artifactApprovals.$inferSelect;
+export type InsertArtifactApproval = typeof artifactApprovals.$inferInsert;
+
+// ─── Artifact Deployments ────────────────────────────────────────────────────
+export const artifactDeployments = pgTable(
+  "artifact_deployments",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    artifactId: text("artifact_id").notNull(),
+    investigationId: text("investigation_id").notNull(),
+    artifactType: text("artifact_type").notNull(),
+    targetPage: text("target_page").notNull(),
+    status: text("status").notNull().default("pending"),
+    deployedAt: timestamp("deployed_at").defaultNow(),
+    rolledBackAt: timestamp("rolled_back_at"),
+    deployedBy: text("deployed_by").notNull(),
+    snapshotContent: jsonb("snapshot_content").default({}),
+  },
+  (table) => [index("idx_artdeploy_org").on(table.orgId), index("idx_artdeploy_status").on(table.orgId, table.status)],
+);
+
+export type ArtifactDeployment = typeof artifactDeployments.$inferSelect;
+export type InsertArtifactDeployment = typeof artifactDeployments.$inferInsert;
+
+// ─── Remediation Fixes ───────────────────────────────────────────────────────
+export const remediationFixes = pgTable(
+  "remediation_fixes",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    type: text("type").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    priority: text("priority").notNull().default("medium"),
+    status: text("status").notNull().default("suggested"),
+    finding: jsonb("finding").default({}),
+    codeChange: jsonb("code_change"),
+    ownerId: text("owner_id"),
+    estimatedEffort: text("estimated_effort"),
+    mitreTactics: jsonb("mitre_tactics").default([]),
+    cweIds: jsonb("cwe_ids").default([]),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_remfix_org").on(table.orgId),
+    index("idx_remfix_status").on(table.orgId, table.status),
+    index("idx_remfix_priority").on(table.orgId, table.priority),
+  ],
+);
+
+export type RemediationFix = typeof remediationFixes.$inferSelect;
+export type InsertRemediationFix = typeof remediationFixes.$inferInsert;
+
+// ─── Code Owners ─────────────────────────────────────────────────────────────
+export const codeOwners = pgTable(
+  "code_owners",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    email: text("email").notNull(),
+    team: text("team").notNull(),
+    filesOwned: jsonb("files_owned").default([]),
+    reviewCount: integer("review_count").default(0),
+    lastActive: timestamp("last_active").defaultNow(),
+  },
+  (table) => [index("idx_codeown_org").on(table.orgId)],
+);
+
+export type CodeOwner = typeof codeOwners.$inferSelect;
+export type InsertCodeOwner = typeof codeOwners.$inferInsert;
+
+// ─── Tenant Data Export/Deletion Jobs ────────────────────────────────────────
+export const tenantDataJobs = pgTable(
+  "tenant_data_jobs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    jobType: text("job_type").notNull(), // 'export' | 'deletion'
+    status: text("status").notNull().default("pending"),
+    format: text("format"),
+    scope: jsonb("scope").default({}),
+    progress: integer("progress").default(0),
+    totalRecords: integer("total_records").default(0),
+    processedRecords: integer("processed_records").default(0),
+    downloadUrl: text("download_url"),
+    error: text("error"),
+    requestedBy: text("requested_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [
+    index("idx_tdj_org").on(table.orgId),
+    index("idx_tdj_type").on(table.orgId, table.jobType),
+    index("idx_tdj_status").on(table.orgId, table.status),
+  ],
+);
+
+export type TenantDataJob = typeof tenantDataJobs.$inferSelect;
+export type InsertTenantDataJob = typeof tenantDataJobs.$inferInsert;
+
+// ─── Endpoint Scan Schedules ─────────────────────────────────────────────────
+export const endpointScanSchedules = pgTable(
+  "endpoint_scan_schedules",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    assetId: text("asset_id").notNull(),
+    scanType: text("scan_type").notNull(),
+    cronExpression: text("cron_expression"),
+    enabled: boolean("enabled").default(true),
+    lastRunAt: timestamp("last_run_at"),
+    nextRunAt: timestamp("next_run_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_epss_org").on(table.orgId), index("idx_epss_asset").on(table.orgId, table.assetId)],
+);
+
+export type EndpointScanSchedule = typeof endpointScanSchedules.$inferSelect;
+export type InsertEndpointScanSchedule = typeof endpointScanSchedules.$inferInsert;
+
+// ─── Endpoint Heartbeats ─────────────────────────────────────────────────────
+export const endpointHeartbeats = pgTable(
+  "endpoint_heartbeats",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    assetId: text("asset_id").notNull(),
+    lastHeartbeat: timestamp("last_heartbeat").defaultNow(),
+    status: text("status").notNull().default("online"),
+    metadata: jsonb("metadata").default({}),
+  },
+  (table) => [index("idx_ephb_org").on(table.orgId), index("idx_ephb_asset").on(table.orgId, table.assetId)],
+);
+
+export type EndpointHeartbeat = typeof endpointHeartbeats.$inferSelect;
+export type InsertEndpointHeartbeat = typeof endpointHeartbeats.$inferInsert;
+
+// ─── Playbook Template Catalog ───────────────────────────────────────────────
+export const playbookTemplateCatalog = pgTable(
+  "playbook_template_catalog",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id"),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    category: text("category").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    steps: jsonb("steps").default([]),
+    tags: jsonb("tags").default([]),
+    author: text("author"),
+    version: text("version").default("1.0.0"),
+    isBuiltIn: boolean("is_built_in").default(false),
+    usageCount: integer("usage_count").default(0),
+    rating: real("rating").default(0),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_pbtc_org").on(table.orgId), index("idx_pbtc_cat").on(table.category)],
+);
+
+export type PlaybookTemplateCatalogEntry = typeof playbookTemplateCatalog.$inferSelect;
+export type InsertPlaybookTemplateCatalogEntry = typeof playbookTemplateCatalog.$inferInsert;
+
+// ─── Graph Snapshots ─────────────────────────────────────────────────────────
+export const graphSnapshots = pgTable(
+  "graph_snapshots",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    graphData: jsonb("graph_data").default({}),
+    nodeCount: integer("node_count").default(0),
+    edgeCount: integer("edge_count").default(0),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_graphsnap_org").on(table.orgId)],
+);
+
+export type GraphSnapshot = typeof graphSnapshots.$inferSelect;
+export type InsertGraphSnapshot = typeof graphSnapshots.$inferInsert;
+
+// ─── CSPM Remediation Safety Records ─────────────────────────────────────────
+export const cspmRemediationSafetyRecords = pgTable(
+  "cspm_remediation_safety_records",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    accountId: text("account_id").notNull(),
+    findingId: text("finding_id"),
+    playbookId: text("playbook_id").notNull(),
+    resourceId: text("resource_id").notNull(),
+    mode: text("mode").notNull().default("dry_run"),
+    dryRunResult: jsonb("dry_run_result").default({}),
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    executedAt: timestamp("executed_at"),
+    rollbackAvailable: boolean("rollback_available").default(true),
+    rollbackExecutedAt: timestamp("rollback_executed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_cspmrem_org").on(table.orgId), index("idx_cspmrem_mode").on(table.orgId, table.mode)],
+);
+
+export type CspmRemediationSafetyRecord = typeof cspmRemediationSafetyRecords.$inferSelect;
+export type InsertCspmRemediationSafetyRecord = typeof cspmRemediationSafetyRecords.$inferInsert;
+
+// ─── Endpoint Groups ─────────────────────────────────────────────────────────
+export const endpointGroups = pgTable(
+  "endpoint_groups",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    groupBy: text("group_by").notNull(),
+    criteria: jsonb("criteria").default({}),
+    policies: jsonb("policies").default([]),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_epgrp_org").on(table.orgId)],
+);
+
+export type EndpointGroup = typeof endpointGroups.$inferSelect;
+export type InsertEndpointGroup = typeof endpointGroups.$inferInsert;
