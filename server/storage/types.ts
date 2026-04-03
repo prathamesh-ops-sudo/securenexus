@@ -250,6 +250,36 @@ import {
   type InsertWarRoomActionItem,
   type WarRoomHandoff,
   type InsertWarRoomHandoff,
+  type NativeSensor,
+  type InsertNativeSensor,
+  type DetectionRule,
+  type InsertDetectionRule,
+  type SensorEvent,
+  type InsertSensorEvent,
+  type DetectionAlert,
+  type InsertDetectionAlert,
+  type DarkWebExposure,
+  type InsertDarkWebExposure,
+  type DarkWebMonitoringConfig,
+  type InsertDarkWebMonitoringConfig,
+  type DarkWebScanHistoryEntry,
+  type InsertDarkWebScanHistoryEntry,
+  type CollectorInstance,
+  type InsertCollectorInstance,
+  type CollectorEvent,
+  type InsertCollectorEvent,
+  type CollectorScan,
+  type InsertCollectorScan,
+  type ChaosSimulation,
+  type InsertChaosSimulation,
+  type ChaosSchedule,
+  type InsertChaosSchedule,
+  type DnsEvent,
+  type InsertDnsEvent,
+  type DnsFinding,
+  type InsertDnsFinding,
+  type PassiveDnsRecord,
+  type InsertPassiveDnsRecord,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -261,7 +291,10 @@ export interface IStorage {
   searchAlerts(query: string, orgId?: string): Promise<Alert[]>;
   getAlertsByIncident(incidentId: string): Promise<Alert[]>;
   findAlertByDedup(orgId: string | null, source: string, sourceEventId: string): Promise<Alert | undefined>;
-  upsertAlert(alert: InsertAlert, dedupWindowMinutes?: number): Promise<{ alert: Alert; isNew: boolean; isDuplicate: boolean }>;
+  upsertAlert(
+    alert: InsertAlert,
+    dedupWindowMinutes?: number,
+  ): Promise<{ alert: Alert; isNew: boolean; isDuplicate: boolean }>;
 
   getAlertsPaginated(params: {
     orgId?: string;
@@ -1145,4 +1178,100 @@ export interface IStorage {
   getWarRoomHandoffs(warRoomId: string): Promise<WarRoomHandoff[]>;
   getWarRoomHandoff(id: string): Promise<WarRoomHandoff | undefined>;
   updateWarRoomHandoff(id: string, data: Partial<WarRoomHandoff>): Promise<WarRoomHandoff | undefined>;
+
+  // Native Sensors
+  getNativeSensors(orgId: string): Promise<NativeSensor[]>;
+  getNativeSensor(id: string): Promise<NativeSensor | undefined>;
+  createNativeSensor(sensor: InsertNativeSensor): Promise<NativeSensor>;
+  updateNativeSensor(id: string, updates: Partial<InsertNativeSensor>): Promise<NativeSensor | undefined>;
+  deleteNativeSensor(id: string): Promise<boolean>;
+  countNativeSensors(orgId: string): Promise<number>;
+
+  // Detection Rules
+  getDetectionRules(orgId: string): Promise<DetectionRule[]>;
+  getDetectionRule(id: string): Promise<DetectionRule | undefined>;
+  createDetectionRule(rule: InsertDetectionRule): Promise<DetectionRule>;
+  updateDetectionRule(id: string, updates: Partial<InsertDetectionRule>): Promise<DetectionRule | undefined>;
+  deleteDetectionRule(id: string): Promise<boolean>;
+  countDetectionRules(orgId: string): Promise<number>;
+
+  // Sensor Events
+  getSensorEvents(orgId: string, limit?: number, offset?: number): Promise<SensorEvent[]>;
+  getSensorEventsBySensor(sensorId: string, limit?: number): Promise<SensorEvent[]>;
+  createSensorEvent(event: InsertSensorEvent): Promise<SensorEvent>;
+  countSensorEvents(orgId: string): Promise<number>;
+
+  // Detection Alerts
+  getDetectionAlerts(orgId: string, limit?: number, offset?: number): Promise<DetectionAlert[]>;
+  getDetectionAlertsByRule(ruleId: string): Promise<DetectionAlert[]>;
+  createDetectionAlert(alert: InsertDetectionAlert): Promise<DetectionAlert>;
+  countDetectionAlerts(orgId: string): Promise<number>;
+  countDetectionAlertsByRule(ruleId: string): Promise<number>;
+
+  // Dark Web Monitoring
+  getDarkWebExposures(orgId: string): Promise<DarkWebExposure[]>;
+  getDarkWebExposure(id: string): Promise<DarkWebExposure | undefined>;
+  createDarkWebExposure(item: InsertDarkWebExposure): Promise<DarkWebExposure>;
+  updateDarkWebExposure(id: string, updates: Partial<InsertDarkWebExposure>): Promise<DarkWebExposure | undefined>;
+  deleteDarkWebExposure(id: string): Promise<boolean>;
+  countDarkWebExposures(orgId: string): Promise<number>;
+  countDarkWebExposuresByStatus(orgId: string, status: string): Promise<number>;
+  getDarkWebMonitoringConfig(orgId: string): Promise<DarkWebMonitoringConfig | undefined>;
+  upsertDarkWebMonitoringConfig(
+    orgId: string,
+    data: Partial<InsertDarkWebMonitoringConfig>,
+  ): Promise<DarkWebMonitoringConfig>;
+  getDarkWebScanHistory(orgId: string, limit?: number): Promise<DarkWebScanHistoryEntry[]>;
+  createDarkWebScanHistoryEntry(entry: InsertDarkWebScanHistoryEntry): Promise<DarkWebScanHistoryEntry>;
+  updateDarkWebScanHistoryEntry(
+    id: string,
+    updates: Partial<InsertDarkWebScanHistoryEntry>,
+  ): Promise<DarkWebScanHistoryEntry | undefined>;
+
+  // Collectors
+  getCollectorInstances(orgId: string): Promise<CollectorInstance[]>;
+  getCollectorInstance(id: string): Promise<CollectorInstance | undefined>;
+  createCollectorInstance(instance: InsertCollectorInstance): Promise<CollectorInstance>;
+  updateCollectorInstance(
+    id: string,
+    updates: Partial<InsertCollectorInstance>,
+  ): Promise<CollectorInstance | undefined>;
+  deleteCollectorInstance(id: string): Promise<boolean>;
+  countCollectorInstances(orgId: string): Promise<number>;
+  getCollectorEvents(orgId: string, limit?: number, offset?: number): Promise<CollectorEvent[]>;
+  getCollectorEventsByInstance(instanceId: string, limit?: number): Promise<CollectorEvent[]>;
+  createCollectorEvent(event: InsertCollectorEvent): Promise<CollectorEvent>;
+  countCollectorEvents(orgId: string): Promise<number>;
+  getCollectorScans(orgId: string, limit?: number): Promise<CollectorScan[]>;
+  createCollectorScan(scan: InsertCollectorScan): Promise<CollectorScan>;
+  updateCollectorScan(id: string, updates: Partial<InsertCollectorScan>): Promise<CollectorScan | undefined>;
+
+  // Chaos Engineering
+  getChaosSimulations(orgId: string): Promise<ChaosSimulation[]>;
+  getChaosSimulation(id: string): Promise<ChaosSimulation | undefined>;
+  createChaosSimulation(sim: InsertChaosSimulation): Promise<ChaosSimulation>;
+  updateChaosSimulation(id: string, updates: Partial<InsertChaosSimulation>): Promise<ChaosSimulation | undefined>;
+  deleteChaosSimulation(id: string): Promise<boolean>;
+  countChaosSimulations(orgId: string): Promise<number>;
+  getChaosSchedules(orgId: string): Promise<ChaosSchedule[]>;
+  getChaosSchedule(id: string): Promise<ChaosSchedule | undefined>;
+  createChaosSchedule(sched: InsertChaosSchedule): Promise<ChaosSchedule>;
+  updateChaosSchedule(id: string, updates: Partial<InsertChaosSchedule>): Promise<ChaosSchedule | undefined>;
+  deleteChaosSchedule(id: string): Promise<boolean>;
+
+  // DNS Security
+  getDnsEvents(orgId: string, limit?: number, offset?: number): Promise<DnsEvent[]>;
+  createDnsEvent(event: InsertDnsEvent): Promise<DnsEvent>;
+  countDnsEvents(orgId: string): Promise<number>;
+  countSuspiciousDnsEvents(orgId: string): Promise<number>;
+  getDnsFindings(orgId: string, limit?: number): Promise<DnsFinding[]>;
+  getDnsFinding(id: string): Promise<DnsFinding | undefined>;
+  createDnsFinding(finding: InsertDnsFinding): Promise<DnsFinding>;
+  updateDnsFinding(id: string, updates: Partial<InsertDnsFinding>): Promise<DnsFinding | undefined>;
+  countDnsFindings(orgId: string): Promise<number>;
+  countDnsFindingsByStatus(orgId: string, status: string): Promise<number>;
+  getPassiveDnsRecords(orgId: string, limit?: number): Promise<PassiveDnsRecord[]>;
+  getPassiveDnsRecordsByDomain(orgId: string, domain: string): Promise<PassiveDnsRecord[]>;
+  createPassiveDnsRecord(record: InsertPassiveDnsRecord): Promise<PassiveDnsRecord>;
+  countPassiveDnsRecords(orgId: string): Promise<number>;
 }

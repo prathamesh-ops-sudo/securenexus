@@ -24,6 +24,11 @@ import * as evidenceFns from "./evidence";
 import * as auditFns from "./audit";
 import * as notificationsFns from "./notifications";
 import * as miscFns from "./misc";
+import * as sensorsFns from "./sensors";
+import * as darkWebFns from "./dark-web";
+import * as collectorsFns from "./collectors";
+import * as chaosFns from "./chaos";
+import * as dnsFns from "./dns";
 
 import type { IStorage } from "./types";
 
@@ -623,6 +628,87 @@ export class DatabaseStorage implements IStorage {
   createPostureScore = miscFns.createPostureScore;
   getLatestPostureScore = miscFns.getLatestPostureScore;
   countTableRows = miscFns.countTableRows;
+
+  // sensors & detection
+  getNativeSensors = sensorsFns.getNativeSensors;
+  getNativeSensor = sensorsFns.getNativeSensor;
+  createNativeSensor = sensorsFns.createNativeSensor;
+  updateNativeSensor = sensorsFns.updateNativeSensor;
+  deleteNativeSensor = sensorsFns.deleteNativeSensor;
+  countNativeSensors = sensorsFns.countNativeSensors;
+  getDetectionRules = sensorsFns.getDetectionRules;
+  getDetectionRule = sensorsFns.getDetectionRule;
+  createDetectionRule = sensorsFns.createDetectionRule;
+  updateDetectionRule = sensorsFns.updateDetectionRule;
+  deleteDetectionRule = sensorsFns.deleteDetectionRule;
+  countDetectionRules = sensorsFns.countDetectionRules;
+  getSensorEvents = sensorsFns.getSensorEvents;
+  getSensorEventsBySensor = sensorsFns.getSensorEventsBySensor;
+  createSensorEvent = sensorsFns.createSensorEvent;
+  countSensorEvents = sensorsFns.countSensorEvents;
+  getDetectionAlerts = sensorsFns.getDetectionAlerts;
+  getDetectionAlertsByRule = sensorsFns.getDetectionAlertsByRule;
+  createDetectionAlert = sensorsFns.createDetectionAlert;
+  countDetectionAlerts = sensorsFns.countDetectionAlerts;
+  countDetectionAlertsByRule = sensorsFns.countDetectionAlertsByRule;
+
+  // dark web
+  getDarkWebExposures = darkWebFns.getDarkWebExposures;
+  getDarkWebExposure = darkWebFns.getDarkWebExposure;
+  createDarkWebExposure = darkWebFns.createDarkWebExposure;
+  updateDarkWebExposure = darkWebFns.updateDarkWebExposure;
+  deleteDarkWebExposure = darkWebFns.deleteDarkWebExposure;
+  countDarkWebExposures = darkWebFns.countDarkWebExposures;
+  countDarkWebExposuresByStatus = darkWebFns.countDarkWebExposuresByStatus;
+  getDarkWebMonitoringConfig = darkWebFns.getDarkWebMonitoringConfig;
+  upsertDarkWebMonitoringConfig = darkWebFns.upsertDarkWebMonitoringConfig;
+  getDarkWebScanHistory = darkWebFns.getDarkWebScanHistory;
+  createDarkWebScanHistoryEntry = darkWebFns.createDarkWebScanHistoryEntry;
+  updateDarkWebScanHistoryEntry = darkWebFns.updateDarkWebScanHistoryEntry;
+
+  // collectors
+  getCollectorInstances = collectorsFns.getCollectorInstances;
+  getCollectorInstance = collectorsFns.getCollectorInstance;
+  createCollectorInstance = collectorsFns.createCollectorInstance;
+  updateCollectorInstance = collectorsFns.updateCollectorInstance;
+  deleteCollectorInstance = collectorsFns.deleteCollectorInstance;
+  countCollectorInstances = collectorsFns.countCollectorInstances;
+  getCollectorEvents = collectorsFns.getCollectorEvents;
+  getCollectorEventsByInstance = collectorsFns.getCollectorEventsByInstance;
+  createCollectorEvent = collectorsFns.createCollectorEvent;
+  countCollectorEvents = collectorsFns.countCollectorEvents;
+  getCollectorScans = collectorsFns.getCollectorScans;
+  createCollectorScan = collectorsFns.createCollectorScan;
+  updateCollectorScan = collectorsFns.updateCollectorScan;
+
+  // chaos engineering
+  getChaosSimulations = chaosFns.getChaosSimulations;
+  getChaosSimulation = chaosFns.getChaosSimulation;
+  createChaosSimulation = chaosFns.createChaosSimulation;
+  updateChaosSimulation = chaosFns.updateChaosSimulation;
+  deleteChaosSimulation = chaosFns.deleteChaosSimulation;
+  countChaosSimulations = chaosFns.countChaosSimulations;
+  getChaosSchedules = chaosFns.getChaosSchedules;
+  getChaosSchedule = chaosFns.getChaosSchedule;
+  createChaosSchedule = chaosFns.createChaosSchedule;
+  updateChaosSchedule = chaosFns.updateChaosSchedule;
+  deleteChaosSchedule = chaosFns.deleteChaosSchedule;
+
+  // dns security
+  getDnsEvents = dnsFns.getDnsEvents;
+  createDnsEvent = dnsFns.createDnsEvent;
+  countDnsEvents = dnsFns.countDnsEvents;
+  countSuspiciousDnsEvents = dnsFns.countSuspiciousDnsEvents;
+  getDnsFindings = dnsFns.getDnsFindings;
+  getDnsFinding = dnsFns.getDnsFinding;
+  createDnsFinding = dnsFns.createDnsFinding;
+  updateDnsFinding = dnsFns.updateDnsFinding;
+  countDnsFindings = dnsFns.countDnsFindings;
+  countDnsFindingsByStatus = dnsFns.countDnsFindingsByStatus;
+  getPassiveDnsRecords = dnsFns.getPassiveDnsRecords;
+  getPassiveDnsRecordsByDomain = dnsFns.getPassiveDnsRecordsByDomain;
+  createPassiveDnsRecord = dnsFns.createPassiveDnsRecord;
+  countPassiveDnsRecords = dnsFns.countPassiveDnsRecords;
 }
 
 export const storage = new DatabaseStorage();
