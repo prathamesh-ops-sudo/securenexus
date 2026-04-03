@@ -126,6 +126,7 @@ export function registerAdversarialTestingRoutes(app: Express): void {
       }
       const tc = getTestCaseById(testCaseId);
       if (!tc) return res.status(404).json({ message: "Test case not found" });
+      if (!tc.enabled) return res.status(400).json({ message: "Test case is disabled" });
 
       const validTrigger: RunTrigger =
         trigger && VALID_TRIGGERS.includes(trigger as RunTrigger) ? (trigger as RunTrigger) : "manual";
@@ -339,14 +340,17 @@ export function registerAdversarialTestingRoutes(app: Express): void {
 
       // Look up original execution to get correct testCaseId, domain, and category
       const originalExecution = await storage.getAdversarialExecution(remediation.executionId, orgId);
+      if (!originalExecution) {
+        return res.status(404).json({ message: "Original execution not found, cannot retest" });
+      }
 
       // Create a new execution for the retest
       const execution = await storage.createAdversarialExecution({
         orgId,
-        testCaseId: originalExecution?.testCaseId || remediation.executionId,
+        testCaseId: originalExecution.testCaseId,
         testCaseName: remediation.testCaseName,
-        domain: originalExecution?.domain || "application",
-        category: originalExecution?.category || "general",
+        domain: originalExecution.domain,
+        category: originalExecution.category,
         phase: "post_fix",
         status: "running",
         trigger: "post_fix",

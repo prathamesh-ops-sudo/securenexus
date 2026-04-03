@@ -178,7 +178,11 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const unacknowledgedOnly = req.query.acknowledged === "false";
-      const anomalies = await storage.getAgentToolAnomalies(orgId, unacknowledgedOnly);
+      const acknowledgedOnly = req.query.acknowledged === "true";
+      let anomalies = await storage.getAgentToolAnomalies(orgId, unacknowledgedOnly);
+      if (acknowledgedOnly) {
+        anomalies = anomalies.filter((a) => a.acknowledged);
+      }
       // Apply client-side filters
       let filtered = anomalies;
       if (typeof req.query.type === "string" && VALID_ANOMALY_TYPES.includes(req.query.type as AnomalyType)) {

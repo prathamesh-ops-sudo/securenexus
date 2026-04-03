@@ -21,6 +21,12 @@ const DATA_TABLES = [
   "investigations",
 ];
 
+const TABLE_TO_DB_NAME: Record<string, string> = {
+  compliance_evidence: "evidence_locker_items",
+  threat_intel: "ioc_entries",
+  investigations: "investigation_runs",
+};
+
 export function registerTenantDataRoutes(app: Express): void {
   const log = logger.child("tenant-data");
 
@@ -253,21 +259,8 @@ export function registerTenantDataRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const summary: Record<string, number> = {};
-        const tableToQuery: Record<string, string> = {
-          alerts: "alerts",
-          incidents: "incidents",
-          entities: "entities",
-          audit_logs: "audit_logs",
-          playbooks: "playbooks",
-          connectors: "connectors",
-          reports: "reports",
-          compliance_evidence: "evidence_locker_items",
-          api_keys: "api_keys",
-          threat_intel: "ioc_entries",
-          investigations: "investigation_runs",
-        };
         for (const table of DATA_TABLES) {
-          const dbTable = tableToQuery[table] || table;
+          const dbTable = TABLE_TO_DB_NAME[table] || table;
           try {
             const result = await storage.countTableRows(dbTable, orgId);
             summary[table] = result;
@@ -309,7 +302,8 @@ async function processDeletionJob(jobId: string, orgId: string): Promise<void> {
   const scope: Record<string, number> = {};
   for (const table of DATA_TABLES) {
     try {
-      scope[table] = await storage.countTableRows(table, orgId);
+      const dbTable = TABLE_TO_DB_NAME[table] || table;
+      scope[table] = await storage.countTableRows(dbTable, orgId);
     } catch {
       scope[table] = 0;
     }
