@@ -6,18 +6,13 @@ import {
   getAllPolicyPacks,
   getPolicyPackById,
   getPolicyPacksByDomain,
-  getPolicyPacksByStrictness,
   getPolicyPackSummary,
   getPackChangelog,
   getDomainLabels,
   getStrictnessPresets,
-  activatePackForOrg,
-  deactivatePackForOrg,
-  getOrgActivatedPacks,
-  updatePackActivation,
-  getEffectiveRules,
 } from "../policy-packs-engine";
 import type { PolicyDomain, StrictnessPreset } from "../policy-packs-engine";
+import { storage } from "../storage";
 
 const log = logger.child("policy-packs");
 
@@ -31,6 +26,7 @@ const VALID_DOMAINS: PolicyDomain[] = [
 const VALID_STRICTNESS: StrictnessPreset[] = ["starter", "balanced", "regulated", "zero_trust"];
 
 export function registerPolicyPacksRoutes(app: Express): void {
+  // Static catalog endpoints (from engine)
   app.get("/api/policy-packs/meta", isAuthenticated, async (_req: Request, res: Response) => {
     try {
       const domains = getDomainLabels();
@@ -70,7 +66,7 @@ export function registerPolicyPacksRoutes(app: Express): void {
       }
 
       if (strictness && VALID_STRICTNESS.includes(strictness as StrictnessPreset)) {
-        packs = packs.filter((p) => p.strictnessPreset === strictness);
+        packs = packs.filter((pp) => pp.strictnessPreset === strictness);
       }
 
       return sendEnvelope(res, packs);
@@ -82,26 +78,6 @@ export function registerPolicyPacksRoutes(app: Express): void {
       });
     }
   });
-
-  app.get(
-    "/api/policy-packs/org/activations",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    async (req: Request, res: Response) => {
-      try {
-        const orgId = getOrgId(req);
-        const activations = getOrgActivatedPacks(orgId);
-        return sendEnvelope(res, activations);
-      } catch (err) {
-        log.error("Failed to get org activations", { error: String(err) });
-        return sendEnvelope(res, null, {
-          status: 500,
-          errors: [{ code: "INTERNAL_ERROR", message: "Failed to fetch org activations" }],
-        });
-      }
-    },
-  );
 
   app.get("/api/policy-packs/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
@@ -137,6 +113,40 @@ export function registerPolicyPacksRoutes(app: Express): void {
     }
   });
 
+  // Org-specific activation endpoints — persisted to DB
+  app.get(
+    "/api/policy-packs/org/activations",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const activations = await storage.getPolicyPackActivations(orgId);
+
+        // Enrich activations with pack metadata
+        const enriched = activations.map((activation) => {
+          const pack = getPolicyPackById(activation.packId);
+          return {
+            ...activation,
+            packName: pack?.name || activation.packId,
+            packDomain: pack?.domain || "unknown",
+            packStrictness: activation.strictnessOverride || pack?.strictnessPreset || "balanced",
+          };
+        });
+
+        return sendEnvelope(res, enriched);
+      } catch (err) {
+        log.error("Failed to get org activations", { error: String(err) });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "INTERNAL_ERROR", message: "Failed to fetch org activations" }],
+        });
+      }
+    },
+  );
+
+  // Effective rules for a pack (combines pack catalog rules with org-level overrides from DB)
   app.get(
     "/api/policy-packs/:id/effective-rules",
     isAuthenticated,
@@ -146,14 +156,27 @@ export function registerPolicyPacksRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const packId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        const rules = getEffectiveRules(orgId, packId);
-        if (!rules) {
+
+        const pack = getPolicyPackById(packId);
+        if (!pack) {
           return sendEnvelope(res, null, {
             status: 404,
             errors: [{ code: "NOT_FOUND", message: "Policy pack not found" }],
           });
         }
-        return sendEnvelope(res, rules);
+
+        // Get org activation from DB
+        const activation = await storage.getPolicyPackActivation(orgId, packId);
+        const disabledRules = new Set(activation?.disabledRuleIds || []);
+
+        // Return pack rules with org-level enable/disable overlay
+        const rules = pack.rules.map((rule: { id: string; [key: string]: unknown }) => ({
+          ...rule,
+          enabled: !disabledRules.has(rule.id),
+          orgOverride: disabledRules.has(rule.id) ? "disabled" : null,
+        }));
+
+        return sendEnvelope(res, { packId, orgId, rules, activationId: activation?.id || null });
       } catch (err) {
         log.error("Failed to get effective rules", { error: String(err) });
         return sendEnvelope(res, null, {
@@ -164,6 +187,7 @@ export function registerPolicyPacksRoutes(app: Express): void {
     },
   );
 
+  // Activate pack for org — persisted to DB
   app.post(
     "/api/policy-packs/:id/activate",
     isAuthenticated,
@@ -175,22 +199,42 @@ export function registerPolicyPacksRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const packId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
         const user = req.user as { id?: string } | undefined;
-        const strictnessOverride =
-          typeof req.body.strictnessOverride === "string" &&
-          VALID_STRICTNESS.includes(req.body.strictnessOverride as StrictnessPreset)
-            ? (req.body.strictnessOverride as StrictnessPreset)
-            : undefined;
 
-        const result = activatePackForOrg(orgId, packId, user?.id || "unknown", strictnessOverride);
-
-        if ("error" in result) {
+        // Verify pack exists in catalog
+        const pack = getPolicyPackById(packId);
+        if (!pack) {
           return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "ACTIVATION_ERROR", message: result.error }],
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "Policy pack not found in catalog" }],
           });
         }
 
-        return sendEnvelope(res, result, { status: 201 });
+        // Check if already activated
+        const existing = await storage.getPolicyPackActivation(orgId, packId);
+        if (existing) {
+          return sendEnvelope(res, null, {
+            status: 409,
+            errors: [{ code: "ALREADY_ACTIVATED", message: "Policy pack is already activated for this organization" }],
+          });
+        }
+
+        const strictnessOverride =
+          typeof req.body.strictnessOverride === "string" &&
+          VALID_STRICTNESS.includes(req.body.strictnessOverride as StrictnessPreset)
+            ? req.body.strictnessOverride
+            : null;
+
+        const activation = await storage.createPolicyPackActivation({
+          orgId,
+          packId,
+          strictnessOverride,
+          enabledRuleIds: [],
+          disabledRuleIds: [],
+          status: "active",
+          activatedBy: user?.id || "unknown",
+        });
+
+        return sendEnvelope(res, activation, { status: 201 });
       } catch (err) {
         log.error("Failed to activate policy pack", { error: String(err) });
         return sendEnvelope(res, null, {
@@ -201,6 +245,7 @@ export function registerPolicyPacksRoutes(app: Express): void {
     },
   );
 
+  // Deactivate pack for org — delete from DB
   app.post(
     "/api/policy-packs/:id/deactivate",
     isAuthenticated,
@@ -211,15 +256,16 @@ export function registerPolicyPacksRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const packId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        const removed = deactivatePackForOrg(orgId, packId);
 
-        if (!removed) {
+        const existing = await storage.getPolicyPackActivation(orgId, packId);
+        if (!existing) {
           return sendEnvelope(res, null, {
             status: 404,
             errors: [{ code: "NOT_FOUND", message: "Activation not found for this organization" }],
           });
         }
 
+        await storage.deletePolicyPackActivation(existing.id, orgId);
         return sendEnvelope(res, { deactivated: true });
       } catch (err) {
         log.error("Failed to deactivate policy pack", { error: String(err) });
@@ -231,6 +277,7 @@ export function registerPolicyPacksRoutes(app: Express): void {
     },
   );
 
+  // Update pack activation — persisted to DB
   app.patch(
     "/api/policy-packs/:id/activation",
     isAuthenticated,
@@ -241,6 +288,14 @@ export function registerPolicyPacksRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const packId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+        const existing = await storage.getPolicyPackActivation(orgId, packId);
+        if (!existing) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "Activation not found for this organization" }],
+          });
+        }
 
         const updates: Record<string, unknown> = {};
         if (req.body.strictnessOverride !== undefined) {
@@ -256,7 +311,7 @@ export function registerPolicyPacksRoutes(app: Express): void {
           updates.strictnessOverride = req.body.strictnessOverride;
         }
         if (req.body.status !== undefined) {
-          const validStatuses = ["active", "paused", "pending_review"];
+          const validStatuses = ["active", "paused", "disabled"];
           if (!validStatuses.includes(req.body.status)) {
             return sendEnvelope(res, null, {
               status: 400,
@@ -265,25 +320,21 @@ export function registerPolicyPacksRoutes(app: Express): void {
           }
           updates.status = req.body.status;
         }
-        if (req.body.ruleOverrides !== undefined) {
-          if (
-            typeof req.body.ruleOverrides !== "object" ||
-            req.body.ruleOverrides === null ||
-            Array.isArray(req.body.ruleOverrides)
-          ) {
+        if (req.body.disabledRuleIds !== undefined) {
+          if (!Array.isArray(req.body.disabledRuleIds)) {
             return sendEnvelope(res, null, {
               status: 400,
-              errors: [{ code: "VALIDATION_ERROR", message: "ruleOverrides must be a non-null object" }],
+              errors: [{ code: "VALIDATION_ERROR", message: "disabledRuleIds must be an array" }],
             });
           }
-          updates.ruleOverrides = req.body.ruleOverrides;
+          updates.disabledRuleIds = req.body.disabledRuleIds;
         }
 
-        const result = updatePackActivation(orgId, packId, updates as Parameters<typeof updatePackActivation>[2]);
+        const result = await storage.updatePolicyPackActivation(existing.id, orgId, updates);
         if (!result) {
           return sendEnvelope(res, null, {
             status: 404,
-            errors: [{ code: "NOT_FOUND", message: "Activation not found for this organization" }],
+            errors: [{ code: "NOT_FOUND", message: "Activation not found" }],
           });
         }
 

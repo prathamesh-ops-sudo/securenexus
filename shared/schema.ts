@@ -12856,3 +12856,784 @@ export const aiInferenceLog = pgTable(
 
 export type AiInferenceLog = typeof aiInferenceLog.$inferSelect;
 export type InsertAiInferenceLog = typeof aiInferenceLog.$inferInsert;
+
+// ==========================================
+// SECURITY GRAPH ASSETS & RELATIONSHIPS
+// ==========================================
+
+export const securityGraphAssets = pgTable(
+  "security_graph_assets",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    type: text("type").notNull(), // code, cloud, identity, data, network, compute, container, endpoint, saas, runtime, remediation, vulnerability
+    subType: text("sub_type").notNull(),
+    environment: text("environment").notNull().default("production"), // production, staging, development, shared
+    riskScore: real("risk_score").notNull().default(0),
+    metadata: jsonb("metadata").default({}),
+    tags: text("tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    owner: text("owner"),
+    lastScannedAt: timestamp("last_scanned_at"),
+    resolutionKey: text("resolution_key").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_sg_assets_org").on(table.orgId),
+    index("idx_sg_assets_type").on(table.orgId, table.type),
+    index("idx_sg_assets_env").on(table.orgId, table.environment),
+    index("idx_sg_assets_resolution").on(table.orgId, table.resolutionKey),
+  ],
+);
+
+export type SecurityGraphAsset = typeof securityGraphAssets.$inferSelect;
+export type InsertSecurityGraphAsset = typeof securityGraphAssets.$inferInsert;
+
+export const securityGraphRelationships = pgTable(
+  "security_graph_relationships",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    sourceId: varchar("source_id")
+      .notNull()
+      .references(() => securityGraphAssets.id, { onDelete: "cascade" }),
+    targetId: varchar("target_id")
+      .notNull()
+      .references(() => securityGraphAssets.id, { onDelete: "cascade" }),
+    relationship: text("relationship").notNull(),
+    weight: real("weight").notNull().default(1),
+    metadata: jsonb("metadata").default({}),
+    bidirectional: boolean("bidirectional").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_sg_rels_org").on(table.orgId),
+    index("idx_sg_rels_source").on(table.sourceId),
+    index("idx_sg_rels_target").on(table.targetId),
+    index("idx_sg_rels_type").on(table.orgId, table.relationship),
+  ],
+);
+
+export type SecurityGraphRelationship = typeof securityGraphRelationships.$inferSelect;
+export type InsertSecurityGraphRelationship = typeof securityGraphRelationships.$inferInsert;
+
+// ==========================================
+// TRUST CENTER ARTIFACTS & DOWNLOAD LOG
+// ==========================================
+
+export const trustCenterArtifacts = pgTable(
+  "trust_center_artifacts",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    category: text("category").notNull(), // soc2_report, iso27001_cert, pentest_report, etc.
+    title: text("title").notNull(),
+    description: text("description").default(""),
+    version: text("version").default("1.0"),
+    fileName: text("file_name").notNull(),
+    fileSize: integer("file_size").default(0),
+    mimeType: text("mime_type").default("application/pdf"),
+    uploadedBy: text("uploaded_by").notNull(),
+    uploadedAt: timestamp("uploaded_at").defaultNow(),
+    lastReviewedAt: timestamp("last_reviewed_at"),
+    nextReviewDue: timestamp("next_review_due"),
+    freshnessSlaDays: integer("freshness_sla_days").default(180),
+    status: text("status").notNull().default("current"), // current, expiring_soon, expired, under_review
+    accessLevel: text("access_level").notNull().default("customer_only"), // public, nda_required, customer_only, internal
+    downloadCount: integer("download_count").default(0),
+    tags: text("tags")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_tc_artifacts_org").on(table.orgId),
+    index("idx_tc_artifacts_category").on(table.orgId, table.category),
+    index("idx_tc_artifacts_status").on(table.orgId, table.status),
+  ],
+);
+
+export type TrustCenterArtifact = typeof trustCenterArtifacts.$inferSelect;
+export type InsertTrustCenterArtifact = typeof trustCenterArtifacts.$inferInsert;
+
+export const trustCenterDownloadLog = pgTable(
+  "trust_center_download_log",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    artifactId: varchar("artifact_id")
+      .notNull()
+      .references(() => trustCenterArtifacts.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    userEmail: text("user_email"),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    downloadedAt: timestamp("downloaded_at").defaultNow(),
+  },
+  (table) => [index("idx_tc_downloads_org").on(table.orgId), index("idx_tc_downloads_artifact").on(table.artifactId)],
+);
+
+export type TrustCenterDownload = typeof trustCenterDownloadLog.$inferSelect;
+export type InsertTrustCenterDownload = typeof trustCenterDownloadLog.$inferInsert;
+
+// ==========================================
+// POLICY PACK ACTIVATIONS
+// ==========================================
+
+export const policyPackActivations = pgTable(
+  "policy_pack_activations",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    packId: text("pack_id").notNull(),
+    strictnessOverride: text("strictness_override"), // null = use pack default
+    enabledRuleIds: text("enabled_rule_ids")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    disabledRuleIds: text("disabled_rule_ids")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    status: text("status").notNull().default("active"), // active, paused, disabled
+    activatedBy: text("activated_by"),
+    activatedAt: timestamp("activated_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ppa_org").on(table.orgId),
+    index("idx_ppa_pack").on(table.orgId, table.packId),
+    index("idx_ppa_status").on(table.orgId, table.status),
+  ],
+);
+
+export type PolicyPackActivation = typeof policyPackActivations.$inferSelect;
+export type InsertPolicyPackActivation = typeof policyPackActivations.$inferInsert;
+
+// ==========================================
+// INTEGRATION MARKETPLACE INSTANCES
+// ==========================================
+
+export const marketplaceInstances = pgTable(
+  "marketplace_instances",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    connectorSlug: text("connector_slug").notNull(),
+    authMethod: text("auth_method").notNull(), // oauth2, service_account, api_key, basic, aws_iam
+    syncDirection: text("sync_direction").notNull().default("inbound"), // inbound, outbound, bidirectional
+    permissionMode: text("permission_mode").notNull().default("read_only"), // read_only, scoped_write, full_write
+    config: jsonb("config").default({}),
+    syncIntervalMinutes: integer("sync_interval_minutes").default(15),
+    status: text("status").notNull().default("pending"), // pending, active, paused, error, disabled
+    lastSyncAt: timestamp("last_sync_at"),
+    lastSyncStatus: text("last_sync_status"), // success, partial, error
+    lastSyncError: text("last_sync_error"),
+    eventsIngested: integer("events_ingested").default(0),
+    fieldMappings: jsonb("field_mappings").default([]),
+    healthScore: integer("health_score").default(100),
+    installedBy: text("installed_by"),
+    installedAt: timestamp("installed_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mi_org").on(table.orgId),
+    index("idx_mi_connector").on(table.orgId, table.connectorSlug),
+    index("idx_mi_status").on(table.orgId, table.status),
+  ],
+);
+
+export type MarketplaceInstance = typeof marketplaceInstances.$inferSelect;
+export type InsertMarketplaceInstance = typeof marketplaceInstances.$inferInsert;
+
+export const marketplaceWebhookEvents = pgTable(
+  "marketplace_webhook_events",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    instanceId: varchar("instance_id")
+      .notNull()
+      .references(() => marketplaceInstances.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(),
+    payload: jsonb("payload").default({}),
+    idempotencyKey: text("idempotency_key"),
+    status: text("status").notNull().default("received"), // received, processed, failed
+    processedAt: timestamp("processed_at"),
+    errorMessage: text("error_message"),
+    receivedAt: timestamp("received_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mwe_org").on(table.orgId),
+    index("idx_mwe_instance").on(table.instanceId),
+    index("idx_mwe_ikey").on(table.idempotencyKey),
+  ],
+);
+
+export type MarketplaceWebhookEvent = typeof marketplaceWebhookEvents.$inferSelect;
+export type InsertMarketplaceWebhookEvent = typeof marketplaceWebhookEvents.$inferInsert;
+
+export const marketplaceDeadLetters = pgTable(
+  "marketplace_dead_letters",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    instanceId: varchar("instance_id")
+      .notNull()
+      .references(() => marketplaceInstances.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(),
+    payload: jsonb("payload").default({}),
+    errorMessage: text("error_message"),
+    retryCount: integer("retry_count").default(0),
+    status: text("status").notNull().default("pending"), // pending, retried, discarded
+    originalReceivedAt: timestamp("original_received_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_mdl_org").on(table.orgId),
+    index("idx_mdl_instance").on(table.instanceId),
+    index("idx_mdl_status").on(table.orgId, table.status),
+  ],
+);
+
+export type MarketplaceDeadLetter = typeof marketplaceDeadLetters.$inferSelect;
+export type InsertMarketplaceDeadLetter = typeof marketplaceDeadLetters.$inferInsert;
+
+export const marketplaceSyncHistory = pgTable(
+  "marketplace_sync_history",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    instanceId: varchar("instance_id")
+      .notNull()
+      .references(() => marketplaceInstances.id, { onDelete: "cascade" }),
+    syncType: text("sync_type").notNull().default("scheduled"), // scheduled, manual, webhook
+    status: text("status").notNull().default("running"), // running, success, partial, error
+    eventsIngested: integer("events_ingested").default(0),
+    errorMessage: text("error_message"),
+    durationMs: integer("duration_ms"),
+    startedAt: timestamp("started_at").defaultNow(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [
+    index("idx_msh_org").on(table.orgId),
+    index("idx_msh_instance").on(table.instanceId),
+    index("idx_msh_started").on(table.startedAt),
+  ],
+);
+
+export type MarketplaceSyncHistoryEntry = typeof marketplaceSyncHistory.$inferSelect;
+export type InsertMarketplaceSyncHistoryEntry = typeof marketplaceSyncHistory.$inferInsert;
+
+// ==========================================
+// CROSS-CUTTING: EVIDENCE, DRIFT, OVERRIDES
+// ==========================================
+
+export const crossCuttingEvidence = pgTable(
+  "cross_cutting_evidence",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    evidenceType: text("evidence_type").notNull(), // detection, policy_check, vulnerability, compliance, audit
+    sourceModule: text("source_module").notNull(), // e.g. "cspm", "endpoint", "identity"
+    resourceId: text("resource_id"),
+    resourceType: text("resource_type"),
+    title: text("title").notNull(),
+    description: text("description"),
+    severity: text("severity").default("info"),
+    status: text("status").notNull().default("open"), // open, acknowledged, resolved, suppressed
+    metadata: jsonb("metadata").default({}),
+    detectedAt: timestamp("detected_at").defaultNow(),
+    resolvedAt: timestamp("resolved_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_cce_org").on(table.orgId),
+    index("idx_cce_type").on(table.orgId, table.evidenceType),
+    index("idx_cce_status").on(table.orgId, table.status),
+    index("idx_cce_resource").on(table.orgId, table.resourceId),
+  ],
+);
+
+export type CrossCuttingEvidence = typeof crossCuttingEvidence.$inferSelect;
+export type InsertCrossCuttingEvidence = typeof crossCuttingEvidence.$inferInsert;
+
+export const crossCuttingDrift = pgTable(
+  "cross_cutting_drift",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    driftType: text("drift_type").notNull(), // policy, integration, identity, control
+    sourceModule: text("source_module").notNull(),
+    resourceId: text("resource_id"),
+    resourceType: text("resource_type"),
+    expectedState: jsonb("expected_state"),
+    actualState: jsonb("actual_state"),
+    severity: text("severity").default("medium"),
+    status: text("status").notNull().default("detected"), // detected, acknowledged, remediated, accepted
+    remediationAction: text("remediation_action"),
+    detectedAt: timestamp("detected_at").defaultNow(),
+    remediatedAt: timestamp("remediated_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ccd_org").on(table.orgId),
+    index("idx_ccd_type").on(table.orgId, table.driftType),
+    index("idx_ccd_status").on(table.orgId, table.status),
+  ],
+);
+
+export type CrossCuttingDriftRecord = typeof crossCuttingDrift.$inferSelect;
+export type InsertCrossCuttingDriftRecord = typeof crossCuttingDrift.$inferInsert;
+
+export const crossCuttingOverrides = pgTable(
+  "cross_cutting_overrides",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    overrideType: text("override_type").notNull(), // policy_exception, risk_acceptance, suppression
+    targetModule: text("target_module").notNull(),
+    targetResourceId: text("target_resource_id"),
+    targetResourceType: text("target_resource_type"),
+    reason: text("reason").notNull(),
+    approvedBy: text("approved_by"),
+    expiresAt: timestamp("expires_at"),
+    status: text("status").notNull().default("active"), // active, expired, revoked
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_cco_org").on(table.orgId),
+    index("idx_cco_type").on(table.orgId, table.overrideType),
+    index("idx_cco_status").on(table.orgId, table.status),
+    index("idx_cco_target").on(table.orgId, table.targetModule, table.targetResourceId),
+  ],
+);
+
+export type CrossCuttingOverride = typeof crossCuttingOverrides.$inferSelect;
+export type InsertCrossCuttingOverride = typeof crossCuttingOverrides.$inferInsert;
+
+// ==========================================
+// JIT SECRET ACCESS REQUESTS
+// ==========================================
+
+export const jitAccessRequests = pgTable(
+  "jit_access_requests",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    requesterId: text("requester_id").notNull(),
+    requesterEmail: text("requester_email"),
+    secretPath: text("secret_path").notNull(),
+    secretProvider: text("secret_provider").notNull(), // aws_secrets_manager, hashicorp_vault, azure_keyvault, gcp_secret_manager
+    reason: text("reason").notNull(),
+    durationMinutes: integer("duration_minutes").notNull().default(60),
+    status: text("status").notNull().default("pending"), // pending, approved, denied, expired, revoked
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    expiresAt: timestamp("expires_at"),
+    revokedAt: timestamp("revoked_at"),
+    accessedAt: timestamp("accessed_at"),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_jar_org").on(table.orgId),
+    index("idx_jar_requester").on(table.orgId, table.requesterId),
+    index("idx_jar_status").on(table.orgId, table.status),
+    index("idx_jar_secret").on(table.orgId, table.secretPath),
+  ],
+);
+
+export type JitAccessRequest = typeof jitAccessRequests.$inferSelect;
+export type InsertJitAccessRequest = typeof jitAccessRequests.$inferInsert;
+
+// ==========================================
+// ADVERSARIAL TESTING: EXECUTIONS & SCHEDULES
+// ==========================================
+
+export const adversarialTestExecutions = pgTable(
+  "adversarial_test_executions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    testCaseId: text("test_case_id").notNull(),
+    testCaseName: text("test_case_name").notNull(),
+    domain: text("domain").notNull(), // application, identity, cloud, ai_agent
+    category: text("category").notNull(),
+    phase: text("phase").notNull().default("pre_production"),
+    status: text("status").notNull().default("pending"), // pending, running, passed, failed, error, skipped
+    trigger: text("trigger").notNull().default("manual"),
+    severity: text("severity").default("medium"),
+    result: jsonb("result").default({}),
+    duration: integer("duration"),
+    startedAt: timestamp("started_at").defaultNow(),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ate_org").on(table.orgId),
+    index("idx_ate_status").on(table.orgId, table.status),
+    index("idx_ate_domain").on(table.orgId, table.domain),
+    index("idx_ate_testcase").on(table.orgId, table.testCaseId),
+  ],
+);
+
+export type AdversarialTestExecution = typeof adversarialTestExecutions.$inferSelect;
+export type InsertAdversarialTestExecution = typeof adversarialTestExecutions.$inferInsert;
+
+export const adversarialTestSchedules = pgTable(
+  "adversarial_test_schedules",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    testCaseIds: text("test_case_ids")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    frequency: text("frequency").notNull().default("weekly"), // hourly, daily, weekly, monthly, on_deploy
+    enabled: boolean("enabled").notNull().default(true),
+    lastRunAt: timestamp("last_run_at"),
+    nextRunAt: timestamp("next_run_at"),
+    config: jsonb("config").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_ats_org").on(table.orgId), index("idx_ats_enabled").on(table.orgId, table.enabled)],
+);
+
+export type AdversarialTestSchedule = typeof adversarialTestSchedules.$inferSelect;
+export type InsertAdversarialTestSchedule = typeof adversarialTestSchedules.$inferInsert;
+
+export const adversarialRemediations = pgTable(
+  "adversarial_remediations",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    executionId: text("execution_id").notNull(),
+    testCaseName: text("test_case_name").notNull(),
+    severity: text("severity").notNull().default("medium"),
+    status: text("status").notNull().default("open"), // open, in_progress, resolved, wont_fix
+    assignee: text("assignee"),
+    recommendation: text("recommendation"),
+    resolvedAt: timestamp("resolved_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_ar_org").on(table.orgId), index("idx_ar_status").on(table.orgId, table.status)],
+);
+
+export type AdversarialRemediation = typeof adversarialRemediations.$inferSelect;
+export type InsertAdversarialRemediation = typeof adversarialRemediations.$inferInsert;
+
+// ==========================================
+// AGENT TOOL SECURITY: INVOCATIONS, ANOMALIES, POLICIES, BOUNDARY RULES
+// ==========================================
+
+export const agentToolInvocations = pgTable(
+  "agent_tool_invocations",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    toolId: text("tool_id").notNull(),
+    toolName: text("tool_name").notNull(),
+    agentId: text("agent_id").notNull(),
+    verdict: text("verdict").notNull().default("allowed"), // allowed, denied, throttled, flagged
+    inputHash: text("input_hash"),
+    outputSummary: text("output_summary"),
+    durationMs: integer("duration_ms"),
+    riskScore: real("risk_score").default(0),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ati_org").on(table.orgId),
+    index("idx_ati_tool").on(table.orgId, table.toolId),
+    index("idx_ati_agent").on(table.orgId, table.agentId),
+    index("idx_ati_verdict").on(table.orgId, table.verdict),
+  ],
+);
+
+export type AgentToolInvocation = typeof agentToolInvocations.$inferSelect;
+export type InsertAgentToolInvocation = typeof agentToolInvocations.$inferInsert;
+
+export const agentToolAnomalies = pgTable(
+  "agent_tool_anomalies",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    toolId: text("tool_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    anomalyType: text("anomaly_type").notNull(), // unusual_chaining, scope_escalation, rate_spike, destination_drift, payload_anomaly
+    severity: text("severity").notNull().default("medium"),
+    description: text("description"),
+    acknowledged: boolean("acknowledged").notNull().default(false),
+    acknowledgedBy: text("acknowledged_by"),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    metadata: jsonb("metadata").default({}),
+    detectedAt: timestamp("detected_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ata_org").on(table.orgId),
+    index("idx_ata_type").on(table.orgId, table.anomalyType),
+    index("idx_ata_ack").on(table.orgId, table.acknowledged),
+  ],
+);
+
+export type AgentToolAnomaly = typeof agentToolAnomalies.$inferSelect;
+export type InsertAgentToolAnomaly = typeof agentToolAnomalies.$inferInsert;
+
+export const agentToolPolicies = pgTable(
+  "agent_tool_policies",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    toolId: text("tool_id").notNull(),
+    maxCallsPerMinute: integer("max_calls_per_minute").default(60),
+    maxCallsPerHour: integer("max_calls_per_hour").default(1000),
+    requireApprovalAboveRisk: real("require_approval_above_risk").default(0.8),
+    allowedAgentIds: text("allowed_agent_ids")
+      .array()
+      .default(sql`ARRAY[]::text[]`),
+    blocked: boolean("blocked").notNull().default(false),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_atp_org").on(table.orgId), index("idx_atp_tool").on(table.orgId, table.toolId)],
+);
+
+export type AgentToolPolicy = typeof agentToolPolicies.$inferSelect;
+export type InsertAgentToolPolicy = typeof agentToolPolicies.$inferInsert;
+
+export const agentTrustBoundaryRules = pgTable(
+  "agent_trust_boundary_rules",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    sourceBoundary: text("source_boundary").notNull(), // internal, external, privileged, sandboxed
+    targetBoundary: text("target_boundary").notNull(),
+    action: text("action").notNull().default("deny"), // allow, deny, require_approval
+    priority: integer("priority").notNull().default(100),
+    enabled: boolean("enabled").notNull().default(true),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_atbr_org").on(table.orgId), index("idx_atbr_source").on(table.orgId, table.sourceBoundary)],
+);
+
+export type AgentTrustBoundaryRule = typeof agentTrustBoundaryRules.$inferSelect;
+export type InsertAgentTrustBoundaryRule = typeof agentTrustBoundaryRules.$inferInsert;
+
+// ==========================================
+// BROWSER DEFENSE: SESSIONS, DOM EVENTS, EGRESS RULES, TRUSTED PATHS
+// ==========================================
+
+export const browserDefenseSessions = pgTable(
+  "browser_defense_sessions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    url: text("url").notNull(),
+    state: text("state").notNull().default("active"), // active, isolated, terminated, expired
+    threatLevel: text("threat_level").default("none"),
+    domEventsCount: integer("dom_events_count").default(0),
+    egressBlockedCount: integer("egress_blocked_count").default(0),
+    metadata: jsonb("metadata").default({}),
+    startedAt: timestamp("started_at").defaultNow(),
+    endedAt: timestamp("ended_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_bds_org").on(table.orgId),
+    index("idx_bds_state").on(table.orgId, table.state),
+    index("idx_bds_agent").on(table.orgId, table.agentId),
+  ],
+);
+
+export type BrowserDefenseSession = typeof browserDefenseSessions.$inferSelect;
+export type InsertBrowserDefenseSession = typeof browserDefenseSessions.$inferInsert;
+
+export const browserEgressRules = pgTable(
+  "browser_egress_rules",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    domain: text("domain").notNull(),
+    protocol: text("protocol").notNull().default("https"),
+    direction: text("direction").notNull().default("outbound"),
+    verdict: text("verdict").notNull().default("allow"), // allow, block, challenge, log_only
+    priority: integer("priority").notNull().default(100),
+    enabled: boolean("enabled").notNull().default(true),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_ber_org").on(table.orgId), index("idx_ber_domain").on(table.orgId, table.domain)],
+);
+
+export type BrowserEgressRule = typeof browserEgressRules.$inferSelect;
+export type InsertBrowserEgressRule = typeof browserEgressRules.$inferInsert;
+
+export const browserTrustedPaths = pgTable(
+  "browser_trusted_paths",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    steps: jsonb("steps").default([]),
+    enabled: boolean("enabled").notNull().default(true),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_btp_org").on(table.orgId)],
+);
+
+export type BrowserTrustedPath = typeof browserTrustedPaths.$inferSelect;
+export type InsertBrowserTrustedPath = typeof browserTrustedPaths.$inferInsert;
+
+// ==========================================
+// RUNTIME GUARDRAILS: POLICIES, DECISIONS, OVERRIDES
+// ==========================================
+
+export const runtimeGuardrailPolicies = pgTable(
+  "runtime_guardrail_policies",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    action: text("action").notNull(), // ai_agent_invoke, ai_agent_tool_call, api_outbound_call, etc.
+    scope: text("scope").notNull().default("global"),
+    mode: text("mode").notNull().default("enforce"), // enforce, dry_run, audit_only, disabled
+    conditions: jsonb("conditions").default([]),
+    priority: integer("priority").notNull().default(100),
+    enabled: boolean("enabled").notNull().default(true),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_rgp_org").on(table.orgId),
+    index("idx_rgp_action").on(table.orgId, table.action),
+    index("idx_rgp_scope").on(table.orgId, table.scope),
+  ],
+);
+
+export type RuntimeGuardrailPolicy = typeof runtimeGuardrailPolicies.$inferSelect;
+export type InsertRuntimeGuardrailPolicy = typeof runtimeGuardrailPolicies.$inferInsert;
+
+export const runtimeGuardrailDecisions = pgTable(
+  "runtime_guardrail_decisions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    policyId: text("policy_id"),
+    policyName: text("policy_name"),
+    action: text("action").notNull(),
+    verdict: text("verdict").notNull(), // allow, deny, quarantine
+    reason: text("reason"),
+    actorId: text("actor_id"),
+    resourceId: text("resource_id"),
+    metadata: jsonb("metadata").default({}),
+    evaluatedAt: timestamp("evaluated_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_rgd_org").on(table.orgId),
+    index("idx_rgd_verdict").on(table.orgId, table.verdict),
+    index("idx_rgd_policy").on(table.orgId, table.policyId),
+  ],
+);
+
+export type RuntimeGuardrailDecision = typeof runtimeGuardrailDecisions.$inferSelect;
+export type InsertRuntimeGuardrailDecision = typeof runtimeGuardrailDecisions.$inferInsert;
+
+export const runtimeGuardrailOverrides = pgTable(
+  "runtime_guardrail_overrides",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    policyId: text("policy_id").notNull(),
+    requestedBy: text("requested_by").notNull(),
+    reason: text("reason").notNull(),
+    status: text("status").notNull().default("pending"), // pending, approved, denied, expired
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    expiresAt: timestamp("expires_at"),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_rgo_org").on(table.orgId),
+    index("idx_rgo_status").on(table.orgId, table.status),
+    index("idx_rgo_policy").on(table.orgId, table.policyId),
+  ],
+);
+
+export type RuntimeGuardrailOverride = typeof runtimeGuardrailOverrides.$inferSelect;
+export type InsertRuntimeGuardrailOverride = typeof runtimeGuardrailOverrides.$inferInsert;

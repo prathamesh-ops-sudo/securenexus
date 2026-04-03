@@ -29,6 +29,16 @@ import * as darkWebFns from "./dark-web";
 import * as collectorsFns from "./collectors";
 import * as chaosFns from "./chaos";
 import * as dnsFns from "./dns";
+import * as securityGraphFns from "./security-graph";
+import * as trustCenterFns from "./trust-center";
+import * as policyPacksFns from "./policy-packs";
+import * as marketplaceFns from "./marketplace";
+import * as crossCuttingFns from "./cross-cutting";
+import * as jitAccessFns from "./jit-access";
+import * as adversarialTestingFns from "./adversarial-testing";
+import * as agentToolSecurityFns from "./agent-tool-security";
+import * as browserDefenseFns from "./browser-defense";
+import * as runtimeGuardrailsFns from "./runtime-guardrails";
 
 import type { IStorage } from "./types";
 
@@ -709,6 +719,152 @@ export class DatabaseStorage implements IStorage {
   getPassiveDnsRecordsByDomain = dnsFns.getPassiveDnsRecordsByDomain;
   createPassiveDnsRecord = dnsFns.createPassiveDnsRecord;
   countPassiveDnsRecords = dnsFns.countPassiveDnsRecords;
+
+  // security graph
+  getSecurityGraphAssets = securityGraphFns.getSecurityGraphAssets;
+  getSecurityGraphAssetsByType = securityGraphFns.getSecurityGraphAssetsByType;
+  getSecurityGraphAsset = securityGraphFns.getSecurityGraphAsset;
+  getSecurityGraphAssetByResolutionKey = securityGraphFns.getSecurityGraphAssetByResolutionKey;
+  createSecurityGraphAsset = securityGraphFns.createSecurityGraphAsset;
+  updateSecurityGraphAsset = securityGraphFns.updateSecurityGraphAsset;
+  deleteSecurityGraphAsset = securityGraphFns.deleteSecurityGraphAsset;
+  countSecurityGraphAssets = securityGraphFns.countSecurityGraphAssets;
+  getSecurityGraphRelationships = securityGraphFns.getSecurityGraphRelationships;
+  getSecurityGraphRelationship = securityGraphFns.getSecurityGraphRelationship;
+  getSecurityGraphRelationshipsByAsset = securityGraphFns.getSecurityGraphRelationshipsByAsset;
+  createSecurityGraphRelationship = securityGraphFns.createSecurityGraphRelationship;
+  deleteSecurityGraphRelationship = securityGraphFns.deleteSecurityGraphRelationship;
+  countSecurityGraphRelationships = securityGraphFns.countSecurityGraphRelationships;
+
+  // trust center
+  getTrustCenterArtifacts = trustCenterFns.getTrustCenterArtifacts;
+  getTrustCenterArtifact = trustCenterFns.getTrustCenterArtifact;
+  createTrustCenterArtifact = trustCenterFns.createTrustCenterArtifact;
+  updateTrustCenterArtifact = trustCenterFns.updateTrustCenterArtifact;
+  deleteTrustCenterArtifact = trustCenterFns.deleteTrustCenterArtifact;
+  countTrustCenterArtifacts = trustCenterFns.countTrustCenterArtifacts;
+  getTrustCenterDownloads = trustCenterFns.getTrustCenterDownloads;
+  createTrustCenterDownload = trustCenterFns.createTrustCenterDownload;
+  countTrustCenterDownloads = trustCenterFns.countTrustCenterDownloads;
+
+  // policy packs
+  getPolicyPackActivations = policyPacksFns.getPolicyPackActivations;
+  getPolicyPackActivation = policyPacksFns.getPolicyPackActivation;
+  getPolicyPackActivationById = policyPacksFns.getPolicyPackActivationById;
+  createPolicyPackActivation = policyPacksFns.createPolicyPackActivation;
+  updatePolicyPackActivation = policyPacksFns.updatePolicyPackActivation;
+  deletePolicyPackActivation = policyPacksFns.deletePolicyPackActivation;
+  countPolicyPackActivations = policyPacksFns.countPolicyPackActivations;
+
+  // marketplace
+  getMarketplaceInstances = marketplaceFns.getMarketplaceInstances;
+  getMarketplaceInstance = marketplaceFns.getMarketplaceInstance;
+  createMarketplaceInstance = marketplaceFns.createMarketplaceInstance;
+  updateMarketplaceInstance = marketplaceFns.updateMarketplaceInstance;
+  deleteMarketplaceInstance = marketplaceFns.deleteMarketplaceInstance;
+  countMarketplaceInstances = marketplaceFns.countMarketplaceInstances;
+  getMarketplaceWebhookEvents = marketplaceFns.getMarketplaceWebhookEvents;
+  createMarketplaceWebhookEvent = marketplaceFns.createMarketplaceWebhookEvent;
+  getMarketplaceDeadLetters = marketplaceFns.getMarketplaceDeadLetters;
+  getMarketplaceDeadLetter = marketplaceFns.getMarketplaceDeadLetter;
+  createMarketplaceDeadLetter = marketplaceFns.createMarketplaceDeadLetter;
+  updateMarketplaceDeadLetter = marketplaceFns.updateMarketplaceDeadLetter;
+  getMarketplaceSyncHistory = marketplaceFns.getMarketplaceSyncHistory;
+  createMarketplaceSyncHistoryEntry = marketplaceFns.createMarketplaceSyncHistoryEntry;
+  updateMarketplaceSyncHistoryEntry = marketplaceFns.updateMarketplaceSyncHistoryEntry;
+
+  // cross-cutting
+  getCrossCuttingEvidenceList = crossCuttingFns.getCrossCuttingEvidenceList;
+  getCrossCuttingEvidenceItem = crossCuttingFns.getCrossCuttingEvidenceItem;
+  createCrossCuttingEvidenceItem = crossCuttingFns.createCrossCuttingEvidenceItem;
+  updateCrossCuttingEvidenceItem = crossCuttingFns.updateCrossCuttingEvidenceItem;
+  countCrossCuttingEvidence = crossCuttingFns.countCrossCuttingEvidence;
+  getCrossCuttingDriftRecords = crossCuttingFns.getCrossCuttingDriftRecords;
+  getCrossCuttingDriftRecord = crossCuttingFns.getCrossCuttingDriftRecord;
+  createCrossCuttingDriftRecord = crossCuttingFns.createCrossCuttingDriftRecord;
+  updateCrossCuttingDriftRecord = crossCuttingFns.updateCrossCuttingDriftRecord;
+  countCrossCuttingDrift = crossCuttingFns.countCrossCuttingDrift;
+  getCrossCuttingOverrides = crossCuttingFns.getCrossCuttingOverrides;
+  getCrossCuttingOverride = crossCuttingFns.getCrossCuttingOverride;
+  createCrossCuttingOverride = crossCuttingFns.createCrossCuttingOverride;
+  updateCrossCuttingOverride = crossCuttingFns.updateCrossCuttingOverride;
+  deleteCrossCuttingOverride = crossCuttingFns.deleteCrossCuttingOverride;
+  countCrossCuttingOverrides = crossCuttingFns.countCrossCuttingOverrides;
+
+  // jit access
+  getJitAccessRequests = jitAccessFns.getJitAccessRequests;
+  getJitAccessRequest = jitAccessFns.getJitAccessRequest;
+  getJitAccessRequestsByRequester = jitAccessFns.getJitAccessRequestsByRequester;
+  createJitAccessRequest = jitAccessFns.createJitAccessRequest;
+  updateJitAccessRequest = jitAccessFns.updateJitAccessRequest;
+  countJitAccessRequests = jitAccessFns.countJitAccessRequests;
+  countPendingJitAccessRequests = jitAccessFns.countPendingJitAccessRequests;
+
+  // adversarial testing
+  getAdversarialExecutions = adversarialTestingFns.getAdversarialExecutions;
+  getAdversarialExecution = adversarialTestingFns.getAdversarialExecution;
+  createAdversarialExecution = adversarialTestingFns.createAdversarialExecution;
+  updateAdversarialExecution = adversarialTestingFns.updateAdversarialExecution;
+  countAdversarialExecutions = adversarialTestingFns.countAdversarialExecutions;
+  getAdversarialSchedules = adversarialTestingFns.getAdversarialSchedules;
+  getAdversarialSchedule = adversarialTestingFns.getAdversarialSchedule;
+  createAdversarialSchedule = adversarialTestingFns.createAdversarialSchedule;
+  updateAdversarialSchedule = adversarialTestingFns.updateAdversarialSchedule;
+  deleteAdversarialSchedule = adversarialTestingFns.deleteAdversarialSchedule;
+  getAdversarialRemediations = adversarialTestingFns.getAdversarialRemediations;
+  getAdversarialRemediation = adversarialTestingFns.getAdversarialRemediation;
+  createAdversarialRemediation = adversarialTestingFns.createAdversarialRemediation;
+  updateAdversarialRemediation = adversarialTestingFns.updateAdversarialRemediation;
+
+  // agent tool security
+  getAgentToolInvocations = agentToolSecurityFns.getAgentToolInvocations;
+  getAgentToolInvocation = agentToolSecurityFns.getAgentToolInvocation;
+  createAgentToolInvocation = agentToolSecurityFns.createAgentToolInvocation;
+  countAgentToolInvocations = agentToolSecurityFns.countAgentToolInvocations;
+  getAgentToolAnomalies = agentToolSecurityFns.getAgentToolAnomalies;
+  acknowledgeAgentToolAnomaly = agentToolSecurityFns.acknowledgeAgentToolAnomaly;
+  createAgentToolAnomaly = agentToolSecurityFns.createAgentToolAnomaly;
+  countAgentToolAnomalies = agentToolSecurityFns.countAgentToolAnomalies;
+  getAgentToolPoliciesList = agentToolSecurityFns.getAgentToolPoliciesList;
+  getAgentToolPolicyByTool = agentToolSecurityFns.getAgentToolPolicyByTool;
+  upsertAgentToolPolicy = agentToolSecurityFns.upsertAgentToolPolicy;
+  getAgentTrustBoundaryRulesList = agentToolSecurityFns.getAgentTrustBoundaryRulesList;
+  getAgentTrustBoundaryRule = agentToolSecurityFns.getAgentTrustBoundaryRule;
+  createAgentTrustBoundaryRule = agentToolSecurityFns.createAgentTrustBoundaryRule;
+  updateAgentTrustBoundaryRule = agentToolSecurityFns.updateAgentTrustBoundaryRule;
+  deleteAgentTrustBoundaryRule = agentToolSecurityFns.deleteAgentTrustBoundaryRule;
+
+  // browser defense
+  getBrowserSessions = browserDefenseFns.getBrowserSessions;
+  getBrowserSession = browserDefenseFns.getBrowserSession;
+  createBrowserSession = browserDefenseFns.createBrowserSession;
+  updateBrowserSession = browserDefenseFns.updateBrowserSession;
+  countBrowserSessions = browserDefenseFns.countBrowserSessions;
+  getBrowserEgressRules = browserDefenseFns.getBrowserEgressRules;
+  getBrowserEgressRule = browserDefenseFns.getBrowserEgressRule;
+  createBrowserEgressRule = browserDefenseFns.createBrowserEgressRule;
+  updateBrowserEgressRule = browserDefenseFns.updateBrowserEgressRule;
+  deleteBrowserEgressRule = browserDefenseFns.deleteBrowserEgressRule;
+  getBrowserTrustedPaths = browserDefenseFns.getBrowserTrustedPaths;
+  getBrowserTrustedPath = browserDefenseFns.getBrowserTrustedPath;
+  createBrowserTrustedPath = browserDefenseFns.createBrowserTrustedPath;
+  updateBrowserTrustedPath = browserDefenseFns.updateBrowserTrustedPath;
+  deleteBrowserTrustedPath = browserDefenseFns.deleteBrowserTrustedPath;
+
+  // runtime guardrails
+  getRuntimePolicies = runtimeGuardrailsFns.getRuntimePolicies;
+  getRuntimePolicy = runtimeGuardrailsFns.getRuntimePolicy;
+  createRuntimePolicy = runtimeGuardrailsFns.createRuntimePolicy;
+  updateRuntimePolicy = runtimeGuardrailsFns.updateRuntimePolicy;
+  deleteRuntimePolicy = runtimeGuardrailsFns.deleteRuntimePolicy;
+  countRuntimePolicies = runtimeGuardrailsFns.countRuntimePolicies;
+  getRuntimeDecisions = runtimeGuardrailsFns.getRuntimeDecisions;
+  createRuntimeDecision = runtimeGuardrailsFns.createRuntimeDecision;
+  countRuntimeDecisions = runtimeGuardrailsFns.countRuntimeDecisions;
+  getRuntimeOverrides = runtimeGuardrailsFns.getRuntimeOverrides;
+  getRuntimeOverride = runtimeGuardrailsFns.getRuntimeOverride;
+  createRuntimeOverride = runtimeGuardrailsFns.createRuntimeOverride;
+  updateRuntimeOverride = runtimeGuardrailsFns.updateRuntimeOverride;
 }
 
 export const storage = new DatabaseStorage();
