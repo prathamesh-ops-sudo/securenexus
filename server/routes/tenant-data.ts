@@ -1,9 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, reply, replyError, sendEnvelope, formatCSVRow, escapeCSVField } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, resolveOrgContext } from "../rbac";
 import { storage } from "../storage";
-import { createHash } from "crypto";
+import { randomBytes, createHash } from "crypto";
 
 interface ExportJob {
   id: string;
@@ -52,7 +53,7 @@ const DATA_TABLES = [
 ];
 
 function generateId(): string {
-  return `${Date.now()}-${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 8)}`;
+  return `${Date.now()}-${randomBytes(4).toString("hex")}`;
 }
 
 export function registerTenantDataRoutes(app: Express): void {
@@ -304,9 +305,29 @@ export function registerTenantDataRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
+        // Query real row counts per tenant table
         const summary: Record<string, number> = {};
+        const tableToQuery: Record<string, string> = {
+          alerts: "alerts",
+          incidents: "incidents",
+          entities: "entities",
+          audit_logs: "audit_logs",
+          playbooks: "playbooks",
+          connectors: "connectors",
+          reports: "reports",
+          compliance_evidence: "evidence_locker_items",
+          api_keys: "api_keys",
+          threat_intel: "ioc_entries",
+          investigations: "investigation_runs",
+        };
         for (const table of DATA_TABLES) {
-          summary[table] = Math.floor(Math.random() * 1000);
+          const dbTable = tableToQuery[table] || table;
+          try {
+            const result = await storage.countTableRows(dbTable, orgId);
+            summary[table] = result;
+          } catch {
+            summary[table] = 0;
+          }
         }
         return reply(res, {
           orgId,
@@ -336,7 +357,11 @@ async function processExportJob(job: ExportJob, orgId: string): Promise<void> {
 async function processDeletionJob(job: DeletionJob, orgId: string): Promise<void> {
   job.status = "running";
   for (const table of DATA_TABLES) {
-    job.recordsBefore[table] = Math.floor(Math.random() * 500);
+    try {
+      job.recordsBefore[table] = await storage.countTableRows(table, orgId);
+    } catch {
+      job.recordsBefore[table] = 0;
+    }
   }
   await new Promise((r) => setTimeout(r, 500));
   for (const table of DATA_TABLES) {

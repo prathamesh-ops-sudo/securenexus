@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { storage } from "./storage";
 import { logger } from "./logger";
 
@@ -631,7 +632,7 @@ export function createArtifact(
   const nextReviewDue = new Date(now.getTime() + data.freshnessSlaDays * 24 * 60 * 60 * 1000);
 
   const artifact: SecurityArtifact = {
-    id: `${orgId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `${orgId}-${Date.now()}-${randomBytes(4).toString("hex")}`,
     orgId,
     category: data.category as ArtifactCategory,
     title: data.title,
@@ -724,7 +725,7 @@ export function recordDownload(
   artifact.downloadCount += 1;
 
   const entry: DownloadAuditEntry = {
-    id: `dl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `dl-${Date.now()}-${randomBytes(4).toString("hex")}`,
     orgId,
     artifactId,
     artifactTitle: artifact.title,

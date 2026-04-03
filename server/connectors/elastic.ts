@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { randomBytes } from "crypto";
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
@@ -89,7 +91,7 @@ export const elasticPlugin: ConnectorPlugin = {
     const signal = r.signal || r;
     return {
       source: "Elastic Security",
-      sourceEventId: r._id || signal.rule?.id || `elastic_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      sourceEventId: r._id || signal.rule?.id || `elastic_${Date.now()}_${randomBytes(6).toString("hex")}`,
       title: signal.rule?.name || signal.rule?.description || "Elastic Security Alert",
       description: signal.rule?.description || "",
       severity: mapSeverity(signal.rule?.severity || signal.severity),

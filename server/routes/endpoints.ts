@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { randomBytes } from "crypto";
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
@@ -954,7 +956,7 @@ export function registerEndpointsRoutes(app: Express): void {
         const account = await storage.getCspmAccount(accountId);
         if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
 
-        const id = `sched-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const id = `sched-${Date.now()}-${randomBytes(3).toString("hex")}`;
         const schedule = {
           id,
           orgId,
@@ -1067,13 +1069,13 @@ export function registerEndpointsRoutes(app: Express): void {
         const account = await storage.getCspmAccount(accountId);
         if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
 
-        const id = `rem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const id = `rem-${Date.now()}-${randomBytes(3).toString("hex")}`;
         const dryRunResult = {
           wouldExecute: [
             { action: "Modify security group rules", impact: "medium", reversible: true },
             { action: "Enable encryption", impact: "low", reversible: false },
             { action: "Update IAM policy", impact: "high", reversible: true },
-          ].slice(0, Math.floor(Math.random() * 3) + 1),
+          ],
           estimatedDuration: "2-5 minutes",
           riskLevel: "medium",
           requiresDowntime: false,
@@ -1861,8 +1863,8 @@ export function registerEndpointsRoutes(app: Express): void {
             runningProcesses.push({
               pid: 1000 + i * 37,
               name: processNames[i % processNames.length],
-              cpu: Math.round(Math.random() * 15 * 10) / 10,
-              memory: Math.round(Math.random() * 500),
+              cpu: Math.round((i % 15) * 10) / 10,
+              memory: (i % 10) * 50,
               user: i < 5 ? "SYSTEM" : "user",
             });
           }
@@ -2168,7 +2170,7 @@ export function registerEndpointsRoutes(app: Express): void {
         const { name, groupBy, criteria, policies } = req.body;
         if (!name || !groupBy) return res.status(400).json({ message: "name and groupBy are required" });
 
-        const id = `grp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const id = `grp-${Date.now()}-${randomBytes(4).toString("hex")}`;
         const group = {
           id,
           orgId,
@@ -2346,7 +2348,7 @@ export function registerEndpointsRoutes(app: Express): void {
             name: sw.name,
             version: sw.version,
             vendor: sw.vendor,
-            installedDate: new Date(Date.now() - Math.random() * 30 * 86400000).toISOString().split("T")[0],
+            installedDate: new Date(Date.now() - 15 * 86400000).toISOString().split("T")[0],
             cveCount: sw.cves,
             riskLevel: sw.risk,
           });

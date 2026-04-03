@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
+import { randomBytes } from "crypto";
 import { getOrgId, logger, p, storage } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../../rbac";
@@ -261,7 +263,7 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
               status: "simulated",
               wouldExecute: node.type === "action",
               wouldBlock: node.type === "approval",
-              estimatedDurationMs: Math.floor(Math.random() * 5000) + 500,
+              estimatedDurationMs: (stepNum + 1) * 500,
               timestamp: new Date(startTime + stepNum * 1000).toISOString(),
               impact: [],
             };
@@ -319,7 +321,7 @@ export function registerPlaybooksSimulationsRoutes(app: Express): void {
               label: actionObj.label || actionType,
               status: "simulated",
               wouldExecute: true,
-              estimatedDurationMs: Math.floor(Math.random() * 5000) + 500,
+              estimatedDurationMs: (stepNum + 1) * 500,
               timestamp: new Date(startTime + stepNum * 1000).toISOString(),
               riskLevel: "medium",
               impact: [{ type: "informational", description: `Would execute: ${actionType}` }],

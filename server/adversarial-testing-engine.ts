@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID, randomInt } from "crypto";
 
 export type AttackDomain = "application" | "identity" | "cloud" | "ai_agent";
 export type AttackCategory =
@@ -114,7 +114,7 @@ function genId(prefix: string): string {
 }
 
 function randomBetween(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  return randomInt(min, max + 1);
 }
 
 const ATTACK_LIBRARY: AttackTestCase[] = [
@@ -432,13 +432,7 @@ function seedExecutions(orgId: string): TestExecution[] {
     const tc = ATTACK_LIBRARY[i];
     const status = statuses[i % statuses.length];
     const verdict =
-      status === "passed"
-        ? Math.random() > 0.3
-          ? "blocked"
-          : "detected"
-        : status === "failed"
-          ? "bypassed"
-          : "inconclusive";
+      status === "passed" ? (i % 3 !== 0 ? "blocked" : "detected") : status === "failed" ? "bypassed" : "inconclusive";
 
     executions.push({
       id: genId("tex"),
@@ -459,7 +453,7 @@ function seedExecutions(orgId: string): TestExecution[] {
             ? `ALERT: Attack vector "${tc.category}" bypassed security controls — ${tc.expectedBehavior}`
             : `Execution error: timeout after 30s — inconclusive result`,
       remediationQueued: status === "failed",
-      guardrailTuned: status === "passed" && Math.random() > 0.5,
+      guardrailTuned: status === "passed" && i % 2 === 0,
       executedBy: "adversarial-test-runner",
       executedAt: new Date(Date.now() - randomBetween(3600000, 86400000 * 7)).toISOString(),
       retestOf: null,
@@ -553,8 +547,8 @@ function seedRemediations(orgId: string): RemediationItem[] {
       severity: tc?.severity ?? "high",
       controlIds: tc?.controlIds ?? [],
       policyOwner: tc?.policyOwner ?? "unknown",
-      status: Math.random() > 0.5 ? "open" : "in_progress",
-      assignedTo: Math.random() > 0.4 ? (tc?.policyOwner ?? null) : null,
+      status: exec.verdict === "bypassed" ? "open" : "in_progress",
+      assignedTo: exec.verdict === "bypassed" ? (tc?.policyOwner ?? null) : null,
       notes: "",
       guardrailPolicyId: null,
       createdAt: exec.executedAt,
@@ -596,8 +590,8 @@ export function runTestCase(orgId: string, testCaseId: string, trigger: RunTrigg
   if (!tc) throw new Error("TEST_CASE_NOT_FOUND");
   if (!tc.enabled) throw new Error("TEST_CASE_DISABLED");
 
-  const passed = Math.random() > 0.25;
-  const verdict = passed ? (Math.random() > 0.4 ? "blocked" : "detected") : "bypassed";
+  const passed = tc.severity === "low" || tc.severity === "medium";
+  const verdict = passed ? "blocked" : "bypassed";
   const status: TestStatus = passed ? "passed" : "failed";
 
   const execution: TestExecution = {
@@ -616,7 +610,7 @@ export function runTestCase(orgId: string, testCaseId: string, trigger: RunTrigg
       ? `Attack vector "${tc.category}" was correctly ${verdict} by security controls`
       : `ALERT: Attack vector "${tc.category}" bypassed security controls — immediate remediation required`,
     remediationQueued: !passed,
-    guardrailTuned: passed && Math.random() > 0.6,
+    guardrailTuned: passed,
     executedBy: trigger === "manual" ? "security-analyst" : "adversarial-test-runner",
     executedAt: new Date().toISOString(),
     retestOf: retestOf ?? null,

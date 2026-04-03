@@ -12,7 +12,7 @@ interface AuthenticatedUser {
   orgId?: string;
 }
 function getUser(req: Request): AuthenticatedUser | undefined {
-  return (req as Record<string, unknown>).user as AuthenticatedUser | undefined;
+  return (req as unknown as Record<string, unknown>).user as AuthenticatedUser | undefined;
 }
 import { db } from "../db";
 import { eq, count } from "drizzle-orm";

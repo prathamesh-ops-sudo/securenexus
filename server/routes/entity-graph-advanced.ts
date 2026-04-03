@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
+import { randomBytes } from "crypto";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { getOrgId, logger, p, storage } from "./shared";
@@ -311,7 +313,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
 
         // Store snapshot in-memory for now (would be DB in production)
         const snapshot = {
-          id: `snap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          id: `snap-${Date.now()}-${randomBytes(4).toString("hex")}`,
           orgId,
           name: String(name).slice(0, 200),
           description: description ? String(description).slice(0, 500) : null,

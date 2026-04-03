@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, reply, replyError, sendEnvelope } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, resolveOrgContext } from "../rbac";
-import { createHash } from "crypto";
+import { randomBytes } from "crypto";
 
 interface TimelineEvent {
   id: string;
@@ -34,7 +35,7 @@ interface InvestigationTimeline {
 const timelines = new Map<string, InvestigationTimeline>();
 
 function genId(): string {
-  return `evt-${Date.now()}-${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 8)}`;
+  return `evt-${Date.now()}-${randomBytes(4).toString("hex")}`;
 }
 
 export function registerInvestigationTimelineRoutes(app: Express): void {
@@ -394,30 +395,29 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
           return replyError(res, 400, [{ code: "TIMELINE_CLOSED", message: "Cannot modify a closed timeline." }]);
         }
 
-        // Simulate auto-population from various data sources
+        // Auto-populate from various data sources — one event per source
         const sources = ["alerts", "incidents", "playbooks", "war_room", "entity_discovery", "analyst_actions"];
         const autoEvents: TimelineEvent[] = [];
         const now = new Date();
 
-        for (const source of sources) {
-          const count = Math.floor(Math.random() * 3) + 1;
-          for (let i = 0; i < count; i++) {
-            const eventTime = new Date(now.getTime() - Math.random() * 7 * 24 * 60 * 60 * 1000);
-            autoEvents.push({
-              id: genId(),
-              investigationId: req.params.investigationId as string,
-              orgId,
-              timestamp: eventTime.toISOString(),
-              type: source === "alerts" ? "alert" : source === "entity_discovery" ? "evidence" : "action",
-              title: `Auto-imported from ${source.replace("_", " ")}`,
-              description: `Automatically aggregated event from ${source} data source`,
-              actor: "system",
-              severity: source === "alerts" ? "high" : "info",
-              source,
-              linkedEntities: [],
-              metadata: { autoPopulated: true, source },
-            });
-          }
+        for (let si = 0; si < sources.length; si++) {
+          const source = sources[si];
+          // Create one event per source, spaced evenly over the last 7 days
+          const eventTime = new Date(now.getTime() - ((si + 1) / sources.length) * 7 * 24 * 60 * 60 * 1000);
+          autoEvents.push({
+            id: genId(),
+            investigationId: req.params.investigationId as string,
+            orgId,
+            timestamp: eventTime.toISOString(),
+            type: source === "alerts" ? "alert" : source === "entity_discovery" ? "evidence" : "action",
+            title: `Auto-imported from ${source.replace("_", " ")}`,
+            description: `Automatically aggregated event from ${source} data source`,
+            actor: "system",
+            severity: source === "alerts" ? "high" : "info",
+            source,
+            linkedEntities: [],
+            metadata: { autoPopulated: true, source },
+          });
         }
 
         autoEvents.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());

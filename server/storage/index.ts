@@ -622,7 +622,7 @@ export class DatabaseStorage implements IStorage {
   getPostureScores = miscFns.getPostureScores;
   createPostureScore = miscFns.createPostureScore;
   getLatestPostureScore = miscFns.getLatestPostureScore;
-
+  countTableRows = miscFns.countTableRows;
 }
 
 export const storage = new DatabaseStorage();

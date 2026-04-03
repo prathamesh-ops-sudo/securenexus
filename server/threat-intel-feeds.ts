@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash, randomInt } from "crypto";
 import Parser from "rss-parser";
 import { logger as rootLogger } from "./logger";
 import { invokeModel } from "./ai/model-gateway";
@@ -216,7 +216,7 @@ async function fetchAndParseRSSFeed(
       if (attempt > maxRetries) {
         return { feed: null, error: errMsg.slice(0, 500) };
       }
-      const delay = Math.min(8000, 750 * Math.pow(2, attempt - 1)) + Math.random() * 250;
+      const delay = Math.min(8000, 750 * Math.pow(2, attempt - 1)) + randomInt(250);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }

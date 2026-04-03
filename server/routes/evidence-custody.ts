@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { randomBytes } from "crypto";
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, reply, replyError, sendEnvelope } from "./shared";
 import { isAuthenticated } from "../auth";
@@ -53,7 +55,7 @@ function computeEntryHash(entry: Omit<CustodyEntry, "entryHash">): string {
 }
 
 function genId(): string {
-  return `evi-${Date.now()}-${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 8)}`;
+  return `evi-${Date.now()}-${randomBytes(4).toString("hex")}`;
 }
 
 export function registerEvidenceCustodyRoutes(app: Express): void {
@@ -872,16 +874,17 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
           case "memory_dump":
           case "network_capture": {
             previewType = "hex";
-            // Generate synthetic hex dump
+            // Generate deterministic hex dump from evidence hash
+            const hashBytes = createHash("sha256")
+              .update(evidence.sha256Hash || evidence.id)
+              .digest();
             const lines: string[] = [];
             for (let offset = 0; offset < 256; offset += 16) {
-              const hex = Array.from({ length: 16 }, () =>
-                Math.floor(Math.random() * 256)
-                  .toString(16)
-                  .padStart(2, "0"),
+              const hex = Array.from({ length: 16 }, (_, j) =>
+                hashBytes[(offset + j) % hashBytes.length].toString(16).padStart(2, "0"),
               ).join(" ");
-              const ascii = Array.from({ length: 16 }, () => {
-                const c = Math.floor(Math.random() * 94) + 33;
+              const ascii = Array.from({ length: 16 }, (_, j) => {
+                const c = hashBytes[(offset + j) % hashBytes.length];
                 return c >= 33 && c <= 126 ? String.fromCharCode(c) : ".";
               }).join("");
               lines.push(`${offset.toString(16).padStart(8, "0")}  ${hex}  |${ascii}|`);

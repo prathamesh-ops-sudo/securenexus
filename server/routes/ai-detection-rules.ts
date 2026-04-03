@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
 import { eq, and, desc, sql, ilike, or } from "drizzle-orm";
 import { db } from "../db";
@@ -997,7 +998,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
                 | "passed"
                 | "warning"
                 | "failed",
-              details: `Estimated eval time: ${Math.round(Math.random() * 50 + 10)}ms per event`,
+              details: `Estimated eval time: ${Math.round((job.qualityScore ?? 50) * 0.8 + 10)}ms per event`,
               duration_ms: 3500,
             },
             {

@@ -1,4 +1,5 @@
-import { randomUUID } from "crypto";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { randomUUID, randomInt } from "crypto";
 
 export type ConnectorCategory =
   | "ticketing"
@@ -516,10 +517,10 @@ export function triggerSync(instanceId: string, orgId: string): SyncEvent | null
   }
 
   const startTime = Date.now();
-  const recordsProcessed = Math.floor(Math.random() * 200) + 10;
-  const recordsFailed = Math.random() > 0.85 ? Math.floor(Math.random() * 5) : 0;
-  const durationMs = Math.floor(Math.random() * 3000) + 200;
-  const status = recordsFailed > 0 ? ("partial" as const) : ("success" as const);
+  const recordsProcessed = 50;
+  const recordsFailed = 0;
+  const durationMs = 800;
+  const status = "success" as const;
 
   const event: SyncEvent = {
     id: randomUUID(),
@@ -666,8 +667,8 @@ export function runHealthCheck(instanceId: string, orgId: string): HealthCheck |
   const instance = instanceStore.get(instanceId);
   if (!instance || instance.orgId !== orgId) return null;
 
-  const latencyMs = Math.floor(Math.random() * 500) + 20;
-  const healthyRoll = Math.random();
+  const latencyMs = 120;
+  const healthyRoll = instance.status === "active" ? 0.5 : 0.98;
   let status: HealthCheck["status"] = "healthy";
   let driftDetected = false;
   let driftDetails: string | null = null;

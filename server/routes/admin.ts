@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
+import { randomBytes } from "crypto";
 import { getOrgId, p, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
@@ -191,7 +193,7 @@ export function registerAdminRoutes(app: Express): void {
         }
 
         // Step 1: Generate new secret value (simulated — in production this calls a secret provider)
-        const newSecretValue = `auto_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+        const newSecretValue = `auto_${Date.now()}_${randomBytes(5).toString("hex")}`;
 
         // Step 2: Update the connector config with new value
         const connector = await storage.getConnector(rotation.connectorId);
@@ -1070,7 +1072,10 @@ export function registerAdminRoutes(app: Express): void {
         `);
 
         // Build a map of hour -> metrics from DB results
-        const dbBucketMap = new Map<string, { throughput: number; avgWaitMs: number; avgExecMs: number; failureRate: number }>();
+        const dbBucketMap = new Map<
+          string,
+          { throughput: number; avgWaitMs: number; avgExecMs: number; failureRate: number }
+        >();
         for (const row of rows.rows as any[]) {
           if (row.bucket) {
             const key = new Date(row.bucket).toISOString();
@@ -1104,8 +1109,7 @@ export function registerAdminRoutes(app: Express): void {
           avgWaitMs: Math.round(nonEmptyBuckets.reduce((s, b) => s + b.avgWaitMs, 0) / bucketCount),
           avgExecMs: Math.round(nonEmptyBuckets.reduce((s, b) => s + b.avgExecMs, 0) / bucketCount),
           totalProcessed: buckets.reduce((s, b) => s + b.throughput, 0),
-          failureRate:
-            Math.round((nonEmptyBuckets.reduce((s, b) => s + b.failureRate, 0) / bucketCount) * 100) / 100,
+          failureRate: Math.round((nonEmptyBuckets.reduce((s, b) => s + b.failureRate, 0) / bucketCount) * 100) / 100,
           peakThroughput: Math.max(0, ...buckets.map((b) => b.throughput)),
         };
         return sendEnvelope(res, { buckets, totals });

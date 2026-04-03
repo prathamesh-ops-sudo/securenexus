@@ -1033,8 +1033,8 @@ function generateInvestigationArtifact(
         "Review access logs for lateral movement indicators",
         "Notify incident response team for escalation",
       ],
-      relatedAlerts: Math.floor(Math.random() * 20) + 5,
-      relatedEntities: Math.floor(Math.random() * 15) + 3,
+      relatedAlerts: 12,
+      relatedEntities: 8,
     },
     editableLogic: [
       {
@@ -1098,8 +1098,8 @@ function generateReportArtifact(
         {
           title: "Metrics",
           data: {
-            totalAlerts: Math.floor(Math.random() * 200) + 50,
-            criticalAlerts: Math.floor(Math.random() * 10) + 1,
+            totalAlerts: 150,
+            criticalAlerts: 5,
             mttr: "4.2 hours",
             falsePositiveRate: "12%",
             coverageScore: 0.94,
@@ -1172,8 +1172,8 @@ function generateQueryArtifact(
       sortOrder: "desc",
       limit: 100,
       columns: ["id", "type", "severity", "source", "description", "created_at"],
-      resultCount: Math.floor(Math.random() * 100) + 10,
-      executionTime: `${Math.floor(Math.random() * 500) + 50}ms`,
+      resultCount: 50,
+      executionTime: "120ms",
     },
     editableLogic: [
       {

@@ -1,16 +1,18 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { randomInt } from "crypto";
 import { storage } from "./storage";
 import type { EndpointAsset, EndpointTelemetry } from "@shared/schema";
 
 function randInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  return randomInt(min, max + 1);
 }
 
 function randFloat(min: number, max: number, decimals = 1): number {
-  return parseFloat((Math.random() * (max - min) + min).toFixed(decimals));
+  return parseFloat(((randomInt(0, 100) / 100) * (max - min) + min).toFixed(decimals));
 }
 
-function pick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+function pick<T>(arr: T[], idx: number = 0): T {
+  return arr[idx % arr.length];
 }
 
 function recentDate(hoursBack: number): string {
@@ -84,31 +86,31 @@ export async function seedEndpointAssets(orgId: string): Promise<EndpointAsset[]
   const existing = await storage.getEndpointAssets(orgId);
   if (existing.length > 0) return existing;
 
-  const count = randInt(8, 12);
-  const shuffled = [...ENDPOINT_TEMPLATES].sort(() => Math.random() - 0.5).slice(0, count);
+  const count = 10;
+  const templates = ENDPOINT_TEMPLATES.slice(0, count);
 
   const assets: EndpointAsset[] = [];
-  for (const template of shuffled) {
-    const statusRoll = Math.random();
-    const agentStatus = statusRoll < 0.7 ? "online" : statusRoll < 0.9 ? "offline" : "degraded";
+  for (let idx = 0; idx < templates.length; idx++) {
+    const template = templates[idx];
+    const agentStatus = idx < 7 ? "online" : idx < 9 ? "offline" : "degraded";
+    const riskScore = idx < 6 ? randInt(0, 30) : idx < 9 ? randInt(31, 60) : randInt(61, 100);
 
-    const riskRoll = Math.random();
-    const riskScore = riskRoll < 0.6 ? randInt(0, 30) : riskRoll < 0.85 ? randInt(31, 60) : randInt(61, 100);
-
-    const octet2 = randInt(0, 255);
-    const octet3 = randInt(0, 255);
-    const octet4 = randInt(1, 254);
-    const ipAddress = Math.random() < 0.7 ? `10.${octet2}.${octet3}.${octet4}` : `192.168.${octet3}.${octet4}`;
+    const octet2 = (idx * 17 + 3) % 256;
+    const octet3 = (idx * 31 + 7) % 256;
+    const octet4 = ((idx * 13 + 1) % 254) + 1;
+    const ipAddress = idx < 7 ? `10.${octet2}.${octet3}.${octet4}` : `192.168.${octet3}.${octet4}`;
 
     const asset = await storage.createEndpointAsset({
       orgId,
       hostname: template.hostname,
       os: template.os,
       osVersion: template.osVersion,
-      agentVersion: `7.${randInt(10, 16)}.${randInt(0, 9)}`,
+      agentVersion: `7.${10 + (idx % 7)}.${idx % 10}`,
       agentStatus,
       ipAddress,
-      macAddress: Array.from({ length: 6 }, () => randInt(0, 255).toString(16).padStart(2, "0")).join(":"),
+      macAddress: Array.from({ length: 6 }, (_, j) => ((idx * 41 + j * 17) % 256).toString(16).padStart(2, "0")).join(
+        ":",
+      ),
       riskScore,
       tags: template.tags,
       metadata: {},
@@ -122,27 +124,27 @@ export async function seedEndpointAssets(orgId: string): Promise<EndpointAsset[]
 export async function generateTelemetry(orgId: string, assetId: string): Promise<EndpointTelemetry[]> {
   const telemetryRecords: EndpointTelemetry[] = [];
 
-  const totalGb = pick([8, 16, 32]);
+  const totalGb = pick([8, 16, 32], 1);
   const usedGb = randFloat(4, totalGb - 2, 1);
   const memPercent = Math.round((usedGb / totalGb) * 100);
 
-  const diskTotal = pick([256, 512]);
+  const diskTotal = pick([256, 512], 0);
   const diskUsed = randInt(80, diskTotal - 50);
   const diskPercent = Math.round((diskUsed / diskTotal) * 100);
 
   const suspiciousCount = randInt(0, 2);
-  const suspiciousProcs = Array.from({ length: suspiciousCount }, () => ({
-    ...pick(SUSPICIOUS_PROCESSES),
+  const suspiciousProcs = Array.from({ length: suspiciousCount }, (_, i) => ({
+    ...pick(SUSPICIOUS_PROCESSES, i),
     pid: randInt(1000, 65535),
   }));
 
-  const avOutdated = Math.random() < 0.2;
+  const avOutdated = false;
   const criticalPending = randInt(0, 3);
 
   const metrics: Array<{ type: string; value: unknown }> = [
     {
       type: "cpu",
-      value: { usage: randInt(15, 85), cores: pick([4, 6, 8, 12, 16]) },
+      value: { usage: randInt(15, 85), cores: pick([4, 6, 8, 12, 16], 2) },
     },
     {
       type: "memory",
@@ -163,7 +165,7 @@ export async function generateTelemetry(orgId: string, assetId: string): Promise
     {
       type: "av_status",
       value: {
-        engine: pick(["CrowdStrike Falcon", "Microsoft Defender"]),
+        engine: pick(["CrowdStrike Falcon", "Microsoft Defender"], 0),
         lastScan: recentDate(48),
         definitions: avOutdated ? "outdated" : "up-to-date",
         threats: randInt(0, 2),
@@ -183,7 +185,7 @@ export async function generateTelemetry(orgId: string, assetId: string): Promise
       value: {
         active: randInt(10, 50),
         suspicious: randInt(0, 2),
-        topDestinations: Array.from({ length: randInt(3, 5) }, () => pick(TOP_DESTINATIONS)),
+        topDestinations: Array.from({ length: 4 }, (_, i) => pick(TOP_DESTINATIONS, i)),
       },
     },
   ];

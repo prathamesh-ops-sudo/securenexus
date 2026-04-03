@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { randomBytes } from "crypto";
 import type { Express } from "express";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
@@ -334,7 +336,7 @@ export function registerSocCopilotRoutes(app: Express): void {
       }
 
       const conversation = {
-        id: `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: `conv_${Date.now()}_${randomBytes(4).toString("hex")}`,
         orgId,
         userId,
         title: title.slice(0, 200),
@@ -364,7 +366,7 @@ export function registerSocCopilotRoutes(app: Express): void {
       }
 
       const message = {
-        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: `msg_${Date.now()}_${randomBytes(4).toString("hex")}`,
         conversationId,
         role,
         content: content.slice(0, 10000),

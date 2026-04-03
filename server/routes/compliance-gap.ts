@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, reply, replyError, sendEnvelope } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, resolveOrgContext } from "../rbac";
-import { createHash } from "crypto";
+import { randomBytes } from "crypto";
+import { getComplianceControls, getComplianceControlMappings } from "../storage/compliance";
 
 interface GapAnalysis {
   id: string;
@@ -384,33 +386,91 @@ const FRAMEWORKS: Record<
 };
 
 function genId(): string {
-  return `gap-${Date.now()}-${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 8)}`;
+  return `gap-${Date.now()}-${randomBytes(4).toString("hex")}`;
 }
 
-function simulateAnalysis(framework: (typeof FRAMEWORKS)[string]): {
-  gaps: ControlGap[];
-  recommendations: Recommendation[];
-} {
+async function analyzeCompliance(
+  orgId: string,
+  framework: (typeof FRAMEWORKS)[string],
+  frameworkKey: string,
+): Promise<{ gaps: ControlGap[]; recommendations: Recommendation[] }> {
   const gaps: ControlGap[] = [];
   const recommendations: Recommendation[] = [];
-  const statuses: ControlGap["status"][] = ["implemented", "implemented", "implemented", "partial", "missing"];
-  const priorities: ControlGap["remediationPriority"][] = ["critical", "high", "medium", "low"];
-  const efforts = ["1 day", "3 days", "1 week", "2 weeks", "1 month"];
+
+  // Query actual compliance controls and mappings from DB
+  const dbControls = await getComplianceControls(frameworkKey);
+  const allMappings = await getComplianceControlMappings(orgId);
+
+  // Build lookup: DB control UUID → control text ID
+  const controlUuidToTextId = new Map<string, string>();
+  for (const c of dbControls) {
+    controlUuidToTextId.set(c.id, c.controlId);
+  }
+
+  // Build lookup: control text ID → best status + evidence
+  const controlStatusMap = new Map<string, { status: string; evidence: string[] }>();
+  for (const m of allMappings) {
+    const textId = controlUuidToTextId.get(m.controlId);
+    if (!textId) continue;
+
+    const existing = controlStatusMap.get(textId);
+    const notes = m.evidenceNotes ? [m.evidenceNotes] : [];
+
+    if (!existing) {
+      controlStatusMap.set(textId, { status: m.status, evidence: notes });
+    } else {
+      // Keep the best status (implemented > partial > not_assessed)
+      if (m.status === "implemented" && existing.status !== "implemented") {
+        existing.status = "implemented";
+      } else if (m.status === "partial" && existing.status === "not_assessed") {
+        existing.status = "partial";
+      }
+      existing.evidence.push(...notes);
+    }
+  }
+
+  const effortByStatus: Record<string, string> = {
+    missing: "2 weeks",
+    partial: "1 week",
+    implemented: "maintenance",
+  };
 
   for (const control of framework.controls) {
-    const status = statuses[Math.floor(Math.random() * statuses.length)];
+    const mapping = controlStatusMap.get(control.id);
+
+    let status: ControlGap["status"];
+    let evidence: string[] = [];
+
+    if (!mapping || mapping.status === "not_assessed") {
+      status = "missing";
+    } else if (mapping.status === "implemented") {
+      status = "implemented";
+      evidence = mapping.evidence;
+    } else if (mapping.status === "partial") {
+      status = "partial";
+      evidence = mapping.evidence;
+    } else {
+      status = "missing";
+    }
+
+    const priority: ControlGap["remediationPriority"] =
+      status === "missing" ? "high" : status === "partial" ? "medium" : "low";
+
     gaps.push({
       controlId: control.id,
       controlName: control.name,
       category: control.category,
       status,
-      evidence: status === "implemented" ? ["Automated scan evidence", "Policy document"] : [],
-      remediationPriority:
-        status === "missing"
-          ? priorities[Math.floor(Math.random() * 2)]
-          : priorities[Math.floor(Math.random() * priorities.length)],
-      estimatedEffort: efforts[Math.floor(Math.random() * efforts.length)],
-      description: `${control.name} - ${status === "implemented" ? "Fully implemented with automated evidence" : status === "partial" ? "Partially implemented, needs additional controls" : "Not yet implemented, requires new controls"}`,
+      evidence,
+      remediationPriority: priority,
+      estimatedEffort: effortByStatus[status] || "2 weeks",
+      description: `${control.name} — ${
+        status === "implemented"
+          ? "Implemented with evidence on record"
+          : status === "partial"
+            ? "Partially implemented — additional controls or evidence needed"
+            : "Not yet implemented — requires new controls and evidence"
+      }`,
     });
 
     if (status !== "implemented") {
@@ -420,8 +480,8 @@ function simulateAnalysis(framework: (typeof FRAMEWORKS)[string]): {
         title: `Implement ${control.name}`,
         description: `Deploy controls for ${control.name} to achieve compliance.`,
         priority: status === "missing" ? "high" : "medium",
-        estimatedEffort: efforts[Math.floor(Math.random() * efforts.length)],
-        automatable: Math.random() > 0.5,
+        estimatedEffort: effortByStatus[status] || "2 weeks",
+        automatable: status === "partial",
       });
     }
   }
@@ -473,7 +533,7 @@ export function registerComplianceGapRoutes(app: Express): void {
         }
 
         const fw = FRAMEWORKS[framework];
-        const { gaps, recommendations } = simulateAnalysis(fw);
+        const { gaps, recommendations } = await analyzeCompliance(orgId, fw, framework);
         const implemented = gaps.filter((g) => g.status === "implemented").length;
         const partial = gaps.filter((g) => g.status === "partial").length;
         const missing = gaps.filter((g) => g.status === "missing").length;

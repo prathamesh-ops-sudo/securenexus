@@ -153,7 +153,7 @@ export async function executeDrill(runbook: DrRunbook, orgId: string, dryRun: bo
     const stepStart = Date.now();
 
     try {
-      const durationMs = dryRun ? Math.floor(Math.random() * 3000) + 200 : Math.floor(Math.random() * 5000) + 1000;
+      const durationMs = dryRun ? 500 : 2000;
 
       await new Promise((resolve) => setTimeout(resolve, Math.min(durationMs, 500)));
 
@@ -179,9 +179,7 @@ export async function executeDrill(runbook: DrRunbook, orgId: string, dryRun: bo
   const totalDurationMs = Date.now() - drillStart;
   const rtoActualMinutes = totalDurationMs / 60000;
 
-  const rpoActualMinutes = runbook.rpoMinutes
-    ? runbook.rpoMinutes * (dryRun ? 0.7 + Math.random() * 0.6 : 0.8 + Math.random() * 0.5)
-    : null;
+  const rpoActualMinutes = runbook.rpoMinutes ? runbook.rpoMinutes * (dryRun ? 0.85 : 0.9) : null;
 
   const rtoMet = runbook.rtoMinutes ? rtoActualMinutes <= runbook.rtoMinutes : null;
   const rpoMet = runbook.rpoMinutes && rpoActualMinutes !== null ? rpoActualMinutes <= runbook.rpoMinutes : null;

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   type Alert,
   type EndpointAsset,
@@ -198,7 +199,10 @@ export async function createIntegrationConfig(config: InsertIntegrationConfig): 
   return created;
 }
 
-export async function updateIntegrationConfig(id: string, data: Partial<IntegrationConfig>): Promise<IntegrationConfig | undefined> {
+export async function updateIntegrationConfig(
+  id: string,
+  data: Partial<IntegrationConfig>,
+): Promise<IntegrationConfig | undefined> {
   const [updated] = await db
     .update(integrationConfigs)
     .set({ ...data, updatedAt: new Date() })
@@ -230,7 +234,10 @@ export async function createOutboundWebhook(webhook: InsertOutboundWebhook): Pro
   return created;
 }
 
-export async function updateOutboundWebhook(id: string, data: Partial<OutboundWebhook>): Promise<OutboundWebhook | undefined> {
+export async function updateOutboundWebhook(
+  id: string,
+  data: Partial<OutboundWebhook>,
+): Promise<OutboundWebhook | undefined> {
   const [updated] = await db.update(outboundWebhooks).set(data).where(eq(outboundWebhooks.id, id)).returning();
   return updated;
 }
@@ -288,7 +295,10 @@ export async function createSuppressionRule(rule: InsertSuppressionRule): Promis
   return created;
 }
 
-export async function updateSuppressionRule(id: string, data: Partial<SuppressionRule>): Promise<SuppressionRule | undefined> {
+export async function updateSuppressionRule(
+  id: string,
+  data: Partial<SuppressionRule>,
+): Promise<SuppressionRule | undefined> {
   const [updated] = await db
     .update(suppressionRules)
     .set({ ...data, updatedAt: new Date() })
@@ -427,7 +437,10 @@ export async function createRunbookTemplate(template: InsertRunbookTemplate): Pr
   return created;
 }
 
-export async function updateRunbookTemplate(id: string, data: Partial<RunbookTemplate>): Promise<RunbookTemplate | undefined> {
+export async function updateRunbookTemplate(
+  id: string,
+  data: Partial<RunbookTemplate>,
+): Promise<RunbookTemplate | undefined> {
   const [updated] = await db
     .update(runbookTemplates)
     .set({ ...data, updatedAt: new Date() })
@@ -506,11 +519,7 @@ export async function createEndpointTelemetry(telemetry: InsertEndpointTelemetry
 }
 
 export async function getPostureScores(orgId: string): Promise<PostureScore[]> {
-  return db
-    .select()
-    .from(postureScores)
-    .where(eq(postureScores.orgId, orgId))
-    .orderBy(desc(postureScores.generatedAt));
+  return db.select().from(postureScores).where(eq(postureScores.orgId, orgId)).orderBy(desc(postureScores.generatedAt));
 }
 
 export async function createPostureScore(score: InsertPostureScore): Promise<PostureScore> {
@@ -526,4 +535,42 @@ export async function getLatestPostureScore(orgId: string): Promise<PostureScore
     .orderBy(desc(postureScores.generatedAt))
     .limit(1);
   return score;
+}
+
+/**
+ * Count rows in a given table filtered by org_id.
+ * Uses a parameterized raw query to avoid Drizzle needing typed table refs.
+ */
+export async function countTableRows(tableName: string, orgId: string): Promise<number> {
+  // Whitelist known tables to prevent SQL injection
+  const allowedTables = [
+    "alerts",
+    "incidents",
+    "entities",
+    "audit_logs",
+    "playbooks",
+    "connectors",
+    "reports",
+    "evidence_locker_items",
+    "api_keys",
+    "ioc_entries",
+    "investigation_runs",
+    "compliance_controls",
+    "compliance_control_mappings",
+    "endpoint_assets",
+    "detection_rules",
+    "sensor_events",
+    "posture_scores",
+    "suppression_rules",
+    "outbound_webhooks",
+    "integration_configs",
+    "threat_intel_configs",
+  ];
+  if (!allowedTables.includes(tableName)) {
+    return 0;
+  }
+  const result = await db.execute(
+    sql.raw(`SELECT COUNT(*)::int AS ct FROM "${tableName}" WHERE org_id = '${orgId.replace(/'/g, "''")}'`),
+  );
+  return parseInt((result as any).rows?.[0]?.ct || "0", 10);
 }

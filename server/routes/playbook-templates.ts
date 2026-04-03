@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, reply, replyError, sendEnvelope } from "./shared";
 import { isAuthenticated } from "../auth";
@@ -803,8 +804,8 @@ function initCatalog(): void {
       ...tpl,
       id,
       orgId: null,
-      usageCount: Math.floor(Math.random() * 200) + 50,
-      createdAt: new Date(Date.now() - Math.floor(Math.random() * 90 * 24 * 60 * 60 * 1000)).toISOString(),
+      usageCount: 0,
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
   }

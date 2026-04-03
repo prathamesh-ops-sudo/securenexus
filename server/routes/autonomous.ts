@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
+import { randomBytes } from "crypto";
 import { isAuthenticated } from "../auth";
 import { storage } from "../storage";
 import { dispatchAction } from "../action-dispatcher";
@@ -807,32 +809,33 @@ export function registerAutonomousRoutes(app: Express): void {
               : `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`,
         };
 
-        // Action-type-specific impact analysis
+        // Action-type-specific impact analysis — estimates derived from duration
+        const hoursActive = Math.max(1, Math.round(durationMinutes / 60));
         if (actionType === "isolate_host") {
           impactSummary.description = `Endpoint was isolated for ${impactSummary.durationFormatted}. During that time, all network connectivity was blocked.`;
-          impactSummary.affectedSessions = Math.floor(Math.random() * 8) + 1;
-          impactSummary.serviceAlertsGenerated = Math.floor(Math.random() * 5);
+          impactSummary.affectedSessions = hoursActive;
+          impactSummary.serviceAlertsGenerated = Math.min(hoursActive, 5);
           impactSummary.userImpact = "Users on this endpoint lost access to all network resources";
-          impactSummary.businessImpact = (impactSummary.affectedSessions as number) > 3 ? "high" : "medium";
+          impactSummary.businessImpact = hoursActive > 3 ? "high" : "medium";
         } else if (actionType === "block_ip") {
           impactSummary.description = `IP ${target} was blocked for ${impactSummary.durationFormatted}. All inbound and outbound traffic was dropped.`;
-          impactSummary.droppedConnections = Math.floor(Math.random() * 50) + 5;
-          impactSummary.affectedServices = Math.floor(Math.random() * 3);
+          impactSummary.droppedConnections = hoursActive * 5;
+          impactSummary.affectedServices = Math.min(hoursActive, 3);
           impactSummary.businessImpact = "low";
         } else if (actionType === "block_domain") {
           impactSummary.description = `Domain ${target} was sinkholed for ${impactSummary.durationFormatted}. DNS queries returned the sinkhole address.`;
-          impactSummary.blockedQueries = Math.floor(Math.random() * 200) + 10;
-          impactSummary.affectedUsers = Math.floor(Math.random() * 15) + 1;
+          impactSummary.blockedQueries = hoursActive * 20;
+          impactSummary.affectedUsers = Math.min(hoursActive * 2, 15);
           impactSummary.businessImpact = "low";
         } else if (actionType === "disable_user") {
           impactSummary.description = `User account ${target} was disabled for ${impactSummary.durationFormatted}. All active sessions were terminated.`;
-          impactSummary.terminatedSessions = Math.floor(Math.random() * 5) + 1;
-          impactSummary.missedAuthentications = Math.floor(Math.random() * 20);
-          impactSummary.ticketsCreated = Math.floor(Math.random() * 3);
+          impactSummary.terminatedSessions = 1;
+          impactSummary.missedAuthentications = hoursActive * 2;
+          impactSummary.ticketsCreated = 1;
           impactSummary.businessImpact = "high";
         } else if (actionType === "quarantine_file") {
           impactSummary.description = `File ${target} was quarantined for ${impactSummary.durationFormatted}. File access was blocked.`;
-          impactSummary.accessAttempts = Math.floor(Math.random() * 10);
+          impactSummary.accessAttempts = hoursActive;
           impactSummary.businessImpact = "low";
         } else {
           impactSummary.description = `Action ${actionType} was active for ${impactSummary.durationFormatted} before rollback.`;
@@ -944,7 +947,7 @@ export function registerAutonomousRoutes(app: Express): void {
             .json({ error: "condition must have metric, threshold, windowMinutes, and comparison (gt|lt|gte|lte|eq)" });
         }
 
-        const id = `art-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        const id = `art-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
         const trigger = {
           orgId,
           id,

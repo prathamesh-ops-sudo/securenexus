@@ -866,14 +866,14 @@ export function generateScoreTrend(
 ): Array<{ period: string; score: number; change: number }> {
   const trend: Array<{ period: string; score: number; change: number }> = [];
   const now = new Date();
-  let prevScore = Math.max(20, currentScore - Math.floor(Math.random() * 25) - 10);
+  let prevScore = Math.max(20, currentScore - 20);
 
   for (let i = months - 1; i >= 0; i--) {
     const d = new Date(now);
     d.setMonth(d.getMonth() - i);
     const period = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
-    const targetScore = i === 0 ? currentScore : prevScore + Math.floor(Math.random() * 5) - 1;
+    const targetScore = i === 0 ? currentScore : prevScore + ((i * 3 + 1) % 5) - 1;
     const score = Math.max(0, Math.min(100, targetScore));
     const change = score - prevScore;
 

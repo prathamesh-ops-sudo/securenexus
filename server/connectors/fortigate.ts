@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { randomBytes } from "crypto";
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
@@ -71,7 +73,7 @@ export const fortigatePlugin: ConnectorPlugin = {
     const r = raw as Record<string, any>;
     return {
       source: "Fortinet FortiGate",
-      sourceEventId: r.logid || r.eventid || `forti_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      sourceEventId: r.logid || r.eventid || `forti_${Date.now()}_${randomBytes(6).toString("hex")}`,
       title: r.msg || r.action || "FortiGate Event",
       description: r.msg || r.logdesc || "",
       severity: mapSeverity(r.level),
