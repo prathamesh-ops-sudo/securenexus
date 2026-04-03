@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
+import { randomBytes } from "crypto";
 import { getOrgId, logger, p, storage } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../../rbac";
@@ -120,7 +122,7 @@ export function registerPlaybooksSchedulingRoutes(app: Express): void {
         const actionsArr = Array.isArray(pb.actions) ? pb.actions : [];
         const nodes = extractNodes(actionsArr);
 
-        const executionId = `track-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const executionId = `track-${Date.now()}-${randomBytes(4).toString("hex")}`;
         const steps = nodes.map((node: any, idx: number) => ({
           nodeId: node.id || `step-${idx}`,
           label: node.data?.label || node.type || `Step ${idx + 1}`,

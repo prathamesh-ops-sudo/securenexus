@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
+import { randomBytes } from "crypto";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId } from "../rbac";
 import { requirePermission } from "../rbac";
@@ -1454,7 +1456,8 @@ export function registerRansomwareDefenseRoutes(app: Express): void {
         const restoreTestResult = "passed"; // Simulated
 
         const startTime = Date.now();
-        const durationSeconds = Math.floor(Math.random() * 120) + 30; // Simulate 30-150s
+        // Estimate verification duration based on number of issues found
+        const durationSeconds = 30 + issues.length * 15;
 
         const [updated] = await db
           .update(backupVerifications)
@@ -1626,7 +1629,7 @@ export function registerRansomwareDefenseRoutes(app: Express): void {
           const verificationResult = issues.some((i) => i.severity === "critical" || i.severity === "high")
             ? "failed"
             : "passed";
-          const durationSeconds = Math.floor(Math.random() * 120) + 30;
+          const durationSeconds = 30 + issues.length * 15;
 
           await db
             .update(backupVerifications)

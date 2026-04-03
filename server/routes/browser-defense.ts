@@ -1,23 +1,10 @@
 import type { Express } from "express";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
+import { storage } from "../storage";
 import {
-  getBrowserDefenseStats,
-  listSessions,
-  getSessionById,
-  isolateSession,
-  terminateSession,
   listDomEvents,
   classifyDomAction,
-  listEgressRules,
-  createEgressRule,
-  updateEgressRule,
-  deleteEgressRule,
-  listTrustedPaths,
-  getTrustedPathById,
-  createTrustedPath,
-  updateTrustedPath,
-  deleteTrustedPath,
   listInjectionPatterns,
   updateInjectionPattern,
   evaluateEgress,
@@ -36,21 +23,39 @@ export function registerBrowserDefenseRoutes(app: Express): void {
   app.get("/api/browser-defense/stats", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      res.json(getBrowserDefenseStats(orgId));
+      const [activeSessions, totalSessions, egressRules, trustedPaths] = await Promise.all([
+        storage.countBrowserSessions(orgId, "active"),
+        storage.countBrowserSessions(orgId),
+        storage.getBrowserEgressRules(orgId),
+        storage.getBrowserTrustedPaths(orgId),
+      ]);
+      res.json({
+        activeSessions,
+        totalSessions,
+        totalEgressRules: egressRules.length,
+        totalTrustedPaths: trustedPaths.length,
+      });
     } catch (error) {
       logger.child("routes").error("Browser defense stats error", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch browser defense stats" });
     }
   });
 
+  // Sessions — persisted to DB
   app.get("/api/browser-defense/sessions", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const filters: { state?: SessionState; agentId?: string } = {};
-      if (typeof req.query.state === "string" && VALID_SESSION_STATES.includes(req.query.state as SessionState))
-        filters.state = req.query.state as SessionState;
-      if (typeof req.query.agentId === "string") filters.agentId = req.query.agentId;
-      res.json(listSessions(orgId, filters));
+      const stateFilter =
+        typeof req.query.state === "string" && VALID_SESSION_STATES.includes(req.query.state as SessionState)
+          ? req.query.state
+          : undefined;
+      const sessions = await storage.getBrowserSessions(orgId, stateFilter);
+      // Apply additional client-side filters
+      let filtered = sessions;
+      if (typeof req.query.agentId === "string") {
+        filtered = filtered.filter((s) => s.agentId === req.query.agentId);
+      }
+      res.json(filtered);
     } catch (error) {
       logger.child("routes").error("List sessions error", { error: String(error) });
       res.status(500).json({ message: "Failed to list browser sessions" });
@@ -61,7 +66,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
-      const session = getSessionById(orgId, id);
+      const session = await storage.getBrowserSession(id, orgId);
       if (!session) return res.status(404).json({ message: "Session not found" });
       res.json(session);
     } catch (error) {
@@ -74,7 +79,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
-      const session = isolateSession(orgId, id);
+      const session = await storage.updateBrowserSession(id, orgId, { state: "isolated" });
       if (!session) return res.status(404).json({ message: "Session not found" });
       res.json(session);
     } catch (error) {
@@ -87,7 +92,10 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
-      const session = terminateSession(orgId, id);
+      const session = await storage.updateBrowserSession(id, orgId, {
+        state: "terminated",
+        endedAt: new Date(),
+      });
       if (!session) return res.status(404).json({ message: "Session not found" });
       res.json(session);
     } catch (error) {
@@ -96,6 +104,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     }
   });
 
+  // DOM events — stateless classification, kept on engine
   app.get("/api/browser-defense/dom-events", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -148,10 +157,12 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     }
   });
 
+  // Egress Rules — persisted to DB
   app.get("/api/browser-defense/egress-rules", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      res.json(listEgressRules(orgId));
+      const rules = await storage.getBrowserEgressRules(orgId);
+      res.json(rules);
     } catch (error) {
       logger.child("routes").error("List egress rules error", { error: String(error) });
       res.status(500).json({ message: "Failed to list egress rules" });
@@ -177,14 +188,19 @@ export function registerBrowserDefenseRoutes(app: Express): void {
       if (!body.action || !VALID_VERDICTS.includes(body.action)) {
         return res.status(400).json({ message: `action must be one of: ${VALID_VERDICTS.join(", ")}` });
       }
-      const rule = createEgressRule(orgId, {
+      const rule = await storage.createBrowserEgressRule({
+        orgId,
         name: body.name,
-        description: typeof body.description === "string" ? body.description : "",
-        direction: body.direction,
-        domainPattern: body.domainPattern,
-        portRange: typeof body.portRange === "string" ? body.portRange : "*",
+        domain: body.domainPattern,
         protocol: body.protocol,
-        action: body.action,
+        direction: body.direction,
+        verdict: body.action,
+        priority: typeof body.priority === "number" ? body.priority : 100,
+        enabled: body.enabled !== false,
+        metadata: {
+          description: typeof body.description === "string" ? body.description : "",
+          portRange: typeof body.portRange === "string" ? body.portRange : "*",
+        },
       });
       res.status(201).json(rule);
     } catch (error) {
@@ -198,31 +214,28 @@ export function registerBrowserDefenseRoutes(app: Express): void {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
       const body = req.body;
-      const sanitized: Record<string, unknown> = {};
+      const updates: Record<string, unknown> = {};
       if (body.name !== undefined) {
         if (typeof body.name !== "string") return res.status(400).json({ message: "name must be a string" });
-        sanitized.name = body.name;
+        updates.name = body.name;
       }
-      if (body.description !== undefined)
-        sanitized.description = typeof body.description === "string" ? body.description : "";
       if (body.domainPattern !== undefined) {
         if (typeof body.domainPattern !== "string")
           return res.status(400).json({ message: "domainPattern must be a string" });
-        sanitized.domainPattern = body.domainPattern;
+        updates.domain = body.domainPattern;
       }
-      if (body.portRange !== undefined) sanitized.portRange = typeof body.portRange === "string" ? body.portRange : "*";
       if (body.protocol !== undefined) {
         if (!VALID_PROTOCOLS.includes(body.protocol))
           return res.status(400).json({ message: `protocol must be one of: ${VALID_PROTOCOLS.join(", ")}` });
-        sanitized.protocol = body.protocol;
+        updates.protocol = body.protocol;
       }
       if (body.action !== undefined) {
         if (!VALID_VERDICTS.includes(body.action))
           return res.status(400).json({ message: `action must be one of: ${VALID_VERDICTS.join(", ")}` });
-        sanitized.action = body.action;
+        updates.verdict = body.action;
       }
-      if (body.enabled !== undefined) sanitized.enabled = body.enabled === true;
-      const updated = updateEgressRule(orgId, id, sanitized as Parameters<typeof updateEgressRule>[2]);
+      if (body.enabled !== undefined) updates.enabled = body.enabled === true;
+      const updated = await storage.updateBrowserEgressRule(id, orgId, updates);
       if (!updated) return res.status(404).json({ message: "Egress rule not found" });
       res.json(updated);
     } catch (error) {
@@ -235,7 +248,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
-      const deleted = deleteEgressRule(orgId, id);
+      const deleted = await storage.deleteBrowserEgressRule(id, orgId);
       if (!deleted) return res.status(404).json({ message: "Egress rule not found" });
       res.json({ message: "Egress rule deleted" });
     } catch (error) {
@@ -244,10 +257,12 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     }
   });
 
+  // Trusted Paths — persisted to DB
   app.get("/api/browser-defense/trusted-paths", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      res.json(listTrustedPaths(orgId));
+      const paths = await storage.getBrowserTrustedPaths(orgId);
+      res.json(paths);
     } catch (error) {
       logger.child("routes").error("List trusted paths error", { error: String(error) });
       res.status(500).json({ message: "Failed to list trusted paths" });
@@ -258,9 +273,9 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
-      const path = getTrustedPathById(orgId, id);
-      if (!path) return res.status(404).json({ message: "Trusted path not found" });
-      res.json(path);
+      const tp = await storage.getBrowserTrustedPath(id, orgId);
+      if (!tp) return res.status(404).json({ message: "Trusted path not found" });
+      res.json(tp);
     } catch (error) {
       logger.child("routes").error("Get trusted path error", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch trusted path" });
@@ -277,18 +292,19 @@ export function registerBrowserDefenseRoutes(app: Express): void {
       if (!Array.isArray(body.steps) || body.steps.length === 0) {
         return res.status(400).json({ message: "steps must be a non-empty array" });
       }
-      if (!body.failAction || !VALID_VERDICTS.includes(body.failAction)) {
-        return res.status(400).json({ message: `failAction must be one of: ${VALID_VERDICTS.join(", ")}` });
-      }
-      const path = createTrustedPath(orgId, {
+      const tp = await storage.createBrowserTrustedPath({
+        orgId,
         name: body.name,
         description: typeof body.description === "string" ? body.description : "",
         steps: body.steps,
-        enforceOrder: body.enforceOrder === true,
-        maxDurationMs: typeof body.maxDurationMs === "number" && body.maxDurationMs > 0 ? body.maxDurationMs : 60000,
-        failAction: body.failAction,
+        enabled: body.enabled !== false,
+        metadata: {
+          enforceOrder: body.enforceOrder === true,
+          maxDurationMs: typeof body.maxDurationMs === "number" && body.maxDurationMs > 0 ? body.maxDurationMs : 60000,
+          failAction: body.failAction && VALID_VERDICTS.includes(body.failAction) ? body.failAction : "block",
+        },
       });
-      res.status(201).json(path);
+      res.status(201).json(tp);
     } catch (error) {
       logger.child("routes").error("Create trusted path error", { error: String(error) });
       res.status(500).json({ message: "Failed to create trusted path" });
@@ -300,26 +316,19 @@ export function registerBrowserDefenseRoutes(app: Express): void {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
       const body = req.body;
-      const sanitized: Record<string, unknown> = {};
+      const updates: Record<string, unknown> = {};
       if (body.name !== undefined) {
         if (typeof body.name !== "string") return res.status(400).json({ message: "name must be a string" });
-        sanitized.name = body.name;
+        updates.name = body.name;
       }
       if (body.description !== undefined)
-        sanitized.description = typeof body.description === "string" ? body.description : "";
-      if (body.enforceOrder !== undefined) sanitized.enforceOrder = body.enforceOrder === true;
-      if (body.maxDurationMs !== undefined) {
-        if (typeof body.maxDurationMs !== "number" || body.maxDurationMs < 1)
-          return res.status(400).json({ message: "maxDurationMs must be a positive number" });
-        sanitized.maxDurationMs = body.maxDurationMs;
+        updates.description = typeof body.description === "string" ? body.description : "";
+      if (body.enabled !== undefined) updates.enabled = body.enabled === true;
+      if (body.steps !== undefined) {
+        if (!Array.isArray(body.steps)) return res.status(400).json({ message: "steps must be an array" });
+        updates.steps = body.steps;
       }
-      if (body.failAction !== undefined) {
-        if (!VALID_VERDICTS.includes(body.failAction))
-          return res.status(400).json({ message: `failAction must be one of: ${VALID_VERDICTS.join(", ")}` });
-        sanitized.failAction = body.failAction;
-      }
-      if (body.enabled !== undefined) sanitized.enabled = body.enabled === true;
-      const updated = updateTrustedPath(orgId, id, sanitized as Parameters<typeof updateTrustedPath>[2]);
+      const updated = await storage.updateBrowserTrustedPath(id, orgId, updates);
       if (!updated) return res.status(404).json({ message: "Trusted path not found" });
       res.json(updated);
     } catch (error) {
@@ -332,7 +341,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
-      const deleted = deleteTrustedPath(orgId, id);
+      const deleted = await storage.deleteBrowserTrustedPath(id, orgId);
       if (!deleted) return res.status(404).json({ message: "Trusted path not found" });
       res.json({ message: "Trusted path deleted" });
     } catch (error) {
@@ -341,6 +350,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     }
   });
 
+  // Injection patterns — stateless reference data, kept on engine
   app.get("/api/browser-defense/injection-patterns", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -381,6 +391,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     }
   });
 
+  // Egress evaluation — stateless computation, kept on engine
   app.post("/api/browser-defense/evaluate-egress", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);

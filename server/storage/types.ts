@@ -250,6 +250,88 @@ import {
   type InsertWarRoomActionItem,
   type WarRoomHandoff,
   type InsertWarRoomHandoff,
+  type NativeSensor,
+  type InsertNativeSensor,
+  type DetectionRule,
+  type InsertDetectionRule,
+  type SensorEvent,
+  type InsertSensorEvent,
+  type DetectionAlert,
+  type InsertDetectionAlert,
+  type DarkWebExposure,
+  type InsertDarkWebExposure,
+  type DarkWebMonitoringConfig,
+  type InsertDarkWebMonitoringConfig,
+  type DarkWebScanHistoryEntry,
+  type InsertDarkWebScanHistoryEntry,
+  type CollectorInstance,
+  type InsertCollectorInstance,
+  type CollectorEvent,
+  type InsertCollectorEvent,
+  type CollectorScan,
+  type InsertCollectorScan,
+  type ChaosSimulation,
+  type InsertChaosSimulation,
+  type ChaosSchedule,
+  type InsertChaosSchedule,
+  type DnsEvent,
+  type InsertDnsEvent,
+  type DnsFinding,
+  type InsertDnsFinding,
+  type PassiveDnsRecord,
+  type InsertPassiveDnsRecord,
+  type SecurityGraphAsset,
+  type InsertSecurityGraphAsset,
+  type SecurityGraphRelationship,
+  type InsertSecurityGraphRelationship,
+  type TrustCenterArtifact,
+  type InsertTrustCenterArtifact,
+  type TrustCenterDownload,
+  type InsertTrustCenterDownload,
+  type PolicyPackActivation,
+  type InsertPolicyPackActivation,
+  type MarketplaceInstance,
+  type InsertMarketplaceInstance,
+  type MarketplaceWebhookEvent,
+  type InsertMarketplaceWebhookEvent,
+  type MarketplaceDeadLetter,
+  type InsertMarketplaceDeadLetter,
+  type MarketplaceSyncHistoryEntry,
+  type InsertMarketplaceSyncHistoryEntry,
+  type CrossCuttingEvidence,
+  type InsertCrossCuttingEvidence,
+  type CrossCuttingDriftRecord,
+  type InsertCrossCuttingDriftRecord,
+  type CrossCuttingOverride,
+  type InsertCrossCuttingOverride,
+  type JitAccessRequest,
+  type InsertJitAccessRequest,
+  type AdversarialTestExecution,
+  type InsertAdversarialTestExecution,
+  type AdversarialTestSchedule,
+  type InsertAdversarialTestSchedule,
+  type AdversarialRemediation,
+  type InsertAdversarialRemediation,
+  type AgentToolInvocation,
+  type InsertAgentToolInvocation,
+  type AgentToolAnomaly,
+  type InsertAgentToolAnomaly,
+  type AgentToolPolicy,
+  type InsertAgentToolPolicy,
+  type AgentTrustBoundaryRule,
+  type InsertAgentTrustBoundaryRule,
+  type BrowserDefenseSession,
+  type InsertBrowserDefenseSession,
+  type BrowserEgressRule,
+  type InsertBrowserEgressRule,
+  type BrowserTrustedPath,
+  type InsertBrowserTrustedPath,
+  type RuntimeGuardrailPolicy,
+  type InsertRuntimeGuardrailPolicy,
+  type RuntimeGuardrailDecision,
+  type InsertRuntimeGuardrailDecision,
+  type RuntimeGuardrailOverride,
+  type InsertRuntimeGuardrailOverride,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -261,7 +343,10 @@ export interface IStorage {
   searchAlerts(query: string, orgId?: string): Promise<Alert[]>;
   getAlertsByIncident(incidentId: string): Promise<Alert[]>;
   findAlertByDedup(orgId: string | null, source: string, sourceEventId: string): Promise<Alert | undefined>;
-  upsertAlert(alert: InsertAlert, dedupWindowMinutes?: number): Promise<{ alert: Alert; isNew: boolean; isDuplicate: boolean }>;
+  upsertAlert(
+    alert: InsertAlert,
+    dedupWindowMinutes?: number,
+  ): Promise<{ alert: Alert; isNew: boolean; isDuplicate: boolean }>;
 
   getAlertsPaginated(params: {
     orgId?: string;
@@ -1145,4 +1230,321 @@ export interface IStorage {
   getWarRoomHandoffs(warRoomId: string): Promise<WarRoomHandoff[]>;
   getWarRoomHandoff(id: string): Promise<WarRoomHandoff | undefined>;
   updateWarRoomHandoff(id: string, data: Partial<WarRoomHandoff>): Promise<WarRoomHandoff | undefined>;
+
+  // Native Sensors
+  getNativeSensors(orgId: string): Promise<NativeSensor[]>;
+  getNativeSensor(id: string): Promise<NativeSensor | undefined>;
+  createNativeSensor(sensor: InsertNativeSensor): Promise<NativeSensor>;
+  updateNativeSensor(id: string, updates: Partial<InsertNativeSensor>): Promise<NativeSensor | undefined>;
+  deleteNativeSensor(id: string): Promise<boolean>;
+  countNativeSensors(orgId: string): Promise<number>;
+
+  // Detection Rules
+  getDetectionRules(orgId: string): Promise<DetectionRule[]>;
+  getDetectionRule(id: string): Promise<DetectionRule | undefined>;
+  createDetectionRule(rule: InsertDetectionRule): Promise<DetectionRule>;
+  updateDetectionRule(id: string, updates: Partial<InsertDetectionRule>): Promise<DetectionRule | undefined>;
+  deleteDetectionRule(id: string): Promise<boolean>;
+  countDetectionRules(orgId: string): Promise<number>;
+
+  // Sensor Events
+  getSensorEvents(orgId: string, limit?: number, offset?: number): Promise<SensorEvent[]>;
+  getSensorEventsBySensor(sensorId: string, limit?: number): Promise<SensorEvent[]>;
+  createSensorEvent(event: InsertSensorEvent): Promise<SensorEvent>;
+  countSensorEvents(orgId: string): Promise<number>;
+
+  // Detection Alerts
+  getDetectionAlerts(orgId: string, limit?: number, offset?: number): Promise<DetectionAlert[]>;
+  getDetectionAlertsByRule(ruleId: string): Promise<DetectionAlert[]>;
+  createDetectionAlert(alert: InsertDetectionAlert): Promise<DetectionAlert>;
+  countDetectionAlerts(orgId: string): Promise<number>;
+  countDetectionAlertsByRule(ruleId: string): Promise<number>;
+
+  // Dark Web Monitoring
+  getDarkWebExposures(orgId: string): Promise<DarkWebExposure[]>;
+  getDarkWebExposure(id: string): Promise<DarkWebExposure | undefined>;
+  createDarkWebExposure(item: InsertDarkWebExposure): Promise<DarkWebExposure>;
+  updateDarkWebExposure(id: string, updates: Partial<InsertDarkWebExposure>): Promise<DarkWebExposure | undefined>;
+  deleteDarkWebExposure(id: string): Promise<boolean>;
+  countDarkWebExposures(orgId: string): Promise<number>;
+  countDarkWebExposuresByStatus(orgId: string, status: string): Promise<number>;
+  getDarkWebMonitoringConfig(orgId: string): Promise<DarkWebMonitoringConfig | undefined>;
+  upsertDarkWebMonitoringConfig(
+    orgId: string,
+    data: Partial<InsertDarkWebMonitoringConfig>,
+  ): Promise<DarkWebMonitoringConfig>;
+  getDarkWebScanHistory(orgId: string, limit?: number): Promise<DarkWebScanHistoryEntry[]>;
+  createDarkWebScanHistoryEntry(entry: InsertDarkWebScanHistoryEntry): Promise<DarkWebScanHistoryEntry>;
+  updateDarkWebScanHistoryEntry(
+    id: string,
+    updates: Partial<InsertDarkWebScanHistoryEntry>,
+  ): Promise<DarkWebScanHistoryEntry | undefined>;
+
+  // Collectors
+  getCollectorInstances(orgId: string): Promise<CollectorInstance[]>;
+  getCollectorInstance(id: string): Promise<CollectorInstance | undefined>;
+  createCollectorInstance(instance: InsertCollectorInstance): Promise<CollectorInstance>;
+  updateCollectorInstance(
+    id: string,
+    updates: Partial<InsertCollectorInstance>,
+  ): Promise<CollectorInstance | undefined>;
+  deleteCollectorInstance(id: string): Promise<boolean>;
+  countCollectorInstances(orgId: string): Promise<number>;
+  getCollectorEvents(orgId: string, limit?: number, offset?: number): Promise<CollectorEvent[]>;
+  getCollectorEventsByInstance(instanceId: string, limit?: number): Promise<CollectorEvent[]>;
+  createCollectorEvent(event: InsertCollectorEvent): Promise<CollectorEvent>;
+  countCollectorEvents(orgId: string): Promise<number>;
+  getCollectorScans(orgId: string, limit?: number): Promise<CollectorScan[]>;
+  createCollectorScan(scan: InsertCollectorScan): Promise<CollectorScan>;
+  updateCollectorScan(id: string, updates: Partial<InsertCollectorScan>): Promise<CollectorScan | undefined>;
+
+  // Chaos Engineering
+  getChaosSimulations(orgId: string): Promise<ChaosSimulation[]>;
+  getChaosSimulation(id: string): Promise<ChaosSimulation | undefined>;
+  createChaosSimulation(sim: InsertChaosSimulation): Promise<ChaosSimulation>;
+  updateChaosSimulation(id: string, updates: Partial<InsertChaosSimulation>): Promise<ChaosSimulation | undefined>;
+  deleteChaosSimulation(id: string): Promise<boolean>;
+  countChaosSimulations(orgId: string): Promise<number>;
+  getChaosSchedules(orgId: string): Promise<ChaosSchedule[]>;
+  getChaosSchedule(id: string): Promise<ChaosSchedule | undefined>;
+  createChaosSchedule(sched: InsertChaosSchedule): Promise<ChaosSchedule>;
+  updateChaosSchedule(id: string, updates: Partial<InsertChaosSchedule>): Promise<ChaosSchedule | undefined>;
+  deleteChaosSchedule(id: string): Promise<boolean>;
+
+  // DNS Security
+  getDnsEvents(orgId: string, limit?: number, offset?: number): Promise<DnsEvent[]>;
+  createDnsEvent(event: InsertDnsEvent): Promise<DnsEvent>;
+  countDnsEvents(orgId: string): Promise<number>;
+  countSuspiciousDnsEvents(orgId: string): Promise<number>;
+  getDnsFindings(orgId: string, limit?: number): Promise<DnsFinding[]>;
+  getDnsFinding(id: string): Promise<DnsFinding | undefined>;
+  createDnsFinding(finding: InsertDnsFinding): Promise<DnsFinding>;
+  updateDnsFinding(id: string, updates: Partial<InsertDnsFinding>): Promise<DnsFinding | undefined>;
+  countDnsFindings(orgId: string): Promise<number>;
+  countDnsFindingsByStatus(orgId: string, status: string): Promise<number>;
+  getPassiveDnsRecords(orgId: string, limit?: number): Promise<PassiveDnsRecord[]>;
+  getPassiveDnsRecordsByDomain(orgId: string, domain: string): Promise<PassiveDnsRecord[]>;
+  createPassiveDnsRecord(record: InsertPassiveDnsRecord): Promise<PassiveDnsRecord>;
+  countPassiveDnsRecords(orgId: string): Promise<number>;
+
+  // Security Graph
+  getSecurityGraphAssets(orgId: string): Promise<SecurityGraphAsset[]>;
+  getSecurityGraphAssetsByType(orgId: string, type: string): Promise<SecurityGraphAsset[]>;
+  getSecurityGraphAsset(id: string, orgId: string): Promise<SecurityGraphAsset | undefined>;
+  getSecurityGraphAssetByResolutionKey(orgId: string, resolutionKey: string): Promise<SecurityGraphAsset | undefined>;
+  createSecurityGraphAsset(data: InsertSecurityGraphAsset): Promise<SecurityGraphAsset>;
+  updateSecurityGraphAsset(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertSecurityGraphAsset>,
+  ): Promise<SecurityGraphAsset | undefined>;
+  deleteSecurityGraphAsset(id: string, orgId: string): Promise<boolean>;
+  countSecurityGraphAssets(orgId: string): Promise<number>;
+  getSecurityGraphRelationships(orgId: string): Promise<SecurityGraphRelationship[]>;
+  getSecurityGraphRelationship(id: string, orgId: string): Promise<SecurityGraphRelationship | undefined>;
+  getSecurityGraphRelationshipsByAsset(assetId: string): Promise<SecurityGraphRelationship[]>;
+  createSecurityGraphRelationship(data: InsertSecurityGraphRelationship): Promise<SecurityGraphRelationship>;
+  deleteSecurityGraphRelationship(id: string, orgId: string): Promise<boolean>;
+  countSecurityGraphRelationships(orgId: string): Promise<number>;
+
+  // Trust Center
+  getTrustCenterArtifacts(orgId: string, category?: string): Promise<TrustCenterArtifact[]>;
+  getTrustCenterArtifact(id: string, orgId: string): Promise<TrustCenterArtifact | undefined>;
+  createTrustCenterArtifact(data: InsertTrustCenterArtifact): Promise<TrustCenterArtifact>;
+  updateTrustCenterArtifact(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertTrustCenterArtifact>,
+  ): Promise<TrustCenterArtifact | undefined>;
+  deleteTrustCenterArtifact(id: string, orgId: string): Promise<boolean>;
+  countTrustCenterArtifacts(orgId: string): Promise<number>;
+  getTrustCenterDownloads(orgId: string, limit?: number): Promise<TrustCenterDownload[]>;
+  createTrustCenterDownload(data: InsertTrustCenterDownload): Promise<TrustCenterDownload>;
+  countTrustCenterDownloads(orgId: string): Promise<number>;
+
+  // Policy Packs
+  getPolicyPackActivations(orgId: string): Promise<PolicyPackActivation[]>;
+  getPolicyPackActivation(orgId: string, packId: string): Promise<PolicyPackActivation | undefined>;
+  getPolicyPackActivationById(id: string, orgId: string): Promise<PolicyPackActivation | undefined>;
+  createPolicyPackActivation(data: InsertPolicyPackActivation): Promise<PolicyPackActivation>;
+  updatePolicyPackActivation(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertPolicyPackActivation>,
+  ): Promise<PolicyPackActivation | undefined>;
+  deletePolicyPackActivation(id: string, orgId: string): Promise<boolean>;
+  countPolicyPackActivations(orgId: string): Promise<number>;
+
+  // Marketplace
+  getMarketplaceInstances(orgId: string): Promise<MarketplaceInstance[]>;
+  getMarketplaceInstance(id: string, orgId: string): Promise<MarketplaceInstance | undefined>;
+  createMarketplaceInstance(data: InsertMarketplaceInstance): Promise<MarketplaceInstance>;
+  updateMarketplaceInstance(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertMarketplaceInstance>,
+  ): Promise<MarketplaceInstance | undefined>;
+  deleteMarketplaceInstance(id: string, orgId: string): Promise<boolean>;
+  countMarketplaceInstances(orgId: string): Promise<number>;
+  getMarketplaceWebhookEvents(orgId: string, instanceId?: string, limit?: number): Promise<MarketplaceWebhookEvent[]>;
+  createMarketplaceWebhookEvent(data: InsertMarketplaceWebhookEvent): Promise<MarketplaceWebhookEvent>;
+  getMarketplaceDeadLetters(orgId: string, instanceId?: string, limit?: number): Promise<MarketplaceDeadLetter[]>;
+  getMarketplaceDeadLetter(id: string, orgId: string): Promise<MarketplaceDeadLetter | undefined>;
+  createMarketplaceDeadLetter(data: InsertMarketplaceDeadLetter): Promise<MarketplaceDeadLetter>;
+  updateMarketplaceDeadLetter(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertMarketplaceDeadLetter>,
+  ): Promise<MarketplaceDeadLetter | undefined>;
+  getMarketplaceSyncHistory(orgId: string, instanceId: string, limit?: number): Promise<MarketplaceSyncHistoryEntry[]>;
+  createMarketplaceSyncHistoryEntry(data: InsertMarketplaceSyncHistoryEntry): Promise<MarketplaceSyncHistoryEntry>;
+  updateMarketplaceSyncHistoryEntry(
+    id: string,
+    updates: Partial<InsertMarketplaceSyncHistoryEntry>,
+  ): Promise<MarketplaceSyncHistoryEntry | undefined>;
+
+  // Cross-Cutting
+  getCrossCuttingEvidenceList(orgId: string, evidenceType?: string, limit?: number): Promise<CrossCuttingEvidence[]>;
+  getCrossCuttingEvidenceItem(id: string, orgId: string): Promise<CrossCuttingEvidence | undefined>;
+  createCrossCuttingEvidenceItem(data: InsertCrossCuttingEvidence): Promise<CrossCuttingEvidence>;
+  updateCrossCuttingEvidenceItem(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertCrossCuttingEvidence>,
+  ): Promise<CrossCuttingEvidence | undefined>;
+  countCrossCuttingEvidence(orgId: string): Promise<number>;
+  getCrossCuttingDriftRecords(orgId: string, driftType?: string, limit?: number): Promise<CrossCuttingDriftRecord[]>;
+  getCrossCuttingDriftRecord(id: string, orgId: string): Promise<CrossCuttingDriftRecord | undefined>;
+  createCrossCuttingDriftRecord(data: InsertCrossCuttingDriftRecord): Promise<CrossCuttingDriftRecord>;
+  updateCrossCuttingDriftRecord(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertCrossCuttingDriftRecord>,
+  ): Promise<CrossCuttingDriftRecord | undefined>;
+  countCrossCuttingDrift(orgId: string): Promise<number>;
+  getCrossCuttingOverrides(orgId: string, overrideType?: string, limit?: number): Promise<CrossCuttingOverride[]>;
+  getCrossCuttingOverride(id: string, orgId: string): Promise<CrossCuttingOverride | undefined>;
+  createCrossCuttingOverride(data: InsertCrossCuttingOverride): Promise<CrossCuttingOverride>;
+  updateCrossCuttingOverride(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertCrossCuttingOverride>,
+  ): Promise<CrossCuttingOverride | undefined>;
+  deleteCrossCuttingOverride(id: string, orgId: string): Promise<boolean>;
+  countCrossCuttingOverrides(orgId: string): Promise<number>;
+
+  // JIT Access
+  getJitAccessRequests(orgId: string, limit?: number): Promise<JitAccessRequest[]>;
+  getJitAccessRequest(id: string, orgId: string): Promise<JitAccessRequest | undefined>;
+  getJitAccessRequestsByRequester(orgId: string, requesterId: string, limit?: number): Promise<JitAccessRequest[]>;
+  createJitAccessRequest(data: InsertJitAccessRequest): Promise<JitAccessRequest>;
+  updateJitAccessRequest(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertJitAccessRequest>,
+  ): Promise<JitAccessRequest | undefined>;
+  countJitAccessRequests(orgId: string): Promise<number>;
+  countPendingJitAccessRequests(orgId: string): Promise<number>;
+
+  // Adversarial Testing
+  getAdversarialExecutions(orgId: string, limit?: number): Promise<AdversarialTestExecution[]>;
+  getAdversarialExecution(id: string, orgId: string): Promise<AdversarialTestExecution | undefined>;
+  createAdversarialExecution(data: InsertAdversarialTestExecution): Promise<AdversarialTestExecution>;
+  updateAdversarialExecution(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertAdversarialTestExecution>,
+  ): Promise<AdversarialTestExecution | undefined>;
+  countAdversarialExecutions(orgId: string): Promise<number>;
+  getAdversarialSchedules(orgId: string): Promise<AdversarialTestSchedule[]>;
+  getAdversarialSchedule(id: string, orgId: string): Promise<AdversarialTestSchedule | undefined>;
+  createAdversarialSchedule(data: InsertAdversarialTestSchedule): Promise<AdversarialTestSchedule>;
+  updateAdversarialSchedule(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertAdversarialTestSchedule>,
+  ): Promise<AdversarialTestSchedule | undefined>;
+  deleteAdversarialSchedule(id: string, orgId: string): Promise<boolean>;
+  getAdversarialRemediations(orgId: string, status?: string): Promise<AdversarialRemediation[]>;
+  getAdversarialRemediation(id: string, orgId: string): Promise<AdversarialRemediation | undefined>;
+  createAdversarialRemediation(data: InsertAdversarialRemediation): Promise<AdversarialRemediation>;
+  updateAdversarialRemediation(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertAdversarialRemediation>,
+  ): Promise<AdversarialRemediation | undefined>;
+
+  // Agent Tool Security
+  getAgentToolInvocations(orgId: string, limit?: number): Promise<AgentToolInvocation[]>;
+  getAgentToolInvocation(id: string, orgId: string): Promise<AgentToolInvocation | undefined>;
+  createAgentToolInvocation(data: InsertAgentToolInvocation): Promise<AgentToolInvocation>;
+  countAgentToolInvocations(orgId: string): Promise<number>;
+  getAgentToolAnomalies(orgId: string, unacknowledgedOnly?: boolean): Promise<AgentToolAnomaly[]>;
+  acknowledgeAgentToolAnomaly(id: string, orgId: string, acknowledgedBy: string): Promise<AgentToolAnomaly | undefined>;
+  createAgentToolAnomaly(data: InsertAgentToolAnomaly): Promise<AgentToolAnomaly>;
+  countAgentToolAnomalies(orgId: string, unacknowledgedOnly?: boolean): Promise<number>;
+  getAgentToolPoliciesList(orgId: string): Promise<AgentToolPolicy[]>;
+  getAgentToolPolicyByTool(orgId: string, toolId: string): Promise<AgentToolPolicy | undefined>;
+  upsertAgentToolPolicy(data: InsertAgentToolPolicy): Promise<AgentToolPolicy>;
+  getAgentTrustBoundaryRulesList(orgId: string): Promise<AgentTrustBoundaryRule[]>;
+  getAgentTrustBoundaryRule(id: string, orgId: string): Promise<AgentTrustBoundaryRule | undefined>;
+  createAgentTrustBoundaryRule(data: InsertAgentTrustBoundaryRule): Promise<AgentTrustBoundaryRule>;
+  updateAgentTrustBoundaryRule(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertAgentTrustBoundaryRule>,
+  ): Promise<AgentTrustBoundaryRule | undefined>;
+  deleteAgentTrustBoundaryRule(id: string, orgId: string): Promise<boolean>;
+
+  // Browser Defense
+  getBrowserSessions(orgId: string, state?: string): Promise<BrowserDefenseSession[]>;
+  getBrowserSession(id: string, orgId: string): Promise<BrowserDefenseSession | undefined>;
+  createBrowserSession(data: InsertBrowserDefenseSession): Promise<BrowserDefenseSession>;
+  updateBrowserSession(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertBrowserDefenseSession>,
+  ): Promise<BrowserDefenseSession | undefined>;
+  countBrowserSessions(orgId: string, state?: string): Promise<number>;
+  getBrowserEgressRules(orgId: string): Promise<BrowserEgressRule[]>;
+  getBrowserEgressRule(id: string, orgId: string): Promise<BrowserEgressRule | undefined>;
+  createBrowserEgressRule(data: InsertBrowserEgressRule): Promise<BrowserEgressRule>;
+  updateBrowserEgressRule(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertBrowserEgressRule>,
+  ): Promise<BrowserEgressRule | undefined>;
+  deleteBrowserEgressRule(id: string, orgId: string): Promise<boolean>;
+  getBrowserTrustedPaths(orgId: string): Promise<BrowserTrustedPath[]>;
+  getBrowserTrustedPath(id: string, orgId: string): Promise<BrowserTrustedPath | undefined>;
+  createBrowserTrustedPath(data: InsertBrowserTrustedPath): Promise<BrowserTrustedPath>;
+  updateBrowserTrustedPath(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertBrowserTrustedPath>,
+  ): Promise<BrowserTrustedPath | undefined>;
+  deleteBrowserTrustedPath(id: string, orgId: string): Promise<boolean>;
+
+  // Runtime Guardrails
+  getRuntimePolicies(orgId: string): Promise<RuntimeGuardrailPolicy[]>;
+  getRuntimePolicy(id: string, orgId: string): Promise<RuntimeGuardrailPolicy | undefined>;
+  createRuntimePolicy(data: InsertRuntimeGuardrailPolicy): Promise<RuntimeGuardrailPolicy>;
+  updateRuntimePolicy(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertRuntimeGuardrailPolicy>,
+  ): Promise<RuntimeGuardrailPolicy | undefined>;
+  deleteRuntimePolicy(id: string, orgId: string): Promise<boolean>;
+  countRuntimePolicies(orgId: string): Promise<number>;
+  getRuntimeDecisions(orgId: string, limit?: number): Promise<RuntimeGuardrailDecision[]>;
+  createRuntimeDecision(data: InsertRuntimeGuardrailDecision): Promise<RuntimeGuardrailDecision>;
+  countRuntimeDecisions(orgId: string): Promise<number>;
+  getRuntimeOverrides(orgId: string, status?: string): Promise<RuntimeGuardrailOverride[]>;
+  getRuntimeOverride(id: string, orgId: string): Promise<RuntimeGuardrailOverride | undefined>;
+  createRuntimeOverride(data: InsertRuntimeGuardrailOverride): Promise<RuntimeGuardrailOverride>;
+  updateRuntimeOverride(
+    id: string,
+    orgId: string,
+    updates: Partial<InsertRuntimeGuardrailOverride>,
+  ): Promise<RuntimeGuardrailOverride | undefined>;
 }

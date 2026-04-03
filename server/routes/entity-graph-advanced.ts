@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { getOrgId, logger, p, storage } from "./shared";
 import { db } from "../db";
+import * as graphSnapshotStorage from "../storage/graph-snapshots";
 import {
   entities,
   alertEntities,
@@ -309,36 +311,28 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
         const graph = await getEntityGraphWithEdges(orgId, 200);
         const userId = (req as any).user?.id || "unknown";
 
-        // Store snapshot in-memory for now (would be DB in production)
-        const snapshot = {
-          id: `snap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        const graphData = {
+          nodes: graph.nodes.map((n) => ({
+            id: n.id,
+            type: n.type,
+            value: n.value,
+            displayName: n.displayName,
+            riskScore: n.riskScore,
+            alertCount: n.alertCount,
+            connections: n.connections,
+          })),
+          edges: graph.edges,
+        };
+
+        const snapshot = await graphSnapshotStorage.createGraphSnapshot({
           orgId,
           name: String(name).slice(0, 200),
           description: description ? String(description).slice(0, 500) : null,
+          graphData,
           nodeCount: graph.nodes.length,
           edgeCount: graph.edges.length,
           createdBy: userId,
-          createdAt: new Date().toISOString(),
-          data: {
-            nodes: graph.nodes.map((n) => ({
-              id: n.id,
-              type: n.type,
-              value: n.value,
-              displayName: n.displayName,
-              riskScore: n.riskScore,
-              alertCount: n.alertCount,
-              connections: n.connections,
-            })),
-            edges: graph.edges,
-          },
-        };
-
-        // Store in global snapshots map (keyed by orgId)
-        if (!graphSnapshots.has(orgId)) graphSnapshots.set(orgId, []);
-        const orgSnapshots = graphSnapshots.get(orgId)!;
-        orgSnapshots.push(snapshot);
-        // Keep max 20 snapshots per org
-        if (orgSnapshots.length > 20) orgSnapshots.shift();
+        });
 
         res.status(201).json({
           id: snapshot.id,
@@ -366,7 +360,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const orgSnapshots = graphSnapshots.get(orgId) || [];
+        const orgSnapshots = await graphSnapshotStorage.getGraphSnapshots(orgId);
         res.json(
           orgSnapshots.map((s) => ({
             id: s.id,
@@ -395,13 +389,13 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const snapshotId = String(req.params.id);
-        const orgSnapshots = graphSnapshots.get(orgId) || [];
-        const snapshot = orgSnapshots.find((s) => s.id === snapshotId);
-        if (!snapshot) return res.status(404).json({ message: "Snapshot not found" });
+        const snapshot = await graphSnapshotStorage.getGraphSnapshot(snapshotId);
+        if (!snapshot || snapshot.orgId !== orgId) return res.status(404).json({ message: "Snapshot not found" });
 
+        const snapshotData = (snapshot.graphData as any) || { nodes: [], edges: [] };
         const currentGraph = await getEntityGraphWithEdges(orgId, 200);
 
-        const snapshotNodeIds = new Set(snapshot.data.nodes.map((n: any) => n.id));
+        const snapshotNodeIds = new Set(snapshotData.nodes.map((n: any) => n.id));
         const currentNodeIds = new Set(currentGraph.nodes.map((n) => n.id));
 
         const addedNodes = currentGraph.nodes
@@ -414,7 +408,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
             riskScore: n.riskScore,
           }));
 
-        const removedNodes = snapshot.data.nodes
+        const removedNodes = snapshotData.nodes
           .filter((n: any) => !currentNodeIds.has(n.id))
           .map((n: any) => ({
             id: n.id,
@@ -433,7 +427,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
           change: number;
         }[] = [];
 
-        const snapshotNodeMap = new Map(snapshot.data.nodes.map((n: any) => [n.id, n]));
+        const snapshotNodeMap = new Map(snapshotData.nodes.map((n: any) => [n.id, n]));
         for (const currentNode of currentGraph.nodes) {
           const oldNode = snapshotNodeMap.get(currentNode.id) as any;
           if (!oldNode) continue;
@@ -452,7 +446,9 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
         }
 
         // Edge diff
-        const snapshotEdgeKeys = new Set(snapshot.data.edges.map((e: any) => [e.source, e.target].sort().join(":")));
+        const snapshotEdgeKeys = new Set<string>(
+          snapshotData.edges.map((e: any) => [e.source, e.target].sort().join(":")),
+        );
         const currentEdgeKeys = new Set(currentGraph.edges.map((e) => [e.source, e.target].sort().join(":")));
 
         const addedEdgeCount = Array.from(currentEdgeKeys).filter((k) => !snapshotEdgeKeys.has(k)).length;
@@ -2268,19 +2264,3 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
     },
   );
 }
-
-// In-memory snapshot storage (per org)
-const graphSnapshots = new Map<
-  string,
-  {
-    id: string;
-    orgId: string;
-    name: string;
-    description: string | null;
-    nodeCount: number;
-    edgeCount: number;
-    createdBy: string;
-    createdAt: string;
-    data: { nodes: any[]; edges: any[] };
-  }[]
->();

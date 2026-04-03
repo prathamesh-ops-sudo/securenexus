@@ -1193,7 +1193,8 @@ export function registerThreatHuntingRoutes(app: Express): void {
       if (queryLower.includes("file") || queryLower.includes("registry")) dataSources.push("file_events");
       if (dataSources.length === 0) dataSources.push("alerts", "ingestion_logs");
 
-      const estimatedRows = Math.floor(Math.random() * 10000) + 100;
+      // Estimate result set size based on data sources
+      const estimatedRows = dataSources.length * 500;
       const estimatedTimeMs = dataSources.length * 500 + estimatedRows * 0.1;
 
       const plan = {

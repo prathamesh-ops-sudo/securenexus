@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { randomBytes } from "crypto";
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
@@ -6,6 +8,7 @@ import { runCspmScan, runDspmScan, createDriftBaseline, runDriftDetection, remed
 import { calculateEndpointRisk, generateTelemetry, seedEndpointAssets } from "../endpoint-telemetry";
 import { calculatePostureScore } from "../posture-engine";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
+import * as endpointStorage from "../storage/endpoint-extras";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 
 export function registerEndpointsRoutes(app: Express): void {
@@ -879,21 +882,6 @@ export function registerEndpointsRoutes(app: Express): void {
 
   // ─── 25.5 Scheduled Scanning ─────────────────────────────────────────────
 
-  const scanSchedules = new Map<
-    string,
-    {
-      id: string;
-      orgId: string;
-      accountId: string;
-      interval: "hourly" | "daily" | "weekly" | "monthly";
-      enabled: boolean;
-      lastScanAt: string | null;
-      nextScanAt: string;
-      createdAt: string;
-      updatedAt: string;
-    }
-  >();
-
   function computeNextScan(interval: string, from: Date = new Date()): string {
     const next = new Date(from);
     switch (interval) {
@@ -922,10 +910,7 @@ export function registerEndpointsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const schedules: any[] = [];
-        scanSchedules.forEach((s) => {
-          if (s.orgId === orgId) schedules.push(s);
-        });
+        const schedules = await endpointStorage.getEndpointScanSchedules(orgId);
         res.json(schedules);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch scan schedules" });
@@ -954,20 +939,15 @@ export function registerEndpointsRoutes(app: Express): void {
         const account = await storage.getCspmAccount(accountId);
         if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
 
-        const id = `sched-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        const schedule = {
-          id,
+        const schedule = await endpointStorage.createEndpointScanSchedule({
           orgId,
-          accountId,
-          interval: interval as "hourly" | "daily" | "weekly" | "monthly",
+          assetId: accountId,
+          scanType: interval,
+          cronExpression: interval,
           enabled: true,
-          lastScanAt: null,
-          nextScanAt: computeNextScan(interval),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
+          nextRunAt: new Date(computeNextScan(interval)),
+        });
 
-        scanSchedules.set(id, schedule);
         res.status(201).json(schedule);
       } catch (error) {
         logger.child("routes").error("Create schedule error", { error: String(error) });
@@ -985,21 +965,23 @@ export function registerEndpointsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const schedule = scanSchedules.get(req.params.id as string);
+        const schedule = await endpointStorage.getEndpointScanSchedule(req.params.id as string);
         if (!schedule || schedule.orgId !== orgId) {
           return res.status(404).json({ message: "Schedule not found" });
         }
 
+        const updates: Record<string, unknown> = {};
         if (req.body.interval && ["hourly", "daily", "weekly", "monthly"].includes(req.body.interval)) {
-          schedule.interval = req.body.interval;
-          schedule.nextScanAt = computeNextScan(req.body.interval);
+          updates.scanType = req.body.interval;
+          updates.cronExpression = req.body.interval;
+          updates.nextRunAt = new Date(computeNextScan(req.body.interval));
         }
         if (typeof req.body.enabled === "boolean") {
-          schedule.enabled = req.body.enabled;
+          updates.enabled = req.body.enabled;
         }
-        schedule.updatedAt = new Date().toISOString();
 
-        res.json(schedule);
+        const updated = await endpointStorage.updateEndpointScanSchedule(schedule.id, updates);
+        res.json(updated);
       } catch (error) {
         res.status(500).json({ message: "Failed to update schedule" });
       }
@@ -1015,11 +997,11 @@ export function registerEndpointsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const schedule = scanSchedules.get(req.params.id as string);
+        const schedule = await endpointStorage.getEndpointScanSchedule(req.params.id as string);
         if (!schedule || schedule.orgId !== orgId) {
           return res.status(404).json({ message: "Schedule not found" });
         }
-        scanSchedules.delete(req.params.id as string);
+        await endpointStorage.deleteEndpointScanSchedule(schedule.id);
         res.json({ message: "Schedule deleted" });
       } catch (error) {
         res.status(500).json({ message: "Failed to delete schedule" });
@@ -1028,26 +1010,6 @@ export function registerEndpointsRoutes(app: Express): void {
   );
 
   // ─── 25.6 Auto-Remediation Safety Controls ───────────────────────────────
-
-  const remediationSafetyRecords = new Map<
-    string,
-    {
-      id: string;
-      orgId: string;
-      accountId: string;
-      findingId: string | null;
-      playbookId: string;
-      resourceId: string;
-      mode: "dry_run" | "pending_approval" | "approved" | "executed" | "rolled_back";
-      dryRunResult: any;
-      approvedBy: string | null;
-      approvedAt: string | null;
-      executedAt: string | null;
-      rollbackAvailable: boolean;
-      rollbackExecutedAt: string | null;
-      createdAt: string;
-    }
-  >();
 
   app.post(
     "/api/cspm/remediation/dry-run",
@@ -1067,40 +1029,33 @@ export function registerEndpointsRoutes(app: Express): void {
         const account = await storage.getCspmAccount(accountId);
         if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
 
-        const id = `rem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const id = `rem-${Date.now()}-${randomBytes(3).toString("hex")}`;
         const dryRunResult = {
           wouldExecute: [
             { action: "Modify security group rules", impact: "medium", reversible: true },
             { action: "Enable encryption", impact: "low", reversible: false },
             { action: "Update IAM policy", impact: "high", reversible: true },
-          ].slice(0, Math.floor(Math.random() * 3) + 1),
+          ],
           estimatedDuration: "2-5 minutes",
           riskLevel: "medium",
           requiresDowntime: false,
           affectedResources: [resourceId],
         };
 
-        const record = {
+        const record = await endpointStorage.createCspmRemediationRecord({
           id,
           orgId,
           accountId,
           findingId: findingId || null,
           playbookId,
           resourceId,
-          mode: "dry_run" as const,
+          mode: "dry_run",
           dryRunResult,
-          approvedBy: null,
-          approvedAt: null,
-          executedAt: null,
           rollbackAvailable: true,
-          rollbackExecutedAt: null,
-          createdAt: new Date().toISOString(),
-        };
-
-        remediationSafetyRecords.set(id, record);
+        });
 
         res.json({
-          id,
+          id: record.id,
           mode: "dry_run",
           dryRunResult,
           nextSteps: ["Review the dry-run results", "Approve to execute", "Or dismiss"],
@@ -1121,7 +1076,7 @@ export function registerEndpointsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const record = remediationSafetyRecords.get(req.params.id as string);
+        const record = await endpointStorage.getCspmRemediationRecord(req.params.id as string);
         if (!record || record.orgId !== orgId) {
           return res.status(404).json({ message: "Remediation record not found" });
         }
@@ -1131,11 +1086,14 @@ export function registerEndpointsRoutes(app: Express): void {
         }
 
         const user = (req as any).user;
-        record.mode = "approved";
-        record.approvedBy = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Admin";
-        record.approvedAt = new Date().toISOString();
+        const approvedBy = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Admin";
+        const updated = await endpointStorage.updateCspmRemediationRecord(record.id, {
+          mode: "approved",
+          approvedBy,
+          approvedAt: new Date(),
+        });
 
-        res.json({ id: record.id, mode: "approved", approvedBy: record.approvedBy, approvedAt: record.approvedAt });
+        res.json({ id: record.id, mode: "approved", approvedBy, approvedAt: updated?.approvedAt });
       } catch (error) {
         res.status(500).json({ message: "Failed to approve remediation" });
       }
@@ -1151,7 +1109,7 @@ export function registerEndpointsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const record = remediationSafetyRecords.get(req.params.id as string);
+        const record = await endpointStorage.getCspmRemediationRecord(req.params.id as string);
         if (!record || record.orgId !== orgId) {
           return res.status(404).json({ message: "Remediation record not found" });
         }
@@ -1160,14 +1118,16 @@ export function registerEndpointsRoutes(app: Express): void {
           return res.status(400).json({ message: "Remediation must be approved before execution" });
         }
 
-        record.mode = "executed";
-        record.executedAt = new Date().toISOString();
-        record.rollbackAvailable = true;
+        const updated = await endpointStorage.updateCspmRemediationRecord(record.id, {
+          mode: "executed",
+          executedAt: new Date(),
+          rollbackAvailable: true,
+        });
 
         res.json({
           id: record.id,
           mode: "executed",
-          executedAt: record.executedAt,
+          executedAt: updated?.executedAt,
           rollbackAvailable: true,
           message: "Remediation executed successfully",
         });
@@ -1186,7 +1146,7 @@ export function registerEndpointsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const record = remediationSafetyRecords.get(req.params.id as string);
+        const record = await endpointStorage.getCspmRemediationRecord(req.params.id as string);
         if (!record || record.orgId !== orgId) {
           return res.status(404).json({ message: "Remediation record not found" });
         }
@@ -1195,14 +1155,16 @@ export function registerEndpointsRoutes(app: Express): void {
           return res.status(400).json({ message: "Remediation cannot be rolled back" });
         }
 
-        record.mode = "rolled_back";
-        record.rollbackExecutedAt = new Date().toISOString();
-        record.rollbackAvailable = false;
+        const updated = await endpointStorage.updateCspmRemediationRecord(record.id, {
+          mode: "rolled_back",
+          rollbackExecutedAt: new Date(),
+          rollbackAvailable: false,
+        });
 
         res.json({
           id: record.id,
           mode: "rolled_back",
-          rollbackExecutedAt: record.rollbackExecutedAt,
+          rollbackExecutedAt: updated?.rollbackExecutedAt,
           message: "Remediation rolled back successfully",
         });
       } catch (error) {
@@ -1220,11 +1182,8 @@ export function registerEndpointsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const records: any[] = [];
-        remediationSafetyRecords.forEach((r) => {
-          if (r.orgId === orgId) records.push(r);
-        });
-        res.json(records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+        const records = await endpointStorage.getCspmRemediationRecords(orgId);
+        res.json(records);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch safety records" });
       }
@@ -1861,8 +1820,8 @@ export function registerEndpointsRoutes(app: Express): void {
             runningProcesses.push({
               pid: 1000 + i * 37,
               name: processNames[i % processNames.length],
-              cpu: Math.round(Math.random() * 15 * 10) / 10,
-              memory: Math.round(Math.random() * 500),
+              cpu: Math.round((i % 15) * 10) / 10,
+              memory: (i % 10) * 50,
               user: i < 5 ? "SYSTEM" : "user",
             });
           }
@@ -2128,25 +2087,32 @@ export function registerEndpointsRoutes(app: Express): void {
         }
 
         // Custom groups
+        const customGroupRows = await endpointStorage.getEndpointGroups(orgId);
         const customGroups: any[] = [];
-        endpointGroups.forEach((g) => {
-          if (g.orgId === orgId) {
-            const matching = assets.filter((a: any) => {
-              if (g.groupBy === "os") return (a.os || "").toLowerCase() === (g.criteria.value || "").toLowerCase();
-              if (g.groupBy === "department") return ((a.tags || []) as string[]).includes(g.criteria.value || "");
-              return true;
-            });
-            customGroups.push({
-              ...g,
-              endpointCount: matching.length,
-              avgRiskScore:
-                matching.length > 0
-                  ? Math.round(matching.reduce((s: number, a: any) => s + (a.riskScore ?? 0), 0) / matching.length)
-                  : 0,
-              onlineCount: matching.filter((a: any) => a.agentStatus === "online").length,
-            });
-          }
-        });
+        for (const g of customGroupRows) {
+          const criteria = (g.criteria as Record<string, string>) || {};
+          const groupByVal = g.groupBy;
+          const matching = assets.filter((a: any) => {
+            if (groupByVal === "os") return (a.os || "").toLowerCase() === (criteria.value || "").toLowerCase();
+            if (groupByVal === "department") return ((a.tags || []) as string[]).includes(criteria.value || "");
+            return true;
+          });
+          customGroups.push({
+            id: g.id,
+            orgId: g.orgId,
+            name: g.name,
+            groupBy: g.groupBy,
+            criteria,
+            policies: g.policies,
+            createdAt: g.createdAt,
+            endpointCount: matching.length,
+            avgRiskScore:
+              matching.length > 0
+                ? Math.round(matching.reduce((s: number, a: any) => s + (a.riskScore ?? 0), 0) / matching.length)
+                : 0,
+            onlineCount: matching.filter((a: any) => a.agentStatus === "online").length,
+          });
+        }
 
         res.json({ autoGroups, customGroups });
       } catch (error) {
@@ -2168,17 +2134,13 @@ export function registerEndpointsRoutes(app: Express): void {
         const { name, groupBy, criteria, policies } = req.body;
         if (!name || !groupBy) return res.status(400).json({ message: "name and groupBy are required" });
 
-        const id = `grp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const group = {
-          id,
+        const group = await endpointStorage.createEndpointGroup({
           orgId,
           name,
-          groupBy: groupBy as "department" | "location" | "os" | "criticality" | "custom",
+          groupBy: groupBy as string,
           criteria: criteria || {},
           policies: policies || [],
-          createdAt: new Date().toISOString(),
-        };
-        endpointGroups.set(id, group);
+        });
         res.status(201).json(group);
       } catch (error) {
         res.status(500).json({ message: "Failed to create endpoint group" });
@@ -2195,9 +2157,9 @@ export function registerEndpointsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const group = endpointGroups.get(req.params.id as string);
+        const group = await endpointStorage.getEndpointGroup(req.params.id as string);
         if (!group || group.orgId !== orgId) return res.status(404).json({ message: "Group not found" });
-        endpointGroups.delete(req.params.id as string);
+        await endpointStorage.deleteEndpointGroup(group.id);
         res.json({ message: "Group deleted" });
       } catch (error) {
         res.status(500).json({ message: "Failed to delete endpoint group" });
@@ -2207,18 +2169,16 @@ export function registerEndpointsRoutes(app: Express): void {
 
   // ─── 26.4 Real-time Endpoint Status via Heartbeat ─────────────────────────
 
-  const heartbeatRecords = new Map<string, { assetId: string; lastHeartbeat: string; status: string; metadata: any }>();
-
   app.post("/api/endpoints/:id/heartbeat", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const asset = await storage.getEndpointAsset(p(req.params.id));
       if (!asset || asset.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
 
-      const now = new Date().toISOString();
-      heartbeatRecords.set(asset.id, {
+      const now = new Date();
+      await endpointStorage.upsertEndpointHeartbeat({
+        orgId,
         assetId: asset.id,
-        lastHeartbeat: now,
         status: "online",
         metadata: req.body.metadata || {},
       });
@@ -2226,10 +2186,10 @@ export function registerEndpointsRoutes(app: Express): void {
       // Update asset status to online and last seen
       await storage.updateEndpointAsset(p(req.params.id), {
         agentStatus: "online",
-        lastSeenAt: now,
+        lastSeenAt: now.toISOString(),
       } as any);
 
-      res.json({ acknowledged: true, timestamp: now });
+      res.json({ acknowledged: true, timestamp: now.toISOString() });
     } catch (error) {
       res.status(500).json({ message: "Failed to process heartbeat" });
     }
@@ -2249,28 +2209,30 @@ export function registerEndpointsRoutes(app: Express): void {
         const HEARTBEAT_TIMEOUT = 300000; // 5 minutes
         const CRITICAL_TIMEOUT = 900000; // 15 minutes
 
-        const statuses = assets.map((asset: any) => {
-          const hb = heartbeatRecords.get(asset.id);
-          const lastSeen = hb
-            ? new Date(hb.lastHeartbeat).getTime()
-            : asset.lastSeenAt
-              ? new Date(asset.lastSeenAt).getTime()
-              : 0;
-          const elapsed = now - lastSeen;
+        const statuses = await Promise.all(
+          assets.map(async (asset: any) => {
+            const hb = await endpointStorage.getEndpointHeartbeatByAsset(orgId, asset.id);
+            const lastSeen = hb
+              ? new Date(hb.lastHeartbeat!).getTime()
+              : asset.lastSeenAt
+                ? new Date(asset.lastSeenAt).getTime()
+                : 0;
+            const elapsed = now - lastSeen;
 
-          let realTimeStatus = "offline";
-          if (elapsed < HEARTBEAT_TIMEOUT) realTimeStatus = "online";
-          else if (elapsed < CRITICAL_TIMEOUT) realTimeStatus = "degraded";
+            let realTimeStatus = "offline";
+            if (elapsed < HEARTBEAT_TIMEOUT) realTimeStatus = "online";
+            else if (elapsed < CRITICAL_TIMEOUT) realTimeStatus = "degraded";
 
-          return {
-            assetId: asset.id,
-            hostname: asset.hostname,
-            realTimeStatus,
-            lastHeartbeat: hb?.lastHeartbeat || asset.lastSeenAt,
-            elapsedMs: elapsed,
-            isCritical: realTimeStatus === "offline" && (asset.riskScore ?? 0) > 50,
-          };
-        });
+            return {
+              assetId: asset.id,
+              hostname: asset.hostname,
+              realTimeStatus,
+              lastHeartbeat: hb?.lastHeartbeat || asset.lastSeenAt,
+              elapsedMs: elapsed,
+              isCritical: realTimeStatus === "offline" && (asset.riskScore ?? 0) > 50,
+            };
+          }),
+        );
 
         const alerts = statuses.filter((s) => s.isCritical);
 
@@ -2346,7 +2308,7 @@ export function registerEndpointsRoutes(app: Express): void {
             name: sw.name,
             version: sw.version,
             vendor: sw.vendor,
-            installedDate: new Date(Date.now() - Math.random() * 30 * 86400000).toISOString().split("T")[0],
+            installedDate: new Date(Date.now() - 15 * 86400000).toISOString().split("T")[0],
             cveCount: sw.cves,
             riskLevel: sw.risk,
           });

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { randomBytes } from "crypto";
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
@@ -68,7 +70,7 @@ export const oktaPlugin: ConnectorPlugin = {
     const r = raw as Record<string, any>;
     return {
       source: "Okta Identity",
-      sourceEventId: r.uuid || `okta_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      sourceEventId: r.uuid || `okta_${Date.now()}_${randomBytes(6).toString("hex")}`,
       title: r.displayMessage || r.eventType || "Okta Event",
       description: r.displayMessage || "",
       severity: mapSeverity(r.severity),

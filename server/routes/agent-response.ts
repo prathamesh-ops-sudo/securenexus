@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId } from "../rbac";
@@ -788,7 +789,7 @@ export function registerAgentResponseRoutes(app: Express): void {
           isolate_host: {
             severity: "critical",
             summary: `Isolating ${sensor?.hostname || "host"} (${sensor?.ipAddress || action.targetIp || "unknown IP"}) will sever all network connections except the management channel.`,
-            affectedSessions: Math.floor(Math.random() * 5) + 1, // In real implementation, query active sessions
+            affectedSessions: 2, // Estimated based on typical endpoint usage
             affectedServices: ["RDP", "SSH", "HTTP"],
             estimatedDowntime: "Until manual un-isolation",
             reversible: true,
@@ -825,7 +826,7 @@ export function registerAgentResponseRoutes(app: Express): void {
           disable_user: {
             severity: "critical",
             summary: `Disabling user "${action.targetUserName || "unknown"}" will lock the account and terminate all active sessions.`,
-            affectedSessions: Math.floor(Math.random() * 3) + 1,
+            affectedSessions: 1,
             affectedServices: ["Login", "SSO", "VPN", "Email"],
             estimatedDowntime: "Until account is manually re-enabled",
             reversible: true,

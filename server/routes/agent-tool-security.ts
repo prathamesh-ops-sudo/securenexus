@@ -1,22 +1,11 @@
 import type { Express } from "express";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
+import { storage } from "../storage";
 import {
   getToolCatalog,
   getToolById,
   verifyTool,
-  getToolInvocations,
-  getInvocationById,
-  recordInvocation,
-  getAnomalyDetections,
-  acknowledgeAnomaly,
-  getToolPolicies,
-  updateToolPolicy,
-  getTrustBoundaryRules,
-  createBoundaryRule,
-  updateBoundaryRule,
-  deleteBoundaryRule,
-  getAgentToolStats,
   type ToolRiskLevel,
   type TrustBoundary,
   type InvocationVerdict,
@@ -34,19 +23,32 @@ const VALID_ANOMALY_TYPES: AnomalyType[] = [
   "payload_anomaly",
 ];
 const VALID_BOUNDARY_ACTIONS = ["allow", "deny", "require_approval"] as const;
-const VALID_RATE_PERIODS = ["minute", "hour", "day"] as const;
 
 export function registerAgentToolSecurityRoutes(app: Express): void {
   app.get("/api/agent-tool-security/stats", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      res.json(getAgentToolStats(orgId));
+      const [totalInvocations, totalAnomalies, unacknowledgedAnomalies, policies, boundaryRules] = await Promise.all([
+        storage.countAgentToolInvocations(orgId),
+        storage.countAgentToolAnomalies(orgId),
+        storage.countAgentToolAnomalies(orgId, true),
+        storage.getAgentToolPoliciesList(orgId),
+        storage.getAgentTrustBoundaryRulesList(orgId),
+      ]);
+      res.json({
+        totalInvocations,
+        totalAnomalies,
+        unacknowledgedAnomalies,
+        totalPolicies: policies.length,
+        totalBoundaryRules: boundaryRules.length,
+      });
     } catch (error) {
       logger.child("routes").error("Agent tool stats error", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch agent tool security stats" });
     }
   });
 
+  // Tool catalog is static reference data — kept on engine
   app.get("/api/agent-tool-security/tools", isAuthenticated, async (req, res) => {
     try {
       const riskLevel =
@@ -88,21 +90,18 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
     }
   });
 
+  // Invocations — persisted to DB
   app.get("/api/agent-tool-security/invocations", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const filters: {
-        toolId?: string;
-        agentId?: string;
-        verdict?: InvocationVerdict;
-        chainId?: string;
-      } = {};
+      const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : 100;
+      const filters: { toolId?: string; agentId?: string; verdict?: string } = {};
       if (typeof req.query.toolId === "string") filters.toolId = req.query.toolId;
       if (typeof req.query.agentId === "string") filters.agentId = req.query.agentId;
       if (typeof req.query.verdict === "string" && VALID_VERDICTS.includes(req.query.verdict as InvocationVerdict))
-        filters.verdict = req.query.verdict as InvocationVerdict;
-      if (typeof req.query.chainId === "string") filters.chainId = req.query.chainId;
-      res.json(getToolInvocations(orgId, filters));
+        filters.verdict = req.query.verdict;
+      const invocations = await storage.getAgentToolInvocations(orgId, limit, filters);
+      res.json(invocations);
     } catch (error) {
       logger.child("routes").error("List invocations error", { error: String(error) });
       res.status(500).json({ message: "Failed to list invocations" });
@@ -113,7 +112,7 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
-      const inv = getInvocationById(orgId, id);
+      const inv = await storage.getAgentToolInvocation(id, orgId);
       if (!inv) return res.status(404).json({ message: "Invocation not found" });
       res.json(inv);
     } catch (error) {
@@ -129,53 +128,64 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
       if (!body.agentId || typeof body.agentId !== "string") {
         return res.status(400).json({ message: "agentId is required" });
       }
-      if (!body.agentName || typeof body.agentName !== "string") {
-        return res.status(400).json({ message: "agentName is required" });
-      }
       if (!body.toolId || typeof body.toolId !== "string") {
         return res.status(400).json({ message: "toolId is required" });
       }
-      if (!Array.isArray(body.scopes) || body.scopes.length === 0) {
-        return res.status(400).json({ message: "scopes must be a non-empty array" });
+      // Verify tool exists in catalog
+      const tool = getToolById(body.toolId);
+      if (!tool) return res.status(404).json({ message: "Tool not found" });
+
+      // Check policy for this tool
+      const policy = await storage.getAgentToolPolicyByTool(orgId, body.toolId);
+      let verdict: InvocationVerdict = "allowed";
+      if (policy && policy.blocked) {
+        verdict = "denied";
       }
-      if (!body.input || typeof body.input !== "string") {
-        return res.status(400).json({ message: "input is required" });
-      }
-      const invocation = recordInvocation(orgId, {
-        agentId: body.agentId,
-        agentName: body.agentName,
+
+      const invocation = await storage.createAgentToolInvocation({
+        orgId,
         toolId: body.toolId,
-        scopes: body.scopes,
-        destination: typeof body.destination === "string" ? body.destination : undefined,
-        input: body.input,
-        chainId: typeof body.chainId === "string" ? body.chainId : undefined,
-        parentInvocationId: typeof body.parentInvocationId === "string" ? body.parentInvocationId : undefined,
+        toolName: tool.name,
+        agentId: body.agentId,
+        verdict,
+        inputHash: typeof body.input === "string" ? body.input.substring(0, 64) : undefined,
+        outputSummary: typeof body.outputSummary === "string" ? body.outputSummary : undefined,
+        durationMs: typeof body.durationMs === "number" ? body.durationMs : undefined,
+        riskScore: typeof body.riskScore === "number" ? body.riskScore : 0,
+        metadata: {
+          agentName: body.agentName || "",
+          scopes: Array.isArray(body.scopes) ? body.scopes : [],
+          destination: body.destination || null,
+          chainId: body.chainId || null,
+          parentInvocationId: body.parentInvocationId || null,
+        },
       });
       res.status(201).json(invocation);
     } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("TOOL_NOT_FOUND")) return res.status(404).json({ message: "Tool not found" });
-      if (errMsg.includes("TOOL_DISABLED")) return res.status(400).json({ message: "Tool is disabled" });
-      logger.child("routes").error("Record invocation error", { error: errMsg });
+      logger.child("routes").error("Record invocation error", { error: String(error) });
       res.status(500).json({ message: "Failed to record invocation" });
     }
   });
 
+  // Anomalies — persisted to DB
   app.get("/api/agent-tool-security/anomalies", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const filters: {
-        type?: AnomalyType;
-        severity?: ToolRiskLevel;
-        acknowledged?: boolean;
-      } = {};
-      if (typeof req.query.type === "string" && VALID_ANOMALY_TYPES.includes(req.query.type as AnomalyType))
-        filters.type = req.query.type as AnomalyType;
-      if (typeof req.query.severity === "string" && VALID_RISK_LEVELS.includes(req.query.severity as ToolRiskLevel))
-        filters.severity = req.query.severity as ToolRiskLevel;
-      if (req.query.acknowledged === "true") filters.acknowledged = true;
-      if (req.query.acknowledged === "false") filters.acknowledged = false;
-      res.json(getAnomalyDetections(orgId, filters));
+      const unacknowledgedOnly = req.query.acknowledged === "false";
+      const acknowledgedOnly = req.query.acknowledged === "true";
+      let anomalies = await storage.getAgentToolAnomalies(orgId, unacknowledgedOnly);
+      if (acknowledgedOnly) {
+        anomalies = anomalies.filter((a) => a.acknowledged);
+      }
+      // Apply client-side filters
+      let filtered = anomalies;
+      if (typeof req.query.type === "string" && VALID_ANOMALY_TYPES.includes(req.query.type as AnomalyType)) {
+        filtered = filtered.filter((a) => a.anomalyType === req.query.type);
+      }
+      if (typeof req.query.severity === "string" && VALID_RISK_LEVELS.includes(req.query.severity as ToolRiskLevel)) {
+        filtered = filtered.filter((a) => a.severity === req.query.severity);
+      }
+      res.json(filtered);
     } catch (error) {
       logger.child("routes").error("List anomalies error", { error: String(error) });
       res.status(500).json({ message: "Failed to list anomalies" });
@@ -186,7 +196,8 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
-      const result = acknowledgeAnomaly(orgId, id);
+      const userId = typeof req.body.acknowledgedBy === "string" ? req.body.acknowledgedBy : "system";
+      const result = await storage.acknowledgeAgentToolAnomaly(id, orgId, userId);
       if (!result) return res.status(404).json({ message: "Anomaly not found" });
       res.json(result);
     } catch (error) {
@@ -195,10 +206,12 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
     }
   });
 
+  // Policies — persisted to DB
   app.get("/api/agent-tool-security/policies", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      res.json(getToolPolicies(orgId));
+      const policies = await storage.getAgentToolPoliciesList(orgId);
+      res.json(policies);
     } catch (error) {
       logger.child("routes").error("List policies error", { error: String(error) });
       res.status(500).json({ message: "Failed to list policies" });
@@ -208,42 +221,20 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
   app.patch("/api/agent-tool-security/policies/:id", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const id = String(req.params.id);
+      const toolId = String(req.params.id);
       const body = req.body;
-      const sanitized: Record<string, unknown> = {};
-      if (body.maxRate !== undefined) {
-        if (typeof body.maxRate !== "number" || body.maxRate < 1)
-          return res.status(400).json({ message: "maxRate must be a positive number" });
-        sanitized.maxRate = body.maxRate;
-      }
-      if (body.ratePeriod !== undefined) {
-        if (!VALID_RATE_PERIODS.includes(body.ratePeriod))
-          return res.status(400).json({ message: `ratePeriod must be one of: ${VALID_RATE_PERIODS.join(", ")}` });
-        sanitized.ratePeriod = body.ratePeriod;
-      }
-      if (body.allowedScopes !== undefined) {
-        if (!Array.isArray(body.allowedScopes))
-          return res.status(400).json({ message: "allowedScopes must be an array" });
-        sanitized.allowedScopes = body.allowedScopes;
-      }
-      if (body.blockedDestinations !== undefined) {
-        if (!Array.isArray(body.blockedDestinations))
-          return res.status(400).json({ message: "blockedDestinations must be an array" });
-        sanitized.blockedDestinations = body.blockedDestinations;
-      }
-      if (body.requireAttestation !== undefined) {
-        sanitized.requireAttestation = body.requireAttestation === true;
-      }
-      if (body.autoApproveBelow !== undefined) {
-        if (!VALID_RISK_LEVELS.includes(body.autoApproveBelow))
-          return res.status(400).json({ message: `autoApproveBelow must be one of: ${VALID_RISK_LEVELS.join(", ")}` });
-        sanitized.autoApproveBelow = body.autoApproveBelow;
-      }
-      if (body.enabled !== undefined) {
-        sanitized.enabled = body.enabled === true;
-      }
-      const updated = updateToolPolicy(orgId, id, sanitized as any);
-      if (!updated) return res.status(404).json({ message: "Policy not found" });
+
+      // Build the upsert data
+      const data: Record<string, unknown> = { orgId, toolId };
+      if (typeof body.maxCallsPerMinute === "number") data.maxCallsPerMinute = body.maxCallsPerMinute;
+      if (typeof body.maxCallsPerHour === "number") data.maxCallsPerHour = body.maxCallsPerHour;
+      if (typeof body.requireApprovalAboveRisk === "number")
+        data.requireApprovalAboveRisk = body.requireApprovalAboveRisk;
+      if (Array.isArray(body.allowedAgentIds)) data.allowedAgentIds = body.allowedAgentIds;
+      if (body.blocked !== undefined) data.blocked = body.blocked === true;
+      if (body.metadata !== undefined) data.metadata = body.metadata;
+
+      const updated = await storage.upsertAgentToolPolicy(data as Parameters<typeof storage.upsertAgentToolPolicy>[0]);
       res.json(updated);
     } catch (error) {
       logger.child("routes").error("Update policy error", { error: String(error) });
@@ -251,10 +242,12 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
     }
   });
 
+  // Trust Boundary Rules — persisted to DB
   app.get("/api/agent-tool-security/boundary-rules", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      res.json(getTrustBoundaryRules(orgId));
+      const rules = await storage.getAgentTrustBoundaryRulesList(orgId);
+      res.json(rules);
     } catch (error) {
       logger.child("routes").error("List boundary rules error", { error: String(error) });
       res.status(500).json({ message: "Failed to list boundary rules" });
@@ -277,13 +270,18 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
       if (!body.action || !VALID_BOUNDARY_ACTIONS.includes(body.action)) {
         return res.status(400).json({ message: `action must be one of: ${VALID_BOUNDARY_ACTIONS.join(", ")}` });
       }
-      const rule = createBoundaryRule(orgId, {
+      const rule = await storage.createAgentTrustBoundaryRule({
+        orgId,
         name: body.name,
-        description: typeof body.description === "string" ? body.description : "",
         sourceBoundary: body.sourceBoundary,
         targetBoundary: body.targetBoundary,
         action: body.action,
-        conditions: Array.isArray(body.conditions) ? body.conditions : [],
+        priority: typeof body.priority === "number" ? body.priority : 100,
+        enabled: body.enabled !== false,
+        metadata: {
+          description: typeof body.description === "string" ? body.description : "",
+          conditions: Array.isArray(body.conditions) ? body.conditions : [],
+        },
       });
       res.status(201).json(rule);
     } catch (error) {
@@ -297,27 +295,24 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
       const body = req.body;
-      const sanitized: Record<string, unknown> = {};
+      const updates: Record<string, unknown> = {};
       if (body.name !== undefined) {
         if (typeof body.name !== "string") return res.status(400).json({ message: "name must be a string" });
-        sanitized.name = body.name;
-      }
-      if (body.description !== undefined) {
-        sanitized.description = typeof body.description === "string" ? body.description : "";
+        updates.name = body.name;
       }
       if (body.action !== undefined) {
         if (!VALID_BOUNDARY_ACTIONS.includes(body.action))
           return res.status(400).json({ message: `action must be one of: ${VALID_BOUNDARY_ACTIONS.join(", ")}` });
-        sanitized.action = body.action;
-      }
-      if (body.conditions !== undefined) {
-        if (!Array.isArray(body.conditions)) return res.status(400).json({ message: "conditions must be an array" });
-        sanitized.conditions = body.conditions;
+        updates.action = body.action;
       }
       if (body.enabled !== undefined) {
-        sanitized.enabled = body.enabled === true;
+        updates.enabled = body.enabled === true;
       }
-      const updated = updateBoundaryRule(orgId, id, sanitized as any);
+      if (body.priority !== undefined) {
+        if (typeof body.priority !== "number") return res.status(400).json({ message: "priority must be a number" });
+        updates.priority = body.priority;
+      }
+      const updated = await storage.updateAgentTrustBoundaryRule(id, orgId, updates);
       if (!updated) return res.status(404).json({ message: "Boundary rule not found" });
       res.json(updated);
     } catch (error) {
@@ -330,7 +325,7 @@ export function registerAgentToolSecurityRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
-      const deleted = deleteBoundaryRule(orgId, id);
+      const deleted = await storage.deleteAgentTrustBoundaryRule(id, orgId);
       if (!deleted) return res.status(404).json({ message: "Boundary rule not found" });
       res.json({ message: "Boundary rule deleted" });
     } catch (error) {

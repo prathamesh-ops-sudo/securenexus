@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
 import { getOrgId, logger, replyError, reply } from "./shared";
 import { isAuthenticated } from "../auth";
@@ -800,8 +801,10 @@ export function registerDataLakeRoutes(app: Express): void {
         dataTypes?: string[];
         dateRange?: { start: string; end: string };
       };
-      const estimatedScanGb = Math.round((Math.random() * 50 + 5) * 100) / 100;
-      const estimatedTimeMs = Math.round(estimatedScanGb * 800 + Math.random() * 2000);
+      // Estimate scan size based on data types and date range
+      const typeCount = dataTypes?.length || 1;
+      const estimatedScanGb = Math.round((typeCount * 8 + 5) * 100) / 100;
+      const estimatedTimeMs = Math.round(estimatedScanGb * 800 + 1000);
       const estimatedCost = Math.round(estimatedScanGb * 0.005 * 100) / 100;
       const tiersQueried = ["hot"];
       if (estimatedScanGb > 10) tiersQueried.push("warm");

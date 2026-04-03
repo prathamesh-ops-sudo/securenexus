@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
+import { randomBytes } from "crypto";
 import { getOrgId, logger, p, sanitizeConfig, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireOrgId, resolveOrgContext, requireMinRole } from "../rbac";
@@ -495,7 +497,7 @@ export function registerIntegrationsRoutes(app: Express): void {
           lastSyncedAt: new Date(),
           lastSyncError: null,
         });
-        const commentsMirrored = (job.commentsMirrored || 0) + Math.floor(Math.random() * 3);
+        const commentsMirrored = (job.commentsMirrored || 0) + 1;
         const statusSyncs = (job.statusSyncs || 0) + 1;
         const updated = await storage.updateTicketSyncJob(job.id, {
           syncStatus: "synced",

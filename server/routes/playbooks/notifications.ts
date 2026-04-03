@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
+import { randomBytes } from "crypto";
 import { getOrgId, logger, p, storage } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../../rbac";
@@ -276,7 +278,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
         if (!notificationTemplateStore.has(key)) notificationTemplateStore.set(key, []);
 
         const template = {
-          id: `tmpl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          id: `tmpl-${Date.now()}-${randomBytes(3).toString("hex")}`,
           channel,
           subject: subject || null,
           body,
@@ -488,7 +490,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
 
         const ticket = {
-          id: `CHG-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+          id: `CHG-${Date.now().toString(36).toUpperCase()}-${randomBytes(2).toString("hex").toUpperCase()}`,
           orgId,
           playbookId,
           playbookName: pb.name,

@@ -710,7 +710,7 @@ export function registerThreatIntelRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const watchlists = await storage.getIocWatchlists(orgId);
-        const existing = watchlists.find((w: { id: number }) => w.id === p(req.params.id));
+        const existing = watchlists.find((w: { id: string }) => w.id === p(req.params.id));
         if (!existing) return res.status(404).json({ message: "Watchlist not found" });
         const deleted = await storage.deleteIocWatchlist(p(req.params.id));
         if (!deleted) return res.status(404).json({ message: "Watchlist not found" });
@@ -826,7 +826,7 @@ export function registerThreatIntelRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const rules = await storage.getIocMatchRules(orgId);
-        const existing = rules.find((r: { id: number }) => r.id === p(req.params.id));
+        const existing = rules.find((r: { id: string }) => r.id === p(req.params.id));
         if (!existing) return res.status(404).json({ message: "Match rule not found" });
         const { orgId: _ignoreOrgId, ...updateData } = req.body;
         const rule = await storage.updateIocMatchRule(p(req.params.id), updateData);
@@ -848,7 +848,7 @@ export function registerThreatIntelRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const rules = await storage.getIocMatchRules(orgId);
-        const existing = rules.find((r: { id: number }) => r.id === p(req.params.id));
+        const existing = rules.find((r: { id: string }) => r.id === p(req.params.id));
         if (!existing) return res.status(404).json({ message: "Match rule not found" });
         const deleted = await storage.deleteIocMatchRule(p(req.params.id));
         if (!deleted) return res.status(404).json({ message: "Match rule not found" });

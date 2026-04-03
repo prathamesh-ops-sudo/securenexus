@@ -1,18 +1,49 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { logger, p, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
-import {
-  getSecurityGraph,
-  getAttackPathById,
-  getAssetById,
-  getAssetNeighbors,
-  ingestEntities,
-  deleteAsset,
-  deleteRelationship,
-  queryGraph,
-  findPaths,
-} from "../security-graph-engine";
-import type { IngestionPayload, GraphQuery, AssetType, RelationshipType } from "../security-graph-engine";
+import { storage } from "../storage";
+import type { InsertSecurityGraphAsset, InsertSecurityGraphRelationship } from "@shared/schema";
+import { createHash } from "crypto";
+
+interface RequestWithUser extends Request {
+  user?: { id?: string; email?: string };
+}
+
+type AssetType =
+  | "code"
+  | "cloud"
+  | "identity"
+  | "data"
+  | "network"
+  | "compute"
+  | "container"
+  | "endpoint"
+  | "saas"
+  | "runtime"
+  | "remediation"
+  | "vulnerability";
+
+type RelationshipType =
+  | "accesses"
+  | "authenticates_with"
+  | "contains"
+  | "deploys_to"
+  | "exposes"
+  | "has_permission"
+  | "reads_from"
+  | "writes_to"
+  | "connects_to"
+  | "inherits_from"
+  | "manages"
+  | "depends_on"
+  | "runs_on"
+  | "can_access"
+  | "exposed_to"
+  | "owned_by"
+  | "fixed_by"
+  | "triggers"
+  | "mitigates"
+  | "scans";
 
 const VALID_ASSET_TYPES: AssetType[] = [
   "code",
@@ -54,6 +85,8 @@ const VALID_RELATIONSHIP_TYPES: RelationshipType[] = [
 
 const VALID_ENVIRONMENTS = ["production", "staging", "development", "shared"];
 
+const log = logger.child("security-graph");
+
 function validateAssetType(t: string): t is AssetType {
   return VALID_ASSET_TYPES.includes(t as AssetType);
 }
@@ -66,19 +99,83 @@ function validateEnvironment(e: string): boolean {
   return VALID_ENVIRONMENTS.includes(e);
 }
 
+function buildResolutionKey(name: string, type: string, subType: string): string {
+  return createHash("sha256").update(`${type}:${subType}:${name}`).digest("hex").slice(0, 16);
+}
+
+interface IngestionAsset {
+  name: string;
+  type: AssetType;
+  subType: string;
+  environment: string;
+  riskScore: number;
+  metadata?: Record<string, unknown>;
+  tags?: string[];
+  owner?: string;
+}
+
+interface IngestionRelationship {
+  sourceResolutionKey: string;
+  targetResolutionKey: string;
+  relationship: RelationshipType;
+  weight?: number;
+  metadata?: Record<string, unknown>;
+  bidirectional?: boolean;
+}
+
+interface IngestionPayload {
+  assets?: IngestionAsset[];
+  relationships?: IngestionRelationship[];
+}
+
+interface GraphQuery {
+  assetTypes?: AssetType[];
+  relationshipTypes?: RelationshipType[];
+  environments?: string[];
+  minRiskScore?: number;
+  maxRiskScore?: number;
+}
+
 export function registerSecurityGraphRoutes(app: Express): void {
-  app.get("/api/security-graph", isAuthenticated, async (req, res) => {
+  // Get full graph
+  app.get("/api/security-graph", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const graph = getSecurityGraph(orgId);
-      res.json(graph);
+      const [assets, relationships] = await Promise.all([
+        storage.getSecurityGraphAssets(orgId),
+        storage.getSecurityGraphRelationships(orgId),
+      ]);
+
+      const typeBreakdown: Record<string, number> = {};
+      const envBreakdown: Record<string, number> = {};
+      let totalRisk = 0;
+      for (const a of assets) {
+        typeBreakdown[a.type] = (typeBreakdown[a.type] || 0) + 1;
+        envBreakdown[a.environment] = (envBreakdown[a.environment] || 0) + 1;
+        totalRisk += a.riskScore;
+      }
+
+      res.json({
+        assets,
+        relationships,
+        attackPaths: [],
+        stats: {
+          totalAssets: assets.length,
+          totalRelationships: relationships.length,
+          typeBreakdown,
+          environmentBreakdown: envBreakdown,
+          averageRiskScore: assets.length > 0 ? totalRisk / assets.length : 0,
+          highRiskAssets: assets.filter((a) => a.riskScore >= 0.7).length,
+        },
+      });
     } catch (error) {
-      logger.child("routes").error("Security graph error", { error: String(error) });
+      log.error("Security graph error", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch security graph" });
     }
   });
 
-  app.post("/api/security-graph/query", isAuthenticated, async (req, res) => {
+  // Query graph with filters
+  app.post("/api/security-graph/query", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const body = req.body as GraphQuery;
@@ -103,15 +200,39 @@ export function registerSecurityGraphRoutes(app: Express): void {
       if (typeof body.maxRiskScore === "number" && (body.maxRiskScore < 0 || body.maxRiskScore > 1)) {
         return res.status(400).json({ message: "maxRiskScore must be between 0 and 1" });
       }
-      const result = queryGraph(orgId, body);
-      res.json(result);
+
+      let assets = await storage.getSecurityGraphAssets(orgId);
+      if (body.assetTypes) {
+        assets = assets.filter((a) => body.assetTypes!.includes(a.type as AssetType));
+      }
+      if (body.environments) {
+        assets = assets.filter((a) => body.environments!.includes(a.environment));
+      }
+      if (typeof body.minRiskScore === "number") {
+        assets = assets.filter((a) => a.riskScore >= body.minRiskScore!);
+      }
+      if (typeof body.maxRiskScore === "number") {
+        assets = assets.filter((a) => a.riskScore <= body.maxRiskScore!);
+      }
+
+      const assetIds = new Set(assets.map((a) => a.id));
+      let relationships = await storage.getSecurityGraphRelationships(orgId);
+      relationships = relationships.filter((r) => assetIds.has(r.sourceId) && assetIds.has(r.targetId));
+      if (body.relationshipTypes) {
+        relationships = relationships.filter((r) =>
+          body.relationshipTypes!.includes(r.relationship as RelationshipType),
+        );
+      }
+
+      res.json({ assets, relationships });
     } catch (error) {
-      logger.child("routes").error("Security graph query error", { error: String(error) });
+      log.error("Security graph query error", { error: String(error) });
       res.status(500).json({ message: "Failed to query security graph" });
     }
   });
 
-  app.post("/api/security-graph/ingest", isAuthenticated, async (req, res) => {
+  // Ingest assets and relationships
+  app.post("/api/security-graph/ingest", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const payload = req.body as IngestionPayload;
@@ -142,108 +263,270 @@ export function registerSecurityGraphRoutes(app: Express): void {
             return res.status(400).json({ message: `Invalid relationship type: ${rel.relationship}` });
         }
       }
-      const result = ingestEntities(orgId, payload);
-      res.json(result);
+
+      let assetsCreated = 0;
+      let assetsUpdated = 0;
+      let relationshipsCreated = 0;
+
+      // Upsert assets by resolution key
+      if (payload.assets) {
+        for (const asset of payload.assets) {
+          const resolutionKey = buildResolutionKey(asset.name, asset.type, asset.subType);
+          const existing = await storage.getSecurityGraphAssetByResolutionKey(orgId, resolutionKey);
+          if (existing) {
+            await storage.updateSecurityGraphAsset(existing.id, orgId, {
+              name: asset.name,
+              type: asset.type,
+              subType: asset.subType,
+              environment: asset.environment,
+              riskScore: asset.riskScore,
+              metadata: asset.metadata || {},
+              tags: asset.tags || [],
+              owner: asset.owner || null,
+              lastScannedAt: new Date(),
+            });
+            assetsUpdated++;
+          } else {
+            const data: InsertSecurityGraphAsset = {
+              orgId,
+              name: asset.name,
+              type: asset.type,
+              subType: asset.subType,
+              environment: asset.environment,
+              riskScore: asset.riskScore,
+              metadata: asset.metadata || {},
+              tags: asset.tags || [],
+              owner: asset.owner || null,
+              resolutionKey,
+              lastScannedAt: new Date(),
+            };
+            await storage.createSecurityGraphAsset(data);
+            assetsCreated++;
+          }
+        }
+      }
+
+      // Create relationships by resolving keys to asset IDs
+      if (payload.relationships) {
+        for (const rel of payload.relationships) {
+          const source = await storage.getSecurityGraphAssetByResolutionKey(orgId, rel.sourceResolutionKey);
+          const target = await storage.getSecurityGraphAssetByResolutionKey(orgId, rel.targetResolutionKey);
+          if (source && target) {
+            const relData: InsertSecurityGraphRelationship = {
+              orgId,
+              sourceId: source.id,
+              targetId: target.id,
+              relationship: rel.relationship,
+              weight: rel.weight ?? 1,
+              metadata: rel.metadata || {},
+              bidirectional: rel.bidirectional ?? false,
+            };
+            await storage.createSecurityGraphRelationship(relData);
+            relationshipsCreated++;
+          }
+        }
+      }
+
+      res.json({ assetsCreated, assetsUpdated, relationshipsCreated });
     } catch (error) {
-      logger.child("routes").error("Security graph ingest error", { error: String(error) });
+      log.error("Security graph ingest error", { error: String(error) });
       res.status(500).json({ message: "Failed to ingest entities" });
     }
   });
 
-  app.post("/api/security-graph/find-paths", isAuthenticated, async (req, res) => {
+  // Find paths between two assets (BFS in app layer from DB data)
+  app.post("/api/security-graph/find-paths", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const { sourceId, targetId, maxDepth } = req.body as { sourceId: string; targetId: string; maxDepth?: number };
+      const { sourceId, targetId, maxDepth } = req.body as {
+        sourceId: string;
+        targetId: string;
+        maxDepth?: number;
+      };
       if (!sourceId || typeof sourceId !== "string") return res.status(400).json({ message: "sourceId is required" });
       if (!targetId || typeof targetId !== "string") return res.status(400).json({ message: "targetId is required" });
       if (maxDepth !== undefined && (typeof maxDepth !== "number" || maxDepth < 1 || maxDepth > 10)) {
         return res.status(400).json({ message: "maxDepth must be between 1 and 10" });
       }
-      const paths = findPaths(orgId, sourceId, targetId, maxDepth);
+
+      const allRelationships = await storage.getSecurityGraphRelationships(orgId);
+      const adjacency = new Map<string, Array<{ targetId: string; relId: string }>>();
+      for (const r of allRelationships) {
+        if (!adjacency.has(r.sourceId)) adjacency.set(r.sourceId, []);
+        adjacency.get(r.sourceId)!.push({ targetId: r.targetId, relId: r.id });
+        if (r.bidirectional) {
+          if (!adjacency.has(r.targetId)) adjacency.set(r.targetId, []);
+          adjacency.get(r.targetId)!.push({ targetId: r.sourceId, relId: r.id });
+        }
+      }
+
+      const limit = maxDepth ?? 5;
+      const paths: string[][] = [];
+      const queue: string[][] = [[sourceId]];
+      while (queue.length > 0 && paths.length < 10) {
+        const current = queue.shift()!;
+        const last = current[current.length - 1];
+        if (last === targetId && current.length > 1) {
+          paths.push(current);
+          continue;
+        }
+        if (current.length > limit) continue;
+        const neighbors = adjacency.get(last) || [];
+        for (const n of neighbors) {
+          if (!current.includes(n.targetId)) {
+            queue.push([...current, n.targetId]);
+          }
+        }
+      }
+
       res.json(paths);
     } catch (error) {
-      logger.child("routes").error("Security graph find-paths error", { error: String(error) });
+      log.error("Security graph find-paths error", { error: String(error) });
       res.status(500).json({ message: "Failed to find paths" });
     }
   });
 
-  app.get("/api/security-graph/assets/:id", isAuthenticated, async (req, res) => {
+  // Get single asset
+  app.get("/api/security-graph/assets/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const asset = getAssetById(p(req.params.id), orgId);
+      const asset = await storage.getSecurityGraphAsset(p(req.params.id), orgId);
       if (!asset) return res.status(404).json({ message: "Asset not found" });
       res.json(asset);
     } catch (error) {
-      logger.child("routes").error("Security graph asset error", { error: String(error) });
+      log.error("Security graph asset error", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch asset" });
     }
   });
 
-  app.delete("/api/security-graph/assets/:id", isAuthenticated, async (req, res) => {
+  // Delete asset
+  app.delete("/api/security-graph/assets/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const deleted = deleteAsset(orgId, p(req.params.id));
+      const deleted = await storage.deleteSecurityGraphAsset(p(req.params.id), orgId);
       if (!deleted) return res.status(404).json({ message: "Asset not found" });
       res.json({ deleted: true });
     } catch (error) {
-      logger.child("routes").error("Security graph delete asset error", { error: String(error) });
+      log.error("Security graph delete asset error", { error: String(error) });
       res.status(500).json({ message: "Failed to delete asset" });
     }
   });
 
-  app.get("/api/security-graph/assets/:id/neighbors", isAuthenticated, async (req, res) => {
+  // Get asset neighbors
+  app.get("/api/security-graph/assets/:id/neighbors", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const neighbors = getAssetNeighbors(p(req.params.id), orgId);
-      res.json(neighbors);
+      const assetId = p(req.params.id);
+      const asset = await storage.getSecurityGraphAsset(assetId, orgId);
+      if (!asset) return res.status(404).json({ message: "Asset not found" });
+
+      const rels = await storage.getSecurityGraphRelationshipsByAsset(assetId);
+      const neighborIds = new Set<string>();
+      for (const r of rels) {
+        if (r.sourceId !== assetId) neighborIds.add(r.sourceId);
+        if (r.targetId !== assetId) neighborIds.add(r.targetId);
+      }
+
+      const neighbors = [];
+      for (const nId of Array.from(neighborIds)) {
+        const neighbor = await storage.getSecurityGraphAsset(nId, orgId);
+        if (neighbor) neighbors.push(neighbor);
+      }
+
+      res.json({ asset, neighbors, relationships: rels });
     } catch (error) {
-      logger.child("routes").error("Security graph neighbors error", { error: String(error) });
+      log.error("Security graph neighbors error", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch asset neighbors" });
     }
   });
 
-  app.get("/api/security-graph/attack-paths", isAuthenticated, async (req, res) => {
+  // Attack paths placeholder (computed from graph data)
+  app.get("/api/security-graph/attack-paths", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const graph = getSecurityGraph(orgId);
-      res.json(graph.attackPaths);
+      const assets = await storage.getSecurityGraphAssets(orgId);
+      const highRisk = assets.filter((a) => a.riskScore >= 0.7);
+      // Return high-risk assets as potential attack path entry points
+      res.json(
+        highRisk.map((a) => ({
+          id: a.id,
+          name: `Path via ${a.name}`,
+          description: `High-risk ${a.type} asset in ${a.environment}`,
+          riskScore: a.riskScore,
+          entryPoint: a,
+          hopCount: 1,
+        })),
+      );
     } catch (error) {
-      logger.child("routes").error("Attack paths error", { error: String(error) });
+      log.error("Attack paths error", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch attack paths" });
     }
   });
 
-  app.get("/api/security-graph/attack-paths/:id", isAuthenticated, async (req, res) => {
+  // Single attack path (look up asset)
+  app.get("/api/security-graph/attack-paths/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const path = getAttackPathById(p(req.params.id), orgId);
-      if (!path) return res.status(404).json({ message: "Attack path not found" });
-      res.json(path);
+      const asset = await storage.getSecurityGraphAsset(p(req.params.id), orgId);
+      if (!asset) return res.status(404).json({ message: "Attack path not found" });
+      const rels = await storage.getSecurityGraphRelationshipsByAsset(asset.id);
+      res.json({
+        id: asset.id,
+        name: `Path via ${asset.name}`,
+        description: `${asset.type} asset in ${asset.environment}`,
+        riskScore: asset.riskScore,
+        entryPoint: asset,
+        edges: rels,
+        hopCount: rels.length,
+      });
     } catch (error) {
-      logger.child("routes").error("Attack path detail error", { error: String(error) });
+      log.error("Attack path detail error", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch attack path" });
     }
   });
 
-  app.delete("/api/security-graph/relationships/:id", isAuthenticated, async (req, res) => {
+  // Delete relationship
+  app.delete("/api/security-graph/relationships/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const deleted = deleteRelationship(orgId, p(req.params.id));
+      const deleted = await storage.deleteSecurityGraphRelationship(p(req.params.id), orgId);
       if (!deleted) return res.status(404).json({ message: "Relationship not found" });
       res.json({ deleted: true });
     } catch (error) {
-      logger.child("routes").error("Security graph delete relationship error", { error: String(error) });
+      log.error("Security graph delete relationship error", { error: String(error) });
       res.status(500).json({ message: "Failed to delete relationship" });
     }
   });
 
-  app.get("/api/security-graph/stats", isAuthenticated, async (req, res) => {
+  // Stats
+  app.get("/api/security-graph/stats", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const graph = getSecurityGraph(orgId);
-      res.json(graph.stats);
+      const [assetCount, relCount, assets] = await Promise.all([
+        storage.countSecurityGraphAssets(orgId),
+        storage.countSecurityGraphRelationships(orgId),
+        storage.getSecurityGraphAssets(orgId),
+      ]);
+
+      const typeBreakdown: Record<string, number> = {};
+      const envBreakdown: Record<string, number> = {};
+      let totalRisk = 0;
+      for (const a of assets) {
+        typeBreakdown[a.type] = (typeBreakdown[a.type] || 0) + 1;
+        envBreakdown[a.environment] = (envBreakdown[a.environment] || 0) + 1;
+        totalRisk += a.riskScore;
+      }
+
+      res.json({
+        totalAssets: assetCount,
+        totalRelationships: relCount,
+        typeBreakdown,
+        environmentBreakdown: envBreakdown,
+        averageRiskScore: assets.length > 0 ? totalRisk / assets.length : 0,
+        highRiskAssets: assets.filter((a) => a.riskScore >= 0.7).length,
+      });
     } catch (error) {
-      logger.child("routes").error("Security graph stats error", { error: String(error) });
+      log.error("Security graph stats error", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch security graph stats" });
     }
   });

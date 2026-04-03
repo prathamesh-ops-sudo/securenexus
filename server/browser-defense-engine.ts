@@ -1,4 +1,4 @@
-import { randomUUID, createHash } from "crypto";
+import { randomUUID, createHash, randomInt } from "crypto";
 
 export type ThreatCategory =
   | "dom_injection"
@@ -132,7 +132,7 @@ function genId(prefix: string): string {
 }
 
 function randomBetween(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  return randomInt(min, max + 1);
 }
 
 function hashPayload(payload: string): string {
@@ -668,7 +668,7 @@ function seedDomEvents(orgId: string): void {
         : `Standard ${DOM_EVENT_TYPES[randomBetween(0, DOM_EVENT_TYPES.length - 1)]} action on page element`,
       rawPayloadHash: hashPayload(`payload-${i}-${session.id}`),
       stepUpRequired,
-      stepUpCompleted: stepUpRequired ? Math.random() > 0.3 : false,
+      stepUpCompleted: stepUpRequired ? i % 3 !== 0 : false,
       timestamp: new Date(now - randomBetween(0, 7 * 24 * 60 * 60 * 1000)).toISOString(),
     });
   }
@@ -695,7 +695,7 @@ function seedEgressRules(orgId: string): void {
       enabled: true,
       hitCount: randomBetween(0, 500),
       lastHitAt:
-        Math.random() > 0.3 ? new Date(Date.now() - randomBetween(0, 3 * 24 * 60 * 60 * 1000)).toISOString() : null,
+        def.action === "block" ? new Date(Date.now() - randomBetween(0, 3 * 24 * 60 * 60 * 1000)).toISOString() : null,
       createdAt: now,
       updatedAt: now,
     });

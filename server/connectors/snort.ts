@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { randomBytes } from "crypto";
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
@@ -77,8 +79,7 @@ export const snortPlugin: ConnectorPlugin = {
     const r = raw as Record<string, any>;
     return {
       source: "Snort IDS",
-      sourceEventId:
-        r.sid?.toString() || r.gid?.toString() || `snort_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      sourceEventId: r.sid?.toString() || r.gid?.toString() || `snort_${Date.now()}_${randomBytes(6).toString("hex")}`,
       title: r.msg || r.message || "Snort Alert",
       description: r.msg || r.reference || "",
       severity: mapSeverity(r.priority || r.rev),

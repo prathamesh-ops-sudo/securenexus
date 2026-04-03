@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
+import { randomBytes } from "crypto";
 import { getOrgId, p, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
@@ -977,7 +979,7 @@ export function registerOperationsRoutes(app: Express): void {
           step: idx + 1,
           title: step.title || `Step ${idx + 1}`,
           status: dryRun ? "simulated" : "completed",
-          durationMs: Math.floor(Math.random() * 2000) + 500,
+          durationMs: dryRun ? 0 : (idx + 1) * 500,
         }));
 
         const drillResult = {
@@ -1430,12 +1432,13 @@ export function registerOperationsRoutes(app: Express): void {
         const now = Date.now();
         const buckets = Array.from({ length: 30 }, (_, i) => {
           const ts = new Date(now - (29 - i) * 60000).toISOString();
-          const lagMs = Math.floor(Math.random() * 3000) + 200;
+          // Deterministic lag based on time bucket position
+          const lagMs = 200 + ((i * 97 + 13) % 2800);
           return {
             timestamp: ts,
             lagMs,
-            pendingCount: Math.floor(Math.random() * 50) + 5,
-            deliveryRate: Math.floor(Math.random() * 30) + 10,
+            pendingCount: 5 + ((i * 17 + 3) % 45),
+            deliveryRate: 10 + ((i * 11 + 7) % 25),
           };
         });
         const currentLagMs = buckets[buckets.length - 1].lagMs;

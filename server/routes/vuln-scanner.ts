@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
+import { randomBytes } from "crypto";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId } from "../rbac";
 import { requirePermission } from "../rbac";
@@ -680,7 +682,7 @@ export function registerVulnScannerRoutes(app: Express): void {
           credentialType: credentialType || "ssh_key",
           scanDepth: scanDepth || "full",
           status: "initiated",
-          estimatedDurationMin: 15 + Math.floor(Math.random() * 45),
+          estimatedDurationMin: 30,
           startedAt: new Date().toISOString(),
           message: "Authenticated scan started — deeper inspection with elevated credentials",
         });
@@ -716,7 +718,7 @@ export function registerVulnScannerRoutes(app: Express): void {
         status: "scanning",
         layers: [],
         vulnerabilities: [],
-        estimatedDurationSec: 30 + Math.floor(Math.random() * 60),
+        estimatedDurationSec: 60,
         startedAt: new Date().toISOString(),
         message: `Scanning container image ${imageRef}`,
       });
@@ -859,7 +861,7 @@ export function registerVulnScannerRoutes(app: Express): void {
         targetCves: Array.isArray(cveIds) ? cveIds : [],
         patchMethod: patchMethod || "auto_update",
         status: "queued",
-        estimatedDurationMin: 5 + Math.floor(Math.random() * 20),
+        estimatedDurationMin: 10,
         triggeredAt: new Date().toISOString(),
         message: `Patch job queued for ${sensor.hostname}`,
       });

@@ -1,22 +1,8 @@
 import type { Express } from "express";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
-import {
-  getPolicies,
-  getPolicyById,
-  createPolicy,
-  deletePolicy,
-  updatePolicy,
-  evaluateAction,
-  simulatePolicy,
-  getDecisionLogs,
-  getSimulations,
-  requestEmergencyOverride,
-  approveEmergencyOverride,
-  denyEmergencyOverride,
-  getOverrides,
-  getGuardrailStats,
-} from "../runtime-guardrails-engine";
+import { storage } from "../storage";
+import { evaluateAction, simulatePolicy } from "../runtime-guardrails-engine";
 import type { PolicyAction, PolicyMode, PolicyDecisionVerdict, PolicyScope } from "../runtime-guardrails-engine";
 
 const VALID_ACTIONS: PolicyAction[] = [
@@ -62,10 +48,11 @@ function isValidScope(val: string): val is PolicyScope {
 }
 
 export function registerRuntimeGuardrailsRoutes(app: Express): void {
+  // Policies — persisted to DB
   app.get("/api/runtime-guardrails/policies", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const policies = getPolicies(orgId);
+      const policies = await storage.getRuntimePolicies(orgId);
       res.json(policies);
     } catch (error) {
       logger.child("routes").error("List guardrail policies error", { error: String(error) });
@@ -76,18 +63,32 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
   app.get("/api/runtime-guardrails/stats", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const stats = getGuardrailStats(orgId);
-      res.json(stats);
+      const [totalPolicies, totalDecisions, overrides] = await Promise.all([
+        storage.countRuntimePolicies(orgId),
+        storage.countRuntimeDecisions(orgId),
+        storage.getRuntimeOverrides(orgId),
+      ]);
+      const pendingOverrides = overrides.filter((o) => o.status === "pending").length;
+      const approvedOverrides = overrides.filter((o) => o.status === "approved").length;
+      res.json({
+        totalPolicies,
+        totalDecisions,
+        totalOverrides: overrides.length,
+        pendingOverrides,
+        approvedOverrides,
+      });
     } catch (error) {
       logger.child("routes").error("Guardrail stats error", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch guardrail stats" });
     }
   });
 
+  // Decisions — persisted to DB
   app.get("/api/runtime-guardrails/decisions", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const decisions = getDecisionLogs(orgId);
+      const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : 100;
+      const decisions = await storage.getRuntimeDecisions(orgId, limit);
       res.json(decisions);
     } catch (error) {
       logger.child("routes").error("List decision logs error", { error: String(error) });
@@ -95,21 +96,12 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/runtime-guardrails/simulations", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const simulations = getSimulations(orgId);
-      res.json(simulations);
-    } catch (error) {
-      logger.child("routes").error("List simulations error", { error: String(error) });
-      res.status(500).json({ message: "Failed to list simulations" });
-    }
-  });
-
+  // Overrides — persisted to DB
   app.get("/api/runtime-guardrails/overrides", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const overrides = getOverrides(orgId);
+      const statusFilter = typeof req.query.status === "string" ? req.query.status : undefined;
+      const overrides = await storage.getRuntimeOverrides(orgId, statusFilter);
       res.json(overrides);
     } catch (error) {
       logger.child("routes").error("List overrides error", { error: String(error) });
@@ -121,7 +113,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
-      const policy = getPolicyById(id, orgId);
+      const policy = await storage.getRuntimePolicy(id, orgId);
       if (!policy) {
         return res.status(404).json({ message: "Policy not found" });
       }
@@ -164,18 +156,24 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
         return res.status(400).json({ message: "priority must be between 0 and 100" });
       }
 
-      const policy = createPolicy(orgId, {
+      // The DB schema has a single `action` field; store the primary action and put the full list in metadata
+      const policy = await storage.createRuntimePolicy({
+        orgId,
         name: body.name,
         description: body.description || "",
+        action: body.actions[0],
         scope: body.scope,
-        actions: body.actions,
         mode: body.mode,
-        priority: body.priority ?? 50,
         conditions: Array.isArray(body.conditions) ? body.conditions : [],
-        verdict: body.verdict,
-        rateLimit: body.rateLimit || null,
-        tags: Array.isArray(body.tags) ? body.tags : [],
-        createdBy: body.createdBy || "api",
+        priority: body.priority ?? 50,
+        enabled: true,
+        metadata: {
+          verdict: body.verdict,
+          actions: body.actions,
+          rateLimit: body.rateLimit || null,
+          tags: Array.isArray(body.tags) ? body.tags : [],
+          createdBy: body.createdBy || "api",
+        },
       });
       res.status(201).json(policy);
     } catch (error) {
@@ -216,7 +214,17 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
         return res.status(400).json({ message: "priority must be between 0 and 100" });
       }
 
-      const updated = updatePolicy(id, orgId, body);
+      const updates: Record<string, unknown> = {};
+      if (body.name !== undefined) updates.name = body.name;
+      if (body.description !== undefined) updates.description = body.description;
+      if (body.mode !== undefined) updates.mode = body.mode;
+      if (body.scope !== undefined) updates.scope = body.scope;
+      if (body.priority !== undefined) updates.priority = body.priority;
+      if (body.enabled !== undefined) updates.enabled = body.enabled === true;
+      if (body.conditions !== undefined) updates.conditions = body.conditions;
+      if (body.actions !== undefined) updates.action = body.actions[0];
+
+      const updated = await storage.updateRuntimePolicy(id, orgId, updates);
       if (!updated) {
         return res.status(404).json({ message: "Policy not found" });
       }
@@ -231,9 +239,9 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
-      const deleted = deletePolicy(id, orgId);
+      const deleted = await storage.deleteRuntimePolicy(id, orgId);
       if (!deleted) {
-        return res.status(404).json({ message: "Policy not found or is a catalog policy that cannot be deleted" });
+        return res.status(404).json({ message: "Policy not found" });
       }
       res.json({ message: "Policy deleted" });
     } catch (error) {
@@ -242,6 +250,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
     }
   });
 
+  // Evaluate — stateless computation with decision persisted to DB
   app.post("/api/runtime-guardrails/evaluate", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -257,6 +266,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
         return res.status(400).json({ message: "actorType must be user, agent, or service" });
       }
 
+      // Run evaluation via engine (stateless)
       const decision = evaluateAction(orgId, {
         action: body.action,
         actorId: body.actorId,
@@ -265,6 +275,24 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
         resourceType: body.resourceType || "unknown",
         context: body.context || {},
       });
+
+      // Persist decision to DB
+      await storage.createRuntimeDecision({
+        orgId,
+        policyId: decision.policyId || null,
+        policyName: decision.policyName || null,
+        action: body.action,
+        verdict: decision.verdict,
+        reason: decision.reason || null,
+        actorId: body.actorId,
+        resourceId: body.resourceId || "unknown",
+        metadata: {
+          actorType: body.actorType,
+          resourceType: body.resourceType || "unknown",
+          context: body.context || {},
+        },
+      });
+
       res.json(decision);
     } catch (error) {
       logger.child("routes").error("Evaluate action error", { error: String(error) });
@@ -272,6 +300,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
     }
   });
 
+  // Simulate — stateless, kept on engine
   app.post("/api/runtime-guardrails/simulate", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -300,6 +329,7 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
     }
   });
 
+  // Overrides — persisted to DB with approval workflow
   app.post("/api/runtime-guardrails/overrides", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -323,22 +353,28 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
         return res.status(400).json({ message: "timeboxMinutes must be between 1 and 480" });
       }
 
-      const override = requestEmergencyOverride(orgId, {
+      // Verify policy exists
+      const policy = await storage.getRuntimePolicy(body.policyId, orgId);
+      if (!policy) {
+        return res.status(404).json({ message: "Policy not found" });
+      }
+
+      const expiresAt = new Date(Date.now() + body.timeboxMinutes * 60 * 1000);
+      const override = await storage.createRuntimeOverride({
+        orgId,
         policyId: body.policyId,
         requestedBy: body.requestedBy,
         reason: body.reason,
-        timeboxMinutes: body.timeboxMinutes,
+        status: "pending",
+        expiresAt,
+        metadata: {
+          timeboxMinutes: body.timeboxMinutes,
+          policyName: policy.name,
+        },
       });
       res.status(201).json(override);
     } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("POLICY_NOT_FOUND")) {
-        return res.status(404).json({ message: "Policy not found" });
-      }
-      if (errMsg.includes("TIMEBOX_OUT_OF_RANGE")) {
-        return res.status(400).json({ message: "timeboxMinutes must be between 1 and 480" });
-      }
-      logger.child("routes").error("Request override error", { error: errMsg });
+      logger.child("routes").error("Request override error", { error: String(error) });
       res.status(500).json({ message: "Failed to request override" });
     }
   });
@@ -353,23 +389,28 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
         return res.status(400).json({ message: "approvedBy is required" });
       }
 
-      const result = approveEmergencyOverride(id, orgId, approvedBy);
-      if (!result) {
+      const existing = await storage.getRuntimeOverride(id, orgId);
+      if (!existing) {
         return res.status(404).json({ message: "Override not found" });
       }
-      res.json(result);
-    } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("OVERRIDE_NOT_PENDING")) {
+      if (existing.status !== "pending") {
         return res.status(400).json({ message: "Override is not in pending state" });
       }
-      if (errMsg.includes("SELF_APPROVAL_FORBIDDEN")) {
+      if (existing.requestedBy === approvedBy) {
         return res.status(403).json({ message: "Self-approval is not allowed. A different user must approve." });
       }
-      if (errMsg.includes("OVERRIDE_EXPIRED")) {
+      if (existing.expiresAt && new Date(existing.expiresAt) < new Date()) {
         return res.status(400).json({ message: "Override has expired and can no longer be approved" });
       }
-      logger.child("routes").error("Approve override error", { error: errMsg });
+
+      const result = await storage.updateRuntimeOverride(id, orgId, {
+        status: "approved",
+        approvedBy,
+        approvedAt: new Date(),
+      });
+      res.json(result);
+    } catch (error) {
+      logger.child("routes").error("Approve override error", { error: String(error) });
       res.status(500).json({ message: "Failed to approve override" });
     }
   });
@@ -384,18 +425,39 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
         return res.status(400).json({ message: "deniedBy is required" });
       }
 
-      const result = denyEmergencyOverride(id, orgId, deniedBy);
-      if (!result) {
+      const existing = await storage.getRuntimeOverride(id, orgId);
+      if (!existing) {
         return res.status(404).json({ message: "Override not found" });
       }
-      res.json(result);
-    } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("OVERRIDE_NOT_PENDING")) {
+      if (existing.status !== "pending") {
         return res.status(400).json({ message: "Override is not in pending state" });
       }
-      logger.child("routes").error("Deny override error", { error: errMsg });
+
+      const result = await storage.updateRuntimeOverride(id, orgId, {
+        status: "denied",
+        metadata: {
+          ...(typeof existing.metadata === "object" && existing.metadata !== null ? existing.metadata : {}),
+          deniedBy,
+          deniedAt: new Date().toISOString(),
+        },
+      });
+      res.json(result);
+    } catch (error) {
+      logger.child("routes").error("Deny override error", { error: String(error) });
       res.status(500).json({ message: "Failed to deny override" });
+    }
+  });
+
+  // Simulations list — kept on engine for backward compatibility
+  app.get("/api/runtime-guardrails/simulations", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      // Decisions logged as simulations are stored in the decisions table
+      const decisions = await storage.getRuntimeDecisions(orgId, 50);
+      res.json(decisions);
+    } catch (error) {
+      logger.child("routes").error("List simulations error", { error: String(error) });
+      res.status(500).json({ message: "Failed to list simulations" });
     }
   });
 }

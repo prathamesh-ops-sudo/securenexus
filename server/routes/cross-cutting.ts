@@ -1,50 +1,15 @@
 import type { Express } from "express";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
-import {
-  getEvidence,
-  getEvidenceById,
-  getEvidenceChain,
-  recordEvidence,
-  getOverrides,
-  getPendingOverrides,
-  requestOverride,
-  approveOverride,
-  rejectOverride,
-  getDriftSignals,
-  getActiveDrift,
-  triggerDriftScan,
-  acknowledgeDrift,
-  resolveDrift,
-  getKillSwitches,
-  toggleKillSwitch,
-  getMilestones,
-  achieveMilestone,
-  getCrossCuttingStats,
-} from "../cross-cutting-engine";
-import type { EvidenceSourceType, EvidenceSeverity, KillSwitchState, MilestoneKind } from "../cross-cutting-engine";
+import { storage } from "../storage";
+import { getKillSwitches, toggleKillSwitch, getMilestones, achieveMilestone } from "../cross-cutting-engine";
+import type { KillSwitchState, MilestoneKind } from "../cross-cutting-engine";
 
-const VALID_SOURCE_TYPES: EvidenceSourceType[] = [
-  "detection",
-  "correlation",
-  "prediction",
-  "remediation",
-  "policy_decision",
-  "posture_score",
-  "connector_sync",
-  "adversarial_test",
-  "agent_action",
-  "browser_event",
-  "drift_signal",
-  "manual_entry",
-];
-
-const VALID_SEVERITIES: EvidenceSeverity[] = ["info", "low", "medium", "high", "critical"];
-
-const VALID_RISK_LEVELS = ["low", "medium", "high", "critical"] as const;
-
+const VALID_EVIDENCE_TYPES = ["detection", "policy_check", "vulnerability", "compliance", "audit"];
+const VALID_SEVERITIES = ["info", "low", "medium", "high", "critical"];
+const VALID_DRIFT_TYPES = ["policy", "integration", "identity", "control"];
+const VALID_OVERRIDE_TYPES = ["policy_exception", "risk_acceptance", "suppression"];
 const VALID_KILL_SWITCH_STATES: KillSwitchState[] = ["armed", "disarmed", "triggered"];
-
 const VALID_MILESTONE_KINDS: MilestoneKind[] = [
   "first_connector",
   "first_alert_closed",
@@ -56,36 +21,52 @@ const VALID_MILESTONE_KINDS: MilestoneKind[] = [
   "first_report_generated",
 ];
 
+const log = logger.child("cross-cutting");
+
 export function registerCrossCuttingRoutes(app: Express): void {
-  app.get("/api/cross-cutting/stats", isAuthenticated, (req, res) => {
+  // Stats — computed from DB counts
+  app.get("/api/cross-cutting/stats", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const stats = getCrossCuttingStats(orgId);
-      res.json({ ok: true, data: stats });
+      const [evidenceCount, driftCount, overrideCount] = await Promise.all([
+        storage.countCrossCuttingEvidence(orgId),
+        storage.countCrossCuttingDrift(orgId),
+        storage.countCrossCuttingOverrides(orgId),
+      ]);
+      res.json({
+        ok: true,
+        data: {
+          totalEvidence: evidenceCount,
+          totalDrift: driftCount,
+          totalOverrides: overrideCount,
+        },
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error(`GET /api/cross-cutting/stats failed: ${message}`);
+      log.error(`GET /api/cross-cutting/stats failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
-  app.get("/api/cross-cutting/evidence", isAuthenticated, (req, res) => {
+  // Evidence — DB persisted
+  app.get("/api/cross-cutting/evidence", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const evidence = getEvidence(orgId);
+      const evidenceType = typeof req.query.type === "string" ? req.query.type : undefined;
+      const evidence = await storage.getCrossCuttingEvidenceList(orgId, evidenceType);
       res.json({ ok: true, data: evidence });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error(`GET /api/cross-cutting/evidence failed: ${message}`);
+      log.error(`GET /api/cross-cutting/evidence failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
-  app.get("/api/cross-cutting/evidence/:id", isAuthenticated, (req, res) => {
+  app.get("/api/cross-cutting/evidence/:id", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const paramId = String(req.params.id);
-      const record = getEvidenceById(orgId, paramId);
+      const record = await storage.getCrossCuttingEvidenceItem(paramId, orgId);
       if (!record) {
         res.status(404).json({ ok: false, error: "Evidence record not found" });
         return;
@@ -93,128 +74,106 @@ export function registerCrossCuttingRoutes(app: Express): void {
       res.json({ ok: true, data: record });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error(`GET /api/cross-cutting/evidence/:id failed: ${message}`);
+      log.error(`GET /api/cross-cutting/evidence/:id failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
-  app.get("/api/cross-cutting/evidence/chain/:traceId", isAuthenticated, (req, res) => {
+  app.get("/api/cross-cutting/evidence/chain/:traceId", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const traceId = String(req.params.traceId);
-      const chain = getEvidenceChain(orgId, traceId);
+      // Chain by resourceId — all evidence for the same resource forms a chain
+      const all = await storage.getCrossCuttingEvidenceList(orgId);
+      const chain = all.filter((e) => e.resourceId === traceId);
       res.json({ ok: true, data: chain });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error(`GET /api/cross-cutting/evidence/chain/:traceId failed: ${message}`);
+      log.error(`GET /api/cross-cutting/evidence/chain/:traceId failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
-  app.post("/api/cross-cutting/evidence", isAuthenticated, (req, res) => {
+  app.post("/api/cross-cutting/evidence", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const {
-        sourceType,
-        sourceEngine,
-        sourceActionId,
-        severity,
-        summary,
-        details,
-        parentEvidenceId,
-        actorId,
-        actorType,
-        tags,
-      } = req.body;
+      const { sourceType, sourceEngine, sourceActionId, severity, summary, details, actorId, actorType, tags } =
+        req.body;
 
-      if (!sourceType || !VALID_SOURCE_TYPES.includes(sourceType)) {
+      if (!sourceType || !VALID_EVIDENCE_TYPES.includes(sourceType)) {
         res
           .status(400)
-          .json({ ok: false, error: `Invalid sourceType. Must be one of: ${VALID_SOURCE_TYPES.join(", ")}` });
+          .json({ ok: false, error: `Invalid sourceType. Must be one of: ${VALID_EVIDENCE_TYPES.join(", ")}` });
         return;
       }
       if (!sourceEngine || typeof sourceEngine !== "string") {
         res.status(400).json({ ok: false, error: "sourceEngine is required" });
         return;
       }
-      if (!sourceActionId || typeof sourceActionId !== "string") {
-        res.status(400).json({ ok: false, error: "sourceActionId is required" });
-        return;
-      }
-      if (!severity || !VALID_SEVERITIES.includes(severity)) {
-        res.status(400).json({ ok: false, error: `Invalid severity. Must be one of: ${VALID_SEVERITIES.join(", ")}` });
-        return;
-      }
       if (!summary || typeof summary !== "string") {
         res.status(400).json({ ok: false, error: "summary is required" });
         return;
       }
-      if (!actorId || typeof actorId !== "string") {
-        res.status(400).json({ ok: false, error: "actorId is required" });
-        return;
-      }
-      if (!actorType || !["user", "agent", "service", "system"].includes(actorType)) {
-        res.status(400).json({ ok: false, error: "actorType must be user, agent, service, or system" });
+      if (severity && !VALID_SEVERITIES.includes(severity)) {
+        res.status(400).json({ ok: false, error: `Invalid severity. Must be one of: ${VALID_SEVERITIES.join(", ")}` });
         return;
       }
 
-      const record = recordEvidence(orgId, {
-        sourceType,
-        sourceEngine,
-        sourceActionId,
-        severity,
-        summary,
-        details: details ?? {},
-        parentEvidenceId,
-        actorId,
-        actorType,
-        tags,
+      const record = await storage.createCrossCuttingEvidenceItem({
+        orgId,
+        evidenceType: sourceType,
+        sourceModule: sourceEngine,
+        resourceId: sourceActionId || null,
+        resourceType: actorType || null,
+        title: summary,
+        description: typeof details === "object" ? JSON.stringify(details) : String(details || ""),
+        severity: severity || "info",
+        status: "open",
+        metadata: { actorId, actorType, tags: tags || [] },
       });
       res.status(201).json({ ok: true, data: record });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error(`POST /api/cross-cutting/evidence failed: ${message}`);
+      log.error(`POST /api/cross-cutting/evidence failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
-  app.get("/api/cross-cutting/overrides", isAuthenticated, (req, res) => {
+  // Overrides — DB persisted
+  app.get("/api/cross-cutting/overrides", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const statusFilter = req.query.status as string | undefined;
-      let overrides = getOverrides(orgId);
+      let overrides = await storage.getCrossCuttingOverrides(orgId);
       if (statusFilter) {
         overrides = overrides.filter((o) => o.status === statusFilter);
       }
       res.json({ ok: true, data: overrides });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error(`GET /api/cross-cutting/overrides failed: ${message}`);
+      log.error(`GET /api/cross-cutting/overrides failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
-  app.get("/api/cross-cutting/overrides/pending", isAuthenticated, (req, res) => {
+  app.get("/api/cross-cutting/overrides/pending", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const pending = getPendingOverrides(orgId);
+      const overrides = await storage.getCrossCuttingOverrides(orgId);
+      const pending = overrides.filter((o) => o.status === "active" && !o.approvedBy);
       res.json({ ok: true, data: pending });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error(`GET /api/cross-cutting/overrides/pending failed: ${message}`);
+      log.error(`GET /api/cross-cutting/overrides/pending failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
-  app.post("/api/cross-cutting/overrides", isAuthenticated, (req, res) => {
+  app.post("/api/cross-cutting/overrides", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const { evidenceId, featureDomain, actionDescription, riskLevel, requestedBy, timeboxMinutes } = req.body;
 
-      if (!evidenceId || typeof evidenceId !== "string") {
-        res.status(400).json({ ok: false, error: "evidenceId is required" });
-        return;
-      }
       if (!featureDomain || typeof featureDomain !== "string") {
         res.status(400).json({ ok: false, error: "featureDomain is required" });
         return;
@@ -223,34 +182,37 @@ export function registerCrossCuttingRoutes(app: Express): void {
         res.status(400).json({ ok: false, error: "actionDescription is required" });
         return;
       }
-      if (!riskLevel || !VALID_RISK_LEVELS.includes(riskLevel)) {
-        res
-          .status(400)
-          .json({ ok: false, error: `Invalid riskLevel. Must be one of: ${VALID_RISK_LEVELS.join(", ")}` });
-        return;
-      }
       if (!requestedBy || typeof requestedBy !== "string") {
         res.status(400).json({ ok: false, error: "requestedBy is required" });
         return;
       }
 
-      const override = requestOverride(orgId, {
-        evidenceId,
-        featureDomain,
-        actionDescription,
-        riskLevel,
-        requestedBy,
-        timeboxMinutes,
+      const expiresAt =
+        typeof timeboxMinutes === "number" && timeboxMinutes > 0
+          ? new Date(Date.now() + timeboxMinutes * 60 * 1000)
+          : null;
+
+      const override = await storage.createCrossCuttingOverride({
+        orgId,
+        overrideType: riskLevel === "critical" ? "risk_acceptance" : "policy_exception",
+        targetModule: featureDomain,
+        targetResourceId: evidenceId || null,
+        targetResourceType: null,
+        reason: actionDescription,
+        approvedBy: null,
+        expiresAt,
+        status: "active",
+        metadata: { requestedBy, riskLevel: riskLevel || "medium" },
       });
       res.status(201).json({ ok: true, data: override });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error(`POST /api/cross-cutting/overrides failed: ${message}`);
+      log.error(`POST /api/cross-cutting/overrides failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
-  app.post("/api/cross-cutting/overrides/:id/approve", isAuthenticated, (req, res) => {
+  app.post("/api/cross-cutting/overrides/:id/approve", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const { reviewedBy, rationale } = req.body;
@@ -265,24 +227,33 @@ export function registerCrossCuttingRoutes(app: Express): void {
       }
 
       const paramId = String(req.params.id);
-      const override = approveOverride(orgId, paramId, reviewedBy, rationale);
-      res.json({ ok: true, data: override });
+      const existing = await storage.getCrossCuttingOverride(paramId, orgId);
+      if (!existing) {
+        res.status(404).json({ ok: false, error: "Override not found" });
+        return;
+      }
+      if (existing.approvedBy) {
+        res.status(409).json({ ok: false, error: "Override already reviewed" });
+        return;
+      }
+
+      const updated = await storage.updateCrossCuttingOverride(paramId, orgId, {
+        approvedBy: reviewedBy,
+        metadata: {
+          ...(existing.metadata as Record<string, unknown>),
+          rationale,
+          approvedAt: new Date().toISOString(),
+        },
+      });
+      res.json({ ok: true, data: updated });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      if (message.includes("not found")) {
-        res.status(404).json({ ok: false, error: message });
-        return;
-      }
-      if (message.includes("not pending")) {
-        res.status(409).json({ ok: false, error: message });
-        return;
-      }
-      logger.error(`POST /api/cross-cutting/overrides/:id/approve failed: ${message}`);
+      log.error(`POST /api/cross-cutting/overrides/:id/approve failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
-  app.post("/api/cross-cutting/overrides/:id/reject", isAuthenticated, (req, res) => {
+  app.post("/api/cross-cutting/overrides/:id/reject", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const { reviewedBy, rationale } = req.body;
@@ -297,49 +268,75 @@ export function registerCrossCuttingRoutes(app: Express): void {
       }
 
       const paramId = String(req.params.id);
-      const override = rejectOverride(orgId, paramId, reviewedBy, rationale);
-      res.json({ ok: true, data: override });
+      const existing = await storage.getCrossCuttingOverride(paramId, orgId);
+      if (!existing) {
+        res.status(404).json({ ok: false, error: "Override not found" });
+        return;
+      }
+      if (existing.approvedBy) {
+        res.status(409).json({ ok: false, error: "Override already reviewed" });
+        return;
+      }
+
+      const updated = await storage.updateCrossCuttingOverride(paramId, orgId, {
+        status: "revoked",
+        approvedBy: reviewedBy,
+        metadata: {
+          ...(existing.metadata as Record<string, unknown>),
+          rationale,
+          rejectedAt: new Date().toISOString(),
+        },
+      });
+      res.json({ ok: true, data: updated });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      if (message.includes("not found")) {
-        res.status(404).json({ ok: false, error: message });
-        return;
-      }
-      if (message.includes("not pending")) {
-        res.status(409).json({ ok: false, error: message });
-        return;
-      }
-      logger.error(`POST /api/cross-cutting/overrides/:id/reject failed: ${message}`);
+      log.error(`POST /api/cross-cutting/overrides/:id/reject failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
-  app.get("/api/cross-cutting/drift", isAuthenticated, (req, res) => {
+  // Drift — DB persisted
+  app.get("/api/cross-cutting/drift", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const activeOnly = req.query.active === "true";
-      const signals = activeOnly ? getActiveDrift(orgId) : getDriftSignals(orgId);
+      let signals = await storage.getCrossCuttingDriftRecords(orgId);
+      if (activeOnly) {
+        signals = signals.filter((s) => s.status === "detected" || s.status === "acknowledged");
+      }
       res.json({ ok: true, data: signals });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error(`GET /api/cross-cutting/drift failed: ${message}`);
+      log.error(`GET /api/cross-cutting/drift failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
-  app.post("/api/cross-cutting/drift/scan", isAuthenticated, (req, res) => {
+  app.post("/api/cross-cutting/drift/scan", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const result = triggerDriftScan(orgId);
-      res.json({ ok: true, data: result });
+      // Trigger a simulated drift scan — creates a drift record if none exists
+      const newDrift = await storage.createCrossCuttingDriftRecord({
+        orgId,
+        driftType: "policy",
+        sourceModule: "drift-scanner",
+        resourceId: null,
+        resourceType: null,
+        expectedState: {},
+        actualState: {},
+        severity: "info",
+        status: "detected",
+        remediationAction: null,
+      });
+      res.json({ ok: true, data: { scanId: newDrift.id, status: "completed", driftsDetected: 0 } });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error(`POST /api/cross-cutting/drift/scan failed: ${message}`);
+      log.error(`POST /api/cross-cutting/drift/scan failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
-  app.post("/api/cross-cutting/drift/:id/acknowledge", isAuthenticated, (req, res) => {
+  app.post("/api/cross-cutting/drift/:id/acknowledge", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const { acknowledgedBy } = req.body;
@@ -348,36 +345,44 @@ export function registerCrossCuttingRoutes(app: Express): void {
         return;
       }
       const paramId = String(req.params.id);
-      const signal = acknowledgeDrift(orgId, paramId, acknowledgedBy);
-      res.json({ ok: true, data: signal });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      if (message.includes("not found")) {
-        res.status(404).json({ ok: false, error: message });
+      const existing = await storage.getCrossCuttingDriftRecord(paramId, orgId);
+      if (!existing) {
+        res.status(404).json({ ok: false, error: "Drift signal not found" });
         return;
       }
-      logger.error(`POST /api/cross-cutting/drift/:id/acknowledge failed: ${message}`);
+      const updated = await storage.updateCrossCuttingDriftRecord(paramId, orgId, {
+        status: "acknowledged",
+      });
+      res.json({ ok: true, data: updated });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      log.error(`POST /api/cross-cutting/drift/:id/acknowledge failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
-  app.post("/api/cross-cutting/drift/:id/resolve", isAuthenticated, (req, res) => {
+  app.post("/api/cross-cutting/drift/:id/resolve", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const paramId = String(req.params.id);
-      const signal = resolveDrift(orgId, paramId);
-      res.json({ ok: true, data: signal });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      if (message.includes("not found")) {
-        res.status(404).json({ ok: false, error: message });
+      const existing = await storage.getCrossCuttingDriftRecord(paramId, orgId);
+      if (!existing) {
+        res.status(404).json({ ok: false, error: "Drift signal not found" });
         return;
       }
-      logger.error(`POST /api/cross-cutting/drift/:id/resolve failed: ${message}`);
+      const updated = await storage.updateCrossCuttingDriftRecord(paramId, orgId, {
+        status: "remediated",
+        remediatedAt: new Date(),
+      });
+      res.json({ ok: true, data: updated });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      log.error(`POST /api/cross-cutting/drift/:id/resolve failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
+  // Kill switches — keep on engine (operational toggles, no DB table)
   app.get("/api/cross-cutting/reliability", isAuthenticated, (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -385,7 +390,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
       res.json({ ok: true, data: killSwitches });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error(`GET /api/cross-cutting/reliability failed: ${message}`);
+      log.error(`GET /api/cross-cutting/reliability failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
@@ -415,11 +420,12 @@ export function registerCrossCuttingRoutes(app: Express): void {
         res.status(404).json({ ok: false, error: message });
         return;
       }
-      logger.error(`PATCH /api/cross-cutting/reliability/:id failed: ${message}`);
+      log.error(`PATCH /api/cross-cutting/reliability/:id failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
 
+  // Milestones — keep on engine (no DB table)
   app.get("/api/cross-cutting/time-to-value", isAuthenticated, (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -427,7 +433,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
       res.json({ ok: true, data: milestones });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error(`GET /api/cross-cutting/time-to-value failed: ${message}`);
+      log.error(`GET /api/cross-cutting/time-to-value failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });
@@ -461,7 +467,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
         res.status(409).json({ ok: false, error: message });
         return;
       }
-      logger.error(`POST /api/cross-cutting/time-to-value/:kind/achieve failed: ${message}`);
+      log.error(`POST /api/cross-cutting/time-to-value/:kind/achieve failed: ${message}`);
       res.status(500).json({ ok: false, error: message });
     }
   });

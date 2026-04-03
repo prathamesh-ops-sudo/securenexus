@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import crypto from "crypto";
 import { db } from "./db";
 import { collectorInstances, collectorEvents, collectorScans } from "@shared/schema";
@@ -531,7 +532,7 @@ function generateId(): string {
 }
 
 function randomBetween(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  return min + crypto.randomInt(max - min + 1);
 }
 
 export function getCollectorTemplates(type?: CollectorType): CollectorTemplate[] {

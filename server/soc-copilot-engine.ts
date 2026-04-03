@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID, randomInt } from "crypto";
 
 export type ActionClass = "READ" | "SUGGEST" | "EXECUTE_WITH_APPROVAL" | "AUTO_EXECUTE_LOW_RISK";
 
@@ -135,11 +135,11 @@ function genId(prefix: string): string {
 }
 
 function randomBetween(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  return randomInt(min, max + 1);
 }
 
 function randomFloat(min: number, max: number): number {
-  return Math.round((Math.random() * (max - min) + min) * 100) / 100;
+  return Math.round(((randomInt(0, 100) / 100) * (max - min) + min) * 100) / 100;
 }
 
 const orgTriageStore = new Map<string, TriageSummary[]>();
@@ -904,7 +904,9 @@ export function getTriageById(orgId: string, triageId: string): TriageSummary | 
 
 export function generateTriage(orgId: string, alertId: string, alertTitle: string, severity: string): TriageSummary {
   const verdicts: TriageVerdict[] = ["true_positive", "false_positive", "needs_investigation", "benign"];
-  const verdict = verdicts[Math.floor(Math.random() * verdicts.length)];
+  // Determine verdict based on severity — higher severity = more likely true positive
+  const verdictIdx = severity === "critical" ? 0 : severity === "high" ? 0 : severity === "medium" ? 2 : 3;
+  const verdict = verdicts[verdictIdx];
   const confidence = randomFloat(0.55, 0.98);
 
   const summaryTemplates: Record<TriageVerdict, string> = {

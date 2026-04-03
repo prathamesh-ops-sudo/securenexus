@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { randomBytes } from "crypto";
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, storage, strictLimiter } from "../shared";
 import { isAuthenticated } from "../../auth";
@@ -262,7 +264,7 @@ export function registerAiModelsRoutes(app: Express): void {
         const requiresApproval = !LOW_RISK_ACTIONS.includes(actionType);
 
         const proposal = {
-          id: `ra_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          id: `ra_${Date.now()}_${randomBytes(4).toString("hex")}`,
           orgId,
           incidentId,
           actionType,

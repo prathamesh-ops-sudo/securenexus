@@ -2,18 +2,11 @@ import type { Express, Request, Response } from "express";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
 import { logger, getOrgId, sendEnvelope } from "./shared";
-import {
-  getExecutiveDashboard,
-  getBoardSummaries,
-  getBoardSummaryById,
-  generateBoardSummary,
-  getMetricsByCategory,
-} from "../executive-risk-engine";
-import type { SummaryPeriod } from "../executive-risk-engine";
+import * as storage from "../storage/executive-risk";
 
 const log = logger.child("executive-risk");
 
-const VALID_PERIODS: SummaryPeriod[] = ["weekly", "monthly", "quarterly"];
+const VALID_PERIODS = ["weekly", "monthly", "quarterly"] as const;
 const VALID_CATEGORIES = ["action", "vanity"] as const;
 
 export function registerExecutiveRiskRoutes(app: Express): void {
@@ -25,8 +18,19 @@ export function registerExecutiveRiskRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const dashboard = getExecutiveDashboard(orgId);
-        return sendEnvelope(res, dashboard);
+        const [summaries, metrics] = await Promise.all([
+          storage.getBoardSummaries(orgId),
+          storage.getExecutiveMetrics(orgId),
+        ]);
+        const actionMetrics = metrics.filter((m) => m.category === "action");
+        const vanityMetrics = metrics.filter((m) => m.category === "vanity");
+        return sendEnvelope(res, {
+          summaries,
+          actionMetrics,
+          vanityMetrics,
+          totalSummaries: summaries.length,
+          totalMetrics: metrics.length,
+        });
       } catch (err) {
         log.error("Failed to get executive dashboard", { error: String(err) });
         return sendEnvelope(res, null, {
@@ -44,6 +48,7 @@ export function registerExecutiveRiskRoutes(app: Express): void {
     requireOrgId,
     async (req: Request, res: Response) => {
       try {
+        const orgId = getOrgId(req);
         const category = typeof req.query.category === "string" ? req.query.category : undefined;
         if (category && !VALID_CATEGORIES.includes(category as (typeof VALID_CATEGORIES)[number])) {
           return sendEnvelope(res, null, {
@@ -54,14 +59,51 @@ export function registerExecutiveRiskRoutes(app: Express): void {
           });
         }
         const metrics = category
-          ? getMetricsByCategory(category as "action" | "vanity")
-          : [...getMetricsByCategory("action"), ...getMetricsByCategory("vanity")];
+          ? await storage.getExecutiveMetricsByCategory(orgId, category)
+          : await storage.getExecutiveMetrics(orgId);
         return sendEnvelope(res, metrics);
       } catch (err) {
         log.error("Failed to get metrics", { error: String(err) });
         return sendEnvelope(res, null, {
           status: 500,
           errors: [{ code: "INTERNAL_ERROR", message: "Failed to fetch metrics" }],
+        });
+      }
+    },
+  );
+
+  app.post(
+    "/api/executive-risk/metrics",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const { name, description, category, value, unit, trend, target } = req.body;
+        if (!name || typeof name !== "string") {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "VALIDATION_ERROR", message: "name is required" }],
+          });
+        }
+        const metric = await storage.createExecutiveMetric({
+          orgId,
+          name,
+          description: description || null,
+          category: category || "action",
+          value: value ?? 0,
+          unit: unit || "count",
+          trend: trend || "stable",
+          target: target ?? null,
+        });
+        return sendEnvelope(res, metric, { status: 201 });
+      } catch (err) {
+        log.error("Failed to create metric", { error: String(err) });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "INTERNAL_ERROR", message: "Failed to create metric" }],
         });
       }
     },
@@ -75,7 +117,7 @@ export function registerExecutiveRiskRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const summaries = getBoardSummaries(orgId);
+        const summaries = await storage.getBoardSummaries(orgId);
         return sendEnvelope(res, summaries);
       } catch (err) {
         log.error("Failed to get board summaries", { error: String(err) });
@@ -95,9 +137,9 @@ export function registerExecutiveRiskRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const summaryId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        const summary = getBoardSummaryById(orgId, summaryId);
-        if (!summary) {
+        const summaryId = String(req.params.id);
+        const summary = await storage.getBoardSummary(summaryId);
+        if (!summary || summary.orgId !== orgId) {
           return sendEnvelope(res, null, {
             status: 404,
             errors: [{ code: "NOT_FOUND", message: "Board summary not found" }],
@@ -115,7 +157,7 @@ export function registerExecutiveRiskRoutes(app: Express): void {
   );
 
   app.post(
-    "/api/executive-risk/summaries/generate",
+    "/api/executive-risk/summaries",
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
@@ -124,24 +166,64 @@ export function registerExecutiveRiskRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const user = req.user as { id?: string } | undefined;
-        const period = typeof req.body.period === "string" ? req.body.period : "monthly";
+        const { title, period, executiveSynopsis, keyFindings, riskPosture, recommendations } = req.body;
 
-        if (!VALID_PERIODS.includes(period as SummaryPeriod)) {
+        if (!title || typeof title !== "string") {
           return sendEnvelope(res, null, {
             status: 400,
-            errors: [
-              { code: "VALIDATION_ERROR", message: `Invalid period. Must be one of: ${VALID_PERIODS.join(", ")}` },
-            ],
+            errors: [{ code: "VALIDATION_ERROR", message: "title is required" }],
           });
         }
+        const validPeriod =
+          typeof period === "string" && VALID_PERIODS.includes(period as (typeof VALID_PERIODS)[number])
+            ? period
+            : "monthly";
 
-        const summary = generateBoardSummary(orgId, period as SummaryPeriod, user?.id || "unknown");
+        const summary = await storage.createBoardSummary({
+          orgId,
+          title,
+          period: validPeriod,
+          executiveSynopsis: executiveSynopsis || null,
+          keyFindings: keyFindings || [],
+          riskPosture: riskPosture || {},
+          recommendations: recommendations || [],
+          generatedBy: user?.id || "unknown",
+        });
         return sendEnvelope(res, summary, { status: 201 });
       } catch (err) {
-        log.error("Failed to generate board summary", { error: String(err) });
+        log.error("Failed to create board summary", { error: String(err) });
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "INTERNAL_ERROR", message: "Failed to generate board summary" }],
+          errors: [{ code: "INTERNAL_ERROR", message: "Failed to create board summary" }],
+        });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/executive-risk/summaries/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const summaryId = String(req.params.id);
+        const summary = await storage.getBoardSummary(summaryId);
+        if (!summary || summary.orgId !== orgId) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "Board summary not found" }],
+          });
+        }
+        await storage.deleteBoardSummary(summaryId);
+        return sendEnvelope(res, { deleted: true });
+      } catch (err) {
+        log.error("Failed to delete board summary", { error: String(err) });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "INTERNAL_ERROR", message: "Failed to delete board summary" }],
         });
       }
     },
