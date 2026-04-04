@@ -5,8 +5,6 @@ import {
   Activity,
   Settings,
   LogOut,
-  ArrowDownToLine,
-  Plug,
   Brain,
   Zap,
   ChevronRight,
@@ -16,16 +14,9 @@ import {
   Workflow,
   Network,
   GitBranch,
-  Swords,
   Scale,
-  Link2,
-  TrendingUp,
-  Bot,
-  Gauge,
   Cloud,
-  Monitor,
   Users,
-  FileText,
   History,
   CreditCard,
   Building2,
@@ -34,55 +25,17 @@ import {
   ShieldCheck,
   Code2,
   Mail,
-  Rss,
-  Send,
-  FolderOpen,
+  Lock,
   KeyRound,
   Fingerprint,
-  MessageSquare,
-  EyeOff,
-  BookOpen,
-  Webhook as WebhookIcon,
-  Upload,
-  Newspaper,
-  GitMerge,
-  ShieldBan,
-  Lock,
-  HardDrive,
   Package,
-  BadgeCheck,
   Layers,
-  ClipboardList,
   Search,
-  DollarSign,
   Server,
   Microscope,
-  Target,
-  Bug,
-  HeartPulse,
-  Wand2,
-  LayoutGrid,
   Database,
-  Flame,
-  ListTodo,
-  RotateCcw,
   Globe,
-  Cpu,
-  Calendar,
-  ClipboardCheck,
-  Flag,
   ShieldAlert,
-  Scan,
-  UserCheck,
-  Zap as ZapIcon,
-  Terminal,
-  Factory,
-  Smartphone,
-  Palette,
-  DoorOpen,
-  GraduationCap,
-  Atom,
-  Radar,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.png";
 import { useLocation, Link } from "wouter";
@@ -139,7 +92,13 @@ const coreItems: NavItem[] = [
 const ENABLED_MODULES_KEY = "securenexus.enabledModules.v1";
 
 /** Groups shown by default for every new user */
-const DEFAULT_ENABLED_MODULES = new Set(["Watch & Recon", "Investigate", "Respond", "Posture", "Data & Integrations"]);
+const DEFAULT_ENABLED_MODULES = new Set([
+  "Threat Intelligence",
+  "Investigate",
+  "Respond",
+  "Posture",
+  "Data & Integrations",
+]);
 
 function loadEnabledModules(): Set<string> {
   try {
@@ -157,27 +116,14 @@ function saveEnabledModules(modules: Set<string>) {
 
 const navGroups: NavGroup[] = [
   {
-    label: "Watch & Recon",
+    label: "Threat Intelligence",
     icon: Globe,
     color: "text-cyan-400",
     core: true,
     sections: [
       {
-        label: "Intelligence Collection",
-        items: [
-          { title: "Threat Intel Feeds", url: "/threat-intel-feeds", icon: Newspaper },
-          { title: "OSINT Monitoring", url: "/osint-feeds-config", icon: Rss },
-          { title: "IOC Management", url: "/ioc-ingestion-matching", icon: Upload },
-          { title: "CVE Database", url: "/cve-browser", icon: Bug },
-        ],
-      },
-      {
-        label: "Adversary Tracking",
-        items: [
-          { title: "Campaigns", url: "/campaign-viewer", icon: Target },
-          { title: "MITRE ATT&CK", url: "/mitre-attack", icon: Crosshair },
-          { title: "Kill Chain", url: "/kill-chain", icon: Swords },
-        ],
+        label: "Threat Intelligence",
+        items: [{ title: "Threat Intelligence", url: "/threat-intelligence", icon: Globe }],
       },
     ],
   },
@@ -188,22 +134,10 @@ const navGroups: NavGroup[] = [
     core: true,
     sections: [
       {
-        label: "Graph Analysis",
+        label: "Investigation Tools",
         items: [
-          { title: "Security Graph", url: "/security-graph", icon: Network },
-          { title: "Attack Paths", url: "/attack-graph", icon: GitBranch },
-          { title: "Entity Explorer", url: "/entity-graph", icon: Search },
-          { title: "Entity Resolution", url: "/entity-merge-alias", icon: GitMerge },
-        ],
-      },
-      {
-        label: "Case Management",
-        items: [
-          { title: "War Room", url: "/war-room", icon: Shield },
-          { title: "Threat Hunting", url: "/threat-hunting", icon: Crosshair },
-          { title: "Timeline", url: "/investigation-timeline", icon: History },
-          { title: "Evidence Chain", url: "/evidence-chain-viewer", icon: Fingerprint },
-          { title: "Evidence Locker", url: "/evidence-custody", icon: Link2 },
+          { title: "Security Graph", url: "/security-graph-hub", icon: Network },
+          { title: "Investigations", url: "/investigations", icon: Microscope },
         ],
       },
     ],
@@ -215,19 +149,8 @@ const navGroups: NavGroup[] = [
     core: true,
     sections: [
       {
-        label: "Automation",
-        items: [
-          { title: "Playbooks", url: "/playbooks", icon: Workflow },
-          { title: "Autonomous Response", url: "/autonomous-response", icon: Bot },
-          { title: "Rollback History", url: "/rollback-history", icon: RotateCcw },
-        ],
-      },
-      {
-        label: "Templates",
-        items: [
-          { title: "Playbook Library", url: "/playbook-templates", icon: BookOpen },
-          { title: "Runbook Library", url: "/runbook-templates", icon: ClipboardList },
-        ],
+        label: "Response",
+        items: [{ title: "Playbooks & Response", url: "/response", icon: Workflow }],
       },
     ],
   },
@@ -238,18 +161,10 @@ const navGroups: NavGroup[] = [
     core: true,
     sections: [
       {
-        label: "Cloud & Infrastructure",
+        label: "Posture",
         items: [
-          { title: "CSPM", url: "/cspm", icon: Cloud },
-          { title: "Endpoint Telemetry", url: "/endpoint-telemetry", icon: Monitor },
-          { title: "Vulnerability Mgmt", url: "/security-posture", icon: Gauge },
-        ],
-      },
-      {
-        label: "Identity & Access",
-        items: [
-          { title: "JIT Access", url: "/jit-secret-access", icon: KeyRound },
-          { title: "Secret Rotation", url: "/secret-rotation-overview", icon: RotateCcw },
+          { title: "Cloud & Endpoint", url: "/cloud-endpoint", icon: Cloud },
+          { title: "Identity & Access", url: "/identity-access", icon: KeyRound },
         ],
       },
     ],
@@ -260,21 +175,8 @@ const navGroups: NavGroup[] = [
     color: "text-fuchsia-400",
     sections: [
       {
-        label: "Capabilities",
-        items: [
-          { title: "AI Engine", url: "/ai-engine", icon: Brain },
-          { title: "SOC Co-Pilot", url: "/soc-copilot", icon: MessageSquare },
-          { title: "Prompt Builder", url: "/prompt-to-artifact", icon: Wand2 },
-        ],
-      },
-      {
-        label: "Governance",
-        items: [
-          { title: "Model Gateway", url: "/model-gateway", icon: Server },
-          { title: "Prompt Registry", url: "/ai-prompt-registry", icon: BookOpen },
-          { title: "Feedback Loop", url: "/ai-feedback", icon: MessageSquare },
-          { title: "Budget & Limits", url: "/ai-budget-controls", icon: DollarSign },
-        ],
+        label: "AI Platform",
+        items: [{ title: "AI Platform", url: "/ai-platform", icon: Brain }],
       },
     ],
   },
@@ -285,150 +187,34 @@ const navGroups: NavGroup[] = [
     core: true,
     sections: [
       {
-        label: "Connectivity",
-        items: [
-          { title: "Connectors", url: "/connectors", icon: Plug },
-          { title: "Marketplace", url: "/integration-marketplace", icon: Package },
-          { title: "Native Collectors", url: "/native-collectors", icon: HardDrive },
-          { title: "Webhooks", url: "/webhook-security-center", icon: WebhookIcon },
-        ],
-      },
-      {
-        label: "Pipeline",
-        items: [
-          { title: "Ingestion Status", url: "/ingestion", icon: Activity },
-          { title: "Job Queue", url: "/job-queue-dashboard", icon: ListTodo },
-          { title: "Outbox Monitor", url: "/outbox-monitor", icon: Send },
-        ],
-      },
-      {
-        label: "Storage",
-        items: [{ title: "Data Lake", url: "/data-lake", icon: Database }],
+        label: "Data Platform",
+        items: [{ title: "Data Platform", url: "/data-platform", icon: Database }],
       },
     ],
   },
   {
-    label: "Standalone Security",
+    label: "Security Modules",
     icon: Shield,
     color: "text-teal-400",
     sections: [
       {
-        label: "Asset & Risk",
+        label: "Core Modules",
         items: [
-          { title: "Asset Inventory", url: "/asset-inventory", icon: Server },
-          { title: "Risk Register", url: "/risk-register", icon: ShieldAlert },
+          { title: "Detection Engineering", url: "/detection-engineering", icon: ShieldAlert },
+          { title: "Asset & Risk", url: "/asset-risk", icon: Server },
+          { title: "Advanced Threats", url: "/advanced-threats", icon: Crosshair },
+          { title: "Comms Security", url: "/comms-security", icon: Mail },
+          { title: "Specialized Security", url: "/specialized-security", icon: Shield },
         ],
       },
       {
-        label: "Agent & Detection",
+        label: "Standalone",
         items: [
-          { title: "Native Sensors", url: "/native-sensors", icon: Cpu },
-          { title: "Detection Rules", url: "/detection-rules", icon: ShieldAlert },
-          { title: "Vuln Scanner", url: "/vuln-scanner", icon: Scan },
-          { title: "Agent Response", url: "/agent-response", icon: Terminal },
-        ],
-      },
-      {
-        label: "Behavioral Analytics",
-        items: [{ title: "UEBA Analytics", url: "/ueba", icon: UserCheck }],
-      },
-      {
-        label: "Supply Chain",
-        items: [{ title: "Supply Chain Security", url: "/supply-chain", icon: GitBranch }],
-      },
-      {
-        label: "Identity & PAM",
-        items: [{ title: "Identity Governance", url: "/identity-governance", icon: Shield }],
-      },
-      {
-        label: "Deception",
-        items: [{ title: "Deception Technology", url: "/deception", icon: Crosshair }],
-      },
-      {
-        label: "OT/ICS Security",
-        items: [{ title: "OT/ICS Security", url: "/ot-security", icon: Factory }],
-      },
-      {
-        label: "Mobile & Remote",
-        items: [{ title: "Mobile Security", url: "/mobile-security", icon: Smartphone }],
-      },
-      {
-        label: "API Security",
-        items: [{ title: "API Security", url: "/api-security", icon: Globe }],
-      },
-      {
-        label: "Ransomware Defense",
-        items: [{ title: "Ransomware Defense", url: "/ransomware-defense", icon: ShieldAlert }],
-      },
-      {
-        label: "Community Intel",
-        items: [{ title: "Community Threat Intel", url: "/community-intel", icon: Network }],
-      },
-      {
-        label: "Posture & Trust",
-        items: [{ title: "Security Posture Score", url: "/posture-trust-center", icon: ShieldCheck }],
-      },
-      {
-        label: "Chaos Engineering",
-        items: [{ title: "Security Chaos Engineering", url: "/chaos-engineering", icon: ZapIcon }],
-      },
-      {
-        label: "AI Rule Generation",
-        items: [{ title: "AI Detection Rules", url: "/ai-detection-rules", icon: Wand2 }],
-      },
-      {
-        label: "Autonomous SOC",
-        items: [{ title: "Autonomous SOC", url: "/autonomous-soc", icon: Brain }],
-      },
-      {
-        label: "Developer Security",
-        items: [{ title: "Developer Security", url: "/developer-security", icon: Code2 }],
-      },
-      {
-        label: "Third-Party Risk",
-        items: [{ title: "TPRM", url: "/tprm", icon: Building2 }],
-      },
-      {
-        label: "Dark Web Monitoring",
-        items: [{ title: "Dark Web Monitoring", url: "/dark-web-monitoring", icon: EyeOff }],
-      },
-      {
-        label: "Physical Security",
-        items: [{ title: "Physical Security", url: "/physical-security", icon: DoorOpen }],
-      },
-      {
-        label: "Security Awareness",
-        items: [{ title: "Phishing & Awareness", url: "/security-awareness", icon: GraduationCap }],
-      },
-      {
-        label: "Quantum Readiness",
-        items: [{ title: "Quantum Readiness", url: "/quantum-readiness", icon: Atom }],
-      },
-      {
-        label: "Privacy Engineering",
-        items: [{ title: "Privacy Engineering", url: "/privacy-engineering", icon: Fingerprint }],
-      },
-      {
-        label: "DNS Security",
-        items: [{ title: "DNS Security", url: "/dns-security", icon: Radar }],
-      },
-      {
-        label: "Email Security",
-        items: [{ title: "Email Security", url: "/email-security", icon: Mail }],
-      },
-      {
-        label: "MSSP Partner",
-        items: [
-          { title: "MSSP Dashboard", url: "/mssp-dashboard", icon: Building2 },
-          { title: "Partner Portal", url: "/mssp-partner-portal", icon: Palette },
-        ],
-      },
-      {
-        label: "Compliance & Reporting",
-        items: [
-          { title: "Assessments", url: "/security-assessments", icon: ClipboardCheck },
-          { title: "Threat Reports", url: "/threat-reports", icon: Flag },
-          { title: "Advanced Reports", url: "/advanced-reporting", icon: BarChart3 },
+          { title: "Autonomous SOC", url: "/autonomous-soc", icon: Brain },
+          { title: "Developer Security", url: "/developer-security", icon: Code2 },
+          { title: "Supply Chain", url: "/supply-chain", icon: GitBranch },
+          { title: "Community Intel", url: "/community-intel", icon: Network },
+          { title: "Privacy Engineering", url: "/privacy-engineering", icon: Fingerprint },
         ],
       },
     ],
@@ -439,28 +225,12 @@ const navGroups: NavGroup[] = [
     color: "text-amber-400",
     sections: [
       {
-        label: "Compliance",
+        label: "Governance",
         items: [
-          { title: "Compliance Center", url: "/compliance", icon: Scale },
-          { title: "Trust Center", url: "/trust-center", icon: BadgeCheck },
-          { title: "Gap Analysis", url: "/compliance-gap", icon: Search },
+          { title: "Compliance & Governance", url: "/compliance-governance", icon: Scale },
+          { title: "Executive & Reporting", url: "/executive-reporting", icon: BarChart3 },
+          { title: "MSSP & Partners", url: "/mssp", icon: Building2 },
         ],
-      },
-      {
-        label: "Audit & Policy",
-        items: [
-          { title: "Audit Log", url: "/audit-log", icon: FileText },
-          { title: "Policy Packs", url: "/policy-packs", icon: Shield },
-          { title: "Reports", url: "/reports", icon: FileText },
-        ],
-      },
-      {
-        label: "Data Sovereignty",
-        items: [{ title: "Data Residency", url: "/data-residency", icon: Globe }],
-      },
-      {
-        label: "Executive Metrics",
-        items: [{ title: "Board Dashboard", url: "/board-dashboard", icon: TrendingUp }],
       },
     ],
   },
@@ -486,15 +256,6 @@ const adminGroup: NavGroup = {
         { title: "Billing", url: "/billing", icon: CreditCard },
         { title: "Usage", url: "/usage-billing", icon: BarChart3 },
         { title: "Plans & Packaging", url: "/tiered-packaging", icon: Package },
-      ],
-    },
-    {
-      label: "Governance",
-      items: [
-        { title: "Audit Log", url: "/audit-log", icon: Activity },
-        { title: "Compliance", url: "/compliance", icon: Scale },
-        { title: "Trust Center", url: "/trust-center", icon: BadgeCheck },
-        { title: "Policy Packs", url: "/policy-packs", icon: Shield },
       ],
     },
     {
