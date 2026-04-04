@@ -89,7 +89,14 @@ const coreItems: NavItem[] = [
 ];
 
 /* ── Module visibility persistence ─────────────────────────────────── */
-const ENABLED_MODULES_KEY = "securenexus.enabledModules.v1";
+const ENABLED_MODULES_KEY = "securenexus.enabledModules.v2";
+const ENABLED_MODULES_KEY_V1 = "securenexus.enabledModules.v1";
+
+/** Renames applied in v2 */
+const LABEL_MIGRATIONS: Record<string, string> = {
+  "Watch & Recon": "Threat Intelligence",
+  "Standalone Security": "Security Modules",
+};
 
 /** Groups shown by default for every new user */
 const DEFAULT_ENABLED_MODULES = new Set([
@@ -102,8 +109,21 @@ const DEFAULT_ENABLED_MODULES = new Set([
 
 function loadEnabledModules(): Set<string> {
   try {
+    // Try v2 first
     const raw = localStorage.getItem(ENABLED_MODULES_KEY);
     if (raw) return new Set(JSON.parse(raw) as string[]);
+
+    // Migrate from v1 if present
+    const v1 = localStorage.getItem(ENABLED_MODULES_KEY_V1);
+    if (v1) {
+      const oldSet = JSON.parse(v1) as string[];
+      const migrated = oldSet.map((label) => LABEL_MIGRATIONS[label] ?? label);
+      const result = new Set(migrated);
+      // Persist as v2 and clean up v1
+      localStorage.setItem(ENABLED_MODULES_KEY, JSON.stringify(Array.from(result)));
+      localStorage.removeItem(ENABLED_MODULES_KEY_V1);
+      return result;
+    }
   } catch {
     /* use defaults */
   }
