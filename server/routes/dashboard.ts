@@ -67,11 +67,13 @@ export function registerDashboardRoutes(app: Express): void {
                 [orgId],
               ),
               // MTTD: avg time from alert created to first investigation (triage)
+              // incidents use referenced_alert_ids (text[]) not a single alert_id FK
               pool.query(
                 `
               SELECT AVG(EXTRACT(EPOCH FROM (i.created_at - a.created_at)) / 60)::numeric(10,1) AS mttd_minutes
               FROM incidents i
-              JOIN alerts a ON a.id = i.alert_id AND a.org_id = $1
+              CROSS JOIN LATERAL unnest(i.referenced_alert_ids) AS ref_id
+              JOIN alerts a ON a.id = ref_id AND a.org_id = $1
               WHERE i.org_id = $1
                 AND i.created_at >= NOW() - INTERVAL '30 days'
             `,
@@ -132,7 +134,7 @@ export function registerDashboardRoutes(app: Express): void {
   );
 
   app.get("/api/dashboard/:role", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    const user = req.user as any;
+    const user = req.user as { orgId?: string; role?: string };
     const role = p(req.params.role);
     if (!["ciso", "soc_manager", "analyst"].includes(role)) {
       return res.status(400).json({ message: "Invalid role. Must be ciso, soc_manager, or analyst" });
@@ -196,8 +198,8 @@ export function registerDashboardRoutes(app: Express): void {
           recentIncidents: allIncidents.filter((i) => ["open", "investigating"].includes(i.status || "")).slice(0, 10),
         });
       }
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ message: err instanceof Error ? err.message : "Internal error" });
     }
   });
 }
