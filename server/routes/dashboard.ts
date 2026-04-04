@@ -70,12 +70,16 @@ export function registerDashboardRoutes(app: Express): void {
               // incidents use referenced_alert_ids (text[]) not a single alert_id FK
               pool.query(
                 `
-              SELECT AVG(EXTRACT(EPOCH FROM (i.created_at - a.created_at)) / 60)::numeric(10,1) AS mttd_minutes
-              FROM incidents i
-              CROSS JOIN LATERAL unnest(i.referenced_alert_ids) AS ref_id
-              JOIN alerts a ON a.id = ref_id AND a.org_id = $1
-              WHERE i.org_id = $1
-                AND i.created_at >= NOW() - INTERVAL '30 days'
+              SELECT AVG(EXTRACT(EPOCH FROM (sub.incident_created - sub.first_alert_created)) / 60)::numeric(10,1) AS mttd_minutes
+              FROM (
+                SELECT i.created_at AS incident_created, MIN(a.created_at) AS first_alert_created
+                FROM incidents i
+                CROSS JOIN LATERAL unnest(i.referenced_alert_ids) AS ref_id
+                JOIN alerts a ON a.id = ref_id AND a.org_id = $1
+                WHERE i.org_id = $1
+                  AND i.created_at >= NOW() - INTERVAL '30 days'
+                GROUP BY i.id, i.created_at
+              ) sub
             `,
                 [orgId],
               ),
