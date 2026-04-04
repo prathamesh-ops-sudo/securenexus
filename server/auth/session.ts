@@ -228,6 +228,99 @@ export async function githubVerifyCallback(
   }
 }
 
+/**
+ * Patch an OAuth2 client instance to use Node.js built-in fetch() for the
+ * access-token exchange instead of the legacy `oauth` npm package's HTTP client.
+ *
+ * The `oauth` library uses an ancient https.request() implementation that
+ * encounters TLS socket errors inside AWS App Runner and similar managed
+ * runtimes. Node.js 22's built-in fetch (based on undici) handles connection
+ * pooling, TLS, and HTTP/2 correctly without these issues.
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any --
+ * We intentionally access protected/private members of the passport-oauth2
+ * OAuth2 client to replace its broken HTTP transport with fetch. This is the
+ * only viable approach short of forking the library. */
+function patchOAuth2WithFetch(oauth2: any, provider: string): void {
+  const log = logger.child("oauth2-fetch-patch");
+  const clientId: string = oauth2._clientId;
+  const clientSecret: string = oauth2._clientSecret;
+  const tokenUrl: string = oauth2._getAccessTokenUrl();
+
+  oauth2.getOAuthAccessToken = function (
+    code: string,
+    params: Record<string, string>,
+    callback: (
+      err: Error | null,
+      accessToken?: string,
+      refreshToken?: string,
+      results?: Record<string, unknown>,
+    ) => void,
+  ) {
+    const body = new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: params.redirect_uri || "",
+      client_id: clientId,
+      client_secret: clientSecret,
+    });
+
+    log.info("Exchanging OAuth code for access token via fetch", {
+      provider,
+      tokenUrl,
+      redirectUri: params.redirect_uri,
+    });
+
+    fetch(tokenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: body.toString(),
+      signal: AbortSignal.timeout(15_000),
+    })
+      .then(async (res) => {
+        const text = await res.text();
+        let data: Record<string, unknown>;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          log.error("Non-JSON response from token endpoint", {
+            provider,
+            status: res.status,
+            body: text.slice(0, 500),
+          });
+          return callback(new Error(`OAuth token endpoint returned non-JSON (status ${res.status})`));
+        }
+
+        if (!res.ok || data.error) {
+          log.error("OAuth token exchange failed", {
+            provider,
+            status: res.status,
+            error: data.error,
+            errorDescription: data.error_description,
+          });
+          return callback(
+            new Error(String(data.error_description || data.error || `Token exchange failed (${res.status})`)),
+          );
+        }
+
+        log.info("OAuth token exchange succeeded", { provider });
+        return callback(null, String(data.access_token), data.refresh_token as string | undefined, data);
+      })
+      .catch((err: Error) => {
+        log.error("OAuth token exchange network error", {
+          provider,
+          error: err.message,
+          name: err.name,
+          cause: String((err as NodeJS.ErrnoException).cause || ""),
+        });
+        return callback(err);
+      });
+  };
+}
+
 export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
   app.use(getSession());
@@ -264,32 +357,36 @@ export async function setupAuth(app: Express) {
 
   if (config.oauth.google.clientId && config.oauth.google.clientSecret) {
     const googleCallbackUrl = resolveCallbackUrl(config.oauth.google.callbackUrl);
-    passport.use(
-      new GoogleStrategy(
-        {
-          clientID: config.oauth.google.clientId,
-          clientSecret: config.oauth.google.clientSecret,
-          callbackURL: googleCallbackUrl,
-        },
-        googleVerifyCallback,
-      ),
+    const googleStrategy = new GoogleStrategy(
+      {
+        clientID: config.oauth.google.clientId,
+        clientSecret: config.oauth.google.clientSecret,
+        callbackURL: googleCallbackUrl,
+      },
+      googleVerifyCallback,
     );
+    // Patch the underlying OAuth2 client to use Node.js built-in fetch instead
+    // of the legacy `oauth` npm package's HTTP client. The `oauth` library uses
+    // an ancient https.request() implementation that fails with TLS socket errors
+    // inside App Runner's network environment.
+    patchOAuth2WithFetch((googleStrategy as any)._oauth2, "google");
+    passport.use(googleStrategy);
     logger.child("auth-session").info("Google OAuth strategy configured", { callbackURL: googleCallbackUrl });
   }
 
   if (config.oauth.github.clientId && config.oauth.github.clientSecret) {
     const githubCallbackUrl = resolveCallbackUrl(config.oauth.github.callbackUrl);
-    passport.use(
-      new GitHubStrategy(
-        {
-          clientID: config.oauth.github.clientId,
-          clientSecret: config.oauth.github.clientSecret,
-          callbackURL: githubCallbackUrl,
-          scope: ["user:email"],
-        },
-        githubVerifyCallback,
-      ),
+    const githubStrategy = new GitHubStrategy(
+      {
+        clientID: config.oauth.github.clientId,
+        clientSecret: config.oauth.github.clientSecret,
+        callbackURL: githubCallbackUrl,
+        scope: ["user:email"],
+      },
+      githubVerifyCallback,
     );
+    patchOAuth2WithFetch((githubStrategy as any)._oauth2, "github");
+    passport.use(githubStrategy);
     logger.child("auth-session").info("GitHub OAuth strategy configured", { callbackURL: githubCallbackUrl });
   }
 

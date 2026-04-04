@@ -34,6 +34,7 @@ import { startBudgetResetScheduler, stopBudgetResetScheduler } from "./ai/budget
 import { bootstrapSuperAdmin } from "./bootstrap-super-admin";
 import { errorTrackingMiddleware, trackError } from "./error-tracker";
 import { startConnectorHealthLoop, stopConnectorHealthLoop } from "./connector-health-loop";
+import { runAutoMigrations } from "./auto-migrate";
 
 const startedAt = Date.now();
 
@@ -157,7 +158,8 @@ export function log(message: string, source = "express") {
   // Centralized error tracking middleware — captures all unhandled errors
   app.use(errorTrackingMiddleware);
 
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Express error handlers require 4-arg signature with Error
+  app.use((err: Error & { status?: number; statusCode?: number }, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
@@ -244,8 +246,10 @@ export function log(message: string, source = "express") {
         externalMb: Math.round(mem.external / 1024 / 1024),
         cpuUserMs: Math.round(cpuUsage.user / 1000),
         cpuSystemMs: Math.round(cpuUsage.system / 1000),
-        activeHandles: (process as any)._getActiveHandles?.()?.length,
-        activeRequests: (process as any)._getActiveRequests?.()?.length,
+        activeHandles: (process as NodeJS.Process & { _getActiveHandles?: () => unknown[] })._getActiveHandles?.()
+          ?.length,
+        activeRequests: (process as NodeJS.Process & { _getActiveRequests?: () => unknown[] })._getActiveRequests?.()
+          ?.length,
       });
     }, HEARTBEAT_INTERVAL_MS);
     heartbeatTimer.unref();

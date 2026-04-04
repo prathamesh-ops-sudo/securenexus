@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from "react";
-import { useLocation } from "wouter";
+import { useSearch } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Newspaper, Rss, Upload, Bug, Target, Crosshair, Swords, Globe } from "lucide-react";
@@ -35,8 +35,8 @@ function TabSkeleton() {
 }
 
 export default function ThreatIntelligenceHubPage() {
-  const [location] = useLocation();
-  const params = new URLSearchParams(location.split("?")[1] || "");
+  const search = useSearch();
+  const params = new URLSearchParams(search);
   const tabFromUrl = params.get("tab") as TabId | null;
   const [activeTab, setActiveTab] = useState<TabId>(
     tabFromUrl && TABS.some((t) => t.id === tabFromUrl) ? tabFromUrl : "feeds",
