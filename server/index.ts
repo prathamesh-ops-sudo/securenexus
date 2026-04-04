@@ -148,6 +148,7 @@ export function log(message: string, source = "express") {
 }
 
 (async () => {
+  await runAutoMigrations();
   await registerRoutes(httpServer, app);
 
   const { seedDatabase } = await import("./seed");
