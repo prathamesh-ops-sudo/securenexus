@@ -15,7 +15,6 @@
 
 import { pool } from "./db";
 import { logger } from "./logger";
-import { randomBytes, createHash } from "crypto";
 
 const log = logger.child("auto-migrate");
 
@@ -66,53 +65,4 @@ export async function runAutoMigrations(): Promise<void> {
 
   const elapsed = Date.now() - startMs;
   log.info("Auto-migration complete", { applied, skipped, elapsedMs: elapsed });
-
-  // Bootstrap Wazuh forwarder API key if it doesn't exist
-  await bootstrapWazuhApiKey();
-}
-
-/**
- * Ensures a Wazuh forwarder API key exists for alert ingestion.
- * Idempotent — skips if a key named "Wazuh Forwarder" already exists.
- */
-async function bootstrapWazuhApiKey(): Promise<void> {
-  try {
-    const existing = await pool.query(`SELECT id FROM api_keys WHERE name = 'Wazuh Forwarder' LIMIT 1`);
-    if (existing.rows.length > 0) {
-      log.debug("Wazuh Forwarder API key already exists");
-      return;
-    }
-
-    // Get first org
-    const orgs = await pool.query(`SELECT id FROM organizations LIMIT 1`);
-    if (orgs.rows.length === 0) {
-      log.debug("No organizations yet — skipping Wazuh API key bootstrap");
-      return;
-    }
-
-    const orgId = orgs.rows[0].id;
-
-    // Generate key dynamically — use env var if provided, otherwise generate fresh
-    const envKey = process.env.WAZUH_API_KEY;
-    const raw = envKey || "snx_" + randomBytes(32).toString("base64url");
-    const keyHash = createHash("sha256").update(raw).digest("hex");
-    const keyPrefix = raw.slice(0, 12);
-
-    await pool.query(
-      `INSERT INTO api_keys (name, key_hash, key_prefix, org_id, scopes, is_active, created_at)
-       VALUES ($1, $2, $3, $4, $5, true, NOW())`,
-      ["Wazuh Forwarder", keyHash, keyPrefix, orgId, ["ingest", "ingest:write"]],
-    );
-    log.info("Wazuh Forwarder API key bootstrapped successfully", { orgId, keyPrefix });
-    if (!envKey) {
-      log.warn("Generated Wazuh API key — configure forwarder with this key", { key: raw });
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("does not exist")) {
-      log.debug("api_keys table not present — skipping Wazuh API key bootstrap");
-    } else {
-      log.error("Failed to bootstrap Wazuh API key", { error: msg });
-    }
-  }
 }
