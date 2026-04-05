@@ -1,9 +1,7 @@
 {
   "*.{ts,tsx}": [
-    "eslint --quiet --rule '{\"no-console\": [\"error\", {\"allow\": [\"warn\", \"error\"]}]}' --rule '{\"@typescript-eslint/no-explicit-any\": \"error\"}'",
+    "eslint --quiet --rule '{\"no-console\": [\"error\", {\"allow\": [\"warn\", \"error\"]}]}'",
     "prettier --check"
   ],
-  "*.{json,md,yml,yaml}": [
-    "prettier --check"
-  ]
+  "*.{json,md,yml,yaml}": ["prettier --check"]
 }

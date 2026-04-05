@@ -1,4 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { ErrorState } from "@/components/empty-state";
 import { useLocation, Link } from "wouter";
 import {
   AlertTriangle,
@@ -2212,20 +2213,13 @@ export default function AlertsPage() {
                       ))
                     ) : alertsError ? (
                       <tr>
-                        <td colSpan={9} className="px-4 py-12 text-center">
-                          <div role="alert" className="flex flex-col items-center gap-3">
-                            <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20">
-                              <AlertTriangle className="h-6 w-6 text-destructive" />
-                            </div>
-                            <p className="text-sm font-medium">Failed to load alerts</p>
-                            <p className="text-xs text-muted-foreground">
-                              An error occurred while fetching alert data.
-                            </p>
-                            <Button variant="outline" size="sm" onClick={() => refetchAlerts()}>
-                              <Activity className="h-3.5 w-3.5 mr-1.5" />
-                              Try Again
-                            </Button>
-                          </div>
+                        <td colSpan={9} className="px-4 py-8">
+                          <ErrorState
+                            title="Alerts unavailable"
+                            message="We couldn't load your alert data. Your security monitoring is still active."
+                            onRetry={() => refetchAlerts()}
+                            compact
+                          />
                         </td>
                       </tr>
                     ) : pageAlerts.length > 0 ? (

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { ErrorState } from "@/components/empty-state";
 import { queryClient, apiRequest, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { formatDateShort, formatDateTime } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -1713,16 +1714,12 @@ export default function ConnectorsPage() {
                   <span className="sr-only">Loading connectors...</span>
                 </div>
               ) : connectorsError ? (
-                <div className="flex flex-col items-center justify-center py-12" role="alert">
-                  <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-                    <XCircle className="h-6 w-6 text-destructive" />
-                  </div>
-                  <p className="text-sm font-medium">Failed to load connectors</p>
-                  <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching connector data.</p>
-                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchConnectors()}>
-                    Try Again
-                  </Button>
-                </div>
+                <ErrorState
+                  title="Connectors unavailable"
+                  message="We couldn't load your connector configuration. Your existing integrations are still running."
+                  onRetry={() => refetchConnectors()}
+                  compact
+                />
               ) : !existingConnectors?.length ? (
                 <div
                   className="flex flex-col items-center justify-center py-12 text-muted-foreground"

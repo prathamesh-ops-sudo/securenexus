@@ -1,4 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { ErrorState } from "@/components/empty-state";
 import {
   FileWarning,
   Search,
@@ -1074,19 +1075,13 @@ export default function IncidentsPage() {
                       ))
                     ) : incidentsError ? (
                       <tr>
-                        <td colSpan={9} className="px-4 py-12 text-center">
-                          <div role="alert" className="flex flex-col items-center gap-3">
-                            <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20">
-                              <FileWarning className="h-6 w-6 text-destructive" />
-                            </div>
-                            <p className="text-sm font-medium">Failed to load incidents</p>
-                            <p className="text-xs text-muted-foreground">
-                              An error occurred while fetching incident data.
-                            </p>
-                            <Button variant="outline" size="sm" onClick={() => refetchIncidents()}>
-                              Try Again
-                            </Button>
-                          </div>
+                        <td colSpan={9} className="px-4 py-8">
+                          <ErrorState
+                            title="Incidents unavailable"
+                            message="We couldn't load incident data. Your detection pipeline is still running."
+                            onRetry={() => refetchIncidents()}
+                            compact
+                          />
                         </td>
                       </tr>
                     ) : filtered.length > 0 ? (
@@ -1136,7 +1131,9 @@ export default function IncidentsPage() {
                                   </Badge>
                                 )}
                                 {incident.confidence != null && (
-                                  <span className="text-xs text-muted-foreground">{Math.round(incident.confidence * 100)}%</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {Math.round(incident.confidence * 100)}%
+                                  </span>
                                 )}
                               </div>
                             </td>

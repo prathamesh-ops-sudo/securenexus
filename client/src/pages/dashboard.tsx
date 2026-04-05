@@ -1,4 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { ErrorState } from "@/components/empty-state";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
@@ -1791,16 +1792,12 @@ export default function Dashboard() {
             Array.from({ length: 6 }).map((_, i) => <StatCardSkeleton key={i} />)
           ) : statsError ? (
             <Card className="col-span-full">
-              <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-                <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-                  <AlertTriangle className="h-6 w-6 text-destructive" />
-                </div>
-                <p className="text-sm font-medium">Failed to load dashboard stats</p>
-                <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-                <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchStats()}>
-                  Try Again
-                </Button>
-              </div>
+              <ErrorState
+                title="Dashboard stats unavailable"
+                message="We couldn't load your security metrics. This is usually a temporary issue."
+                onRetry={() => refetchStats()}
+                compact
+              />
             </Card>
           ) : (
             <>
@@ -1914,16 +1911,12 @@ export default function Dashboard() {
               >
                 {analyticsError ? (
                   <Card className="col-span-full">
-                    <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-                      <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-                        <AlertTriangle className="h-6 w-6 text-destructive" />
-                      </div>
-                      <p className="text-sm font-medium">Failed to load chart data</p>
-                      <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching analytics.</p>
-                      <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchAnalytics()}>
-                        Try Again
-                      </Button>
-                    </div>
+                    <ErrorState
+                      title="Analytics charts unavailable"
+                      message="Chart data failed to load. Your alerts and incidents are still being tracked."
+                      onRetry={() => refetchAnalytics()}
+                      compact
+                    />
                   </Card>
                 ) : (
                   visibleChartWidgets.map((widgetId) => (
