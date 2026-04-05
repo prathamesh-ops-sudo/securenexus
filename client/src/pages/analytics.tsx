@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { ErrorState } from "@/components/empty-state";
 import { TrendingDown, Clock, Shield, Activity, BarChart3, Target, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -492,16 +493,14 @@ export default function Analytics() {
           </>
         ) : analyticsError ? (
           <Card className="col-span-full">
-            <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-              <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-                <Shield className="h-6 w-6 text-destructive" />
-              </div>
-              <p className="text-sm font-medium">Failed to load analytics</p>
-              <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching chart data.</p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchAnalytics()}>
-                Try Again
-              </Button>
-            </div>
+            <CardContent className="py-4">
+              <ErrorState
+                title="Analytics unavailable"
+                message="We couldn't load your security analytics. Your monitoring is still active."
+                onRetry={() => refetchAnalytics()}
+                compact
+              />
+            </CardContent>
           </Card>
         ) : analytics ? (
           <>

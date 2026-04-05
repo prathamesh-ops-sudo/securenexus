@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
+import { ErrorState } from "@/components/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -220,23 +221,12 @@ function CloudAccountsTab() {
 
   if (accountsError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load cloud accounts</p>
-        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-3"
-          onClick={() => {
-            refetchAccounts();
-          }}
-        >
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Cloud accounts unavailable"
+        message="We couldn't load your cloud accounts. Your cloud monitoring is still active."
+        onRetry={() => refetchAccounts()}
+        compact
+      />
     );
   }
 
@@ -470,16 +460,12 @@ function ScanHistoryTab() {
 
   if (scansError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load scan history</p>
-        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchScans()}>
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Scan history unavailable"
+        message="We couldn't load scan history. Your scheduled scans are still running."
+        onRetry={() => refetchScans()}
+        compact
+      />
     );
   }
 
@@ -624,16 +610,12 @@ function FindingsTab() {
 
   if (findingsError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load findings</p>
-        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchFindings()}>
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Findings unavailable"
+        message="We couldn't load cloud security findings. Your detection rules are still active."
+        onRetry={() => refetchFindings()}
+        compact
+      />
     );
   }
 
@@ -906,16 +888,12 @@ function PolicyChecksTab() {
 
   if (policyError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load policy checks</p>
-        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchPolicies()}>
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Policy checks unavailable"
+        message="We couldn't load policy-as-code checks. Your policies are still being enforced."
+        onRetry={() => refetchPolicies()}
+        compact
+      />
     );
   }
 
@@ -1360,15 +1338,12 @@ function DriftDetectionTab() {
 
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load drift events</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchEvents()}>
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Drift detection unavailable"
+        message="We couldn't load drift events. Your drift monitoring is still active."
+        onRetry={() => refetchEvents()}
+        compact
+      />
     );
   }
 
@@ -1539,15 +1514,12 @@ function DSPMTab() {
 
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load DSPM findings</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchDspm()}>
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Data security findings unavailable"
+        message="We couldn't load DSPM findings. Your data classification is still running."
+        onRetry={() => refetchDspm()}
+        compact
+      />
     );
   }
 
@@ -1702,15 +1674,12 @@ function AttackPathsTab() {
 
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load attack paths</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchPaths()}>
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Attack paths unavailable"
+        message="We couldn't load cloud attack paths. Your threat detection is still active."
+        onRetry={() => refetchPaths()}
+        compact
+      />
     );
   }
 
@@ -1855,15 +1824,12 @@ function RemediationTab() {
 
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load remediations</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchRemediations()}>
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Remediations unavailable"
+        message="We couldn't load remediation plans. Your existing remediations are still running."
+        onRetry={() => refetchRemediations()}
+        compact
+      />
     );
   }
 
