@@ -273,9 +273,9 @@ function AuthenticatedApp() {
 
   const dotColor =
     connectionState === "connected"
-      ? "bg-green-500"
+      ? "bg-green-500 animate-live-dot"
       : connectionState === "connecting"
-        ? "bg-yellow-500"
+        ? "bg-yellow-500 animate-pulse"
         : "bg-red-500";
 
   return (
@@ -304,173 +304,175 @@ function AuthenticatedApp() {
                 </div>
               </header>
               <main id="main-content" className="flex-1 overflow-auto" tabIndex={0}>
-                <Suspense fallback={<PageSkeleton />}>
-                  <Switch>
-                    <Route path="/" component={Dashboard} />
-                    <Route path="/alerts/:id" component={AlertDetailPage} />
-                    <Route path="/alerts" component={AlertsPage} />
-                    <Route path="/incidents" component={IncidentsPage} />
-                    <Route path="/incidents/:id" component={IncidentDetailPage} />
+                <div key={location} className="animate-fade-in">
+                  <Suspense fallback={<PageSkeleton />}>
+                    <Switch>
+                      <Route path="/" component={Dashboard} />
+                      <Route path="/alerts/:id" component={AlertDetailPage} />
+                      <Route path="/alerts" component={AlertsPage} />
+                      <Route path="/incidents" component={IncidentsPage} />
+                      <Route path="/incidents/:id" component={IncidentDetailPage} />
 
-                    {/* ── Hub pages (bundled features) ──────────────── */}
-                    <Route path="/threat-intelligence" component={ThreatIntelligenceHubPage} />
-                    <Route path="/security-graph-hub" component={SecurityGraphHubPage} />
-                    <Route path="/investigations" component={InvestigationsHubPage} />
-                    <Route path="/response" component={PlaybooksResponseHubPage} />
-                    <Route path="/cloud-endpoint" component={CloudEndpointHubPage} />
-                    <Route path="/identity-access" component={IdentityAccessHubPage} />
-                    <Route path="/ai-platform" component={AiPlatformHubPage} />
-                    <Route path="/data-platform" component={DataPlatformHubPage} />
-                    <Route path="/detection-engineering" component={DetectionEngineeringHubPage} />
-                    <Route path="/asset-risk" component={AssetRiskHubPage} />
-                    <Route path="/advanced-threats" component={AdvancedThreatHubPage} />
-                    <Route path="/comms-security" component={CommsSecurityHubPage} />
-                    <Route path="/specialized-security" component={SpecializedSecurityHubPage} />
-                    <Route path="/compliance-governance" component={ComplianceGovernanceHubPage} />
-                    <Route path="/executive-reporting" component={ExecutiveReportingHubPage} />
-                    <Route path="/mssp" component={MsspHubPage} />
+                      {/* ── Hub pages (bundled features) ──────────────── */}
+                      <Route path="/threat-intelligence" component={ThreatIntelligenceHubPage} />
+                      <Route path="/security-graph-hub" component={SecurityGraphHubPage} />
+                      <Route path="/investigations" component={InvestigationsHubPage} />
+                      <Route path="/response" component={PlaybooksResponseHubPage} />
+                      <Route path="/cloud-endpoint" component={CloudEndpointHubPage} />
+                      <Route path="/identity-access" component={IdentityAccessHubPage} />
+                      <Route path="/ai-platform" component={AiPlatformHubPage} />
+                      <Route path="/data-platform" component={DataPlatformHubPage} />
+                      <Route path="/detection-engineering" component={DetectionEngineeringHubPage} />
+                      <Route path="/asset-risk" component={AssetRiskHubPage} />
+                      <Route path="/advanced-threats" component={AdvancedThreatHubPage} />
+                      <Route path="/comms-security" component={CommsSecurityHubPage} />
+                      <Route path="/specialized-security" component={SpecializedSecurityHubPage} />
+                      <Route path="/compliance-governance" component={ComplianceGovernanceHubPage} />
+                      <Route path="/executive-reporting" component={ExecutiveReportingHubPage} />
+                      <Route path="/mssp" component={MsspHubPage} />
 
-                    {/* ── Standalone pages (not bundled) ────────────── */}
-                    <Route path="/autonomous-soc" component={AutonomousSOCPage} />
-                    <Route path="/developer-security" component={DeveloperSecurityPage} />
-                    <Route path="/supply-chain" component={SupplyChainPage} />
-                    <Route path="/community-intel" component={CommunityIntelPage} />
-                    <Route path="/privacy-engineering" component={PrivacyEngineeringPage} />
-                    <Route path="/cross-cutting" component={CrossCuttingPage} />
+                      {/* ── Standalone pages (not bundled) ────────────── */}
+                      <Route path="/autonomous-soc" component={AutonomousSOCPage} />
+                      <Route path="/developer-security" component={DeveloperSecurityPage} />
+                      <Route path="/supply-chain" component={SupplyChainPage} />
+                      <Route path="/community-intel" component={CommunityIntelPage} />
+                      <Route path="/privacy-engineering" component={PrivacyEngineeringPage} />
+                      <Route path="/cross-cutting" component={CrossCuttingPage} />
 
-                    {/* ── Admin/settings pages ─────────────────────── */}
-                    <Route path="/settings" component={SettingsPage} />
-                    <Route path="/team" component={TeamManagementPage} />
-                    <Route path="/onboarding" component={OnboardingPage} />
-                    <Route path="/onboarding-wizard" component={OnboardingWizardPage} />
-                    <Route path="/usage-billing" component={UsageBillingPage} />
-                    <Route path="/billing" component={BillingPage} />
-                    <Route path="/org-settings" component={OrgSettingsPage} />
-                    <Route path="/accept-invitation" component={AcceptInvitationPage} />
-                    <Route path="/platform-admin" component={PlatformAdminPage} />
-                    <Route path="/dev-portal" component={DevPortalPage} />
-                    <Route path="/developer-portal" component={DeveloperPortalPage} />
-                    <Route path="/tiered-packaging" component={TieredPackagingPage} />
-                    <Route path="/mfa-setup" component={MfaSetupPage} />
-                    <Route path="/account-lockout" component={AccountLockoutPage} />
-                    <Route path="/domain-auto-join" component={DomainAutoJoinPage} />
+                      {/* ── Admin/settings pages ─────────────────────── */}
+                      <Route path="/settings" component={SettingsPage} />
+                      <Route path="/team" component={TeamManagementPage} />
+                      <Route path="/onboarding" component={OnboardingPage} />
+                      <Route path="/onboarding-wizard" component={OnboardingWizardPage} />
+                      <Route path="/usage-billing" component={UsageBillingPage} />
+                      <Route path="/billing" component={BillingPage} />
+                      <Route path="/org-settings" component={OrgSettingsPage} />
+                      <Route path="/accept-invitation" component={AcceptInvitationPage} />
+                      <Route path="/platform-admin" component={PlatformAdminPage} />
+                      <Route path="/dev-portal" component={DevPortalPage} />
+                      <Route path="/developer-portal" component={DeveloperPortalPage} />
+                      <Route path="/tiered-packaging" component={TieredPackagingPage} />
+                      <Route path="/mfa-setup" component={MfaSetupPage} />
+                      <Route path="/account-lockout" component={AccountLockoutPage} />
+                      <Route path="/domain-auto-join" component={DomainAutoJoinPage} />
 
-                    {/* ── Utility/internal pages ───────────────────── */}
-                    <Route path="/analytics" component={AnalyticsPage} />
-                    <Route path="/operations" component={OperationsPage} />
-                    <Route path="/engine-controls" component={EngineControlsPage} />
-                    <Route path="/email-templates" component={EmailTemplatesPage} />
-                    <Route path="/metrics-rollup" component={MetricsRollupPage} />
-                    <Route path="/api-versioning" component={ApiVersioningPage} />
-                    <Route path="/file-manager" component={FileManagerPage} />
-                    <Route path="/suppressed-alerts" component={SuppressedAlertsPage} />
-                    <Route path="/report-template-versioning" component={ReportTemplateVersioningPage} />
-                    <Route path="/developer-remediation" component={DeveloperRemediationPage} />
-                    <Route path="/finding-lineage" component={FindingLineagePage} />
-                    <Route path="/runtime-guardrails" component={RuntimeGuardrailsPage} />
-                    <Route path="/adversarial-testing" component={AdversarialTestingPage} />
-                    <Route path="/agent-tool-security" component={AgentToolSecurityPage} />
-                    <Route path="/browser-defense" component={BrowserDefensePage} />
-                    <Route path="/gap-analysis" component={GapAnalysisPage} />
-                    <Route path="/tenant-isolation" component={TenantIsolationPage} />
-                    <Route path="/investigation-runs" component={InvestigationRunsPage} />
-                    <Route path="/post-incident-review" component={PostIncidentReviewPage} />
-                    <Route path="/ai-model-health" component={AiModelHealthPage} />
-                    <Route path="/manual-ai-triggers" component={ManualAiTriggersPage} />
-                    <Route path="/role-dashboard" component={RoleDashboardPage} />
-                    <Route path="/data-lifecycle" component={DataLifecyclePage} />
-                    <Route path="/dr-drill-scheduler" component={DrDrillSchedulerPage} />
-                    <Route path="/usage-metering-analytics" component={UsageMeteringAnalyticsPage} />
-                    <Route path="/stunning-dashboard" component={StunningDashboardPage} />
-                    <Route path="/tenant-data" component={TenantDataPage} />
-                    <Route path="/report-scheduling" component={ReportSchedulingPage} />
-                    <Route path="/executive-risk" component={ExecutiveRiskPage} />
-                    <Route path="/posture-trust-center" component={PostureTrustCenterPage} />
-                    <Route path="/threat-intel" component={ThreatIntelPage} />
-                    <Route path="/integrations" component={IntegrationsPage} />
-                    <Route path="/predictive-defense" component={PredictiveDefensePage} />
+                      {/* ── Utility/internal pages ───────────────────── */}
+                      <Route path="/analytics" component={AnalyticsPage} />
+                      <Route path="/operations" component={OperationsPage} />
+                      <Route path="/engine-controls" component={EngineControlsPage} />
+                      <Route path="/email-templates" component={EmailTemplatesPage} />
+                      <Route path="/metrics-rollup" component={MetricsRollupPage} />
+                      <Route path="/api-versioning" component={ApiVersioningPage} />
+                      <Route path="/file-manager" component={FileManagerPage} />
+                      <Route path="/suppressed-alerts" component={SuppressedAlertsPage} />
+                      <Route path="/report-template-versioning" component={ReportTemplateVersioningPage} />
+                      <Route path="/developer-remediation" component={DeveloperRemediationPage} />
+                      <Route path="/finding-lineage" component={FindingLineagePage} />
+                      <Route path="/runtime-guardrails" component={RuntimeGuardrailsPage} />
+                      <Route path="/adversarial-testing" component={AdversarialTestingPage} />
+                      <Route path="/agent-tool-security" component={AgentToolSecurityPage} />
+                      <Route path="/browser-defense" component={BrowserDefensePage} />
+                      <Route path="/gap-analysis" component={GapAnalysisPage} />
+                      <Route path="/tenant-isolation" component={TenantIsolationPage} />
+                      <Route path="/investigation-runs" component={InvestigationRunsPage} />
+                      <Route path="/post-incident-review" component={PostIncidentReviewPage} />
+                      <Route path="/ai-model-health" component={AiModelHealthPage} />
+                      <Route path="/manual-ai-triggers" component={ManualAiTriggersPage} />
+                      <Route path="/role-dashboard" component={RoleDashboardPage} />
+                      <Route path="/data-lifecycle" component={DataLifecyclePage} />
+                      <Route path="/dr-drill-scheduler" component={DrDrillSchedulerPage} />
+                      <Route path="/usage-metering-analytics" component={UsageMeteringAnalyticsPage} />
+                      <Route path="/stunning-dashboard" component={StunningDashboardPage} />
+                      <Route path="/tenant-data" component={TenantDataPage} />
+                      <Route path="/report-scheduling" component={ReportSchedulingPage} />
+                      <Route path="/executive-risk" component={ExecutiveRiskPage} />
+                      <Route path="/posture-trust-center" component={PostureTrustCenterPage} />
+                      <Route path="/threat-intel" component={ThreatIntelPage} />
+                      <Route path="/integrations" component={IntegrationsPage} />
+                      <Route path="/predictive-defense" component={PredictiveDefensePage} />
 
-                    {/* ── Legacy direct routes (still accessible via URL) ── */}
-                    <Route path="/threat-intel-feeds" component={ThreatIntelFeedsPage} />
-                    <Route path="/osint-feeds-config" component={OsintFeedsConfigPage} />
-                    <Route path="/ioc-ingestion-matching" component={IocIngestionMatchingPage} />
-                    <Route path="/cve-browser" component={CveBrowserPage} />
-                    <Route path="/campaign-viewer" component={CampaignViewerPage} />
-                    <Route path="/mitre-attack" component={MitreAttackPage} />
-                    <Route path="/kill-chain" component={KillChainPage} />
-                    <Route path="/security-graph" component={UnifiedSecurityGraphPage} />
-                    <Route path="/attack-graph" component={AttackGraphPage} />
-                    <Route path="/entity-graph" component={EntityGraphPage} />
-                    <Route path="/entity-merge-alias" component={EntityMergeAliasPage} />
-                    <Route path="/war-room" component={WarRoomPage} />
-                    <Route path="/threat-hunting" component={ThreatHuntingPage} />
-                    <Route path="/investigation-timeline" component={InvestigationTimelinePage} />
-                    <Route path="/evidence-chain-viewer" component={EvidenceChainViewerPage} />
-                    <Route path="/evidence-custody" component={EvidenceCustodyPage} />
-                    <Route path="/playbooks" component={PlaybooksPage} />
-                    <Route path="/autonomous-response" component={AutonomousResponsePage} />
-                    <Route path="/rollback-history" component={RollbackHistoryPage} />
-                    <Route path="/playbook-templates" component={PlaybookTemplatesPage} />
-                    <Route path="/runbook-templates" component={RunbookTemplatesPage} />
-                    <Route path="/cspm" component={CspmPage} />
-                    <Route path="/endpoint-telemetry" component={EndpointTelemetryPage} />
-                    <Route path="/security-posture" component={SecurityPosturePage} />
-                    <Route path="/native-sensors" component={NativeSensorsPage} />
-                    <Route path="/vuln-scanner" component={VulnScannerPage} />
-                    <Route path="/identity-governance" component={IdentityGovernancePage} />
-                    <Route path="/jit-secret-access" component={JitSecretAccessPage} />
-                    <Route path="/secret-rotation-overview" component={SecretRotationOverviewPage} />
-                    <Route path="/ai-engine" component={AIEnginePage} />
-                    <Route path="/soc-copilot" component={SocCopilotPage} />
-                    <Route path="/prompt-to-artifact" component={PromptToArtifactPage} />
-                    <Route path="/model-gateway" component={ModelGatewayPage} />
-                    <Route path="/ai-prompt-registry" component={AiPromptRegistryPage} />
-                    <Route path="/ai-feedback" component={AiFeedbackFormPage} />
-                    <Route path="/ai-budget-controls" component={AiBudgetControlsPage} />
-                    <Route path="/connectors" component={ConnectorsPage} />
-                    <Route path="/integration-marketplace" component={IntegrationMarketplacePage} />
-                    <Route path="/native-collectors" component={NativeCollectorsPage} />
-                    <Route path="/webhook-security-center" component={WebhookSecurityCenterPage} />
-                    <Route path="/ingestion" component={IngestionPage} />
-                    <Route path="/job-queue-dashboard" component={JobQueueDashboardPage} />
-                    <Route path="/outbox-monitor" component={OutboxMonitoringPage} />
-                    <Route path="/data-lake" component={DataLakePage} />
-                    <Route path="/detection-rules" component={DetectionRulesPage} />
-                    <Route path="/ai-detection-rules" component={AiDetectionRulesPage} />
-                    <Route path="/ueba" component={UebaPage} />
-                    <Route path="/agent-response" component={AgentResponsePage} />
-                    <Route path="/asset-inventory" component={AssetInventoryPage} />
-                    <Route path="/risk-register" component={RiskRegisterPage} />
-                    <Route path="/tprm" component={TprmPage} />
-                    <Route path="/deception" component={DeceptionPage} />
-                    <Route path="/ransomware-defense" component={RansomwareDefensePage} />
-                    <Route path="/dark-web-monitoring" component={DarkWebMonitoringPage} />
-                    <Route path="/chaos-engineering" component={SecurityChaosEngineeringPage} />
-                    <Route path="/dns-security" component={DnsSecurityPage} />
-                    <Route path="/email-security" component={EmailSecurityPage} />
-                    <Route path="/security-awareness" component={SecurityAwarenessPage} />
-                    <Route path="/ot-security" component={OtSecurityPage} />
-                    <Route path="/mobile-security" component={MobileSecurityPage} />
-                    <Route path="/api-security" component={ApiSecurityPage} />
-                    <Route path="/physical-security" component={PhysicalSecurityPage} />
-                    <Route path="/quantum-readiness" component={QuantumReadinessPage} />
-                    <Route path="/compliance" component={CompliancePage} />
-                    <Route path="/trust-center" component={TrustCenterPage} />
-                    <Route path="/compliance-gap" component={ComplianceGapPage} />
-                    <Route path="/audit-log" component={AuditLogPage} />
-                    <Route path="/policy-packs" component={PolicyPacksPage} />
-                    <Route path="/data-residency" component={DataResidencyPage} />
-                    <Route path="/reports" component={ReportsPage} />
-                    <Route path="/board-dashboard" component={BoardDashboardPage} />
-                    <Route path="/security-assessments" component={SecurityAssessmentsPage} />
-                    <Route path="/threat-reports" component={ThreatReportsPage} />
-                    <Route path="/advanced-reporting" component={AdvancedReportingPage} />
-                    <Route path="/mssp-dashboard" component={MsspDashboardPage} />
-                    <Route path="/mssp-partner-portal" component={MsspPartnerPortalPage} />
+                      {/* ── Legacy direct routes (still accessible via URL) ── */}
+                      <Route path="/threat-intel-feeds" component={ThreatIntelFeedsPage} />
+                      <Route path="/osint-feeds-config" component={OsintFeedsConfigPage} />
+                      <Route path="/ioc-ingestion-matching" component={IocIngestionMatchingPage} />
+                      <Route path="/cve-browser" component={CveBrowserPage} />
+                      <Route path="/campaign-viewer" component={CampaignViewerPage} />
+                      <Route path="/mitre-attack" component={MitreAttackPage} />
+                      <Route path="/kill-chain" component={KillChainPage} />
+                      <Route path="/security-graph" component={UnifiedSecurityGraphPage} />
+                      <Route path="/attack-graph" component={AttackGraphPage} />
+                      <Route path="/entity-graph" component={EntityGraphPage} />
+                      <Route path="/entity-merge-alias" component={EntityMergeAliasPage} />
+                      <Route path="/war-room" component={WarRoomPage} />
+                      <Route path="/threat-hunting" component={ThreatHuntingPage} />
+                      <Route path="/investigation-timeline" component={InvestigationTimelinePage} />
+                      <Route path="/evidence-chain-viewer" component={EvidenceChainViewerPage} />
+                      <Route path="/evidence-custody" component={EvidenceCustodyPage} />
+                      <Route path="/playbooks" component={PlaybooksPage} />
+                      <Route path="/autonomous-response" component={AutonomousResponsePage} />
+                      <Route path="/rollback-history" component={RollbackHistoryPage} />
+                      <Route path="/playbook-templates" component={PlaybookTemplatesPage} />
+                      <Route path="/runbook-templates" component={RunbookTemplatesPage} />
+                      <Route path="/cspm" component={CspmPage} />
+                      <Route path="/endpoint-telemetry" component={EndpointTelemetryPage} />
+                      <Route path="/security-posture" component={SecurityPosturePage} />
+                      <Route path="/native-sensors" component={NativeSensorsPage} />
+                      <Route path="/vuln-scanner" component={VulnScannerPage} />
+                      <Route path="/identity-governance" component={IdentityGovernancePage} />
+                      <Route path="/jit-secret-access" component={JitSecretAccessPage} />
+                      <Route path="/secret-rotation-overview" component={SecretRotationOverviewPage} />
+                      <Route path="/ai-engine" component={AIEnginePage} />
+                      <Route path="/soc-copilot" component={SocCopilotPage} />
+                      <Route path="/prompt-to-artifact" component={PromptToArtifactPage} />
+                      <Route path="/model-gateway" component={ModelGatewayPage} />
+                      <Route path="/ai-prompt-registry" component={AiPromptRegistryPage} />
+                      <Route path="/ai-feedback" component={AiFeedbackFormPage} />
+                      <Route path="/ai-budget-controls" component={AiBudgetControlsPage} />
+                      <Route path="/connectors" component={ConnectorsPage} />
+                      <Route path="/integration-marketplace" component={IntegrationMarketplacePage} />
+                      <Route path="/native-collectors" component={NativeCollectorsPage} />
+                      <Route path="/webhook-security-center" component={WebhookSecurityCenterPage} />
+                      <Route path="/ingestion" component={IngestionPage} />
+                      <Route path="/job-queue-dashboard" component={JobQueueDashboardPage} />
+                      <Route path="/outbox-monitor" component={OutboxMonitoringPage} />
+                      <Route path="/data-lake" component={DataLakePage} />
+                      <Route path="/detection-rules" component={DetectionRulesPage} />
+                      <Route path="/ai-detection-rules" component={AiDetectionRulesPage} />
+                      <Route path="/ueba" component={UebaPage} />
+                      <Route path="/agent-response" component={AgentResponsePage} />
+                      <Route path="/asset-inventory" component={AssetInventoryPage} />
+                      <Route path="/risk-register" component={RiskRegisterPage} />
+                      <Route path="/tprm" component={TprmPage} />
+                      <Route path="/deception" component={DeceptionPage} />
+                      <Route path="/ransomware-defense" component={RansomwareDefensePage} />
+                      <Route path="/dark-web-monitoring" component={DarkWebMonitoringPage} />
+                      <Route path="/chaos-engineering" component={SecurityChaosEngineeringPage} />
+                      <Route path="/dns-security" component={DnsSecurityPage} />
+                      <Route path="/email-security" component={EmailSecurityPage} />
+                      <Route path="/security-awareness" component={SecurityAwarenessPage} />
+                      <Route path="/ot-security" component={OtSecurityPage} />
+                      <Route path="/mobile-security" component={MobileSecurityPage} />
+                      <Route path="/api-security" component={ApiSecurityPage} />
+                      <Route path="/physical-security" component={PhysicalSecurityPage} />
+                      <Route path="/quantum-readiness" component={QuantumReadinessPage} />
+                      <Route path="/compliance" component={CompliancePage} />
+                      <Route path="/trust-center" component={TrustCenterPage} />
+                      <Route path="/compliance-gap" component={ComplianceGapPage} />
+                      <Route path="/audit-log" component={AuditLogPage} />
+                      <Route path="/policy-packs" component={PolicyPacksPage} />
+                      <Route path="/data-residency" component={DataResidencyPage} />
+                      <Route path="/reports" component={ReportsPage} />
+                      <Route path="/board-dashboard" component={BoardDashboardPage} />
+                      <Route path="/security-assessments" component={SecurityAssessmentsPage} />
+                      <Route path="/threat-reports" component={ThreatReportsPage} />
+                      <Route path="/advanced-reporting" component={AdvancedReportingPage} />
+                      <Route path="/mssp-dashboard" component={MsspDashboardPage} />
+                      <Route path="/mssp-partner-portal" component={MsspPartnerPortalPage} />
 
-                    <Route component={NotFound} />
-                  </Switch>
-                </Suspense>
+                      <Route component={NotFound} />
+                    </Switch>
+                  </Suspense>
+                </div>
               </main>
             </div>
           </div>
