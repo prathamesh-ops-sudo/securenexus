@@ -65,4 +65,47 @@ export async function runAutoMigrations(): Promise<void> {
 
   const elapsed = Date.now() - startMs;
   log.info("Auto-migration complete", { applied, skipped, elapsedMs: elapsed });
+
+  // Bootstrap Wazuh forwarder API key if it doesn't exist
+  await bootstrapWazuhApiKey();
+}
+
+/**
+ * Ensures a Wazuh forwarder API key exists for alert ingestion.
+ * Idempotent — skips if a key named "Wazuh Forwarder" already exists.
+ */
+async function bootstrapWazuhApiKey(): Promise<void> {
+  try {
+    const existing = await pool.query(`SELECT id FROM api_keys WHERE name = 'Wazuh Forwarder' LIMIT 1`);
+    if (existing.rows.length > 0) {
+      log.debug("Wazuh Forwarder API key already exists");
+      return;
+    }
+
+    // Get first org
+    const orgs = await pool.query(`SELECT id FROM organizations LIMIT 1`);
+    if (orgs.rows.length === 0) {
+      log.debug("No organizations yet — skipping Wazuh API key bootstrap");
+      return;
+    }
+
+    const orgId = orgs.rows[0].id;
+    // Pre-generated key hash for snx_41cyV5qKZSYaF0YYiQqRLorzl4cra04b_QTv6SxnTB4
+    const keyHash = "2efc5974582d5c7d7e2f4a798c78cb3cfadbc63dd410f7fe312f8d0fd94b509a";
+    const keyPrefix = "snx_41cyV5qK";
+
+    await pool.query(
+      `INSERT INTO api_keys (name, key_hash, key_prefix, org_id, scopes, is_active, created_at)
+       VALUES ($1, $2, $3, $4, $5, true, NOW())`,
+      ["Wazuh Forwarder", keyHash, keyPrefix, orgId, JSON.stringify(["ingest", "ingest:write"])],
+    );
+    log.info("Wazuh Forwarder API key bootstrapped successfully", { orgId, keyPrefix });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("does not exist")) {
+      log.debug("api_keys table not present — skipping Wazuh API key bootstrap");
+    } else {
+      log.error("Failed to bootstrap Wazuh API key", { error: msg });
+    }
+  }
 }
