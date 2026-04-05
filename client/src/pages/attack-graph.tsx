@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { ErrorState } from "@/components/empty-state";
 import {
   GitBranch,
   AlertTriangle,
@@ -1181,24 +1182,15 @@ export default function AttackGraphPage() {
 
   if (pathsError || campaignsError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load attack graph data</p>
-        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-3"
-          onClick={() => {
-            refetchPaths();
-            refetchCampaigns();
-          }}
-        >
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Attack graph unavailable"
+        message="We couldn't load attack path data. Your threat detection is still active."
+        onRetry={() => {
+          refetchPaths();
+          refetchCampaigns();
+        }}
+        compact
+      />
     );
   }
 

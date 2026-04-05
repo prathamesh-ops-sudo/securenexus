@@ -3,21 +3,36 @@ import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
 import { storage } from "../storage";
 import {
-  getSecrets,
-  getSecretById,
-  registerSecret,
-  createShare,
-  consumeShare,
-  getShares,
-  transferOwnership,
-  reclaimOwnership,
-  getTransfers,
-  breakGlassAccess,
-  reviewBreakGlass,
-  getBreakGlassEntries,
-  getAuditLog,
-} from "../jit-secret-access-engine";
-import type { SecretType, SecretClassification } from "../jit-secret-access-engine";
+  getJitManagedSecrets,
+  getJitManagedSecret,
+  createJitManagedSecret,
+  updateJitManagedSecret,
+  getJitExternalSharesList,
+  getJitExternalShare,
+  createJitExternalShareEntry,
+  updateJitExternalShareEntry,
+  getJitOwnershipTransfersList,
+  createJitOwnershipTransferEntry,
+  getJitBreakGlassEntriesList,
+  getJitBreakGlassEntry,
+  createJitBreakGlassEntry,
+  updateJitBreakGlassEntry,
+  getJitAuditLogEntries,
+  createJitAuditLogEntry,
+  incrementJitSecretAccessCount,
+} from "../storage/jit-secret-access";
+import { randomBytes } from "crypto";
+
+type SecretType =
+  | "api_key"
+  | "database_credential"
+  | "ssh_key"
+  | "tls_cert"
+  | "oauth_token"
+  | "encryption_key"
+  | "service_account"
+  | "other";
+type SecretClassification = "critical" | "high" | "medium" | "low";
 
 const VALID_SECRET_TYPES: SecretType[] = [
   "api_key",
@@ -48,7 +63,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
   app.get("/api/jit-secrets/secrets", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const secrets = getSecrets(orgId);
+      const secrets = await getJitManagedSecrets(orgId);
       res.json(secrets);
     } catch (error) {
       logger.child("routes").error("Get secrets error", { error: String(error) });
@@ -60,7 +75,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const id = String(req.params.id);
-      const secret = getSecretById(orgId, id);
+      const secret = await getJitManagedSecret(id, orgId);
       if (!secret) {
         return res.status(404).json({ message: "Secret not found" });
       }
@@ -104,7 +119,8 @@ export function registerJitSecretAccessRoutes(app: Express): void {
         return res.status(400).json({ message: "ownerName is required" });
       }
 
-      const secret = registerSecret(orgId, {
+      const secret = await createJitManagedSecret({
+        orgId,
         name: String(name).trim(),
         description: typeof description === "string" ? description.trim() : "",
         secretType,
@@ -116,6 +132,13 @@ export function registerJitSecretAccessRoutes(app: Express): void {
         rotationIntervalDays:
           typeof rotationIntervalDays === "number" && rotationIntervalDays > 0 ? rotationIntervalDays : 90,
         noPlaintextSharing: noPlaintextSharing === true,
+      });
+
+      await createJitAuditLogEntry({
+        orgId,
+        action: "secret_registered",
+        actor: String(ownerName),
+        details: `Registered secret: ${String(name).trim()}`,
       });
 
       res.status(201).json(secret);
@@ -164,7 +187,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
       }
 
       // Verify secret exists in registry
-      const secret = getSecretById(orgId, String(secretId));
+      const secret = await getJitManagedSecret(String(secretId), orgId);
       if (!secret) {
         return res.status(404).json({ message: "Secret not found" });
       }
@@ -291,7 +314,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
   app.get("/api/jit-secrets/shares", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const shares = getShares(orgId);
+      const shares = await getJitExternalSharesList(orgId);
       res.json(shares);
     } catch (error) {
       logger.child("routes").error("Get shares error", { error: String(error) });
@@ -318,12 +341,30 @@ export function registerJitSecretAccessRoutes(app: Express): void {
         return res.status(400).json({ message: "expiresInHours must be 1-168" });
       }
 
-      const share = createShare(orgId, {
+      const secretRecord = await getJitManagedSecret(String(secretId), orgId);
+      if (!secretRecord) {
+        return res.status(404).json({ message: "Secret not found" });
+      }
+
+      const shareToken = randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
+      const share = await createJitExternalShareEntry({
+        orgId,
         secretId: String(secretId),
+        secretName: secretRecord.name,
         createdBy: String(createdBy),
         recipientEmail: String(recipientEmail),
-        expiresInHours,
+        shareToken,
+        expiresAt,
         maxUses: typeof maxUses === "number" && maxUses >= 1 && maxUses <= 10 ? maxUses : 1,
+        noPlaintext: secretRecord.noPlaintextSharing,
+      });
+
+      await createJitAuditLogEntry({
+        orgId,
+        action: "share_created",
+        actor: String(createdBy),
+        details: `Share to ${String(recipientEmail)} for ${secretRecord.name}`,
       });
 
       res.status(201).json(share);
@@ -351,20 +392,31 @@ export function registerJitSecretAccessRoutes(app: Express): void {
       if (!consumerIdentity || typeof consumerIdentity !== "string") {
         return res.status(400).json({ message: "consumerIdentity is required" });
       }
-      const share = consumeShare(orgId, id, String(consumerIdentity));
-      res.json(share);
-    } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("SHARE_NOT_FOUND")) {
+      const existing = await getJitExternalShare(id, orgId);
+      if (!existing) {
         return res.status(404).json({ message: "Share not found" });
       }
-      if (errMsg.includes("SHARE_NOT_ACTIVE")) {
+      if (existing.status !== "active") {
         return res.status(400).json({ message: "Share is not active" });
       }
-      if (errMsg.includes("SHARE_EXPIRED")) {
+      if (existing.expiresAt && new Date(existing.expiresAt) < new Date()) {
+        await updateJitExternalShareEntry(id, orgId, { status: "expired" });
         return res.status(400).json({ message: "Share has expired" });
       }
-      logger.child("routes").error("Consume share error", { error: errMsg });
+      const newUses = existing.currentUses + 1;
+      const newStatus = newUses >= existing.maxUses ? "consumed" : "active";
+      const share = await updateJitExternalShareEntry(id, orgId, { currentUses: newUses, status: newStatus });
+
+      await createJitAuditLogEntry({
+        orgId,
+        action: "share_consumed",
+        actor: String(consumerIdentity),
+        details: `Share ${id} consumed`,
+      });
+
+      res.json(share);
+    } catch (error) {
+      logger.child("routes").error("Consume share error", { error: String(error) });
       res.status(500).json({ message: "Failed to consume share" });
     }
   });
@@ -393,28 +445,37 @@ export function registerJitSecretAccessRoutes(app: Express): void {
         return res.status(400).json({ message: "durationMinutes must be 5-120" });
       }
 
-      const access = breakGlassAccess(orgId, {
+      const secretRecord = await getJitManagedSecret(String(secretId), orgId);
+      if (!secretRecord) {
+        return res.status(404).json({ message: "Secret not found" });
+      }
+
+      const ephemeralToken = randomBytes(48).toString("hex");
+      const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000);
+      const access = await createJitBreakGlassEntry({
+        orgId,
         secretId: String(secretId),
+        secretName: secretRecord.name,
         requesterId: String(requesterId),
         requesterName: String(requesterName),
         justification: String(justification).trim(),
         incidentId: typeof incidentId === "string" ? incidentId : null,
+        ephemeralToken,
+        expiresAt,
         durationMinutes,
+      });
+
+      await incrementJitSecretAccessCount(String(secretId), orgId);
+      await createJitAuditLogEntry({
+        orgId,
+        action: "break_glass_activated",
+        actor: String(requesterName),
+        details: `Break glass: ${secretRecord.name}${incidentId ? ` (${incidentId})` : ""}`,
       });
 
       res.status(201).json(access);
     } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("SECRET_NOT_FOUND")) {
-        return res.status(404).json({ message: "Secret not found" });
-      }
-      if (errMsg.includes("JUSTIFICATION_TOO_SHORT")) {
-        return res.status(400).json({ message: "Justification must be at least 20 characters" });
-      }
-      if (errMsg.includes("INVALID_DURATION")) {
-        return res.status(400).json({ message: "Duration must be 5-120 minutes" });
-      }
-      logger.child("routes").error("Break glass error", { error: errMsg });
+      logger.child("routes").error("Break glass error", { error: String(error) });
       res.status(500).json({ message: "Failed to activate break-glass access" });
     }
   });
@@ -430,17 +491,30 @@ export function registerJitSecretAccessRoutes(app: Express): void {
       if (!notes || typeof notes !== "string") {
         return res.status(400).json({ message: "notes is required" });
       }
-      const entry = reviewBreakGlass(orgId, id, String(reviewerName), String(notes));
-      res.json(entry);
-    } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("BREAK_GLASS_NOT_FOUND")) {
+      const existing = await getJitBreakGlassEntry(id, orgId);
+      if (!existing) {
         return res.status(404).json({ message: "Break-glass entry not found" });
       }
-      if (errMsg.includes("ALREADY_REVIEWED")) {
+      if (existing.status === "reviewed") {
         return res.status(400).json({ message: "Break-glass entry already reviewed" });
       }
-      logger.child("routes").error("Review break glass error", { error: errMsg });
+      const entry = await updateJitBreakGlassEntry(id, orgId, {
+        status: "reviewed",
+        reviewedBy: String(reviewerName),
+        reviewedAt: new Date(),
+        reviewNotes: String(notes),
+      });
+
+      await createJitAuditLogEntry({
+        orgId,
+        action: "break_glass_reviewed",
+        actor: String(reviewerName),
+        details: `Reviewed break glass ${id}`,
+      });
+
+      res.json(entry);
+    } catch (error) {
+      logger.child("routes").error("Review break glass error", { error: String(error) });
       res.status(500).json({ message: "Failed to review break-glass access" });
     }
   });
@@ -448,7 +522,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
   app.get("/api/jit-secrets/break-glass", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const entries = getBreakGlassEntries(orgId);
+      const entries = await getJitBreakGlassEntriesList(orgId);
       res.json(entries);
     } catch (error) {
       logger.child("routes").error("Get break glass error", { error: String(error) });
@@ -480,25 +554,40 @@ export function registerJitSecretAccessRoutes(app: Express): void {
         return res.status(400).json({ message: "initiatedBy is required" });
       }
 
-      const transfer = transferOwnership(orgId, {
+      const secretRecord = await getJitManagedSecret(String(secretId), orgId);
+      if (!secretRecord) {
+        return res.status(404).json({ message: "Secret not found" });
+      }
+
+      const transfer = await createJitOwnershipTransferEntry({
+        orgId,
         secretId: String(secretId),
+        secretName: secretRecord.name,
+        fromOwnerId: secretRecord.ownerId,
+        fromOwnerName: secretRecord.ownerName,
         toOwnerId: String(toOwnerId),
         toOwnerName: String(toOwnerName),
+        action: "transfer",
         reason: String(reason).trim(),
         isOffboarding: isOffboarding === true,
         initiatedBy: String(initiatedBy),
       });
 
+      await updateJitManagedSecret(String(secretId), orgId, {
+        ownerId: String(toOwnerId),
+        ownerName: String(toOwnerName),
+      });
+
+      await createJitAuditLogEntry({
+        orgId,
+        action: "ownership_transferred",
+        actor: String(initiatedBy),
+        details: `${secretRecord.name}: ${secretRecord.ownerName} → ${String(toOwnerName)}`,
+      });
+
       res.status(201).json(transfer);
     } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("SECRET_NOT_FOUND")) {
-        return res.status(404).json({ message: "Secret not found" });
-      }
-      if (errMsg.includes("REASON_TOO_SHORT")) {
-        return res.status(400).json({ message: "Reason must be at least 10 characters" });
-      }
-      logger.child("routes").error("Transfer ownership error", { error: errMsg });
+      logger.child("routes").error("Transfer ownership error", { error: String(error) });
       res.status(500).json({ message: "Failed to transfer ownership" });
     }
   });
@@ -525,24 +614,40 @@ export function registerJitSecretAccessRoutes(app: Express): void {
         return res.status(400).json({ message: "initiatedBy is required" });
       }
 
-      const transfer = reclaimOwnership(orgId, {
+      const secretRecord = await getJitManagedSecret(String(secretId), orgId);
+      if (!secretRecord) {
+        return res.status(404).json({ message: "Secret not found" });
+      }
+
+      const transfer = await createJitOwnershipTransferEntry({
+        orgId,
         secretId: String(secretId),
+        secretName: secretRecord.name,
+        fromOwnerId: secretRecord.ownerId,
+        fromOwnerName: secretRecord.ownerName,
         toOwnerId: String(toOwnerId),
         toOwnerName: String(toOwnerName),
+        action: "reclaim",
         reason: String(reason).trim(),
+        isOffboarding: false,
         initiatedBy: String(initiatedBy),
+      });
+
+      await updateJitManagedSecret(String(secretId), orgId, {
+        ownerId: String(toOwnerId),
+        ownerName: String(toOwnerName),
+      });
+
+      await createJitAuditLogEntry({
+        orgId,
+        action: "ownership_reclaimed",
+        actor: String(initiatedBy),
+        details: `${secretRecord.name}: reclaimed to ${String(toOwnerName)}`,
       });
 
       res.status(201).json(transfer);
     } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("SECRET_NOT_FOUND")) {
-        return res.status(404).json({ message: "Secret not found" });
-      }
-      if (errMsg.includes("REASON_TOO_SHORT")) {
-        return res.status(400).json({ message: "Reason must be at least 10 characters" });
-      }
-      logger.child("routes").error("Reclaim ownership error", { error: errMsg });
+      logger.child("routes").error("Reclaim ownership error", { error: String(error) });
       res.status(500).json({ message: "Failed to reclaim ownership" });
     }
   });
@@ -550,7 +655,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
   app.get("/api/jit-secrets/transfers", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const transfers = getTransfers(orgId);
+      const transfers = await getJitOwnershipTransfersList(orgId);
       res.json(transfers);
     } catch (error) {
       logger.child("routes").error("Get transfers error", { error: String(error) });
@@ -563,7 +668,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
   app.get("/api/jit-secrets/audit-log", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const auditLog = getAuditLog(orgId);
+      const auditLog = await getJitAuditLogEntries(orgId);
       res.json(auditLog);
     } catch (error) {
       logger.child("routes").error("Get audit log error", { error: String(error) });
@@ -580,10 +685,12 @@ export function registerJitSecretAccessRoutes(app: Express): void {
         storage.countJitAccessRequests(orgId),
         storage.countPendingJitAccessRequests(orgId),
       ]);
-      const secrets = getSecrets(orgId);
-      const shares = getShares(orgId);
-      const breakGlassEntries = getBreakGlassEntries(orgId);
-      const transfers = getTransfers(orgId);
+      const [secrets, shares, breakGlassEntries, transfers] = await Promise.all([
+        getJitManagedSecrets(orgId),
+        getJitExternalSharesList(orgId),
+        getJitBreakGlassEntriesList(orgId),
+        getJitOwnershipTransfersList(orgId),
+      ]);
 
       res.json({
         totalSecrets: secrets.length,
@@ -606,34 +713,24 @@ export function registerJitSecretAccessRoutes(app: Express): void {
   app.get("/api/jit-secrets/target-systems", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const secrets = getSecrets(orgId);
-      const systems = secrets.map(
-        (s: {
-          id: string;
-          name: string;
-          secretType: string;
-          classification: string;
-          environment: string;
-          service: string;
-          ownerName: string;
-        }) => ({
-          id: s.id,
-          name: s.name,
-          type: s.secretType,
-          classification: s.classification,
-          environment: s.environment,
-          service: s.service,
-          owner: s.ownerName,
-          approvalChain:
-            s.classification === "critical"
-              ? ["manager", "security", "owner"]
-              : s.classification === "high"
-                ? ["manager", "owner"]
-                : ["owner"],
-          availableRoles: ["read", "write", "admin"],
-          maxDurationMinutes: s.classification === "critical" ? 60 : s.classification === "high" ? 240 : 480,
-        }),
-      );
+      const secrets = await getJitManagedSecrets(orgId);
+      const systems = secrets.map((s) => ({
+        id: s.id,
+        name: s.name,
+        type: s.secretType,
+        classification: s.classification,
+        environment: s.environment,
+        service: s.service,
+        owner: s.ownerName,
+        approvalChain:
+          s.classification === "critical"
+            ? ["manager", "security", "owner"]
+            : s.classification === "high"
+              ? ["manager", "owner"]
+              : ["owner"],
+        availableRoles: ["read", "write", "admin"],
+        maxDurationMinutes: s.classification === "critical" ? 60 : s.classification === "high" ? 240 : 480,
+      }));
       res.json(systems);
     } catch (error) {
       logger.child("routes").error("Get target systems error", { error: String(error) });
@@ -909,38 +1006,36 @@ export function registerJitSecretAccessRoutes(app: Express): void {
   app.get("/api/jit-secrets/approval-chains", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const secrets = getSecrets(orgId);
+      const secrets = await getJitManagedSecrets(orgId);
 
-      const chains = secrets.map(
-        (s: { id: string; name: string; classification: string; environment: string; ownerName: string }) => {
-          let levels: Array<{ level: number; role: string; description: string; required: boolean }>;
-          if (s.classification === "critical") {
-            levels = [
-              { level: 1, role: "manager", description: "Direct manager approval", required: true },
-              { level: 2, role: "security", description: "Security team review", required: true },
-              { level: 3, role: "owner", description: "Secret owner final sign-off", required: true },
-            ];
-          } else if (s.classification === "high") {
-            levels = [
-              { level: 1, role: "manager", description: "Direct manager approval", required: true },
-              { level: 2, role: "owner", description: "Secret owner approval", required: true },
-            ];
-          } else {
-            levels = [{ level: 1, role: "owner", description: "Secret owner approval", required: true }];
-          }
+      const chains = secrets.map((s) => {
+        let levels: Array<{ level: number; role: string; description: string; required: boolean }>;
+        if (s.classification === "critical") {
+          levels = [
+            { level: 1, role: "manager", description: "Direct manager approval", required: true },
+            { level: 2, role: "security", description: "Security team review", required: true },
+            { level: 3, role: "owner", description: "Secret owner final sign-off", required: true },
+          ];
+        } else if (s.classification === "high") {
+          levels = [
+            { level: 1, role: "manager", description: "Direct manager approval", required: true },
+            { level: 2, role: "owner", description: "Secret owner approval", required: true },
+          ];
+        } else {
+          levels = [{ level: 1, role: "owner", description: "Secret owner approval", required: true }];
+        }
 
-          return {
-            secretId: s.id,
-            secretName: s.name,
-            classification: s.classification,
-            environment: s.environment,
-            owner: s.ownerName,
-            approvalLevels: levels,
-            totalLevels: levels.length,
-            estimatedApprovalTimeMinutes: levels.length * 15,
-          };
-        },
-      );
+        return {
+          secretId: s.id,
+          secretName: s.name,
+          classification: s.classification,
+          environment: s.environment,
+          owner: s.ownerName,
+          approvalLevels: levels,
+          totalLevels: levels.length,
+          estimatedApprovalTimeMinutes: levels.length * 15,
+        };
+      });
 
       res.json({ chains, total: chains.length });
     } catch (error) {
@@ -959,7 +1054,7 @@ export function registerJitSecretAccessRoutes(app: Express): void {
         return res.status(400).json({ message: "approvalLevels array is required" });
       }
 
-      const secret = getSecretById(orgId, secretId);
+      const secret = await getJitManagedSecret(secretId, orgId);
       if (!secret) {
         return res.status(404).json({ message: "Secret not found" });
       }

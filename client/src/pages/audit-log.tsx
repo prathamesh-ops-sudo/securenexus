@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { ErrorState } from "@/components/empty-state";
 import {
   Activity,
   User,
@@ -479,16 +480,12 @@ export default function AuditLogPage() {
               ))}
             </div>
           ) : logsError ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-              <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-                <AlertTriangle className="h-6 w-6 text-destructive" />
-              </div>
-              <p className="text-sm font-medium">Failed to load audit logs</p>
-              <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchLogs()}>
-                Try Again
-              </Button>
-            </div>
+            <ErrorState
+              title="Audit logs unavailable"
+              message="We couldn't load audit log entries. Your audit trail is still being recorded."
+              onRetry={() => refetchLogs()}
+              compact
+            />
           ) : paginatedLogs.length > 0 ? (
             <div className="space-y-0">
               {paginatedLogs.map((log) => {

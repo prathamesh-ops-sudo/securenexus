@@ -2,8 +2,28 @@ import type { Express } from "express";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
 import { storage } from "../storage";
-import { getKillSwitches, toggleKillSwitch, getMilestones, achieveMilestone } from "../cross-cutting-engine";
-import type { KillSwitchState, MilestoneKind } from "../cross-cutting-engine";
+import {
+  getKillSwitchesList,
+  getKillSwitchById,
+  createKillSwitch,
+  updateKillSwitch,
+  countKillSwitches,
+  getTtvMilestones,
+  getTtvMilestoneByKind,
+  createTtvMilestone,
+  updateTtvMilestone,
+} from "../storage/cross-cutting";
+
+type KillSwitchState = "armed" | "disarmed" | "triggered";
+type MilestoneKind =
+  | "first_connector"
+  | "first_alert_closed"
+  | "first_question_answered"
+  | "first_finding_resolved"
+  | "first_incident_prevented"
+  | "first_playbook_executed"
+  | "first_policy_enforced"
+  | "first_report_generated";
 
 const VALID_EVIDENCE_TYPES = ["detection", "policy_check", "vulnerability", "compliance", "audit"];
 const VALID_SEVERITIES = ["info", "low", "medium", "high", "critical"];
@@ -382,11 +402,11 @@ export function registerCrossCuttingRoutes(app: Express): void {
     }
   });
 
-  // Kill switches — keep on engine (operational toggles, no DB table)
-  app.get("/api/cross-cutting/reliability", isAuthenticated, (req, res) => {
+  // Kill switches — DB-backed
+  app.get("/api/cross-cutting/reliability", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const killSwitches = getKillSwitches(orgId);
+      const killSwitches = await getKillSwitchesList(orgId);
       res.json({ ok: true, data: killSwitches });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -395,7 +415,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/cross-cutting/reliability/:id", isAuthenticated, (req, res) => {
+  app.patch("/api/cross-cutting/reliability/:id", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const { state, actor, reason } = req.body;
@@ -412,7 +432,18 @@ export function registerCrossCuttingRoutes(app: Express): void {
       }
 
       const paramId = String(req.params.id);
-      const ks = toggleKillSwitch(orgId, paramId, state, actor, reason);
+      const existing = await getKillSwitchById(paramId, orgId);
+      if (!existing) {
+        res.status(404).json({ ok: false, error: `Kill switch ${paramId} not found` });
+        return;
+      }
+      const ks = await updateKillSwitch(paramId, orgId, {
+        state,
+        updatedBy: actor,
+        lastTriggeredAt: state === "triggered" ? new Date() : existing.lastTriggeredAt,
+        triggeredBy: state === "triggered" ? actor : existing.triggeredBy,
+        triggerReason: state === "triggered" ? reason || null : existing.triggerReason,
+      });
       res.json({ ok: true, data: ks });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -425,11 +456,11 @@ export function registerCrossCuttingRoutes(app: Express): void {
     }
   });
 
-  // Milestones — keep on engine (no DB table)
-  app.get("/api/cross-cutting/time-to-value", isAuthenticated, (req, res) => {
+  // Milestones — DB-backed
+  app.get("/api/cross-cutting/time-to-value", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const milestones = getMilestones(orgId);
+      const milestones = await getTtvMilestones(orgId);
       res.json({ ok: true, data: milestones });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -438,7 +469,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/cross-cutting/time-to-value/:kind/achieve", isAuthenticated, (req, res) => {
+  app.post("/api/cross-cutting/time-to-value/:kind/achieve", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const kind = req.params.kind as MilestoneKind;
@@ -459,7 +490,35 @@ export function registerCrossCuttingRoutes(app: Express): void {
         return;
       }
 
-      const milestone = achieveMilestone(orgId, kind, actor, actionId, signupTime);
+      const existing = await getTtvMilestoneByKind(orgId, kind);
+      if (existing && existing.achievedAt) {
+        res.status(409).json({ ok: false, error: `Milestone '${kind}' already achieved` });
+        return;
+      }
+
+      const now = new Date();
+      const signupDate = signupTime ? new Date(signupTime) : now;
+      const durationMs = now.getTime() - signupDate.getTime();
+
+      let milestone;
+      if (existing) {
+        milestone = await updateTtvMilestone(orgId, kind, {
+          achievedAt: now,
+          durationFromSignupMs: durationMs > 0 ? durationMs : null,
+          triggeredByAction: actionId,
+          triggeredByActor: actor,
+        });
+      } else {
+        milestone = await createTtvMilestone({
+          orgId,
+          kind,
+          label: kind.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+          achievedAt: now,
+          durationFromSignupMs: durationMs > 0 ? durationMs : null,
+          triggeredByAction: actionId,
+          triggeredByActor: actor,
+        });
+      }
       res.json({ ok: true, data: milestone });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
