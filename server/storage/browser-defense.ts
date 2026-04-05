@@ -5,12 +5,18 @@ import {
   type InsertBrowserEgressRule,
   type BrowserTrustedPath,
   type InsertBrowserTrustedPath,
+  type BrowserDomEvent,
+  type InsertBrowserDomEvent,
+  type BrowserInjectionPattern,
+  type InsertBrowserInjectionPattern,
   browserDefenseSessions,
   browserEgressRules,
   browserTrustedPaths,
+  browserDomEvents,
+  browserInjectionPatterns,
 } from "@shared/schema";
 import { db } from "../db";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 
 // ─── Sessions ────────────────────────────────────────────────────────────────
 
@@ -139,4 +145,73 @@ export async function deleteBrowserTrustedPath(id: string, orgId: string): Promi
     .where(and(eq(browserTrustedPaths.id, id), eq(browserTrustedPaths.orgId, orgId)))
     .returning();
   return result.length > 0;
+}
+
+// ─── DOM Events ──────────────────────────────────────────────────────────────
+
+export async function getBrowserDomEvents(
+  orgId: string,
+  filters?: { sessionId?: string; severity?: string; verdict?: string },
+): Promise<BrowserDomEvent[]> {
+  let where = eq(browserDomEvents.orgId, orgId);
+  if (filters?.sessionId) {
+    where = and(where, eq(browserDomEvents.sessionId, filters.sessionId))!;
+  }
+  if (filters?.severity) {
+    where = and(where, eq(browserDomEvents.severity, filters.severity))!;
+  }
+  if (filters?.verdict) {
+    where = and(where, eq(browserDomEvents.verdict, filters.verdict))!;
+  }
+  return db.select().from(browserDomEvents).where(where).orderBy(desc(browserDomEvents.createdAt)).limit(200);
+}
+
+export async function createBrowserDomEvent(data: InsertBrowserDomEvent): Promise<BrowserDomEvent> {
+  const [created] = await db.insert(browserDomEvents).values(data).returning();
+  return created;
+}
+
+// ─── Injection Patterns ──────────────────────────────────────────────────────
+
+export async function getBrowserInjectionPatterns(orgId: string): Promise<BrowserInjectionPattern[]> {
+  return db
+    .select()
+    .from(browserInjectionPatterns)
+    .where(eq(browserInjectionPatterns.orgId, orgId))
+    .orderBy(desc(browserInjectionPatterns.createdAt));
+}
+
+export async function getBrowserInjectionPattern(
+  id: string,
+  orgId: string,
+): Promise<BrowserInjectionPattern | undefined> {
+  const [row] = await db
+    .select()
+    .from(browserInjectionPatterns)
+    .where(and(eq(browserInjectionPatterns.id, id), eq(browserInjectionPatterns.orgId, orgId)));
+  return row;
+}
+
+export async function updateBrowserInjectionPattern(
+  id: string,
+  orgId: string,
+  updates: Partial<InsertBrowserInjectionPattern>,
+): Promise<BrowserInjectionPattern | undefined> {
+  const [updated] = await db
+    .update(browserInjectionPatterns)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(and(eq(browserInjectionPatterns.id, id), eq(browserInjectionPatterns.orgId, orgId)))
+    .returning();
+  return updated;
+}
+
+export async function incrementInjectionPatternMatchCount(id: string, orgId: string): Promise<void> {
+  await db
+    .update(browserInjectionPatterns)
+    .set({
+      matchCount: sql`${browserInjectionPatterns.matchCount} + 1`,
+      lastMatchedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(browserInjectionPatterns.id, id), eq(browserInjectionPatterns.orgId, orgId)));
 }

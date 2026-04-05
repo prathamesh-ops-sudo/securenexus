@@ -860,7 +860,7 @@ function generateAlertRuleArtifact(
     enabled: false,
   };
   const gate = createApprovalGate(artifactId, "alert_rule");
-  approvalStore.set(gate.id, gate);
+  // approvalStore removed — approvals persisted to DB by route
   return {
     id: artifactId,
     type: "alert_rule",
@@ -952,7 +952,7 @@ function generateWorkflowArtifact(
     runMode: "automatic",
   };
   const gate = createApprovalGate(artifactId, "workflow");
-  approvalStore.set(gate.id, gate);
+  // approvalStore removed — approvals persisted to DB by route
   return {
     id: artifactId,
     type: "workflow",
@@ -1224,9 +1224,8 @@ function generateArtifact(
   }
 }
 
-const MAX_INVESTIGATION_STORE_SIZE = 10000;
-const investigationStore = new Map<string, Investigation>();
-const approvalStore = new Map<string, ApprovalGate>();
+// Maps removed — investigations and approvals are persisted to DB via storage/prompt-artifact.ts
+// These Maps were redundant since the route already saves to DB after calling runInvestigation.
 
 export function runInvestigation(prompt: string, orgId: string | null): Investigation {
   const sanitizedPrompt = prompt.trim().slice(0, 2000);
@@ -1254,22 +1253,6 @@ export function runInvestigation(prompt: string, orgId: string | null): Investig
     completedAt: new Date().toISOString(),
   };
 
-  investigationStore.set(investigation.id, investigation);
-
-  if (investigationStore.size > MAX_INVESTIGATION_STORE_SIZE) {
-    const entries = Array.from(investigationStore.entries());
-    entries.sort((a, b) => new Date(a[1].createdAt).getTime() - new Date(b[1].createdAt).getTime());
-    const toRemove = entries.slice(0, investigationStore.size - MAX_INVESTIGATION_STORE_SIZE);
-    for (const [key, inv] of toRemove) {
-      for (const art of inv.artifacts) {
-        if (art.approvalGate) {
-          approvalStore.delete(art.approvalGate.id);
-        }
-      }
-      investigationStore.delete(key);
-    }
-  }
-
   return investigation;
 }
 
@@ -1281,16 +1264,14 @@ function buildSummary(classification: IntentClassification, artifact: GeneratedA
   return `Analyzed ${entityDesc}${timeDesc}${severityDesc} and generated a ${artifact.type.replace(/_/g, " ")}: "${artifact.name}".`;
 }
 
-export function getInvestigation(id: string, orgId?: string | null): Investigation | null {
-  const investigation = investigationStore.get(id) || null;
-  if (investigation && investigation.orgId !== orgId) return null;
-  return investigation;
+export function getInvestigation(_id: string, _orgId?: string | null): Investigation | null {
+  // Deprecated — use promptStorage.getPromptInvestigation() instead
+  return null;
 }
 
-export function listInvestigations(orgId?: string | null): Investigation[] {
-  const all = Array.from(investigationStore.values());
-  const filtered = all.filter((inv) => inv.orgId === orgId);
-  return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+export function listInvestigations(_orgId?: string | null): Investigation[] {
+  // Deprecated — use promptStorage.getPromptInvestigations() instead
+  return [];
 }
 
 export function getSuggestedPrompts(): string[] {
@@ -1313,66 +1294,28 @@ export function getTemplates(): ConstrainedTemplate[] {
 }
 
 export function reviewApproval(
-  approvalId: string,
-  reviewerName: string,
-  decision: "approved" | "rejected",
-  notes: string,
-  orgId: string,
+  _approvalId: string,
+  _reviewerName: string,
+  _decision: "approved" | "rejected",
+  _notes: string,
+  _orgId: string,
 ): ApprovalGate | null {
-  const gate = approvalStore.get(approvalId);
-  if (!gate) return null;
-
-  const investigation = Array.from(investigationStore.values()).find((inv) =>
-    inv.artifacts.some((a) => a.id === gate.artifactId),
-  );
-  if (!investigation || investigation.orgId !== orgId) return null;
-
-  gate.status = decision;
-  gate.reviewedBy = reviewerName;
-  gate.reviewedAt = new Date().toISOString();
-  gate.reviewNotes = notes;
-  approvalStore.set(approvalId, gate);
-
-  if (investigation) {
-    const artifact = investigation.artifacts.find((a) => a.id === gate.artifactId);
-    if (artifact) {
-      artifact.approvalGate = gate;
-    }
-  }
-
-  return gate;
+  // Deprecated — use promptStorage.updateArtifactApproval() instead
+  return null;
 }
 
-export function getPendingApprovals(orgId: string): ApprovalGate[] {
-  const pending: ApprovalGate[] = [];
-  for (const gate of Array.from(approvalStore.values())) {
-    if (gate.status !== "pending_approval") continue;
-    const investigation = Array.from(investigationStore.values()).find((inv) =>
-      inv.artifacts.some((a) => a.id === gate.artifactId),
-    );
-    if (investigation && investigation.orgId === orgId) {
-      pending.push(gate);
-    }
-  }
-  return pending;
+export function getPendingApprovals(_orgId: string): ApprovalGate[] {
+  // Deprecated — use promptStorage.getPendingArtifactApprovals() instead
+  return [];
 }
 
 export function updateArtifactLogic(
-  investigationId: string,
-  artifactId: string,
-  blockId: string,
-  newCode: string,
-  orgId: string,
+  _investigationId: string,
+  _artifactId: string,
+  _blockId: string,
+  _newCode: string,
+  _orgId: string,
 ): GeneratedArtifact | null {
-  const investigation = investigationStore.get(investigationId);
-  if (!investigation || investigation.orgId !== orgId) return null;
-
-  const artifact = investigation.artifacts.find((a) => a.id === artifactId);
-  if (!artifact) return null;
-
-  const block = artifact.editableLogic.find((b) => b.id === blockId);
-  if (!block || !block.editable) return null;
-
-  block.code = newCode.slice(0, 50000);
-  return artifact;
+  // Deprecated — use promptStorage for DB-backed artifact updates instead
+  return null;
 }

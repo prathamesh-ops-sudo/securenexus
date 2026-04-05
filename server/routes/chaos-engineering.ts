@@ -10,8 +10,8 @@ interface RequestWithUser extends Request {
 import {
   getAttackLibrary,
   getPurpleTeamScenarios,
-  getMitreHeatmapData,
   MITRE_TACTICS,
+  MITRE_TECHNIQUE_LIBRARY,
 } from "../chaos-engineering-engine";
 
 const log = logger.child("chaos-engineering");
@@ -296,8 +296,21 @@ export function registerChaosEngineeringRoutes(app: Express): void {
   app.get("/api/chaos-engineering/heatmap", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      // Heatmap from attack library reference data is acceptable — it's catalog data
-      res.json(getMitreHeatmapData(orgId));
+      const simulations = await storage.getChaosSimulations(orgId);
+      const heatmap: Record<string, Record<string, { coverage: string; tested: boolean; passed: boolean }>> = {};
+      for (const tactic of MITRE_TACTICS) {
+        heatmap[tactic.name] = {};
+        const tacticTechniques = MITRE_TECHNIQUE_LIBRARY.filter((t) => t.tacticId === tactic.id);
+        for (const tech of tacticTechniques) {
+          const sim = simulations.find((s) => s.mitreTechnique === tech.id);
+          heatmap[tactic.name][tech.id] = {
+            coverage: sim ? (sim.status === "passed" ? "full" : "partial") : "none",
+            tested: !!sim,
+            passed: sim?.status === "passed" || false,
+          };
+        }
+      }
+      res.json(heatmap);
     } catch (error) {
       log.error("Heatmap error", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch heatmap data" });

@@ -5,9 +5,15 @@ import {
   type InsertCrossCuttingDriftRecord,
   type CrossCuttingOverride,
   type InsertCrossCuttingOverride,
+  type CrossCuttingKillSwitch,
+  type InsertCrossCuttingKillSwitch,
+  type TtvMilestone,
+  type InsertTtvMilestone,
   crossCuttingEvidence,
   crossCuttingDrift,
   crossCuttingOverrides,
+  crossCuttingKillSwitches,
+  ttvMilestones,
 } from "@shared/schema";
 import { db } from "../db";
 import { and, count, desc, eq } from "drizzle-orm";
@@ -193,4 +199,79 @@ export async function countCrossCuttingOverrides(orgId: string): Promise<number>
     .from(crossCuttingOverrides)
     .where(eq(crossCuttingOverrides.orgId, orgId));
   return row?.total ?? 0;
+}
+
+// ── Kill Switches ──
+
+export async function getKillSwitchesList(orgId: string): Promise<CrossCuttingKillSwitch[]> {
+  return db
+    .select()
+    .from(crossCuttingKillSwitches)
+    .where(eq(crossCuttingKillSwitches.orgId, orgId))
+    .orderBy(crossCuttingKillSwitches.featureName);
+}
+
+export async function getKillSwitchById(id: string, orgId: string): Promise<CrossCuttingKillSwitch | undefined> {
+  const [row] = await db
+    .select()
+    .from(crossCuttingKillSwitches)
+    .where(and(eq(crossCuttingKillSwitches.id, id), eq(crossCuttingKillSwitches.orgId, orgId)));
+  return row;
+}
+
+export async function createKillSwitch(data: InsertCrossCuttingKillSwitch): Promise<CrossCuttingKillSwitch> {
+  const [created] = await db.insert(crossCuttingKillSwitches).values(data).returning();
+  return created;
+}
+
+export async function updateKillSwitch(
+  id: string,
+  orgId: string,
+  updates: Partial<InsertCrossCuttingKillSwitch>,
+): Promise<CrossCuttingKillSwitch | undefined> {
+  const [updated] = await db
+    .update(crossCuttingKillSwitches)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(and(eq(crossCuttingKillSwitches.id, id), eq(crossCuttingKillSwitches.orgId, orgId)))
+    .returning();
+  return updated;
+}
+
+export async function countKillSwitches(orgId: string, state?: string): Promise<number> {
+  const base = eq(crossCuttingKillSwitches.orgId, orgId);
+  const where = state ? and(base, eq(crossCuttingKillSwitches.state, state)) : base;
+  const [row] = await db.select({ total: count() }).from(crossCuttingKillSwitches).where(where);
+  return row?.total ?? 0;
+}
+
+// ── Time-to-Value Milestones ──
+
+export async function getTtvMilestones(orgId: string): Promise<TtvMilestone[]> {
+  return db.select().from(ttvMilestones).where(eq(ttvMilestones.orgId, orgId)).orderBy(ttvMilestones.kind);
+}
+
+export async function getTtvMilestoneByKind(orgId: string, kind: string): Promise<TtvMilestone | undefined> {
+  const [row] = await db
+    .select()
+    .from(ttvMilestones)
+    .where(and(eq(ttvMilestones.orgId, orgId), eq(ttvMilestones.kind, kind)));
+  return row;
+}
+
+export async function createTtvMilestone(data: InsertTtvMilestone): Promise<TtvMilestone> {
+  const [created] = await db.insert(ttvMilestones).values(data).returning();
+  return created;
+}
+
+export async function updateTtvMilestone(
+  orgId: string,
+  kind: string,
+  updates: Partial<InsertTtvMilestone>,
+): Promise<TtvMilestone | undefined> {
+  const [updated] = await db
+    .update(ttvMilestones)
+    .set(updates)
+    .where(and(eq(ttvMilestones.orgId, orgId), eq(ttvMilestones.kind, kind)))
+    .returning();
+  return updated;
 }
