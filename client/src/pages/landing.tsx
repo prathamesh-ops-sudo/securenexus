@@ -262,6 +262,24 @@ export default function LandingPage() {
   const [contactMessage, setContactMessage] = useState("");
   const [contactSubmitted, setContactSubmitted] = useState(false);
 
+  /* Handle OAuth error redirect from server (e.g. /?error=google_auth_failed) */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const errorCode = params.get("error");
+    if (errorCode) {
+      const errorMessages: Record<string, string> = {
+        google_auth_failed: "Google sign-in failed. Please try again or use email login.",
+        github_auth_failed: "GitHub sign-in failed. Please try again or use email login.",
+        oauth_no_email: "No email returned from provider. Please use email login.",
+        oauth_org_denied: "Your account is not associated with an organization. Contact your admin.",
+      };
+      setOauthError(errorMessages[errorCode] || `Authentication failed (${errorCode}). Please try again.`);
+      setAuthMode("login");
+      // Clean URL without reload
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
   /* 94.2 — SEO: set document title + meta description */
   useEffect(() => {
     document.title = "SecureNexus — Enterprise Security Platform | No EDR Required";
