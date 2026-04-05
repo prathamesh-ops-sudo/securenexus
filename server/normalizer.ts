@@ -872,6 +872,100 @@ function normalizeCheckPoint(payload: any): NormalizedAlert {
   };
 }
 
+function normalizeWazuh(payload: any): NormalizedAlert {
+  const rule = payload.rule || {};
+  const agent = payload.agent || {};
+  const data = payload.data || {};
+  const predecoder = payload.predecoder || {};
+  const decoder = payload.decoder || {};
+  const syscheck = payload.syscheck || {};
+  const location = payload.location || "";
+
+  // Map Wazuh rule levels to severity
+  const level = parseInt(rule.level, 10) || 3;
+  const severity =
+    level >= 12 ? "critical" : level >= 10 ? "high" : level >= 7 ? "medium" : level >= 4 ? "low" : "informational";
+
+  // Map Wazuh rule groups to categories
+  const groups = (rule.groups || []) as string[];
+  let category = "other";
+  if (groups.some((g: string) => /authentication|login|sshd|pam/.test(g))) category = "authentication";
+  else if (groups.some((g: string) => /syscheck|integrity/.test(g))) category = "file_integrity";
+  else if (groups.some((g: string) => /firewall|iptables/.test(g))) category = "network";
+  else if (groups.some((g: string) => /web|apache|nginx/.test(g))) category = "web_attack";
+  else if (groups.some((g: string) => /rootkit|trojan|malware/.test(g))) category = "malware";
+  else if (groups.some((g: string) => /policy|audit/.test(g))) category = "compliance";
+  else if (groups.some((g: string) => /vulnerability/.test(g))) category = "vulnerability";
+  else if (groups.some((g: string) => /attack|exploit/.test(g))) category = "intrusion";
+
+  // Extract MITRE ATT&CK info if available
+  const mitre = rule.mitre || {};
+  const mitreTactic = Array.isArray(mitre.tactic) ? mitre.tactic[0] : mitre.tactic;
+  const mitreTechnique = Array.isArray(mitre.id) ? mitre.id[0] : mitre.id;
+
+  return {
+    source: "Wazuh",
+    sourceEventId: payload.id || `wazuh-${agent.id}-${payload.timestamp}`,
+    category: normalizeCategory(category),
+    severity: normalizeSeverity(severity),
+    title: rule.description || "Wazuh Alert",
+    description:
+      payload.full_log ||
+      `[Rule ${rule.id}] ${rule.description || "Alert"} on agent ${agent.name || agent.id || "unknown"} (${location})`,
+    rawData: payload,
+    normalizedData: {
+      normalized: true,
+      source: "wazuh",
+      ocsf_mapped: true,
+      timestamp: payload.timestamp || new Date().toISOString(),
+      agent_id: agent.id,
+      agent_name: agent.name,
+      agent_ip: agent.ip,
+      manager_name: payload.manager?.name,
+      rule_id: rule.id,
+      rule_level: rule.level,
+      rule_groups: rule.groups,
+      rule_pci_dss: rule.pci_dss,
+      rule_gdpr: rule.gdpr,
+      rule_hipaa: rule.hipaa,
+      rule_nist: rule.nist_800_53,
+      decoder_name: decoder.name,
+      decoder_parent: decoder.parent,
+      location: location,
+      program_name: predecoder.program_name,
+      src_ip: data.srcip || predecoder.srcip,
+      dest_ip: data.dstip,
+      src_port: data.srcport,
+      dest_port: data.dstport,
+      src_user: data.srcuser || data.dstuser,
+      protocol: data.protocol,
+      action: data.action,
+      file_path: syscheck.path,
+      file_md5: syscheck.md5_after,
+      file_sha1: syscheck.sha1_after,
+      file_sha256: syscheck.sha256_after,
+      file_event: syscheck.event,
+      vulnerability_id: data.vulnerability?.cve,
+      vulnerability_severity: data.vulnerability?.severity,
+      mitre_tactic: mitreTactic,
+      mitre_technique: mitreTechnique,
+      mitre_id: mitre.id,
+    },
+    sourceIp: data.srcip || predecoder.srcip || agent.ip,
+    destIp: data.dstip,
+    sourcePort: parseInt(data.srcport, 10) || undefined,
+    destPort: parseInt(data.dstport, 10) || undefined,
+    protocol: data.protocol,
+    hostname: agent.name || agent.id,
+    userId: data.srcuser || data.dstuser,
+    fileHash: syscheck.sha256_after || syscheck.md5_after,
+    domain: data.hostname,
+    mitreTactic: mitreTactic,
+    mitreTechnique: mitreTechnique,
+    detectedAt: parseTimestamp(payload.timestamp),
+  };
+}
+
 function normalizeCustom(payload: any): NormalizedAlert {
   return {
     source: "Custom",
@@ -920,6 +1014,7 @@ const NORMALIZERS: Record<string, (payload: any) => NormalizedAlert> = {
   snort: normalizeSnort,
   zscaler: normalizeZscaler,
   checkpoint: normalizeCheckPoint,
+  wazuh: normalizeWazuh,
   custom: normalizeCustom,
 };
 
