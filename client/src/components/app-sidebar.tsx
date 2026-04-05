@@ -43,7 +43,9 @@ import { useAuth } from "@/hooks/use-auth";
 import { useOrgContext } from "@/hooks/use-org-context";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useContext } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { EventStreamContext } from "@/App";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -326,6 +328,38 @@ function useRecentPages(currentPath: string) {
   return recent.slice(1);
 }
 
+/** Live alert count badge that pulses when new alerts arrive */
+function LiveAlertBadge() {
+  const { eventCount } = useContext(EventStreamContext);
+  const { data: stats } = useQuery<{ openAlerts?: number }>({
+    queryKey: ["/api/dashboard/stats"],
+    refetchInterval: 30_000,
+  });
+  const count = stats?.openAlerts ?? 0;
+  const [flash, setFlash] = useState(false);
+
+  useEffect(() => {
+    if (eventCount > 0) {
+      setFlash(true);
+      const t = setTimeout(() => setFlash(false), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [eventCount]);
+
+  if (count === 0) return null;
+
+  const display = count > 99 ? "99+" : String(count);
+  return (
+    <span
+      className={`ml-auto flex h-4 min-w-4 items-center justify-center rounded-full text-[9px] font-bold px-1 tabular-nums transition-all duration-300 ${
+        flash ? "bg-red-500/30 text-red-300 animate-pulse scale-110" : "bg-red-500/15 text-red-400"
+      }`}
+    >
+      {display}
+    </span>
+  );
+}
+
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
@@ -582,11 +616,7 @@ export function AppSidebar() {
                           aria-hidden="true"
                         />
                         <span className="truncate">{item.title}</span>
-                        {item.url === "/alerts" && (
-                          <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500/15 text-[9px] font-bold text-red-400 px-1 tabular-nums">
-                            !
-                          </span>
-                        )}
+                        {item.url === "/alerts" && <LiveAlertBadge />}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
