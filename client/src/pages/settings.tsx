@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ErrorState } from "@/components/empty-state";
 import {
   Brain,
   Activity,
@@ -299,24 +300,15 @@ export default function SettingsPage() {
 
   if (apiKeysError || webhooksError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load settings</p>
-        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-3"
-          onClick={() => {
-            refetchApiKeys();
-            refetchWebhooks();
-          }}
-        >
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Settings unavailable"
+        message="We couldn't load your settings. Your existing configuration is still active."
+        onRetry={() => {
+          refetchApiKeys();
+          refetchWebhooks();
+        }}
+        compact
+      />
     );
   }
 

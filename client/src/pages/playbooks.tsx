@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { ErrorState } from "@/components/empty-state";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { formatRelativeTime, formatDateShort } from "@/lib/i18n";
 import { usePageTitle } from "@/hooks/use-page-title";
@@ -1718,15 +1719,13 @@ export default function PlaybooksPage() {
             </div>
           ) : playbooksError ? (
             <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12" role="alert">
-                <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-                  <AlertTriangle className="h-6 w-6 text-destructive" />
-                </div>
-                <p className="text-sm font-medium">Failed to load playbooks</p>
-                <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching playbook data.</p>
-                <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchPlaybooks()}>
-                  Try Again
-                </Button>
+              <CardContent className="py-4">
+                <ErrorState
+                  title="Playbooks unavailable"
+                  message="We couldn't load your automation playbooks. Your existing workflows are still running."
+                  onRetry={() => refetchPlaybooks()}
+                  compact
+                />
               </CardContent>
             </Card>
           ) : !playbooks?.length ? (

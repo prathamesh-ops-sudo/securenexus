@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { ErrorState } from "@/components/empty-state";
 import {
   Users,
   Shield,
@@ -304,16 +305,12 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
 
   if (membersError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load team members</p>
-        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchMembers()}>
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Team data unavailable"
+        message="We couldn't load your team members. Your team access controls are still active."
+        onRetry={() => refetchMembers()}
+        compact
+      />
     );
   }
 

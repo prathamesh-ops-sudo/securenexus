@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { ErrorState } from "@/components/empty-state";
 import {
   Shield,
   FileText,
@@ -349,15 +350,12 @@ function ComplianceCenterTab() {
 
   if (isError || !centerData) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load compliance center</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Compliance center unavailable"
+        message="We couldn't load your compliance data. Your policies and controls are still enforced."
+        onRetry={() => refetch()}
+        compact
+      />
     );
   }
 
@@ -749,16 +747,12 @@ function PoliciesTab() {
 
   if (policyError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load compliance policy</p>
-        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchPolicy()}>
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Compliance policy unavailable"
+        message="We couldn't load this policy's details. Your compliance monitoring is still active."
+        onRetry={() => refetchPolicy()}
+        compact
+      />
     );
   }
 
@@ -1835,24 +1829,15 @@ function ControlsTab() {
 
   if (controlsError || mappingsError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
-        <div className="rounded-full bg-destructive/10 p-3 ring-1 ring-destructive/20 mb-3">
-          <AlertTriangle className="h-6 w-6 text-destructive" />
-        </div>
-        <p className="text-sm font-medium">Failed to load compliance controls</p>
-        <p className="text-xs text-muted-foreground mt-1">An error occurred while fetching data.</p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-3"
-          onClick={() => {
-            refetchControls();
-            refetchMappings();
-          }}
-        >
-          Try Again
-        </Button>
-      </div>
+      <ErrorState
+        title="Compliance controls unavailable"
+        message="We couldn't load compliance controls and mappings. Your existing controls are still enforced."
+        onRetry={() => {
+          refetchControls();
+          refetchMappings();
+        }}
+        compact
+      />
     );
   }
 
