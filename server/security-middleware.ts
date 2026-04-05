@@ -23,7 +23,13 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/auth/reset-password",
 ]);
 
-const CSRF_EXEMPT_PREFIXES = ["/api/v1/ingest", "/api/v1/webhooks"];
+const CSRF_EXEMPT_PREFIXES = [
+  "/api/v1/ingest",
+  "/api/v1/webhooks",
+  "/api/ingest",
+  "/api/ingestion/webhook",
+  "/api/ingestion/syslog",
+];
 
 function isApiKeyAuthenticated(req: Request): boolean {
   return !!(req as any).apiKey;

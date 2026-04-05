@@ -439,8 +439,12 @@ export function registerBrowserDefenseRoutes(app: Express): void {
         const domainPatterns = r.domain.split(",").map((d) => d.trim());
         const domainMatch = domainPatterns.some((dp) => {
           if (dp === "*") return true;
-          const regex = new RegExp("^" + dp.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$", "i");
-          return regex.test(dest);
+          try {
+            const regex = new RegExp("^" + dp.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$", "i");
+            return regex.test(dest);
+          } catch (_regexErr) {
+            return false;
+          }
         });
         const protoMatch = r.protocol === "any" || r.protocol === proto;
         return domainMatch && protoMatch;
