@@ -14696,3 +14696,305 @@ export const endpointGroups = pgTable(
 
 export type EndpointGroup = typeof endpointGroups.$inferSelect;
 export type InsertEndpointGroup = typeof endpointGroups.$inferInsert;
+
+// ─── Prompt A/B Tests ─────────────────────────────────────────────────────────
+export const promptAbTests = pgTable(
+  "prompt_ab_tests",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    promptId: varchar("prompt_id").notNull(),
+    versionA: integer("version_a").notNull(),
+    versionB: integer("version_b").notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("running"),
+    sampleSize: integer("sample_size").notNull().default(100),
+    results: jsonb("results").default({}),
+    startedAt: timestamp("started_at").defaultNow(),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_prompt_ab_org").on(table.orgId), index("idx_prompt_ab_prompt").on(table.promptId)],
+);
+
+export type PromptAbTest = typeof promptAbTests.$inferSelect;
+export type InsertPromptAbTest = typeof promptAbTests.$inferInsert;
+
+// ─── Prompt Quality Scores ──────────────────────────────────────────────────
+export const promptQualityScores = pgTable(
+  "prompt_quality_scores",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    promptId: varchar("prompt_id").notNull(),
+    version: integer("version").notNull().default(1),
+    relevance: integer("relevance").notNull(),
+    accuracy: integer("accuracy").notNull(),
+    actionability: integer("actionability").notNull(),
+    formatCompliance: integer("format_compliance").notNull(),
+    overall: integer("overall").notNull(),
+    sampleOutput: text("sample_output").default(""),
+    evaluatedAt: timestamp("evaluated_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_prompt_qs_org").on(table.orgId), index("idx_prompt_qs_prompt").on(table.promptId)],
+);
+
+export type PromptQualityScore = typeof promptQualityScores.$inferSelect;
+export type InsertPromptQualityScore = typeof promptQualityScores.$inferInsert;
+
+// ─── Cross-Cutting Kill Switches ────────────────────────────────────────────
+export const crossCuttingKillSwitches = pgTable(
+  "cross_cutting_kill_switches",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    featureName: text("feature_name").notNull(),
+    engineName: text("engine_name").notNull(),
+    state: varchar("state", { length: 20 }).notNull().default("armed"),
+    confidenceThreshold: integer("confidence_threshold").notNull().default(70),
+    currentConfidence: integer("current_confidence").notNull().default(100),
+    lastTriggeredAt: timestamp("last_triggered_at"),
+    triggeredBy: text("triggered_by"),
+    triggerReason: text("trigger_reason"),
+    rollbackInstructions: text("rollback_instructions").notNull().default(""),
+    updatedAt: timestamp("updated_at").defaultNow(),
+    updatedBy: text("updated_by").notNull().default("system"),
+  },
+  (table) => [index("idx_cc_ks_org").on(table.orgId), index("idx_cc_ks_feature").on(table.orgId, table.featureName)],
+);
+
+export type CrossCuttingKillSwitch = typeof crossCuttingKillSwitches.$inferSelect;
+export type InsertCrossCuttingKillSwitch = typeof crossCuttingKillSwitches.$inferInsert;
+
+// ─── Time-to-Value Milestones ───────────────────────────────────────────────
+export const ttvMilestones = pgTable(
+  "ttv_milestones",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    kind: varchar("kind", { length: 50 }).notNull(),
+    label: text("label").notNull(),
+    achievedAt: timestamp("achieved_at"),
+    durationFromSignupMs: integer("duration_from_signup_ms"),
+    triggeredByAction: text("triggered_by_action"),
+    triggeredByActor: text("triggered_by_actor"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_ttv_org").on(table.orgId), index("idx_ttv_kind").on(table.orgId, table.kind)],
+);
+
+export type TtvMilestone = typeof ttvMilestones.$inferSelect;
+export type InsertTtvMilestone = typeof ttvMilestones.$inferInsert;
+
+// ─── JIT Managed Secrets ────────────────────────────────────────────────────
+export const jitManagedSecrets = pgTable(
+  "jit_managed_secrets",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    secretType: varchar("secret_type", { length: 30 }).notNull(),
+    classification: varchar("classification", { length: 20 }).notNull().default("internal"),
+    ownerId: varchar("owner_id").notNull(),
+    ownerName: text("owner_name").notNull(),
+    environment: varchar("environment", { length: 30 }).notNull().default("production"),
+    service: text("service").notNull().default(""),
+    lastRotatedAt: timestamp("last_rotated_at").defaultNow(),
+    rotationIntervalDays: integer("rotation_interval_days").notNull().default(90),
+    needsRotation: boolean("needs_rotation").notNull().default(false),
+    noPlaintextSharing: boolean("no_plaintext_sharing").notNull().default(true),
+    accessCount: integer("access_count").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_jit_ms_org").on(table.orgId), index("idx_jit_ms_owner").on(table.orgId, table.ownerId)],
+);
+
+export type JitManagedSecret = typeof jitManagedSecrets.$inferSelect;
+export type InsertJitManagedSecret = typeof jitManagedSecrets.$inferInsert;
+
+// ─── JIT Secret Access Requests (V2 — engine-backed) ────────────────────────
+export const jitSecretAccessRequests = pgTable(
+  "jit_secret_access_requests",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    secretId: varchar("secret_id").notNull(),
+    secretName: text("secret_name").notNull(),
+    requesterId: varchar("requester_id").notNull(),
+    requesterName: text("requester_name").notNull(),
+    reason: text("reason").notNull(),
+    durationMinutes: integer("duration_minutes").notNull().default(60),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    approverRole: varchar("approver_role", { length: 20 }).notNull().default("owner"),
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    deniedBy: text("denied_by"),
+    deniedAt: timestamp("denied_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_jit_sar_org").on(table.orgId), index("idx_jit_sar_secret").on(table.orgId, table.secretId)],
+);
+
+export type JitSecretAccessRequest = typeof jitSecretAccessRequests.$inferSelect;
+export type InsertJitSecretAccessRequest = typeof jitSecretAccessRequests.$inferInsert;
+
+// ─── JIT External Shares ────────────────────────────────────────────────────
+export const jitExternalShares = pgTable(
+  "jit_external_shares",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    secretId: varchar("secret_id").notNull(),
+    secretName: text("secret_name").notNull(),
+    createdBy: text("created_by").notNull(),
+    recipientEmail: text("recipient_email").notNull(),
+    shareToken: text("share_token").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    maxUses: integer("max_uses").notNull().default(1),
+    currentUses: integer("current_uses").notNull().default(0),
+    status: varchar("status", { length: 20 }).notNull().default("active"),
+    noPlaintext: boolean("no_plaintext").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_jit_es_org").on(table.orgId), index("idx_jit_es_token").on(table.shareToken)],
+);
+
+export type JitExternalShare = typeof jitExternalShares.$inferSelect;
+export type InsertJitExternalShare = typeof jitExternalShares.$inferInsert;
+
+// ─── JIT Ownership Transfers ────────────────────────────────────────────────
+export const jitOwnershipTransfers = pgTable(
+  "jit_ownership_transfers",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    secretId: varchar("secret_id").notNull(),
+    secretName: text("secret_name").notNull(),
+    fromOwnerId: varchar("from_owner_id").notNull(),
+    fromOwnerName: text("from_owner_name").notNull(),
+    toOwnerId: varchar("to_owner_id").notNull(),
+    toOwnerName: text("to_owner_name").notNull(),
+    action: varchar("action", { length: 30 }).notNull(),
+    reason: text("reason").notNull(),
+    isOffboarding: boolean("is_offboarding").notNull().default(false),
+    initiatedBy: text("initiated_by").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_jit_ot_org").on(table.orgId)],
+);
+
+export type JitOwnershipTransfer = typeof jitOwnershipTransfers.$inferSelect;
+export type InsertJitOwnershipTransfer = typeof jitOwnershipTransfers.$inferInsert;
+
+// ─── JIT Break Glass Access ─────────────────────────────────────────────────
+export const jitBreakGlassAccess = pgTable(
+  "jit_break_glass_access",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    secretId: varchar("secret_id").notNull(),
+    secretName: text("secret_name").notNull(),
+    requesterId: varchar("requester_id").notNull(),
+    requesterName: text("requester_name").notNull(),
+    justification: text("justification").notNull(),
+    incidentId: varchar("incident_id"),
+    status: varchar("status", { length: 20 }).notNull().default("active"),
+    ephemeralToken: text("ephemeral_token").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    durationMinutes: integer("duration_minutes").notNull().default(60),
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at"),
+    reviewNotes: text("review_notes"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_jit_bg_org").on(table.orgId)],
+);
+
+export type JitBreakGlassAccessEntry = typeof jitBreakGlassAccess.$inferSelect;
+export type InsertJitBreakGlassAccessEntry = typeof jitBreakGlassAccess.$inferInsert;
+
+// ─── JIT Audit Log ──────────────────────────────────────────────────────────
+export const jitAuditLog = pgTable(
+  "jit_audit_log",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    action: text("action").notNull(),
+    actor: text("actor").notNull(),
+    details: text("details"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_jit_al_org").on(table.orgId)],
+);
+
+export type JitAuditLogEntry = typeof jitAuditLog.$inferSelect;
+export type InsertJitAuditLogEntry = typeof jitAuditLog.$inferInsert;
+
+// ─── Browser DOM Events ─────────────────────────────────────────────────────
+export const browserDomEvents = pgTable(
+  "browser_dom_events",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    sessionId: varchar("session_id").notNull(),
+    eventType: varchar("event_type", { length: 30 }).notNull(),
+    target: text("target").notNull(),
+    severity: varchar("severity", { length: 20 }).notNull().default("info"),
+    verdict: varchar("verdict", { length: 20 }).notNull().default("allow"),
+    details: jsonb("details").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_bde_org").on(table.orgId), index("idx_bde_session").on(table.orgId, table.sessionId)],
+);
+
+export type BrowserDomEvent = typeof browserDomEvents.$inferSelect;
+export type InsertBrowserDomEvent = typeof browserDomEvents.$inferInsert;
+
+// ─── Browser Injection Patterns ─────────────────────────────────────────────
+export const browserInjectionPatterns = pgTable(
+  "browser_injection_patterns",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    pattern: text("pattern").notNull(),
+    patternType: varchar("pattern_type", { length: 20 }).notNull().default("regex"),
+    severity: varchar("severity", { length: 20 }).notNull().default("high"),
+    enabled: boolean("enabled").notNull().default(true),
+    matchCount: integer("match_count").notNull().default(0),
+    lastMatchedAt: timestamp("last_matched_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_bip_org").on(table.orgId)],
+);
+
+export type BrowserInjectionPattern = typeof browserInjectionPatterns.$inferSelect;
+export type InsertBrowserInjectionPattern = typeof browserInjectionPatterns.$inferInsert;

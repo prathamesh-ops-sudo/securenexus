@@ -1,30 +1,19 @@
 import type { Express, Request, Response } from "express";
-import { randomBytes } from "crypto";
-import { logger, p } from "../shared";
+import { logger, p, getOrgId } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { resolveOrgContext, requireMinRole } from "../../rbac";
 import { getAllRegisteredPrompts, getPromptCatalogSummary, getPromptAuditLog, getPromptVersionHistory } from "../../ai";
+import {
+  getAbTestsByPrompt,
+  createAbTest,
+  updateAbTest,
+  getQualityScoresByPrompt,
+  createQualityScore,
+} from "../../storage/prompt-ab-tests";
 
 const log = logger.child("routes-ai-prompts");
 
-// --- Prompt A/B Testing ---
-
-interface PromptABTest {
-  id: string;
-  promptId: string;
-  versionA: number;
-  versionB: number;
-  status: "running" | "completed" | "paused";
-  startedAt: string;
-  completedAt: string | null;
-  sampleSize: number;
-  results: {
-    versionA: { avgQuality: number; avgLatencyMs: number; avgSatisfaction: number; sampleCount: number };
-    versionB: { avgQuality: number; avgLatencyMs: number; avgSatisfaction: number; sampleCount: number };
-  };
-}
-
-const abTestStore = new Map<string, PromptABTest[]>();
+// --- Prompt A/B Testing (DB-backed via prompt_ab_tests table) ---
 
 // --- Prompt Variable Documentation ---
 
@@ -157,17 +146,7 @@ const PROMPT_CATEGORIES: Record<string, { label: string; description: string; ti
   },
 };
 
-// --- Prompt Quality Scoring ---
-
-interface PromptQualityScore {
-  promptId: string;
-  version: number;
-  scores: { relevance: number; accuracy: number; actionability: number; formatCompliance: number; overall: number };
-  evaluatedAt: string;
-  sampleOutput: string;
-}
-
-const qualityScoreStore = new Map<string, PromptQualityScore[]>();
+// --- Prompt Quality Scoring (DB-backed via prompt_quality_scores table) ---
 
 export function registerAiPromptsRoutes(app: Express): void {
   app.get("/api/ai/prompts", isAuthenticated, async (_req, res) => {
@@ -245,10 +224,11 @@ export function registerAiPromptsRoutes(app: Express): void {
   });
 
   // A/B Tests
-  app.get("/api/ai/prompts/:id/ab-tests", isAuthenticated, async (req, res) => {
+  app.get("/api/ai/prompts/:id/ab-tests", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const promptId = p(req.params.id);
-      const tests = abTestStore.get(promptId) || [];
+      const tests = await getAbTestsByPrompt(orgId, promptId);
       res.json(tests);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch A/B tests" });
@@ -262,28 +242,24 @@ export function registerAiPromptsRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
         const promptId = p(req.params.id);
         const { versionA, versionB, sampleSize } = req.body;
         if (!versionA || !versionB || versionA === versionB) {
           return res.status(400).json({ message: "versionA and versionB must be different valid versions" });
         }
-        const test: PromptABTest = {
-          id: `abt_${Date.now()}_${randomBytes(4).toString("hex")}`,
+        const test = await createAbTest({
+          orgId,
           promptId,
           versionA: Number(versionA),
           versionB: Number(versionB),
           status: "running",
-          startedAt: new Date().toISOString(),
-          completedAt: null,
           sampleSize: Math.min(Math.max(Number(sampleSize) || 100, 10), 10000),
           results: {
             versionA: { avgQuality: 0, avgLatencyMs: 0, avgSatisfaction: 0, sampleCount: 0 },
             versionB: { avgQuality: 0, avgLatencyMs: 0, avgSatisfaction: 0, sampleCount: 0 },
           },
-        };
-        const existing = abTestStore.get(promptId) || [];
-        existing.push(test);
-        abTestStore.set(promptId, existing);
+        });
         res.status(201).json(test);
       } catch (error) {
         res.status(500).json({ message: "Failed to create A/B test" });
@@ -298,16 +274,15 @@ export function registerAiPromptsRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const promptId = p(req.params.id);
         const testId = p(req.params.testId);
-        const tests = abTestStore.get(promptId) || [];
-        const test = tests.find((t) => t.id === testId);
-        if (!test) return res.status(404).json({ message: "A/B test not found" });
         const { status } = req.body;
-        if (status && ["running", "completed", "paused"].includes(status)) {
-          test.status = status;
-          if (status === "completed") test.completedAt = new Date().toISOString();
+        if (!status || !["running", "completed", "paused"].includes(status)) {
+          return res.status(400).json({ message: "status must be running, completed, or paused" });
         }
+        const updates: { status: string; completedAt?: Date } = { status };
+        if (status === "completed") updates.completedAt = new Date();
+        const test = await updateAbTest(testId, updates);
+        if (!test) return res.status(404).json({ message: "A/B test not found" });
         res.json(test);
       } catch (error) {
         res.status(500).json({ message: "Failed to update A/B test" });
@@ -329,10 +304,11 @@ export function registerAiPromptsRoutes(app: Express): void {
   });
 
   // Quality Scores
-  app.get("/api/ai/prompts/:id/quality-scores", isAuthenticated, async (req, res) => {
+  app.get("/api/ai/prompts/:id/quality-scores", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const promptId = p(req.params.id);
-      const scores = qualityScoreStore.get(promptId) || [];
+      const scores = await getQualityScoresByPrompt(orgId, promptId);
       res.json(scores);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch quality scores" });
@@ -346,6 +322,7 @@ export function registerAiPromptsRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
         const promptId = p(req.params.id);
         const { version, relevance, accuracy, actionability, formatCompliance, sampleOutput } = req.body;
         if (
@@ -364,16 +341,17 @@ export function registerAiPromptsRoutes(app: Express): void {
         const act = clamp(actionability);
         const fc = clamp(formatCompliance);
         const overall = Math.round((r + a + act + fc) / 4);
-        const score: PromptQualityScore = {
+        const score = await createQualityScore({
+          orgId,
           promptId,
           version: Number(version) || 1,
-          scores: { relevance: r, accuracy: a, actionability: act, formatCompliance: fc, overall },
-          evaluatedAt: new Date().toISOString(),
+          relevance: r,
+          accuracy: a,
+          actionability: act,
+          formatCompliance: fc,
+          overall,
           sampleOutput: String(sampleOutput || "").slice(0, 5000),
-        };
-        const existing = qualityScoreStore.get(promptId) || [];
-        existing.push(score);
-        qualityScoreStore.set(promptId, existing);
+        });
         res.status(201).json(score);
       } catch (error) {
         res.status(500).json({ message: "Failed to record quality score" });

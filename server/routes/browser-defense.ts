@@ -3,15 +3,16 @@ import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
 import { storage } from "../storage";
 import {
-  listDomEvents,
-  classifyDomAction,
-  listInjectionPatterns,
-  updateInjectionPattern,
-  evaluateEgress,
-  type SessionState,
-  type ActionSeverity,
-  type PolicyVerdict,
-} from "../browser-defense-engine";
+  getBrowserDomEvents,
+  createBrowserDomEvent,
+  getBrowserInjectionPatterns as getInjectionPatternsFromDb,
+  updateBrowserInjectionPattern as updateInjectionPatternInDb,
+  getBrowserEgressRules,
+} from "../storage/browser-defense";
+
+type SessionState = "active" | "isolated" | "terminated" | "expired";
+type ActionSeverity = "info" | "low" | "medium" | "high" | "critical";
+type PolicyVerdict = "allow" | "block" | "challenge" | "log_only";
 
 const VALID_SESSION_STATES: SessionState[] = ["active", "isolated", "terminated", "expired"];
 const VALID_SEVERITIES: ActionSeverity[] = ["info", "low", "medium", "high", "critical"];
@@ -120,7 +121,8 @@ export function registerBrowserDefenseRoutes(app: Express): void {
         filters.severity = req.query.severity as ActionSeverity;
       if (typeof req.query.verdict === "string" && VALID_VERDICTS.includes(req.query.verdict as PolicyVerdict))
         filters.verdict = req.query.verdict as PolicyVerdict;
-      res.json(listDomEvents(orgId, filters));
+      const events = await getBrowserDomEvents(orgId, filters);
+      res.json(events);
     } catch (error) {
       logger.child("routes").error("List DOM events error", { error: String(error) });
       res.status(500).json({ message: "Failed to list DOM events" });
@@ -143,10 +145,14 @@ export function registerBrowserDefenseRoutes(app: Express): void {
       if (!body.rawPayload || typeof body.rawPayload !== "string") {
         return res.status(400).json({ message: "rawPayload is required" });
       }
-      const event = classifyDomAction(orgId, body.sessionId, {
+      const event = await createBrowserDomEvent({
+        orgId,
+        sessionId: body.sessionId,
         eventType: body.eventType,
-        targetSelector: body.targetSelector,
-        rawPayload: body.rawPayload,
+        target: body.targetSelector,
+        severity: "medium",
+        verdict: "log_only",
+        details: { rawPayload: body.rawPayload },
       });
       res.status(201).json(event);
     } catch (error) {
@@ -354,7 +360,8 @@ export function registerBrowserDefenseRoutes(app: Express): void {
   app.get("/api/browser-defense/injection-patterns", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      res.json(listInjectionPatterns(orgId));
+      const patterns = await getInjectionPatternsFromDb(orgId);
+      res.json(patterns);
     } catch (error) {
       logger.child("routes").error("List injection patterns error", { error: String(error) });
       res.status(500).json({ message: "Failed to list injection patterns" });
@@ -382,7 +389,7 @@ export function registerBrowserDefenseRoutes(app: Express): void {
         sanitized.action = body.action;
       }
       if (body.enabled !== undefined) sanitized.enabled = body.enabled === true;
-      const updated = updateInjectionPattern(orgId, id, sanitized as Parameters<typeof updateInjectionPattern>[2]);
+      const updated = await updateInjectionPatternInDb(id, orgId, sanitized as Record<string, unknown>);
       if (!updated) return res.status(404).json({ message: "Injection pattern not found" });
       res.json(updated);
     } catch (error) {
@@ -402,7 +409,17 @@ export function registerBrowserDefenseRoutes(app: Express): void {
       if (!body.protocol || typeof body.protocol !== "string") {
         return res.status(400).json({ message: "protocol is required" });
       }
-      const result = evaluateEgress(orgId, body.destination, body.protocol);
+      const rules = await getBrowserEgressRules(orgId);
+      const dest = body.destination.toLowerCase();
+      const proto = body.protocol.toLowerCase();
+      const matchedRule = rules.find((r) => {
+        const domainMatch = r.domain === "*" || dest.includes(r.domain);
+        const protoMatch = r.protocol === "any" || r.protocol === proto;
+        return domainMatch && protoMatch;
+      });
+      const result = matchedRule
+        ? { allowed: matchedRule.verdict === "allow", rule: matchedRule, destination: dest, protocol: proto }
+        : { allowed: true, rule: null, destination: dest, protocol: proto, note: "No matching rule — default allow" };
       res.json(result);
     } catch (error) {
       logger.child("routes").error("Evaluate egress error", { error: String(error) });
