@@ -15,6 +15,7 @@
 
 import { pool } from "./db";
 import { logger } from "./logger";
+import { randomBytes, createHash } from "crypto";
 
 const log = logger.child("auto-migrate");
 
@@ -90,16 +91,22 @@ async function bootstrapWazuhApiKey(): Promise<void> {
     }
 
     const orgId = orgs.rows[0].id;
-    // Pre-generated key hash for snx_41cyV5qKZSYaF0YYiQqRLorzl4cra04b_QTv6SxnTB4
-    const keyHash = "2efc5974582d5c7d7e2f4a798c78cb3cfadbc63dd410f7fe312f8d0fd94b509a";
-    const keyPrefix = "snx_41cyV5qK";
+
+    // Generate key dynamically — use env var if provided, otherwise generate fresh
+    const envKey = process.env.WAZUH_API_KEY;
+    const raw = envKey || "snx_" + randomBytes(32).toString("base64url");
+    const keyHash = createHash("sha256").update(raw).digest("hex");
+    const keyPrefix = raw.slice(0, 12);
 
     await pool.query(
       `INSERT INTO api_keys (name, key_hash, key_prefix, org_id, scopes, is_active, created_at)
        VALUES ($1, $2, $3, $4, $5, true, NOW())`,
-      ["Wazuh Forwarder", keyHash, keyPrefix, orgId, JSON.stringify(["ingest", "ingest:write"])],
+      ["Wazuh Forwarder", keyHash, keyPrefix, orgId, ["ingest", "ingest:write"]],
     );
     log.info("Wazuh Forwarder API key bootstrapped successfully", { orgId, keyPrefix });
+    if (!envKey) {
+      log.warn("Generated Wazuh API key — configure forwarder with this key", { key: raw });
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("does not exist")) {
