@@ -303,10 +303,11 @@ export function registerChaosEngineeringRoutes(app: Express): void {
         const tacticTechniques = MITRE_TECHNIQUE_LIBRARY.filter((t) => t.tacticId === tactic.id);
         for (const tech of tacticTechniques) {
           const sim = simulations.find((s) => s.mitreTechnique === tech.id);
+          const simPassed = sim ? sim.verdict === "passed" || sim.status === "passed" : false;
           heatmap[tactic.name][tech.id] = {
-            coverage: sim ? (sim.status === "passed" ? "full" : "partial") : "none",
+            coverage: sim ? (simPassed ? "full" : "partial") : "none",
             tested: !!sim,
-            passed: sim?.status === "passed" || false,
+            passed: simPassed,
           };
         }
       }

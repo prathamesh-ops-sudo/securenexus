@@ -7,6 +7,7 @@ import {
   createBrowserDomEvent,
   getBrowserInjectionPatterns as getInjectionPatternsFromDb,
   updateBrowserInjectionPattern as updateInjectionPatternInDb,
+  incrementInjectionPatternMatchCount,
   getBrowserEgressRules,
 } from "../storage/browser-defense";
 
@@ -145,14 +146,35 @@ export function registerBrowserDefenseRoutes(app: Express): void {
       if (!body.rawPayload || typeof body.rawPayload !== "string") {
         return res.status(400).json({ message: "rawPayload is required" });
       }
+      // Classify against DB-backed injection patterns before storing
+      const patterns = await getInjectionPatternsFromDb(orgId);
+      let matchedSeverity: ActionSeverity = "info";
+      let matchedVerdict: PolicyVerdict = "log_only";
+      let matchedPatternId: string | null = null;
+      for (const pat of patterns) {
+        if (!pat.enabled) continue;
+        try {
+          const regex = new RegExp(pat.pattern, "i");
+          if (regex.test(body.rawPayload) || regex.test(body.targetSelector)) {
+            matchedSeverity = (pat.severity as ActionSeverity) || "high";
+            matchedVerdict = "block";
+            matchedPatternId = pat.id;
+            // Increment match count for the pattern
+            incrementInjectionPatternMatchCount(pat.id, orgId).catch(() => {});
+            break;
+          }
+        } catch (_regexErr) {
+          // Skip invalid regex patterns
+        }
+      }
       const event = await createBrowserDomEvent({
         orgId,
         sessionId: body.sessionId,
         eventType: body.eventType,
         target: body.targetSelector,
-        severity: "medium",
-        verdict: "log_only",
-        details: { rawPayload: body.rawPayload },
+        severity: matchedSeverity,
+        verdict: matchedVerdict,
+        details: { rawPayload: body.rawPayload, matchedPatternId },
       });
       res.status(201).json(event);
     } catch (error) {
@@ -413,7 +435,13 @@ export function registerBrowserDefenseRoutes(app: Express): void {
       const dest = body.destination.toLowerCase();
       const proto = body.protocol.toLowerCase();
       const matchedRule = rules.find((r) => {
-        const domainMatch = r.domain === "*" || dest.includes(r.domain);
+        if (!r.enabled) return false;
+        const domainPatterns = r.domain.split(",").map((d) => d.trim());
+        const domainMatch = domainPatterns.some((dp) => {
+          if (dp === "*") return true;
+          const regex = new RegExp("^" + dp.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$", "i");
+          return regex.test(dest);
+        });
         const protoMatch = r.protocol === "any" || r.protocol === proto;
         return domainMatch && protoMatch;
       });
