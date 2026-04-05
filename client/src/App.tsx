@@ -296,7 +296,26 @@ function AuthenticatedApp() {
               <header className="flex items-center justify-between gap-4 px-3 py-2 border-b border-border/60 sticky top-0 z-40 bg-background/80 backdrop-blur-md">
                 <div className="flex items-center gap-2">
                   <SidebarTrigger data-testid="button-sidebar-toggle" />
-                  <div className={`w-2 h-2 rounded-full ${dotColor}`} data-testid="indicator-sse-status" />
+                  <div className="flex items-center gap-1.5" data-testid="indicator-sse-status">
+                    <div className="relative">
+                      <div className={`w-2 h-2 rounded-full ${dotColor}`} />
+                      {connectionState === "connected" && (
+                        <div className="absolute inset-0 w-2 h-2 rounded-full bg-green-500 animate-ping opacity-40" />
+                      )}
+                    </div>
+                    <span className="text-[10px] font-medium text-muted-foreground hidden sm:inline tabular-nums">
+                      {connectionState === "connected"
+                        ? "LIVE"
+                        : connectionState === "connecting"
+                          ? "CONNECTING"
+                          : "OFFLINE"}
+                    </span>
+                    {eventCount > 0 && connectionState === "connected" && (
+                      <span className="text-[9px] font-mono text-muted-foreground/60 hidden md:inline tabular-nums">
+                        {eventCount} events
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-1">
                   <NotificationBell />
