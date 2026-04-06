@@ -82,19 +82,20 @@ function StatCard({ label, value, icon: Icon }: { label: string; value: number |
 }
 
 function DnsEventsTab() {
-  const [eventType, setEventType] = useState("");
+  const [eventType, setEventType] = useState("all");
   const [sourceIp, setSourceIp] = useState("");
   const [domainFilter, setDomainFilter] = useState("");
 
   const params = new URLSearchParams();
-  if (eventType) params.set("eventType", eventType);
+  if (eventType && eventType !== "all") params.set("eventType", eventType);
   if (sourceIp) params.set("sourceIp", sourceIp);
   if (domainFilter) params.set("domain", domainFilter);
   params.set("limit", "50");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["/api/dns-security/events", eventType, sourceIp, domainFilter],
     queryFn: () => apiFetch(`/api/dns-security/events?${params.toString()}`),
+    retry: false,
   });
 
   return (
@@ -107,7 +108,7 @@ function DnsEventsTab() {
               <SelectValue placeholder="All types" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All types</SelectItem>
+              <SelectItem value="all">All types</SelectItem>
               <SelectItem value="query">Query</SelectItem>
               <SelectItem value="blocked">Blocked</SelectItem>
               <SelectItem value="sinkholed">Sinkholed</SelectItem>
@@ -207,19 +208,20 @@ function DnsEventsTab() {
 function DnsFindingsTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [findingType, setFindingType] = useState("");
-  const [severity, setSeverity] = useState("");
+  const [findingType, setFindingType] = useState("all");
+  const [severity, setSeverity] = useState("all");
   const [status, setStatus] = useState("open");
 
   const params = new URLSearchParams();
-  if (findingType) params.set("findingType", findingType);
-  if (severity) params.set("severity", severity);
-  if (status) params.set("status", status);
+  if (findingType && findingType !== "all") params.set("findingType", findingType);
+  if (severity && severity !== "all") params.set("severity", severity);
+  if (status && status !== "all") params.set("status", status);
   params.set("limit", "50");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["/api/dns-security/findings", findingType, severity, status],
     queryFn: () => apiFetch(`/api/dns-security/findings?${params.toString()}`),
+    retry: false,
   });
 
   const resolveMut = useMutation({
@@ -245,7 +247,7 @@ function DnsFindingsTab() {
               <SelectValue placeholder="All types" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All types</SelectItem>
+              <SelectItem value="all">All types</SelectItem>
               <SelectItem value="dga_domain">DGA Domain</SelectItem>
               <SelectItem value="dns_tunneling">DNS Tunneling</SelectItem>
               <SelectItem value="dns_exfiltration">Exfiltration</SelectItem>
@@ -263,7 +265,7 @@ function DnsFindingsTab() {
               <SelectValue placeholder="All" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All</SelectItem>
+              <SelectItem value="all">All</SelectItem>
               <SelectItem value="critical">Critical</SelectItem>
               <SelectItem value="high">High</SelectItem>
               <SelectItem value="medium">Medium</SelectItem>
@@ -278,7 +280,7 @@ function DnsFindingsTab() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All</SelectItem>
+              <SelectItem value="all">All</SelectItem>
               <SelectItem value="open">Open</SelectItem>
               <SelectItem value="resolved">Resolved</SelectItem>
             </SelectContent>
@@ -854,7 +856,8 @@ function AnalysisToolsTab() {
 export default function DnsSecurityPage() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ["/api/dns-security/dashboard"],
-    queryFn: () => apiFetch("/api/dns-security/dashboard"),
+    queryFn: () => apiFetch("/api/dns-security/dashboard").catch(() => null),
+    retry: false,
   });
 
   if (isLoading) return <DashboardSkeleton />;

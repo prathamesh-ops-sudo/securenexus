@@ -1161,6 +1161,7 @@ export default function SocCopilotPage() {
       const res = await apiRequest("GET", "/api/soc-copilot/stats");
       return res.json();
     },
+    retry: false,
   });
 
   const { data: triages, isLoading: triagesLoading } = useQuery<TriageSummary[]>({
