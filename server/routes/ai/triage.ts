@@ -142,7 +142,7 @@ export function registerAiTriageRoutes(app: Express): void {
       try {
         const orgId = (req as any).orgId || (req as any).user?.orgId;
         const { alertIds } = req.body;
-        const MAX_ALERTS_FOR_CORRELATION = 50;
+        const MAX_ALERTS_FOR_CORRELATION = 20;
         let alertsToCorrelate;
         if (alertIds && Array.isArray(alertIds) && alertIds.length > 0) {
           const allAlerts = await storage.getAlerts(orgId);
