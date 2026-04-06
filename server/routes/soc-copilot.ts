@@ -18,17 +18,58 @@ export function registerSocCopilotRoutes(app: Express): void {
   app.get("/api/soc-copilot/stats", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const [triages, actions, hypotheses, feedback] = await Promise.all([
+      const [triages, actions, hypotheses, feedback, calibrations] = await Promise.all([
         storage.getCopilotTriages(orgId),
         storage.getCopilotActions(orgId),
         storage.getCopilotHypotheses(orgId),
         storage.getCopilotFeedback(orgId),
+        storage.getCopilotCalibrations(orgId).catch(() => [] as any[]),
       ]);
+
+      const autoExecuted = actions.filter((a) => a.status === "auto_executed");
+      const pendingApprovals = actions.filter((a) => a.status === "pending_approval");
+      const executed = actions.filter((a) => a.status === "executed" || a.status === "auto_executed");
+
+      const accepted = feedback.filter((f) => f.outcome === "accepted");
+      const overridden = feedback.filter((f) => f.outcome === "overridden");
+      const acceptanceRate = feedback.length > 0 ? Math.round((accepted.length / feedback.length) * 100) : 0;
+      const overrideRate = feedback.length > 0 ? Math.round((overridden.length / feedback.length) * 100) : 0;
+
+      const totalConfidence = triages.reduce((sum, t) => sum + (t.confidence ?? 0), 0);
+      const avgConfidence = triages.length > 0 ? totalConfidence / triages.length : 0;
+
+      const byDomain: Record<string, { total: number; accepted: number; overridden: number }> = {};
+      for (const f of feedback) {
+        const domain = (f as any).domain || "general";
+        if (!byDomain[domain]) byDomain[domain] = { total: 0, accepted: 0, overridden: 0 };
+        byDomain[domain].total++;
+        if (f.outcome === "accepted") byDomain[domain].accepted++;
+        if (f.outcome === "overridden") byDomain[domain].overridden++;
+      }
+
+      const byActionClass: Record<string, { total: number; executed: number; rejected: number }> = {};
+      for (const a of actions) {
+        const cls = a.actionClass || "SUGGEST";
+        if (!byActionClass[cls]) byActionClass[cls] = { total: 0, executed: 0, rejected: 0 };
+        byActionClass[cls].total++;
+        if (a.status === "executed" || a.status === "auto_executed") byActionClass[cls].executed++;
+        if (a.status === "rejected") byActionClass[cls].rejected++;
+      }
+
       res.json({
         totalTriages: triages.length,
-        totalActions: actions.length,
+        totalTimelines: 0,
         totalHypotheses: hypotheses.length,
-        totalFeedback: feedback.length,
+        totalActions: actions.length,
+        autoExecutedActions: autoExecuted.length,
+        pendingApprovals: pendingApprovals.length,
+        feedbackCount: feedback.length,
+        acceptanceRate,
+        overrideRate,
+        avgConfidence,
+        byDomain,
+        byActionClass,
+        recentCalibrations: calibrations.length,
         triagesByVerdict: VALID_VERDICTS.reduce(
           (acc, v) => {
             acc[v] = triages.filter((t) => t.verdict === v).length;

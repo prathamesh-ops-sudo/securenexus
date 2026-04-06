@@ -25,21 +25,33 @@ import {
   BarChart3,
   Clock,
 } from "lucide-react";
+import { fetchCsrfToken } from "@/lib/queryClient";
 import { DashboardSkeleton } from "@/components/page-skeleton";
 
-function apiFetch(url: string, options?: RequestInit) {
-  return fetch(url, {
+async function apiFetch(url: string, options?: RequestInit) {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string>),
+  };
+  const method = options?.method || "GET";
+  if (method !== "GET" && method !== "HEAD") {
+    const csrfToken = await fetchCsrfToken();
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+  }
+  try {
+    const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
+    if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
+  } catch {
+    /* SSR / privacy mode */
+  }
+  const res = await fetch(url, {
     ...options,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
-  }).then(async (r) => {
-    const data = await r.json();
-    if (!r.ok) throw new Error(data?.error || r.statusText);
-    return data;
+    headers,
   });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || res.statusText);
+  return data;
 }
 
 function severityColor(severity: string) {
