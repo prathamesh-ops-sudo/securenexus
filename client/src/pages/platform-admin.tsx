@@ -166,12 +166,39 @@ function StatCard({
 }
 
 function OverviewTab() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [showSeedConfirm, setShowSeedConfirm] = useState(false);
+  const [seedForm, setSeedForm] = useState({
+    orgName: "Arica Tech Security",
+    testEmail: "devin-test@aricatech.com",
+    testPassword: "DevinTest2026!",
+  });
+
   const { data, isPending } = useQuery<PlatformStats>({
     queryKey: ["/api/platform-admin/stats"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/platform-admin/stats");
       const body = await res.json();
       return body as PlatformStats;
+    },
+  });
+
+  const seedMutation = useMutation({
+    mutationFn: async (payload: typeof seedForm) => {
+      const res = await apiRequest("POST", "/api/platform-admin/seed-platform", payload);
+      return res.json();
+    },
+    onSuccess: (result: any) => {
+      toast({
+        title: "Platform seeded",
+        description: `Org "${result.data?.organization?.name}" created. Log out and back in to pick up org context.`,
+      });
+      setShowSeedConfirm(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-admin"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Seed failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -211,6 +238,82 @@ function OverviewTab() {
         <StatCard title="New Orgs (30d)" value={data.newOrgsThisMonth} icon={Globe} />
         <StatCard title="New Users (30d)" value={data.newUsersThisMonth} icon={Users} />
       </div>
+
+      {/* Seed Platform — for development/testing environments */}
+      <Card className="border-destructive/30 bg-destructive/5">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium text-destructive flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            Development Tools
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!showSeedConfirm ? (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Seed Platform</p>
+                <p className="text-xs text-muted-foreground">
+                  Clear all data and create a fresh org with your account + a test user. Destructive action.
+                </p>
+              </div>
+              <Button variant="destructive" size="sm" onClick={() => setShowSeedConfirm(true)}>
+                Reset &amp; Seed
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3 p-3 rounded-md border border-destructive/30 bg-background">
+              <p className="text-sm font-medium text-destructive">
+                This will DELETE all users, orgs, alerts, incidents, and related data.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">Org Name</Label>
+                  <Input
+                    value={seedForm.orgName}
+                    onChange={(e) => setSeedForm({ ...seedForm, orgName: e.target.value })}
+                    placeholder="Arica Tech Security"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Test User Email</Label>
+                  <Input
+                    value={seedForm.testEmail}
+                    onChange={(e) => setSeedForm({ ...seedForm, testEmail: e.target.value })}
+                    placeholder="test@example.com"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Test User Password</Label>
+                  <Input
+                    value={seedForm.testPassword}
+                    onChange={(e) => setSeedForm({ ...seedForm, testPassword: e.target.value })}
+                    placeholder="password"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={seedMutation.isPending}
+                  onClick={() => seedMutation.mutate(seedForm)}
+                >
+                  {seedMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Seeding...
+                    </>
+                  ) : (
+                    "Confirm — Delete Everything & Seed"
+                  )}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setShowSeedConfirm(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
