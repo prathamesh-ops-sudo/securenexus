@@ -989,7 +989,7 @@ export async function correlateAlerts(
   const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
   const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
 
-  const { text } = await invokeWithPrompt("correlation", finalUserMessage, "correlation", orgId);
+  const { text } = await invokeWithPrompt("correlation", finalUserMessage, "triage", orgId);
   return JSON.parse(extractJson(text));
 }
 
