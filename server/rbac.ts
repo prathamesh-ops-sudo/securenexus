@@ -79,7 +79,8 @@ export async function resolveOrgContext(req: Request, res: Response, next: NextF
   }
 
   (req as any).orgId = membership.orgId;
-  (req as any).orgRole = membership.role;
+  // Superadmins get owner-level permissions regardless of their org membership role
+  (req as any).orgRole = (req as any).user?.isSuperAdmin ? "owner" : membership.role;
   (req as any).membership = membership;
   next();
 }
