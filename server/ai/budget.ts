@@ -9,7 +9,7 @@ interface PlanAiBudget {
 }
 
 const PLAN_AI_BUDGETS: Record<string, PlanAiBudget> = {
-  free: { budgetUsd: 100, invocationCap: 5000 },
+  free: { budgetUsd: 1000, invocationCap: 50000 },
   starter: { budgetUsd: 50, invocationCap: 5000 },
   professional: { budgetUsd: 500, invocationCap: 50000 },
   enterprise: { budgetUsd: 10000, invocationCap: 1000000 },
