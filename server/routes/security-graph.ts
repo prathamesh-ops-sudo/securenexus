@@ -146,12 +146,12 @@ export function registerSecurityGraphRoutes(app: Express): void {
         storage.getSecurityGraphRelationships(orgId),
       ]);
 
-      const typeBreakdown: Record<string, number> = {};
-      const envBreakdown: Record<string, number> = {};
+      const byType: Record<string, number> = {};
+      const byEnvironment: Record<string, number> = {};
       let totalRisk = 0;
       for (const a of assets) {
-        typeBreakdown[a.type] = (typeBreakdown[a.type] || 0) + 1;
-        envBreakdown[a.environment] = (envBreakdown[a.environment] || 0) + 1;
+        byType[a.type] = (byType[a.type] || 0) + 1;
+        byEnvironment[a.environment] = (byEnvironment[a.environment] || 0) + 1;
         totalRisk += a.riskScore;
       }
 
@@ -162,10 +162,13 @@ export function registerSecurityGraphRoutes(app: Express): void {
         stats: {
           totalAssets: assets.length,
           totalRelationships: relationships.length,
-          typeBreakdown,
-          environmentBreakdown: envBreakdown,
-          averageRiskScore: assets.length > 0 ? totalRisk / assets.length : 0,
+          criticalPaths: 0,
           highRiskAssets: assets.filter((a) => a.riskScore >= 0.7).length,
+          avgRiskScore: assets.length > 0 ? totalRisk / assets.length : 0,
+          byType,
+          byEnvironment,
+          internetExposed: 0,
+          overPrivileged: 0,
         },
       });
     } catch (error) {
@@ -224,7 +227,31 @@ export function registerSecurityGraphRoutes(app: Express): void {
         );
       }
 
-      res.json({ assets, relationships });
+      const byType: Record<string, number> = {};
+      const byEnv: Record<string, number> = {};
+      let totalRisk = 0;
+      for (const a of assets) {
+        byType[a.type] = (byType[a.type] || 0) + 1;
+        byEnv[a.environment] = (byEnv[a.environment] || 0) + 1;
+        totalRisk += a.riskScore;
+      }
+
+      res.json({
+        assets,
+        relationships,
+        attackPaths: [],
+        stats: {
+          totalAssets: assets.length,
+          totalRelationships: relationships.length,
+          criticalPaths: 0,
+          highRiskAssets: assets.filter((a) => a.riskScore >= 0.7).length,
+          avgRiskScore: assets.length > 0 ? totalRisk / assets.length : 0,
+          byType,
+          byEnvironment: byEnv,
+          internetExposed: 0,
+          overPrivileged: 0,
+        },
+      });
     } catch (error) {
       log.error("Security graph query error", { error: String(error) });
       res.status(500).json({ message: "Failed to query security graph" });

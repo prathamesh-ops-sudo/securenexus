@@ -19,7 +19,7 @@ import {
   notificationDeliveryLog,
 } from "@shared/schema";
 import { eq, desc, sql, and, count, ilike, or, isNull, gte, lte } from "drizzle-orm";
-import { getPoolHealth, checkPoolConnectivity } from "../db";
+import { pool, getPoolHealth, checkPoolConnectivity } from "../db";
 import { logger } from "../logger";
 import { randomBytes } from "crypto";
 import { authStorage } from "../auth/storage";
@@ -1657,6 +1657,147 @@ export function registerPlatformAdminRoutes(app: Express): void {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [{ code: "STATS_FAILED", message: "Failed to fetch failed login stats" }],
+        });
+      }
+    },
+  );
+
+  // ── Seed Platform: clear all data + create fresh org with superadmin + test user ──
+  app.post(
+    "/api/platform-admin/seed-platform",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const caller = getReqUser(req);
+        const testEmail = (req.body.testEmail || "devin-test@aricatech.com").trim().toLowerCase();
+        const testPassword = req.body.testPassword || "DevinTest2026!";
+        const orgName = (req.body.orgName || "Arica Tech Security").trim();
+
+        log.warn("SEED PLATFORM initiated — clearing all data", {
+          callerEmail: caller.email,
+          callerId: caller.id,
+          testEmail,
+          orgName,
+        });
+
+        // 1. Use raw SQL to truncate all tables cleanly.
+        //    TRUNCATE CASCADE on the core tables cascades to all FK-dependent tables.
+        //    We do this in a single transaction for atomicity.
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+
+          // Truncate sessions first (no FKs depend on it)
+          await client.query("TRUNCATE TABLE sessions");
+
+          // Truncate the two core tables — CASCADE handles all dependent tables
+          // (alerts, incidents, connectors, api_keys, audit_logs, org_memberships, etc.)
+          await client.query("TRUNCATE TABLE organizations CASCADE");
+          await client.query("TRUNCATE TABLE users CASCADE");
+
+          await client.query("COMMIT");
+        } catch (truncErr) {
+          await client.query("ROLLBACK");
+          throw truncErr;
+        } finally {
+          client.release();
+        }
+
+        log.info("All tables truncated successfully");
+
+        // 2. Create fresh organization
+        const baseSlug = orgName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "");
+        const slug = `${baseSlug}-${randomBytes(3).toString("hex")}`;
+
+        const org = await storage.createOrganization({
+          name: orgName,
+          slug,
+          industry: "cybersecurity",
+          companySize: "11-50",
+          contactEmail: caller.email,
+        });
+
+        log.info("Fresh organization created", { orgId: org.id, orgName });
+
+        // 3. Re-create the superadmin user (caller — uses OAuth, no password needed)
+        const superadminUser = await authStorage.upsertUser({
+          email: caller.email,
+          firstName: caller.firstName || "Platform",
+          lastName: caller.lastName || "Admin",
+        });
+
+        // Mark as superadmin
+        await db
+          .update(users)
+          .set({ isSuperAdmin: true, updatedAt: new Date() })
+          .where(eq(users.id, superadminUser.id));
+
+        // Add superadmin as org owner
+        await storage.createOrgMembership({
+          orgId: org.id,
+          userId: superadminUser.id,
+          role: "owner",
+          status: "active",
+          joinedAt: new Date(),
+        });
+
+        log.info("Superadmin re-created and added to org", {
+          userId: superadminUser.id,
+          email: caller.email,
+          orgId: org.id,
+        });
+
+        // 4. Create the test user with a known password
+        const hashedPw = await hashPassword(testPassword);
+        const testUser = await authStorage.upsertUser({
+          email: testEmail,
+          passwordHash: hashedPw,
+          firstName: "Devin",
+          lastName: "Test",
+        });
+
+        // Add test user as analyst in the same org
+        await storage.createOrgMembership({
+          orgId: org.id,
+          userId: testUser.id,
+          role: "analyst",
+          status: "active",
+          joinedAt: new Date(),
+        });
+
+        log.info("Test user created and added to org", {
+          userId: testUser.id,
+          email: testEmail,
+          orgId: org.id,
+          role: "analyst",
+        });
+
+        // 5. Invalidate deserialize cache for both users
+        invalidateDeserializeCache(superadminUser.id);
+        invalidateDeserializeCache(testUser.id);
+
+        return sendEnvelope(
+          res,
+          {
+            success: true,
+            organization: { id: org.id, name: org.name, slug: org.slug },
+            superadmin: { id: superadminUser.id, email: caller.email, role: "owner" },
+            testUser: { id: testUser.id, email: testEmail, role: "analyst" },
+            message:
+              "Platform seeded successfully. Log out and log back in via Google OAuth to pick up the new org context.",
+          },
+          { status: 200 },
+        );
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log.error("Failed to seed platform", { error: message });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "SEED_FAILED", message: "Failed to seed platform", details: message }],
         });
       }
     },

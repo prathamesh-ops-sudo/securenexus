@@ -93,7 +93,8 @@ const globalApiLimiter = rateLimit({
         req.path === "/api/ops/ready" ||
         req.path === "/api/ops/live" ||
         req.path === "/api/health" ||
-        req.path === "/api/ops/metrics"
+        req.path === "/api/ops/metrics" ||
+        req.path === "/api/events/stream" // SSE is long-lived; rate-limiting causes reconnect storms
     : () => true, // skip rate limiting entirely in development
   validate: { limit: false }, // suppress WRN_ERL_MAX_ZERO — 0 intentionally means "disabled" in dev
   standardHeaders: true,

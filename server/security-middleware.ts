@@ -125,7 +125,7 @@ function configureHelmet() {
           "https://www.googletagmanager.com",
           "https://www.google-analytics.com",
         ],
-        styleSrc: ["'self'", ...(isDev ? ["'unsafe-inline'"] : [nonceFn]), "https://fonts.googleapis.com"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "blob:", "https:"],
         connectSrc: [
