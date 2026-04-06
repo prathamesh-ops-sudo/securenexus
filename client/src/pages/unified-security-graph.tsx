@@ -1327,7 +1327,7 @@ export default function UnifiedSecurityGraphPage() {
           <CardContent className="p-3">
             <p className="text-[10px] text-muted-foreground mb-1.5">Asset Distribution</p>
             <div className="space-y-1">
-              {Object.entries(stats.byType).map(([type, count]) => {
+              {Object.entries(stats.byType || {}).map(([type, count]) => {
                 const config = ASSET_TYPE_CONFIG[type];
                 return (
                   <div key={type} className="flex items-center justify-between text-xs">

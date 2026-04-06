@@ -610,7 +610,7 @@ export async function computeDnsStats(orgId: string): Promise<DnsStats> {
     return await computeDnsStatsInternal(orgId);
   } catch (err) {
     const msg = String(err);
-    if (msg.includes("does not exist") || msg.includes("relation") || msg.includes("undefined")) {
+    if (msg.includes("does not exist") || msg.includes("relation")) {
       return {
         totalEvents: 0,
         totalFindings: 0,

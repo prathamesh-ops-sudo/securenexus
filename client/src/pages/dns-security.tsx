@@ -157,7 +157,7 @@ function DnsEventsTab() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map(
+                {(data.items || []).map(
                   (e: {
                     id: string;
                     timestamp: string;
@@ -189,7 +189,7 @@ function DnsEventsTab() {
                     </tr>
                   ),
                 )}
-                {data.items.length === 0 && (
+                {(data.items || []).length === 0 && (
                   <tr>
                     <td colSpan={7} className="p-4 text-center text-muted-foreground">
                       No DNS events found
@@ -294,7 +294,7 @@ function DnsFindingsTab() {
         <>
           <p className="text-sm text-muted-foreground">{data.total} total findings</p>
           <div className="space-y-2">
-            {data.items.map(
+            {(data.items || []).map(
               (f: {
                 id: string;
                 findingType: string;
@@ -464,7 +464,7 @@ function SinkholesTab() {
               </tr>
             </thead>
             <tbody>
-              {data.items.map(
+              {(data.items || []).map(
                 (s: {
                   id: string;
                   domain: string;
@@ -558,7 +558,7 @@ function PassiveDnsTab() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map(
+                {(data.items || []).map(
                   (r: {
                     id: string;
                     domain: string;
@@ -582,7 +582,7 @@ function PassiveDnsTab() {
                     </tr>
                   ),
                 )}
-                {data.items.length === 0 && (
+                {(data.items || []).length === 0 && (
                   <tr>
                     <td colSpan={6} className="p-4 text-center text-muted-foreground">
                       No passive DNS records

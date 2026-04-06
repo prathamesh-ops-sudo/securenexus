@@ -19,11 +19,16 @@ export function registerSocCopilotRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const emptyArr: never[] = [];
+      const catchTableNotFound = (err: unknown) => {
+        const msg = String(err);
+        if (msg.includes("does not exist") || msg.includes("relation")) return emptyArr;
+        throw err;
+      };
       const [triages, actions, hypotheses, feedback] = await Promise.all([
-        storage.getCopilotTriages(orgId).catch(() => emptyArr),
-        storage.getCopilotActions(orgId).catch(() => emptyArr),
-        storage.getCopilotHypotheses(orgId).catch(() => emptyArr),
-        storage.getCopilotFeedback(orgId).catch(() => emptyArr),
+        storage.getCopilotTriages(orgId).catch(catchTableNotFound),
+        storage.getCopilotActions(orgId).catch(catchTableNotFound),
+        storage.getCopilotHypotheses(orgId).catch(catchTableNotFound),
+        storage.getCopilotFeedback(orgId).catch(catchTableNotFound),
       ]);
 
       const autoExecuted = actions.filter((a: any) => a.status === "auto_executed");

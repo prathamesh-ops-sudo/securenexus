@@ -194,7 +194,7 @@ function EmailFindingsTab() {
         <>
           <p className="text-sm text-muted-foreground">{data.total} total findings</p>
           <div className="space-y-2">
-            {data.items.map(
+            {(data.items || []).map(
               (f: {
                 id: string;
                 findingType: string;
@@ -258,7 +258,9 @@ function EmailFindingsTab() {
                 </Card>
               ),
             )}
-            {data.items.length === 0 && <p className="text-center text-muted-foreground py-8">No findings found</p>}
+            {(data.items || []).length === 0 && (
+              <p className="text-center text-muted-foreground py-8">No findings found</p>
+            )}
           </div>
         </>
       )}
@@ -418,7 +420,7 @@ function EmailPoliciesTab() {
               </tr>
             </thead>
             <tbody>
-              {data.items.map(
+              {(data.items || []).map(
                 (p: {
                   id: string;
                   name: string;
@@ -471,7 +473,7 @@ function EmailPoliciesTab() {
                   </tr>
                 ),
               )}
-              {data.items.length === 0 && (
+              {(data.items || []).length === 0 && (
                 <tr>
                   <td colSpan={6} className="p-4 text-center text-muted-foreground">
                     No policies configured
@@ -665,11 +667,11 @@ function ThreadInjectionTab() {
                     Confidence: {Math.round(result.confidence * 100)}%
                   </span>
                 </div>
-                {result.indicators.length > 0 && (
+                {result.indicators?.length > 0 && (
                   <div className="space-y-1">
                     <p className="text-xs font-medium">Indicators:</p>
                     <ul className="list-disc list-inside text-xs text-muted-foreground space-y-0.5">
-                      {result.indicators.map((ind, i) => (
+                      {(result.indicators || []).map((ind, i) => (
                         <li key={i}>{ind}</li>
                       ))}
                     </ul>
@@ -837,11 +839,11 @@ function RetroactiveScanTab() {
             <Card className="mt-4">
               <CardHeader>
                 <CardTitle className="text-base">
-                  Scan Results — {scanResult.matches.length} matches in {scanResult.totalScanned} emails
+                  Scan Results — {(scanResult.matches || []).length} matches in {scanResult.totalScanned} emails
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {scanResult.matches.length === 0 ? (
+                {(scanResult.matches || []).length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     No historical email matches found for the provided IOCs.
                   </p>
@@ -858,7 +860,7 @@ function RetroactiveScanTab() {
                         </tr>
                       </thead>
                       <tbody>
-                        {scanResult.matches.map((m, i) => (
+                        {(scanResult.matches || []).map((m, i) => (
                           <tr key={i} className="border-t hover:bg-muted/30">
                             <td className="p-2 text-xs">
                               {m.receivedAt ? new Date(m.receivedAt).toLocaleString() : "—"}
@@ -1070,11 +1072,11 @@ function AnalysisToolsTab() {
                   </span>
                 </div>
                 <p className="text-xs font-mono truncate">{urlResult.url}</p>
-                {urlResult.indicators.length > 0 && (
+                {urlResult.indicators?.length > 0 && (
                   <div className="mt-2">
                     <p className="text-xs font-medium">Indicators:</p>
                     <ul className="list-disc list-inside text-xs text-muted-foreground">
-                      {urlResult.indicators.map((ind, i) => (
+                      {(urlResult.indicators || []).map((ind, i) => (
                         <li key={i}>{ind}</li>
                       ))}
                     </ul>
@@ -1134,11 +1136,11 @@ function AnalysisToolsTab() {
                   <span>Lookalike: {becResult.lookalikeDetected ? "Yes" : "No"}</span>
                   <span>Impersonation: {becResult.impersonationDetected ? "Yes" : "No"}</span>
                 </div>
-                {becResult.indicators.length > 0 && (
+                {becResult.indicators?.length > 0 && (
                   <div className="mt-2">
                     <p className="text-xs font-medium">Indicators:</p>
                     <ul className="list-disc list-inside text-xs text-muted-foreground">
-                      {becResult.indicators.map((ind, i) => (
+                      {(becResult.indicators || []).map((ind, i) => (
                         <li key={i}>{ind}</li>
                       ))}
                     </ul>

@@ -1368,10 +1368,10 @@ export default function SocCopilotPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="pb-4 space-y-2">
-              {Object.entries(stats.byDomain).length === 0 ? (
+              {Object.entries(stats.byDomain || {}).length === 0 ? (
                 <p className="text-xs text-muted-foreground">No domain feedback data yet</p>
               ) : (
-                Object.entries(stats.byDomain).map(([domain, data]) => {
+                Object.entries(stats.byDomain || {}).map(([domain, data]) => {
                   const acceptRate = data.total > 0 ? Math.round((data.accepted / data.total) * 100) : 0;
                   return (
                     <div key={domain} className="space-y-1">
@@ -1409,10 +1409,10 @@ export default function SocCopilotPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="pb-4 space-y-2">
-              {Object.entries(stats.byActionClass).length === 0 ? (
+              {Object.entries(stats.byActionClass || {}).length === 0 ? (
                 <p className="text-xs text-muted-foreground">No action class data yet</p>
               ) : (
-                Object.entries(stats.byActionClass).map(([cls, data]) => {
+                Object.entries(stats.byActionClass || {}).map(([cls, data]) => {
                   const classConf = ACTION_CLASS_CONFIG[cls] || { label: cls, color: "" };
                   return (
                     <div
