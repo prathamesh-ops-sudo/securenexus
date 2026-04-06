@@ -606,6 +606,28 @@ export interface DnsStats {
 }
 
 export async function computeDnsStats(orgId: string): Promise<DnsStats> {
+  try {
+    return await computeDnsStatsInternal(orgId);
+  } catch (err) {
+    const msg = String(err);
+    if (msg.includes("does not exist") || msg.includes("relation") || msg.includes("undefined")) {
+      return {
+        totalEvents: 0,
+        totalFindings: 0,
+        openFindings: 0,
+        sinkholedDomainCount: 0,
+        sinkholedHits: 0,
+        passiveDnsRecordCount: 0,
+        eventsByType: {},
+        findingsBySeverity: {},
+        topQueriedDomains: [],
+      };
+    }
+    throw err;
+  }
+}
+
+async function computeDnsStatsInternal(orgId: string): Promise<DnsStats> {
   const since30d = new Date(Date.now() - 30 * 86400000);
 
   const [

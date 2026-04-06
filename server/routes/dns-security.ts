@@ -102,19 +102,28 @@ export function registerDnsSecurityRoutes(app: Express): void {
           conditions.push(eq(dnsEvents.isSuspicious, true));
         }
 
-        const [items, [{ value: total }]] = await Promise.all([
-          db
-            .select()
-            .from(dnsEvents)
-            .where(and(...conditions))
-            .orderBy(desc(dnsEvents.timestamp))
-            .limit(limit)
-            .offset(offset),
-          db
-            .select({ value: count() })
-            .from(dnsEvents)
-            .where(and(...conditions)),
-        ]);
+        let items: unknown[] = [];
+        let total = 0;
+        try {
+          const [rows, [{ value: cnt }]] = await Promise.all([
+            db
+              .select()
+              .from(dnsEvents)
+              .where(and(...conditions))
+              .orderBy(desc(dnsEvents.timestamp))
+              .limit(limit)
+              .offset(offset),
+            db
+              .select({ value: count() })
+              .from(dnsEvents)
+              .where(and(...conditions)),
+          ]);
+          items = rows;
+          total = Number(cnt);
+        } catch (queryErr) {
+          const msg = String(queryErr);
+          if (!msg.includes("does not exist") && !msg.includes("relation")) throw queryErr;
+        }
 
         res.json({ items, total, limit, offset });
       } catch (err) {
@@ -253,19 +262,28 @@ export function registerDnsSecurityRoutes(app: Express): void {
           conditions.push(eq(dnsFindings.status, status));
         }
 
-        const [items, [{ value: total }]] = await Promise.all([
-          db
-            .select()
-            .from(dnsFindings)
-            .where(and(...conditions))
-            .orderBy(desc(dnsFindings.createdAt))
-            .limit(limit)
-            .offset(offset),
-          db
-            .select({ value: count() })
-            .from(dnsFindings)
-            .where(and(...conditions)),
-        ]);
+        let items: unknown[] = [];
+        let total = 0;
+        try {
+          const [rows, [{ value: cnt }]] = await Promise.all([
+            db
+              .select()
+              .from(dnsFindings)
+              .where(and(...conditions))
+              .orderBy(desc(dnsFindings.createdAt))
+              .limit(limit)
+              .offset(offset),
+            db
+              .select({ value: count() })
+              .from(dnsFindings)
+              .where(and(...conditions)),
+          ]);
+          items = rows;
+          total = Number(cnt);
+        } catch (queryErr) {
+          const msg = String(queryErr);
+          if (!msg.includes("does not exist") && !msg.includes("relation")) throw queryErr;
+        }
 
         res.json({ items, total, limit, offset });
       } catch (err) {

@@ -93,15 +93,15 @@ function StatCard({ label, value, icon: Icon }: { label: string; value: number |
 function EmailFindingsTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [findingType, setFindingType] = useState("");
-  const [severity, setSeverity] = useState("");
+  const [findingType, setFindingType] = useState("all");
+  const [severity, setSeverity] = useState("all");
   const [status, setStatus] = useState("open");
   const [senderFilter, setSenderFilter] = useState("");
 
   const params = new URLSearchParams();
-  if (findingType) params.set("findingType", findingType);
-  if (severity) params.set("severity", severity);
-  if (status) params.set("status", status);
+  if (findingType && findingType !== "all") params.set("findingType", findingType);
+  if (severity && severity !== "all") params.set("severity", severity);
+  if (status && status !== "all") params.set("status", status);
   if (senderFilter) params.set("sender", senderFilter);
   params.set("limit", "50");
 
@@ -133,7 +133,7 @@ function EmailFindingsTab() {
               <SelectValue placeholder="All types" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All types</SelectItem>
+              <SelectItem value="all">All types</SelectItem>
               <SelectItem value="spf_fail">SPF Fail</SelectItem>
               <SelectItem value="dkim_fail">DKIM Fail</SelectItem>
               <SelectItem value="dmarc_fail">DMARC Fail</SelectItem>
@@ -154,7 +154,7 @@ function EmailFindingsTab() {
               <SelectValue placeholder="All" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All</SelectItem>
+              <SelectItem value="all">All</SelectItem>
               <SelectItem value="critical">Critical</SelectItem>
               <SelectItem value="high">High</SelectItem>
               <SelectItem value="medium">Medium</SelectItem>
@@ -169,7 +169,7 @@ function EmailFindingsTab() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All</SelectItem>
+              <SelectItem value="all">All</SelectItem>
               <SelectItem value="open">Open</SelectItem>
               <SelectItem value="investigating">Investigating</SelectItem>
               <SelectItem value="resolved">Resolved</SelectItem>
@@ -1158,7 +1158,8 @@ function AnalysisToolsTab() {
 export default function EmailSecurityPage() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ["/api/email-security/dashboard"],
-    queryFn: () => apiFetch("/api/email-security/dashboard"),
+    queryFn: () => apiFetch("/api/email-security/dashboard").catch(() => null),
+    retry: false,
   });
 
   if (isLoading) return <DashboardSkeleton />;
