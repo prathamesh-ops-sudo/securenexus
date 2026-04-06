@@ -356,7 +356,9 @@ function DnsFindingsTab() {
                 </Card>
               ),
             )}
-            {data.items.length === 0 && <p className="text-center text-muted-foreground py-8">No findings found</p>}
+            {(data.items || []).length === 0 && (
+              <p className="text-center text-muted-foreground py-8">No findings found</p>
+            )}
           </div>
         </>
       )}
@@ -501,7 +503,7 @@ function SinkholesTab() {
                   </tr>
                 ),
               )}
-              {data.items.length === 0 && (
+              {(data.items || []).length === 0 && (
                 <tr>
                   <td colSpan={6} className="p-4 text-center text-muted-foreground">
                     No sinkholed domains
