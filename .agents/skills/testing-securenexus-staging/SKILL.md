@@ -60,8 +60,89 @@ set -a && source .env && set +a && npm run dev
 ## Testing UI Changes
 
 ### Test User Credentials
-- A test user `testuser-devin@aricatech.com` / `TestPass123!` was created during a previous session. It may still be available.
-- If the test user doesn't work, create a new one via the registration flow at the staging URL.
+- Primary test user: `devin-test@aricatech.com` / `DevinTest2026!` (superadmin role in "Arica Tech Security" org)
+- Created via platform seed endpoint (`POST /api/platform-admin/seed-platform`)
+- If credentials don't work, the platform may have been re-seeded — check with the user
+
+### Login Flow (Important!)
+The staging landing page has a **"Log In"** button (not "Sign In") in the top-right nav bar.
+
+**Playwright automation steps:**
+1. Navigate to `https://staging.aricatech.xyz/` with `waitUntil: "domcontentloaded"` (NOT `networkidle` — SSE connections prevent networkidle from resolving)
+2. Click `text=Log In` — this opens a modal overlay with email/password form + Google/GitHub OAuth buttons
+3. Fill `input[type="email"]` and `input[type="password"]`
+4. Click `button[type="submit"]`
+5. Wait 8-10 seconds for session to establish and dashboard to render
+6. After login, URL stays at `/` but content changes from landing page to dashboard
+
+**Critical Playwright tips:**
+- The repo uses `"type": "module"` in package.json, so test scripts must use `.cjs` extension (not `.js`) when using `require()`
+- Use `waitUntil: "domcontentloaded"` for ALL page navigations — `networkidle` will timeout because SSE connections keep the network active
+- Allow 8+ seconds after login submit for session to establish
+- Use `page.evaluate()` with regex to extract stat card values — DOM structure uses separate elements for title and value
+
+### Dashboard Verification
+
+**Navigation:** After login, dashboard is at `/` (root URL)
+
+**Key elements to verify:**
+- **Stat cards row:** Total Alerts, Critical, Open Incidents, New Today, Escalated, Resolved
+- **Second row:** MTTD, MTTR, Resolution Rate, Throughput
+- **Charts:** Severity Distribution (donut), Alerts by Source (bar), Alert Trend (7 Days)
+- **LIVE indicator:** Top header shows green dot + "LIVE X events" text (SSE connected)
+- **Spike banner:** Yellow banner "Unusual spike: X new alerts today (above normal baseline)" appears when alert count exceeds baseline
+
+**Extracting stat values with Playwright:**
+```javascript
+const stats = await page.evaluate(() => {
+  const body = document.body.innerText;
+  const totalMatch = body.match(/Total Alerts[\s\S]*?(\d+)[\s\S]*?All sources/);
+  return { totalAlerts: totalMatch ? parseInt(totalMatch[1]) : -1 };
+});
+```
+
+### Alerts Page Verification
+
+**Navigation:** Sidebar → Alerts (or `/alerts`)
+
+**Key elements to verify:**
+- **Total count:** Toolbar shows "X total alerts" text
+- **Table columns:** Alert (title + timestamp), Source, Severity, Category, MITRE Tactic, Status, Queue, Actions
+- **Severity filter bar:** All, Critical, High, Medium, Low buttons
+- **Search:** Input with placeholder "Search alerts..."
+- **Toolbar buttons:** Query Builder, Keys, Show Detail, Presets
+
+**Known issues with Wazuh alerts:**
+- Category mapping: Most PAM/sudo events show "other" instead of "authentication" — the normalizer pattern `/authentication|login|sshd|pam/` should match but Wazuh `rule.groups` may not contain those exact strings
+- Severity distribution: ~99% informational for normal system events (PAM login, sudo). Higher severity requires actual attack events.
+- Search is full-text on alert title/content, NOT a source-field filter. Searching "Wazuh" returns only alerts with "Wazuh" in the title, not all Wazuh-source alerts.
+
+### Wazuh Alert Ingestion Testing
+
+**Wazuh EC2 Instance:**
+- Instance ID: `i-0d1d011a161803c64`
+- Region: `us-east-1`
+- SSH: `ssh -i /home/ubuntu/wazuh-key.pem ubuntu@<public-ip>` (IP may change on restart)
+- Forwarder script: `/home/ubuntu/wazuh-forwarder.sh`
+- Forwarder log: `/home/ubuntu/wazuh-forwarder.log`
+
+**Checking forwarder status:**
+```bash
+ssh -i /home/ubuntu/wazuh-key.pem -o StrictHostKeyChecking=no ubuntu@<ip> \
+  "ps aux | grep wazuh-forwarder | grep -v grep; tail -5 /home/ubuntu/wazuh-forwarder.log"
+```
+
+**Verifying live ingestion:**
+1. Note Total Alerts count on Dashboard
+2. Wait 30-35 seconds (forwarder processes ~6 alerts per batch every ~10s)
+3. Refresh Dashboard
+4. Verify count increased (expect +10-20 in 30s)
+
+**API key for ingestion:**
+- Created via Platform Admin or Settings → API Keys
+- Must have `ingest` scope
+- API key is used in the forwarder script's `Authorization: Bearer <key>` header
+- If platform is re-seeded, the API key is deleted — must create a new one
 
 ### Native Sensors Testing
 
@@ -109,9 +190,12 @@ These pages detect 501 responses from stub endpoints and show "Coming Soon" UI:
 The frontend detects 501 via `error?.message?.startsWith("501:")`. This depends on `throwIfResNotOk` in `queryClient.ts` formatting errors as `"${status}: ${text}"`. If this contract changes, Coming Soon detection will break.
 
 ### Testing Tips
+- Use `waitUntil: "domcontentloaded"` for Playwright page navigation — `networkidle` times out due to SSE
 - Pages may take 5-8 seconds to load after navigation — wait before checking content
 - The skeleton loading state appears first, then the actual content renders
 - After a deployment rollout, the first page load may be slow due to pod startup
 - Use screen recording to capture the full test flow for the user
 - Annotate recordings at each major test step for clarity
 - For local testing, ensure PostgreSQL is running and `.env` file is sourced before starting the dev server
+- When extracting text values from stat cards, use `page.evaluate()` with regex patterns — the stat title and value are in separate DOM elements
+- After platform seed, all data (alerts, API keys, connectors) is wiped — forwarder must be reconfigured with a new API key
