@@ -104,37 +104,32 @@ export function registerAiTriageRoutes(app: Express): void {
   );
 
   // GET /api/ai/triage/jobs/:jobId - Poll triage job status
-  app.get(
-    "/api/ai/triage/jobs/:jobId",
-    isAuthenticated,
-    resolveOrgContext,
-    async (req, res) => {
-      try {
-        const jobId = p(req.params.jobId);
-        const job = await storage.getJob(jobId);
-        if (!job) {
-          return res.status(404).json({ message: "Job not found" });
-        }
-
-        // Verify org access
-        const orgId = (req as any).orgId || (req as any).user?.orgId;
-        if (job.orgId && orgId && job.orgId !== orgId) {
-          return res.status(404).json({ message: "Job not found" });
-        }
-
-        if (job.status === "completed") {
-          return res.json({ status: "completed", result: job.result });
-        }
-        if (job.status === "failed" || job.status === "dead_letter") {
-          return res.json({ status: "failed", error: job.lastError || "Unknown error" });
-        }
-        res.json({ status: job.status }); // pending, running
-      } catch (error: any) {
-        logger.child("ai").error("Job poll error", { error: String(error) });
-        res.status(500).json({ message: "Failed to check job status" });
+  app.get("/api/ai/triage/jobs/:jobId", isAuthenticated, resolveOrgContext, async (req, res) => {
+    try {
+      const jobId = p(req.params.jobId);
+      const job = await storage.getJob(jobId);
+      if (!job) {
+        return res.status(404).json({ message: "Job not found" });
       }
-    },
-  );
+
+      // Verify org access
+      const orgId = (req as any).orgId || (req as any).user?.orgId;
+      if (job.orgId && orgId && job.orgId !== orgId) {
+        return res.status(404).json({ message: "Job not found" });
+      }
+
+      if (job.status === "completed") {
+        return res.json({ status: "completed", result: job.result });
+      }
+      if (job.status === "failed" || job.status === "dead_letter") {
+        return res.json({ status: "failed", error: job.lastError || "Unknown error" });
+      }
+      res.json({ status: job.status }); // pending, running
+    } catch (error: any) {
+      logger.child("ai").error("Job poll error", { error: String(error) });
+      res.status(500).json({ message: "Failed to check job status" });
+    }
+  });
 
   // POST /api/ai/correlate
   app.post(
@@ -147,20 +142,31 @@ export function registerAiTriageRoutes(app: Express): void {
       try {
         const orgId = (req as any).orgId || (req as any).user?.orgId;
         const { alertIds } = req.body;
+        const MAX_ALERTS_FOR_CORRELATION = 50;
         let alertsToCorrelate;
         if (alertIds && Array.isArray(alertIds) && alertIds.length > 0) {
           const allAlerts = await storage.getAlerts(orgId);
           alertsToCorrelate = allAlerts.filter((a) => alertIds.includes(a.id));
         } else {
-          alertsToCorrelate = (await storage.getAlerts(orgId)).filter(
+          const candidates = (await storage.getAlerts(orgId)).filter(
             (a) => a.status === "new" || a.status === "triaged",
           );
+          // Prioritize higher-severity alerts to fit within model context window
+          const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 };
+          candidates.sort(
+            (a, b) =>
+              (severityOrder[a.severity ?? "informational"] ?? 4) - (severityOrder[b.severity ?? "informational"] ?? 4),
+          );
+          alertsToCorrelate = candidates.slice(0, MAX_ALERTS_FOR_CORRELATION);
         }
         if (alertsToCorrelate.length === 0) {
           return res.status(400).json({ message: "No alerts to correlate" });
         }
         const threatIntelCtx = await buildThreatIntelContext(alertsToCorrelate);
-        const correlationCacheKey = `correlate:${orgId}:${alertsToCorrelate.map((a) => a.id).sort().join(",")}`;
+        const correlationCacheKey = `correlate:${orgId}:${alertsToCorrelate
+          .map((a) => a.id)
+          .sort()
+          .join(",")}`;
         const fallbackResult = await withAiFallback(correlationCacheKey, () =>
           correlateAlerts(alertsToCorrelate, threatIntelCtx, orgId),
         );
