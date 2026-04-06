@@ -3,7 +3,7 @@ import { logger } from "../logger";
 
 const log = logger.child("rule-generator");
 
-const SONNET_MODEL = "anthropic.claude-sonnet-4-20250514-v1:0";
+const SONNET_MODEL = "mistral.mistral-large-2402-v1:0";
 
 // ─── Prompts ──────────────────────────────────────────────────────────────────
 

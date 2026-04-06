@@ -135,10 +135,9 @@ export function registerModelGatewayRoutes(app: Express): void {
   }
 
   const failoverConfig = new Map<string, string>([
-    ["anthropic.claude-opus-4-20250514-v1:0", "anthropic.claude-sonnet-4-20250514-v1:0"],
-    ["anthropic.claude-sonnet-4-20250514-v1:0", "anthropic.claude-3-haiku"],
-    ["anthropic.claude-3-sonnet", "anthropic.claude-3-haiku"],
-    ["mistral.mistral-large-2402-v1:0", "anthropic.claude-3-haiku"],
+    ["mistral.mistral-large-2402-v1:0", "anthropic.claude-3-haiku-20240307-v1:0"],
+    ["anthropic.claude-3-haiku-20240307-v1:0", "mistral.mistral-large-2402-v1:0"],
+    ["anthropic.claude-3-sonnet", "anthropic.claude-3-haiku-20240307-v1:0"],
   ]);
 
   app.get("/api/model-gateway/health", ...authChain, async (_req, res) => {
@@ -333,19 +332,19 @@ export function registerModelGatewayRoutes(app: Express): void {
   const modelVersionStore: ModelVersion[] = [
     {
       id: "mv-1",
-      modelId: "anthropic.claude-sonnet-4-20250514-v1:0",
-      version: "v4.0-sonnet",
+      modelId: "mistral.mistral-large-2402-v1:0",
+      version: "v1.0-mistral-large",
       status: "active",
       activatedAt: new Date(Date.now() - 7 * 86400000).toISOString(),
       performance: { avgLatencyMs: 2800, errorRate: 1.2, avgCostPerRequest: 0.045, sampleSize: 1250 },
     },
     {
       id: "mv-2",
-      modelId: "anthropic.claude-opus-4-20250514-v1:0",
-      version: "v4.0-opus",
+      modelId: "anthropic.claude-3-haiku-20240307-v1:0",
+      version: "v3.0-haiku",
       status: "active",
       activatedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-      performance: { avgLatencyMs: 5200, errorRate: 0.8, avgCostPerRequest: 0.135, sampleSize: 430 },
+      performance: { avgLatencyMs: 800, errorRate: 0.5, avgCostPerRequest: 0.002, sampleSize: 430 },
     },
     {
       id: "mv-3",
@@ -392,17 +391,17 @@ export function registerModelGatewayRoutes(app: Express): void {
   const abTestStore: ABTest[] = [
     {
       id: "ab-1",
-      name: "Sonnet 4 vs Sonnet 3 for Triage",
-      modelA: "anthropic.claude-sonnet-4-20250514-v1:0",
-      modelB: "anthropic.claude-3-sonnet",
+      name: "Mistral Large vs Haiku for Triage",
+      modelA: "mistral.mistral-large-2402-v1:0",
+      modelB: "anthropic.claude-3-haiku-20240307-v1:0",
       trafficSplitPercent: 50,
       status: "completed",
       startedAt: new Date(Date.now() - 14 * 86400000).toISOString(),
       completedAt: new Date(Date.now() - 7 * 86400000).toISOString(),
       results: {
         modelA: { requests: 500, avgLatencyMs: 2800, errorRate: 1.2, avgCost: 0.045 },
-        modelB: { requests: 500, avgLatencyMs: 3100, errorRate: 2.1, avgCost: 0.048 },
-        winner: "anthropic.claude-sonnet-4-20250514-v1:0",
+        modelB: { requests: 500, avgLatencyMs: 800, errorRate: 0.5, avgCost: 0.002 },
+        winner: "mistral.mistral-large-2402-v1:0",
       },
     },
   ];
@@ -580,18 +579,18 @@ export function registerModelGatewayRoutes(app: Express): void {
     },
     {
       id: "rr-2",
-      name: "Deep Investigation → Opus",
+      name: "Deep Investigation → Mistral Large",
       useCase: "deep_investigation",
-      modelId: "anthropic.claude-opus-4-20250514-v1:0",
+      modelId: "mistral.mistral-large-2402-v1:0",
       priority: 1,
       conditions: [{ field: "tier", operator: "eq", value: "deep-investigation" }],
       enabled: true,
     },
     {
       id: "rr-3",
-      name: "Narrative → Sonnet",
+      name: "Narrative → Mistral Large",
       useCase: "narrative",
-      modelId: "anthropic.claude-sonnet-4-20250514-v1:0",
+      modelId: "mistral.mistral-large-2402-v1:0",
       priority: 1,
       conditions: [{ field: "tier", operator: "eq", value: "narrative" }],
       enabled: true,
@@ -600,16 +599,16 @@ export function registerModelGatewayRoutes(app: Express): void {
       id: "rr-4",
       name: "Auto-Response → Haiku",
       useCase: "auto_response",
-      modelId: "anthropic.claude-3-haiku",
+      modelId: "anthropic.claude-3-haiku-20240307-v1:0",
       priority: 1,
       conditions: [{ field: "tier", operator: "eq", value: "auto-response" }],
       enabled: true,
     },
     {
       id: "rr-5",
-      name: "Detection Rule Gen → Sonnet",
+      name: "Detection Rule Gen → Mistral Large",
       useCase: "detection_rule",
-      modelId: "anthropic.claude-sonnet-4-20250514-v1:0",
+      modelId: "mistral.mistral-large-2402-v1:0",
       priority: 1,
       conditions: [{ field: "tier", operator: "eq", value: "detection-rule" }],
       enabled: true,

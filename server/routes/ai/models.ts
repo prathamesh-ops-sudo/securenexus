@@ -16,23 +16,23 @@ export function registerAiModelsRoutes(app: Express): void {
     try {
       const models = [
         {
-          id: "anthropic.claude-sonnet-4-20250514",
+          id: "mistral.mistral-large-2402-v1:0",
           provider: "aws_bedrock",
-          name: "Claude Sonnet 4",
+          name: "Mistral Large",
           tier: "default",
-          capabilities: ["triage", "correlation", "narrative"],
+          capabilities: ["triage", "correlation", "narrative", "deep_investigation", "threat_hunt"],
           maxTokens: 8192,
-          costPer1kTokens: 0.003,
+          costPer1kTokens: 0.004,
           status: "available",
         },
         {
-          id: "anthropic.claude-opus-4-20250514",
+          id: "anthropic.claude-3-haiku-20240307-v1:0",
           provider: "aws_bedrock",
-          name: "Claude Opus 4",
-          tier: "investigation",
-          capabilities: ["deep_investigation", "threat_hunt", "behavioral_analysis", "attack_prediction"],
-          maxTokens: 16384,
-          costPer1kTokens: 0.015,
+          name: "Claude 3 Haiku",
+          tier: "triage",
+          capabilities: ["triage", "correlation"],
+          maxTokens: 4096,
+          costPer1kTokens: 0.00025,
           status: "available",
         },
         {
@@ -73,9 +73,9 @@ export function registerAiModelsRoutes(app: Express): void {
         activeModel: activeConfig,
         availableModels: models,
         tierAssignments: {
-          default: "anthropic.claude-sonnet-4-20250514",
-          investigation: "anthropic.claude-opus-4-20250514",
-          triage: "anthropic.claude-sonnet-4-20250514",
+          default: "mistral.mistral-large-2402-v1:0",
+          investigation: "mistral.mistral-large-2402-v1:0",
+          triage: "anthropic.claude-3-haiku-20240307-v1:0",
         },
       });
     } catch (error: any) {
