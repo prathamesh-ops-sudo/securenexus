@@ -9,7 +9,7 @@ interface PlanAiBudget {
 }
 
 const PLAN_AI_BUDGETS: Record<string, PlanAiBudget> = {
-  free: { budgetUsd: 5, invocationCap: 500 },
+  free: { budgetUsd: 100, invocationCap: 5000 },
   starter: { budgetUsd: 50, invocationCap: 5000 },
   professional: { budgetUsd: 500, invocationCap: 50000 },
   enterprise: { budgetUsd: 10000, invocationCap: 1000000 },
@@ -83,7 +83,9 @@ async function ensureOrgRow(orgId: string): Promise<void> {
   await pool.query(
     `INSERT INTO org_ai_budgets (org_id, budget_usd, invocation_cap, daily_spend_usd, daily_invocations, daily_input_tokens, daily_output_tokens, last_reset_at, updated_at)
      VALUES ($1, $2, $3, 0, 0, 0, 0, NOW(), NOW())
-     ON CONFLICT (org_id) DO NOTHING`,
+     ON CONFLICT (org_id) DO UPDATE SET budget_usd = GREATEST(org_ai_budgets.budget_usd, EXCLUDED.budget_usd),
+       invocation_cap = GREATEST(org_ai_budgets.invocation_cap, EXCLUDED.invocation_cap),
+       updated_at = NOW()`,
     [orgId, budget.budgetUsd, budget.invocationCap],
   );
 }
@@ -123,7 +125,32 @@ export async function syncOrgAiBudgetWithPlan(orgId: string, planTier: string): 
 }
 
 export async function checkBudget(orgId: string): Promise<{ allowed: boolean; reason?: string }> {
-  const row = await getRow(orgId);
+  let row = await getRow(orgId);
+
+  // Auto-reset if last_reset_at is from a previous UTC day (handles missed scheduler resets after restarts)
+  if (row.last_reset_at) {
+    const lastReset = new Date(row.last_reset_at);
+    const now = new Date();
+    if (
+      lastReset.getUTCFullYear() !== now.getUTCFullYear() ||
+      lastReset.getUTCMonth() !== now.getUTCMonth() ||
+      lastReset.getUTCDate() !== now.getUTCDate()
+    ) {
+      log.info("Auto-resetting stale daily AI budget", {
+        orgId,
+        lastReset: lastReset.toISOString(),
+        staleSpend: row.daily_spend_usd,
+      });
+      await pool.query(
+        `UPDATE org_ai_budgets
+         SET daily_spend_usd = 0, daily_invocations = 0, daily_input_tokens = 0,
+             daily_output_tokens = 0, last_reset_at = NOW(), updated_at = NOW()
+         WHERE org_id = $1`,
+        [orgId],
+      );
+      row = await getRow(orgId);
+    }
+  }
 
   if (row.daily_spend_usd >= row.budget_usd) {
     log.warn("AI budget exceeded", { orgId, spent: row.daily_spend_usd, limit: row.budget_usd });
