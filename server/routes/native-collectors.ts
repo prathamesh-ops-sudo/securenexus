@@ -80,21 +80,28 @@ function redactInstanceConfig(instance: {
   templateSlug: string;
   [key: string]: unknown;
 }): typeof instance {
-  const template = getTemplateBySlug(instance.templateSlug);
-  if (!template) return instance;
-
-  const secretKeys = new Set(
-    template.configSchema.filter((f: { type: string }) => f.type === "secret").map((f: { key: string }) => f.key),
-  );
-  if (secretKeys.size === 0) return instance;
-
   const rawConfig = (instance.config && typeof instance.config === "object" ? instance.config : {}) as Record<
     string,
     unknown
   >;
+
+  // Always redact internal auth fields
+  const internalSecretKeys = new Set(["apiKeyHash"]);
+
+  const template = getTemplateBySlug(instance.templateSlug);
+  const templateSecretKeys = template
+    ? new Set(
+        template.configSchema.filter((f: { type: string }) => f.type === "secret").map((f: { key: string }) => f.key),
+      )
+    : new Set<string>();
+
   const redactedConfig: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(rawConfig)) {
-    redactedConfig[key] = secretKeys.has(key) ? REDACTED : value;
+    if (internalSecretKeys.has(key) || templateSecretKeys.has(key)) {
+      redactedConfig[key] = REDACTED;
+    } else {
+      redactedConfig[key] = value;
+    }
   }
   return { ...instance, config: redactedConfig };
 }

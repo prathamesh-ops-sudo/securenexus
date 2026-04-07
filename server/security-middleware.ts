@@ -50,6 +50,13 @@ function isCsrfExempt(req: Request): boolean {
   if (isApiKeyAuthenticated(req)) {
     return true;
   }
+  // Collector key auth: heartbeat and ingest endpoints authenticate via X-Collector-Key
+  if (
+    req.headers["x-collector-key"] &&
+    req.path.match(/\/api\/native-collectors\/instances\/[^/]+\/(heartbeat|ingest)$/)
+  ) {
+    return true;
+  }
   return false;
 }
 
