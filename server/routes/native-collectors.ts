@@ -679,9 +679,10 @@ export function registerNativeCollectorRoutes(app: Express): void {
           return res.status(404).json({ message: "Collector not found" });
         }
 
-        // If regenerateKey=true, generate a new API key and embed it in the script
+        // Always generate a fresh API key for the deploy script so it works out of the box.
+        // The user can also pass ?regenerateKey=false to skip key generation and use env vars.
         let collectorApiKey: string | undefined;
-        if (req.query.regenerateKey === "true") {
+        if (req.query.regenerateKey !== "false") {
           collectorApiKey = `snc_${crypto.randomBytes(32).toString("hex")}`;
           const apiKeyHash = crypto.createHash("sha256").update(collectorApiKey).digest("hex");
           const existingConfig = (

@@ -996,12 +996,26 @@ echo "[SecureNexus] Check status: sudo systemctl status securenexus-collector"`;
   if (templateSlug.startsWith("endpoint-agent-windows")) {
     return `# SecureNexus Endpoint Agent — Windows (PowerShell)
 # Lightweight collector using Windows Event Log + PowerShell (no binary agent needed)
+# IMPORTANT: Run this script as Administrator (right-click PowerShell → "Run as Administrator")
 $ErrorActionPreference = "Stop"
+
+# ── Check for Administrator privileges ──────────────────────────────────────
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host "[SecureNexus] ERROR: This script must be run as Administrator." -ForegroundColor Red
+    Write-Host "[SecureNexus] Right-click PowerShell and select 'Run as Administrator', then re-run this script." -ForegroundColor Yellow
+    exit 1
+}
 
 $CollectorId = "${instanceId}"
 $ApiEndpoint = "${baseUrl}/api/native-collectors/instances/${instanceId}"
-$CollectorKey = if ($env:SN_COLLECTOR_KEY) { $env:SN_COLLECTOR_KEY } else { "${collectorApiKey || "REPLACE_WITH_YOUR_COLLECTOR_KEY"}" }
+$CollectorKey = "${collectorApiKey || "REPLACE_WITH_YOUR_COLLECTOR_KEY"}"
 $Interval = if ($env:SN_INTERVAL) { [int]$env:SN_INTERVAL } else { 30 }
+
+if ($CollectorKey -eq "REPLACE_WITH_YOUR_COLLECTOR_KEY") {
+    Write-Host "[SecureNexus] ERROR: No API key found. Re-download the deployment script from the SecureNexus dashboard to get a fresh key." -ForegroundColor Red
+    exit 1
+}
 
 Write-Host "[SecureNexus] Setting up endpoint collector (ID: $CollectorId)..."
 
@@ -1018,14 +1032,16 @@ while ($true) {
         # Collect Security Event Log (logon events, privilege use)
         $secEvents = Get-WinEvent -LogName Security -MaxEvents 100 -ErrorAction SilentlyContinue |
             Select-Object -First 50 | ForEach-Object {
+                $sev = "info"
+                if ($_.Level -le 2) { $sev = "high" } elseif ($_.Level -le 3) { $sev = "medium" }
                 @{
                     eventType = "windows_security"
-                    severity = if ($_.Level -le 2) { "high" } elseif ($_.Level -le 3) { "medium" } else { "info" }
+                    severity = $sev
                     source = "Security"
                     rawData = @{ id = $_.Id; message = $_.Message; timeCreated = $_.TimeCreated.ToString("o") }
                 }
             }
-        $events += $secEvents
+        if ($secEvents) { $events += $secEvents }
 
         # Collect PowerShell script block logging
         $psEvents = Get-WinEvent -LogName "Microsoft-Windows-PowerShell/Operational" -MaxEvents 50 -ErrorAction SilentlyContinue |
@@ -1037,39 +1053,49 @@ while ($true) {
                     rawData = @{ id = $_.Id; message = $_.Message; timeCreated = $_.TimeCreated.ToString("o") }
                 }
             }
-        $events += $psEvents
+        if ($psEvents) { $events += $psEvents }
 
         # Collect Sysmon events if available
-        $sysmonEvents = Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 50 -ErrorAction SilentlyContinue |
-            Select-Object -First 25 | ForEach-Object {
-                @{
-                    eventType = "sysmon"
-                    severity = if ($_.Id -in @(1,3,7,8,10,11)) { "medium" } else { "info" }
-                    source = "Sysmon"
-                    rawData = @{ id = $_.Id; message = $_.Message; timeCreated = $_.TimeCreated.ToString("o") }
+        try {
+            $sysmonEvents = Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 50 -ErrorAction Stop |
+                Select-Object -First 25 | ForEach-Object {
+                    $sev = "info"
+                    if ($_.Id -in @(1,3,7,8,10,11)) { $sev = "medium" }
+                    @{
+                        eventType = "sysmon"
+                        severity = $sev
+                        source = "Sysmon"
+                        rawData = @{ id = $_.Id; message = $_.Message; timeCreated = $_.TimeCreated.ToString("o") }
+                    }
                 }
-            }
-        $events += $sysmonEvents
+            if ($sysmonEvents) { $events += $sysmonEvents }
+        } catch { }
 
         # Ship events to API
         if ($events.Count -gt 0) {
             $batch = $events | Select-Object -First 200
             $body = @{ events = $batch } | ConvertTo-Json -Depth 5
             Invoke-RestMethod -Uri "$ApiEndpoint/ingest" -Method POST -Body $body -Headers $headers -TimeoutSec 10 -ErrorAction SilentlyContinue
+            Write-Host "[SecureNexus] Shipped $($batch.Count) events"
         }
 
         # Send heartbeat
+        $ipAddr = "127.0.0.1"
+        try { $ipAddr = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch "Loopback" -and $_.IPAddress -ne "127.0.0.1" } | Select-Object -First 1).IPAddress } catch { }
+        $memGb = 0
+        try { $memGb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 1) } catch { }
         $hostInfo = @{
             hostname = $env:COMPUTERNAME
-            ipAddress = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -ne "Loopback" } | Select-Object -First 1).IPAddress
+            ipAddress = $ipAddr
             os = [System.Environment]::OSVersion.VersionString
             arch = $env:PROCESSOR_ARCHITECTURE
             cpuCount = $env:NUMBER_OF_PROCESSORS
-            memoryGb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 1)
+            memoryGb = $memGb
             agentVersion = "1.0.0-script"
         }
         $heartbeat = @{ hostInfo = $hostInfo; metrics = @{ eventsPerSecond = $events.Count } } | ConvertTo-Json -Depth 3
         Invoke-RestMethod -Uri "$ApiEndpoint/heartbeat" -Method POST -Body $heartbeat -Headers $headers -TimeoutSec 10 -ErrorAction SilentlyContinue
+        Write-Host "[SecureNexus] Heartbeat sent. Next cycle in $Interval seconds..."
     } catch {
         Write-Warning "Collection cycle failed: $_"
     }
@@ -1092,9 +1118,11 @@ Register-ScheduledTask -TaskName "SecureNexusCollector" -Action $Action -Trigger
 # Start immediately
 Start-ScheduledTask -TaskName "SecureNexusCollector"
 
-Write-Host "[SecureNexus] Endpoint collector installed and running."
+Write-Host ""
+Write-Host "[SecureNexus] Endpoint collector installed and running." -ForegroundColor Green
 Write-Host "[SecureNexus] Collector ID: ${instanceId}"
-Write-Host "[SecureNexus] Check status: Get-ScheduledTask -TaskName SecureNexusCollector"`;
+Write-Host "[SecureNexus] Check status: Get-ScheduledTask -TaskName SecureNexusCollector"
+Write-Host "[SecureNexus] View logs: Get-Content $InstallDir\\collector.ps1"`;
   }
 
   if (templateSlug.startsWith("endpoint-agent-macos")) {
