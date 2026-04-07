@@ -1064,7 +1064,9 @@ export default function AIEnginePage() {
         if (!pollRes.ok) {
           throw new Error(`Job poll failed: ${pollRes.status}`);
         }
-        const job = await pollRes.json();
+        const raw = await pollRes.json();
+        // Unwrap ApiEnvelope if present (raw fetch doesn't auto-unwrap)
+        const job = raw?.data && raw?.meta !== undefined ? raw.data : raw;
 
         if (job.status === "completed") {
           const triageData = job.result?.result || job.result;

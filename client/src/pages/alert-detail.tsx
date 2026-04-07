@@ -150,7 +150,9 @@ export default function AlertDetailPage() {
         if (!pollRes.ok) {
           throw new Error(`Job poll failed: ${pollRes.status}`);
         }
-        const job = await pollRes.json();
+        const raw = await pollRes.json();
+        // Unwrap ApiEnvelope if present (raw fetch doesn't auto-unwrap)
+        const job = raw?.data && raw?.meta !== undefined ? raw.data : raw;
 
         if (job.status === "completed") {
           // The result is nested: job.result.result contains the triage data
