@@ -154,8 +154,8 @@ const heartbeatSchema = z.object({
     ipAddress: z.string().min(1).max(45),
     os: z.string().min(1).max(100),
     arch: z.string().min(1).max(50),
-    cpuCount: z.number().int().min(1).max(1024),
-    memoryGb: z.number().min(0).max(65536),
+    cpuCount: z.coerce.number().int().min(1).max(1024),
+    memoryGb: z.coerce.number().min(0).max(65536),
     agentVersion: z.string().min(1).max(50),
   }),
   metrics: z

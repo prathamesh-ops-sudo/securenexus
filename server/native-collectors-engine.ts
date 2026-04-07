@@ -999,6 +999,9 @@ echo "[SecureNexus] Check status: sudo systemctl status securenexus-collector"`;
 # IMPORTANT: Run this script as Administrator (right-click PowerShell → "Run as Administrator")
 $ErrorActionPreference = "Stop"
 
+# ── Force TLS 1.2 (PowerShell 5.1 defaults to TLS 1.0 which modern servers reject) ──
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 # ── Check for Administrator privileges ──────────────────────────────────────
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
@@ -1022,6 +1025,9 @@ Write-Host "[SecureNexus] Setting up endpoint collector (ID: $CollectorId)..."
 # Create collector script
 $CollectorScript = @'
 param([string]$ApiEndpoint, [string]$CollectorKey, [int]$Interval = 30)
+
+# Force TLS 1.2 for HTTPS connections
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $headers = @{ "Content-Type" = "application/json"; "X-Collector-Key" = $CollectorKey }
 
@@ -1084,12 +1090,14 @@ while ($true) {
         try { $ipAddr = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch "Loopback" -and $_.IPAddress -ne "127.0.0.1" } | Select-Object -First 1).IPAddress } catch { }
         $memGb = 0
         try { $memGb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 1) } catch { }
+        $cpuCount = 1
+        try { $cpuCount = [int]$env:NUMBER_OF_PROCESSORS } catch { }
         $hostInfo = @{
             hostname = $env:COMPUTERNAME
             ipAddress = $ipAddr
             os = [System.Environment]::OSVersion.VersionString
             arch = $env:PROCESSOR_ARCHITECTURE
-            cpuCount = $env:NUMBER_OF_PROCESSORS
+            cpuCount = $cpuCount
             memoryGb = $memGb
             agentVersion = "1.0.0-script"
         }
