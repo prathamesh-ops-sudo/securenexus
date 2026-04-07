@@ -1041,9 +1041,43 @@ export default function AIEnginePage() {
   });
 
   const triage = useMutation({
-    mutationFn: async (alertId: string) => {
+    mutationFn: async (alertId: string): Promise<TriageResult> => {
       const res = await apiRequest("POST", `/api/ai/triage/${alertId}`, {});
-      return res.json();
+      const envelope = await res.json();
+
+      // If the response already contains triage fields (sync path), return directly
+      if (envelope.severity && envelope.reasoning) {
+        return envelope as TriageResult;
+      }
+
+      // Async path: poll the job until it completes
+      const pollUrl = envelope.pollUrl || `/api/ai/triage/jobs/${envelope.jobId}`;
+      if (!envelope.jobId && !envelope.pollUrl) {
+        if (envelope.data?.severity) return envelope.data as TriageResult;
+        throw new Error("Triage returned unexpected response format");
+      }
+
+      const maxAttempts = 60; // Poll for up to 120 seconds (60 * 2s)
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const pollRes = await fetch(pollUrl, { credentials: "include" });
+        if (!pollRes.ok) {
+          throw new Error(`Job poll failed: ${pollRes.status}`);
+        }
+        const job = await pollRes.json();
+
+        if (job.status === "completed") {
+          const triageData = job.result?.result || job.result;
+          if (!triageData?.severity) {
+            throw new Error("Triage job completed but returned no result data");
+          }
+          return triageData as TriageResult;
+        }
+        if (job.status === "failed") {
+          throw new Error(job.error || "AI triage job failed");
+        }
+      }
+      throw new Error("AI triage timed out after 120 seconds");
     },
     onSuccess: (data) => {
       setTriageResult(data);
@@ -1794,7 +1828,7 @@ export default function AIEnginePage() {
                 <div className="rounded-md bg-muted/40 p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Priority</div>
                   <div className="text-sm font-bold mt-1" data-testid="text-triage-priority">
-                    P{triageResult.priority}
+                    P{triageResult.priority ?? "-"}
                   </div>
                 </div>
                 <div className="rounded-md bg-muted/40 p-3">
@@ -1835,11 +1869,20 @@ export default function AIEnginePage() {
                 <div className="flex items-center justify-between text-xs mb-1">
                   <span className="text-muted-foreground">False Positive Likelihood</span>
                   <span className="font-medium tabular-nums" data-testid="text-triage-fp">
-                    {Math.round(triageResult.falsePositiveLikelihood * 100)}%
+                    {typeof triageResult.falsePositiveLikelihood === "number" &&
+                    !isNaN(triageResult.falsePositiveLikelihood)
+                      ? Math.round(triageResult.falsePositiveLikelihood * 100)
+                      : 0}
+                    %
                   </span>
                 </div>
                 <Progress
-                  value={triageResult.falsePositiveLikelihood * 100}
+                  value={
+                    typeof triageResult.falsePositiveLikelihood === "number" &&
+                    !isNaN(triageResult.falsePositiveLikelihood)
+                      ? triageResult.falsePositiveLikelihood * 100
+                      : 0
+                  }
                   className="h-2"
                   data-testid="progress-false-positive"
                 />
@@ -1964,7 +2007,7 @@ export default function AIEnginePage() {
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-medium">{triageResult.severity}</span>
                             <Badge variant="outline" className="text-[10px]">
-                              P{triageResult.priority}
+                              P{triageResult.priority ?? "-"}
                             </Badge>
                           </div>
                         </div>
@@ -1975,7 +2018,11 @@ export default function AIEnginePage() {
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-medium tabular-nums">
-                              {Math.round(triageResult.falsePositiveLikelihood * 100)}% likely FP
+                              {typeof triageResult.falsePositiveLikelihood === "number" &&
+                              !isNaN(triageResult.falsePositiveLikelihood)
+                                ? Math.round(triageResult.falsePositiveLikelihood * 100)
+                                : 0}
+                              % likely FP
                             </span>
                           </div>
                         </div>

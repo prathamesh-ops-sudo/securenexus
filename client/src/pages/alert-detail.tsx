@@ -126,9 +126,46 @@ export default function AlertDetailPage() {
   });
 
   const triage = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<TriageResult> => {
       const res = await apiRequest("POST", `/api/ai/triage/${params.id}`, {});
-      return res.json();
+      const envelope = await res.json();
+
+      // If the response already contains triage fields (sync path), return directly
+      if (envelope.severity && envelope.reasoning) {
+        return envelope as TriageResult;
+      }
+
+      // Async path: poll the job until it completes
+      const pollUrl = envelope.pollUrl || `/api/ai/triage/jobs/${envelope.jobId}`;
+      if (!envelope.jobId && !envelope.pollUrl) {
+        // No job ID — check if result is nested in data
+        if (envelope.data?.severity) return envelope.data as TriageResult;
+        throw new Error("Triage returned unexpected response format");
+      }
+
+      const maxAttempts = 60; // Poll for up to 120 seconds (60 * 2s)
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const pollRes = await fetch(pollUrl, { credentials: "include" });
+        if (!pollRes.ok) {
+          throw new Error(`Job poll failed: ${pollRes.status}`);
+        }
+        const job = await pollRes.json();
+
+        if (job.status === "completed") {
+          // The result is nested: job.result.result contains the triage data
+          const triageData = job.result?.result || job.result;
+          if (!triageData?.severity) {
+            throw new Error("Triage job completed but returned no result data");
+          }
+          return triageData as TriageResult;
+        }
+        if (job.status === "failed") {
+          throw new Error(job.error || "AI triage job failed");
+        }
+        // status is "pending" or "running" — keep polling
+      }
+      throw new Error("AI triage timed out after 120 seconds");
     },
     onSuccess: (data: TriageResult) => {
       setTriageResult(data);
@@ -619,7 +656,7 @@ export default function AlertDetailPage() {
                   <div>
                     <div className="text-[10px] text-muted-foreground uppercase">Priority</div>
                     <div className="text-sm font-bold" data-testid="text-triage-priority">
-                      P{triageResult.priority}
+                      P{triageResult.priority ?? "-"}
                     </div>
                   </div>
                   <div>
@@ -631,7 +668,11 @@ export default function AlertDetailPage() {
                   <div>
                     <div className="text-[10px] text-muted-foreground uppercase">False Positive</div>
                     <div className="text-xs" data-testid="text-triage-fp">
-                      {Math.round(triageResult.falsePositiveLikelihood * 100)}%
+                      {typeof triageResult.falsePositiveLikelihood === "number" &&
+                      !isNaN(triageResult.falsePositiveLikelihood)
+                        ? Math.round(triageResult.falsePositiveLikelihood * 100)
+                        : 0}
+                      %
                     </div>
                   </div>
                 </div>
