@@ -190,6 +190,23 @@ const scanSchema = z.object({
   targets: z.array(z.string().min(1).max(200)).min(1).max(100),
 });
 
+/** Map collector event types to alert categories for the main alerts table */
+function mapEventTypeToCategory(eventType: string): string {
+  const lower = eventType.toLowerCase();
+  if (lower.includes("security") || lower.includes("logon") || lower.includes("auth")) return "authentication";
+  if (lower.includes("powershell") || lower.includes("script")) return "execution";
+  if (lower.includes("sysmon") || lower.includes("process")) return "execution";
+  if (lower.includes("network") || lower.includes("connection") || lower.includes("tcp")) return "network";
+  if (lower.includes("firewall") || lower.includes("block")) return "network";
+  if (lower.includes("file") || lower.includes("fim") || lower.includes("integrity")) return "file_integrity";
+  if (lower.includes("dns")) return "dns";
+  if (lower.includes("cloud") || lower.includes("guardduty") || lower.includes("defender")) return "cloud_security";
+  if (lower.includes("vuln") || lower.includes("cve")) return "vulnerability";
+  if (lower.includes("syslog") || lower.includes("system")) return "system";
+  if (lower.includes("asset") || lower.includes("discovery")) return "asset_discovery";
+  return "other";
+}
+
 export function registerNativeCollectorRoutes(app: Express): void {
   // ─── Templates (static catalog) ───────────────────────────────────────────
   app.get("/api/native-collectors/templates", isAuthenticated, resolveOrgContext, requireOrgId, (_req, res) => {
@@ -440,6 +457,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
       }
 
       const created = [];
+      let alertsCreated = 0;
       for (const evt of parsed.data.events) {
         const event = await storage.createCollectorEvent({
           collectorId: instanceId,
@@ -451,14 +469,56 @@ export function registerNativeCollectorRoutes(app: Express): void {
           tags: evt.tags || [],
         });
         created.push(event);
+
+        // Also create an alert in the main alerts table so collector events
+        // show up in the Alerts page alongside Wazuh/connector alerts
+        try {
+          const rawMsg =
+            typeof evt.rawData === "object" && evt.rawData !== null
+              ? (evt.rawData as Record<string, unknown>).message || (evt.rawData as Record<string, unknown>).line || ""
+              : "";
+          const description = typeof rawMsg === "string" ? rawMsg.slice(0, 500) : JSON.stringify(rawMsg).slice(0, 500);
+          const alertSeverity =
+            evt.severity === "info" ? "informational" : evt.severity === "low" ? "low" : evt.severity;
+          const hostname = (instance.hostInfo as Record<string, unknown> | null)?.hostname as string | undefined;
+          const sourceIp = (instance.hostInfo as Record<string, unknown> | null)?.ipAddress as string | undefined;
+
+          await storage.upsertAlert({
+            orgId,
+            source: `native-collector:${instance.templateSlug}`,
+            sourceEventId: event.id,
+            category: mapEventTypeToCategory(evt.eventType),
+            severity: alertSeverity,
+            title: `[${instance.name || instance.templateSlug}] ${evt.eventType}`,
+            description: description || `${evt.eventType} event from ${evt.source}`,
+            rawData: evt.rawData,
+            hostname: hostname || null,
+            sourceIp: sourceIp || null,
+            status: "new",
+            detectedAt: new Date(),
+          });
+          alertsCreated++;
+        } catch (alertErr) {
+          // Non-fatal: event was stored in collector_events, alert creation is best-effort
+          log.warn("Failed to create alert from collector event", {
+            eventId: event.id,
+            error: String(alertErr),
+          });
+        }
       }
 
-      // Update last data timestamp on instance
+      // Update last data timestamp and total events on instance
+      const existingMetrics = (
+        instance.metrics && typeof instance.metrics === "object" ? instance.metrics : {}
+      ) as Record<string, unknown>;
+      const prevTotal =
+        typeof existingMetrics.totalEventsIngested === "number" ? existingMetrics.totalEventsIngested : 0;
       await storage.updateCollectorInstance(instanceId, {
         lastDataAt: new Date(),
+        metrics: { ...existingMetrics, totalEventsIngested: prevTotal + created.length },
       });
 
-      res.status(201).json({ ingested: created.length, events: created });
+      res.status(201).json({ ingested: created.length, alertsCreated, events: created });
     } catch (err: unknown) {
       log.error("Ingest error", { error: String(err) });
       res.status(400).json({ message: (err as Error).message });
