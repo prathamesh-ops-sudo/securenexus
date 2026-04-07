@@ -873,11 +873,14 @@ export async function getScanResult(scanId: string, orgId: string): Promise<Scan
   return row ? dbRowToScan(row) : null;
 }
 
-export function getDeploymentScript(templateSlug: string, instanceId: string): string {
+export function getDeploymentScript(templateSlug: string, instanceId: string, collectorApiKey?: string): string {
   const template = COLLECTOR_TEMPLATES.find((t) => t.slug === templateSlug);
   if (!template) return "";
 
   const baseUrl = process.env.APP_URL || "https://staging.aricatech.xyz";
+  // If no key passed, use env var placeholder so user can set SN_COLLECTOR_KEY
+  const keyRef = collectorApiKey ? `"${collectorApiKey}"` : '"$SN_COLLECTOR_KEY"';
+  const keyHeader = `-H "X-Collector-Key: \${SN_COLLECTOR_KEY}"`;
 
   if (templateSlug.startsWith("endpoint-agent-linux")) {
     return `#!/bin/bash
@@ -887,6 +890,7 @@ set -euo pipefail
 
 COLLECTOR_ID="${instanceId}"
 API_ENDPOINT="${baseUrl}/api/native-collectors/instances/${instanceId}"
+SN_COLLECTOR_KEY=\${SN_COLLECTOR_KEY:-${collectorApiKey || "REPLACE_WITH_YOUR_COLLECTOR_KEY"}}
 INTERVAL=\${SN_INTERVAL:-30}
 
 echo "[SecureNexus] Setting up endpoint collector (ID: $COLLECTOR_ID)..."
@@ -934,6 +938,7 @@ while true; do
   if [ "$EVENT_COUNT" -gt 0 ]; then
     curl -sS -X POST "$API/ingest" \\
       -H "Content-Type: application/json" \\
+      -H "X-Collector-Key: $SN_COLLECTOR_KEY" \\
       -d "{\\"events\\": $BATCH}" \\
       --max-time 10 || true
   fi
@@ -948,6 +953,7 @@ while true; do
 
   curl -sS -X POST "$API/heartbeat" \\
     -H "Content-Type: application/json" \\
+    -H "X-Collector-Key: $SN_COLLECTOR_KEY" \\
     -d "{\\"hostInfo\\": {\\"hostname\\": \\"$HOSTNAME_VAL\\", \\"ipAddress\\": \\"$IP_VAL\\", \\"os\\": \\"$OS_VAL\\", \\"arch\\": \\"$ARCH_VAL\\", \\"cpuCount\\": $CPU_COUNT, \\"memoryGb\\": $MEM_GB, \\"agentVersion\\": \\"1.0.0-script\\"}, \\"metrics\\": {\\"eventsPerSecond\\": $EVENT_COUNT}}" \\
     --max-time 10 || true
 
@@ -966,6 +972,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+Environment=SN_COLLECTOR_KEY=${collectorApiKey || "REPLACE_WITH_YOUR_COLLECTOR_KEY"}
 ExecStart=/bin/bash /opt/securenexus/collector.sh ${baseUrl}/api/native-collectors/instances/${instanceId}
 Restart=always
 RestartSec=10
@@ -993,13 +1000,16 @@ $ErrorActionPreference = "Stop"
 
 $CollectorId = "${instanceId}"
 $ApiEndpoint = "${baseUrl}/api/native-collectors/instances/${instanceId}"
+$CollectorKey = if ($env:SN_COLLECTOR_KEY) { $env:SN_COLLECTOR_KEY } else { "${collectorApiKey || "REPLACE_WITH_YOUR_COLLECTOR_KEY"}" }
 $Interval = if ($env:SN_INTERVAL) { [int]$env:SN_INTERVAL } else { 30 }
 
 Write-Host "[SecureNexus] Setting up endpoint collector (ID: $CollectorId)..."
 
 # Create collector script
 $CollectorScript = @'
-param([string]$ApiEndpoint, [int]$Interval = 30)
+param([string]$ApiEndpoint, [string]$CollectorKey, [int]$Interval = 30)
+
+$headers = @{ "Content-Type" = "application/json"; "X-Collector-Key" = $CollectorKey }
 
 while ($true) {
     try {
@@ -1045,7 +1055,7 @@ while ($true) {
         if ($events.Count -gt 0) {
             $batch = $events | Select-Object -First 200
             $body = @{ events = $batch } | ConvertTo-Json -Depth 5
-            Invoke-RestMethod -Uri "$ApiEndpoint/ingest" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 10 -ErrorAction SilentlyContinue
+            Invoke-RestMethod -Uri "$ApiEndpoint/ingest" -Method POST -Body $body -Headers $headers -TimeoutSec 10 -ErrorAction SilentlyContinue
         }
 
         # Send heartbeat
@@ -1059,7 +1069,7 @@ while ($true) {
             agentVersion = "1.0.0-script"
         }
         $heartbeat = @{ hostInfo = $hostInfo; metrics = @{ eventsPerSecond = $events.Count } } | ConvertTo-Json -Depth 3
-        Invoke-RestMethod -Uri "$ApiEndpoint/heartbeat" -Method POST -Body $heartbeat -ContentType "application/json" -TimeoutSec 10 -ErrorAction SilentlyContinue
+        Invoke-RestMethod -Uri "$ApiEndpoint/heartbeat" -Method POST -Body $heartbeat -Headers $headers -TimeoutSec 10 -ErrorAction SilentlyContinue
     } catch {
         Write-Warning "Collection cycle failed: $_"
     }
@@ -1074,7 +1084,7 @@ New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 $CollectorScript | Out-File -FilePath "$InstallDir\\collector.ps1" -Encoding UTF8
 
 # Register as Windows scheduled task (runs at startup, restarts on failure)
-$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File $InstallDir\\collector.ps1 -ApiEndpoint $ApiEndpoint -Interval $Interval"
+$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File $InstallDir\\collector.ps1 -ApiEndpoint $ApiEndpoint -CollectorKey $CollectorKey -Interval $Interval"
 $Trigger = New-ScheduledTaskTrigger -AtStartup
 $Settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 365)
 Register-ScheduledTask -TaskName "SecureNexusCollector" -Action $Action -Trigger $Trigger -Settings $Settings -User "SYSTEM" -RunLevel Highest -Force
@@ -1095,6 +1105,7 @@ set -euo pipefail
 
 COLLECTOR_ID="${instanceId}"
 API_ENDPOINT="${baseUrl}/api/native-collectors/instances/${instanceId}"
+SN_COLLECTOR_KEY=\${SN_COLLECTOR_KEY:-${collectorApiKey || "REPLACE_WITH_YOUR_COLLECTOR_KEY"}}
 
 echo "[SecureNexus] Setting up endpoint collector (ID: $COLLECTOR_ID)..."
 
@@ -1120,12 +1131,13 @@ while true; do
   BATCH=$(echo "$EVENTS" | jq '.[0:200]')
   EVENT_COUNT=$(echo "$BATCH" | jq 'length')
   if [ "$EVENT_COUNT" -gt 0 ]; then
-    curl -sS -X POST "$API/ingest" -H "Content-Type: application/json" -d "{\\"events\\": $BATCH}" --max-time 10 || true
+    curl -sS -X POST "$API/ingest" -H "Content-Type: application/json" -H "X-Collector-Key: $SN_COLLECTOR_KEY" -d "{\\"events\\": $BATCH}" --max-time 10 || true
   fi
 
   # Send heartbeat
   curl -sS -X POST "$API/heartbeat" \\
     -H "Content-Type: application/json" \\
+    -H "X-Collector-Key: $SN_COLLECTOR_KEY" \\
     -d "{\\"hostInfo\\": {\\"hostname\\": \\"$(hostname)\\", \\"ipAddress\\": \\"$(ipconfig getifaddr en0 2>/dev/null || echo 127.0.0.1)\\", \\"os\\": \\"$(sw_vers -productName) $(sw_vers -productVersion)\\", \\"arch\\": \\"$(uname -m)\\", \\"cpuCount\\": $(sysctl -n hw.ncpu), \\"memoryGb\\": $(echo "scale=1; $(sysctl -n hw.memsize) / 1073741824" | bc), \\"agentVersion\\": \\"1.0.0-script\\"}, \\"metrics\\": {\\"eventsPerSecond\\": $EVENT_COUNT}}" \\
     --max-time 10 || true
 
@@ -1174,6 +1186,7 @@ set -euo pipefail
 
 COLLECTOR_ID="${instanceId}"
 API_ENDPOINT="${baseUrl}/api/native-collectors/instances/${instanceId}"
+SN_COLLECTOR_KEY=\${SN_COLLECTOR_KEY:-${collectorApiKey || "REPLACE_WITH_YOUR_COLLECTOR_KEY"}}
 
 echo "[SecureNexus] Deploying ${template.name}..."
 
@@ -1183,6 +1196,7 @@ docker run -d \\
   --network host \\
   -e COLLECTOR_ID=${instanceId} \\
   -e API_ENDPOINT=$API_ENDPOINT \\
+  -e SN_COLLECTOR_KEY=$SN_COLLECTOR_KEY \\
   -e SN_INTERVAL=30 \\
   alpine:latest sh -c '
     apk add --no-cache curl jq bash
@@ -1190,6 +1204,7 @@ docker run -d \\
       # Heartbeat
       curl -sS -X POST "$API_ENDPOINT/heartbeat" \\
         -H "Content-Type: application/json" \\
+        -H "X-Collector-Key: $SN_COLLECTOR_KEY" \\
         -d "{\\\"hostInfo\\\": {\\\"hostname\\\": \\\"$(hostname)\\\", \\\"ipAddress\\\": \\\"$(hostname -i 2>/dev/null || echo 127.0.0.1)\\\", \\\"os\\\": \\\"$(uname -sr)\\\", \\\"arch\\\": \\\"$(uname -m)\\\", \\\"cpuCount\\\": $(nproc 2>/dev/null || echo 1), \\\"memoryGb\\\": 0, \\\"agentVersion\\\": \\\"1.0.0-docker\\\"}}" \\
         --max-time 10 || true
       sleep \${SN_INTERVAL:-30}
@@ -1203,16 +1218,20 @@ echo "[SecureNexus] Collector ID: ${instanceId}"`;
   return `# ${template.name}
 # Configure via the SecureNexus API:
 #
-# 1. Generate an API key:
-#    POST ${baseUrl}/api/native-collectors/instances/${instanceId}/api-key
+# 1. Your collector API key was generated during deployment.
+#    Use the X-Collector-Key header for all API calls.
 #
 # 2. Push events:
 #    curl -X POST ${baseUrl}/api/native-collectors/instances/${instanceId}/ingest \\
 #      -H "Content-Type: application/json" \\
+#      -H "X-Collector-Key: YOUR_COLLECTOR_KEY" \\
 #      -d '{"events": [{"eventType": "custom", "severity": "info", "source": "my-app", "rawData": {}}]}'
 #
 # 3. Send heartbeat:
-#    POST ${baseUrl}/api/native-collectors/instances/${instanceId}/heartbeat`;
+#    curl -X POST ${baseUrl}/api/native-collectors/instances/${instanceId}/heartbeat \\
+#      -H "Content-Type: application/json" \\
+#      -H "X-Collector-Key: YOUR_COLLECTOR_KEY" \\
+#      -d '{"hostInfo": {"hostname": "my-host", "ipAddress": "10.0.0.1", "os": "Linux", "arch": "x86_64", "cpuCount": 4, "memoryGb": 8, "agentVersion": "1.0.0"}}'`;
 }
 
 export async function getDataPipelineStats(orgId: string): Promise<DataPipelineStats> {

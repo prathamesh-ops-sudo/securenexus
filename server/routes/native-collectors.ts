@@ -1,4 +1,5 @@
-import type { Express, Request } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
+import crypto from "crypto";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId } from "../rbac";
 import { logger, getOrgId, reply, replyError } from "./shared";
@@ -13,6 +14,66 @@ interface RequestWithUser extends Request {
 const log = logger.child("native-collectors");
 
 const REDACTED = "***REDACTED***";
+
+/**
+ * Middleware that authenticates requests using a collector-specific API key.
+ * Checks the X-Collector-Key header, hashes it with SHA-256, and validates
+ * against the stored hash in the collector instance config.
+ * Sets req.collectorOrgId so downstream handlers can use it.
+ */
+async function collectorKeyAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const collectorKey = req.headers["x-collector-key"] as string | undefined;
+  const instanceId = req.params.id as string;
+
+  if (!collectorKey || !instanceId) {
+    res.status(401).json({ message: "Missing X-Collector-Key header or collector ID" });
+    return;
+  }
+
+  try {
+    const keyHash = crypto.createHash("sha256").update(collectorKey).digest("hex");
+    const instance = await storage.getCollectorInstance(instanceId);
+    if (!instance) {
+      res.status(404).json({ message: "Collector not found" });
+      return;
+    }
+
+    const cfg = (instance.config && typeof instance.config === "object" ? instance.config : {}) as Record<
+      string,
+      unknown
+    >;
+    if (!cfg.apiKeyHash || cfg.apiKeyHash !== keyHash) {
+      res.status(401).json({ message: "Invalid collector API key" });
+      return;
+    }
+
+    // Attach orgId to request for downstream handlers
+    (req as any).collectorOrgId = instance.orgId;
+    (req as any).collectorInstanceId = instance.id;
+    next();
+  } catch (err) {
+    log.error("Collector key auth error", { error: String(err) });
+    res.status(500).json({ message: "Internal authentication error" });
+  }
+}
+
+/**
+ * Combined auth middleware: tries session auth first, falls back to collector key auth.
+ * This allows both dashboard users and deployment scripts to use heartbeat/ingest endpoints.
+ */
+function sessionOrCollectorKey(req: Request, res: Response, next: NextFunction): void {
+  // If user has a valid session, use session auth
+  if ((req as any).isAuthenticated?.() && (req as any).user) {
+    return next();
+  }
+  // Otherwise, try collector key auth
+  if (req.headers["x-collector-key"]) {
+    collectorKeyAuth(req, res, next);
+    return;
+  }
+  // No auth method provided — run isAuthenticated to get the proper 401/redirect
+  isAuthenticated(req, res, next);
+}
 
 function redactInstanceConfig(instance: {
   config: unknown;
@@ -183,7 +244,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     }
   });
 
-  // ─── Deploy (create instance in DB) ───────────────────────────────────────
+  // ─── Deploy (create instance in DB + auto-generate API key) ────────────────
   app.post("/api/native-collectors/deploy", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     const parsed = deploySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -196,19 +257,26 @@ export function registerNativeCollectorRoutes(app: Express): void {
         return replyError(res, 404, [{ code: "NOT_FOUND", message: "Template not found" }]);
       }
 
+      // Auto-generate a collector API key so deployment scripts can authenticate
+      const apiKey = `snc_${crypto.randomBytes(32).toString("hex")}`;
+      const apiKeyHash = crypto.createHash("sha256").update(apiKey).digest("hex");
+      const apiKeyPrefix = apiKey.slice(0, 12);
+
       const instance = await storage.createCollectorInstance({
         orgId,
         templateSlug: parsed.data.templateSlug,
         name: parsed.data.name,
         platform: parsed.data.platform,
         deploymentMethod: parsed.data.deploymentMethod,
-        config: parsed.data.config,
+        config: { ...parsed.data.config, apiKeyHash, apiKeyPrefix, apiKeySet: true },
         tags: parsed.data.tags,
         status: "pending_install",
         version: "1.0.0",
       });
 
-      res.status(201).json(redactInstanceConfig(instance));
+      // Return instance + plaintext API key (shown once, never stored in plaintext)
+      const redacted = redactInstanceConfig(instance);
+      res.status(201).json({ ...redacted, collectorApiKey: apiKey });
     } catch (err: unknown) {
       log.error("Deploy error", { error: String(err) });
       res.status(400).json({ message: (err as Error).message });
@@ -316,87 +384,79 @@ export function registerNativeCollectorRoutes(app: Express): void {
   );
 
   // ─── Heartbeat (update instance metrics in DB) ────────────────────────────
-  app.post(
-    "/api/native-collectors/instances/:id/heartbeat",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    async (req, res) => {
-      const parsed = heartbeatSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
+  // Accepts EITHER session auth OR collector API key (X-Collector-Key header)
+  app.post("/api/native-collectors/instances/:id/heartbeat", sessionOrCollectorKey, async (req, res) => {
+    const parsed = heartbeatSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
+    }
+    try {
+      // Get orgId from session or collector key auth
+      const orgId = (req as any).collectorOrgId || getOrgId(req);
+      const instanceId = req.params.id as string;
+      const instance = await storage.getCollectorInstance(instanceId);
+      if (!instance || instance.orgId !== orgId) {
+        return res.status(404).json({ message: "Collector not found" });
       }
-      try {
-        const orgId = getOrgId(req);
-        const instanceId = req.params.id as string;
-        const instance = await storage.getCollectorInstance(instanceId);
-        if (!instance || instance.orgId !== orgId) {
-          return res.status(404).json({ message: "Collector not found" });
-        }
 
-        const existingMetrics = (
-          instance.metrics && typeof instance.metrics === "object" ? instance.metrics : {}
-        ) as Record<string, unknown>;
-        const updated = await storage.updateCollectorInstance(instanceId, {
-          hostInfo: parsed.data.hostInfo,
-          metrics: { ...existingMetrics, ...parsed.data.metrics },
-          lastHeartbeatAt: new Date(),
-          status: "active",
-        });
-        if (!updated) return res.status(404).json({ message: "Collector not found" });
-        res.json(redactInstanceConfig(updated));
-      } catch (error) {
-        log.error("Heartbeat error", { error: String(error) });
-        replyError(res, 500, [{ code: "INTERNAL", message: "Failed to process heartbeat" }]);
-      }
-    },
-  );
+      const existingMetrics = (
+        instance.metrics && typeof instance.metrics === "object" ? instance.metrics : {}
+      ) as Record<string, unknown>;
+      const updated = await storage.updateCollectorInstance(instanceId, {
+        hostInfo: parsed.data.hostInfo,
+        metrics: { ...existingMetrics, ...parsed.data.metrics },
+        lastHeartbeatAt: new Date(),
+        status: "active",
+      });
+      if (!updated) return res.status(404).json({ message: "Collector not found" });
+      res.json(redactInstanceConfig(updated));
+    } catch (error) {
+      log.error("Heartbeat error", { error: String(error) });
+      replyError(res, 500, [{ code: "INTERNAL", message: "Failed to process heartbeat" }]);
+    }
+  });
 
   // ─── Ingest Events (persist to DB) ────────────────────────────────────────
-  app.post(
-    "/api/native-collectors/instances/:id/ingest",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    async (req, res) => {
-      const parsed = ingestSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
+  // Accepts EITHER session auth OR collector API key (X-Collector-Key header)
+  app.post("/api/native-collectors/instances/:id/ingest", sessionOrCollectorKey, async (req, res) => {
+    const parsed = ingestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
+    }
+    try {
+      // Get orgId from session or collector key auth
+      const orgId = (req as any).collectorOrgId || getOrgId(req);
+      const instanceId = req.params.id as string;
+      const instance = await storage.getCollectorInstance(instanceId);
+      if (!instance || instance.orgId !== orgId) {
+        return res.status(400).json({ message: "Collector not found" });
       }
-      try {
-        const orgId = getOrgId(req);
-        const instanceId = req.params.id as string;
-        const instance = await storage.getCollectorInstance(instanceId);
-        if (!instance || instance.orgId !== orgId) {
-          return res.status(400).json({ message: "Collector not found" });
-        }
 
-        const created = [];
-        for (const evt of parsed.data.events) {
-          const event = await storage.createCollectorEvent({
-            collectorId: instanceId,
-            orgId,
-            eventType: evt.eventType,
-            severity: evt.severity,
-            source: evt.source,
-            rawData: evt.rawData,
-            tags: evt.tags || [],
-          });
-          created.push(event);
-        }
-
-        // Update last data timestamp on instance
-        await storage.updateCollectorInstance(instanceId, {
-          lastDataAt: new Date(),
+      const created = [];
+      for (const evt of parsed.data.events) {
+        const event = await storage.createCollectorEvent({
+          collectorId: instanceId,
+          orgId,
+          eventType: evt.eventType,
+          severity: evt.severity,
+          source: evt.source,
+          rawData: evt.rawData,
+          tags: evt.tags || [],
         });
-
-        res.status(201).json({ ingested: created.length, events: created });
-      } catch (err: unknown) {
-        log.error("Ingest error", { error: String(err) });
-        res.status(400).json({ message: (err as Error).message });
+        created.push(event);
       }
-    },
-  );
+
+      // Update last data timestamp on instance
+      await storage.updateCollectorInstance(instanceId, {
+        lastDataAt: new Date(),
+      });
+
+      res.status(201).json({ ingested: created.length, events: created });
+    } catch (err: unknown) {
+      log.error("Ingest error", { error: String(err) });
+      res.status(400).json({ message: (err as Error).message });
+    }
+  });
 
   // ─── List Events (from DB) ────────────────────────────────────────────────
   app.get("/api/native-collectors/events", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -512,8 +572,22 @@ export function registerNativeCollectorRoutes(app: Express): void {
         if (!instance || instance.orgId !== orgId) {
           return res.status(404).json({ message: "Collector not found" });
         }
-        const script = getDeploymentScript(instance.templateSlug, instanceId);
-        res.json({ script, templateSlug: instance.templateSlug });
+
+        // If regenerateKey=true, generate a new API key and embed it in the script
+        let collectorApiKey: string | undefined;
+        if (req.query.regenerateKey === "true") {
+          collectorApiKey = `snc_${crypto.randomBytes(32).toString("hex")}`;
+          const apiKeyHash = crypto.createHash("sha256").update(collectorApiKey).digest("hex");
+          const existingConfig = (
+            instance.config && typeof instance.config === "object" ? instance.config : {}
+          ) as Record<string, unknown>;
+          await storage.updateCollectorInstance(instanceId, {
+            config: { ...existingConfig, apiKeyHash, apiKeyPrefix: collectorApiKey.slice(0, 12), apiKeySet: true },
+          });
+        }
+
+        const script = getDeploymentScript(instance.templateSlug, instanceId, collectorApiKey);
+        res.json({ script, templateSlug: instance.templateSlug, collectorApiKey });
       } catch (error) {
         log.error("Deploy script error", { error: String(error) });
         replyError(res, 500, [{ code: "INTERNAL", message: "Failed to generate deploy script" }]);
@@ -521,7 +595,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     },
   );
 
-  // ─── API Key Generation ───────────────────────────────────────────────────
+  // ─── API Key Generation (regenerate with proper hash storage) ──────────────
   app.post(
     "/api/native-collectors/instances/:id/api-key",
     isAuthenticated,
@@ -535,18 +609,17 @@ export function registerNativeCollectorRoutes(app: Express): void {
         if (!instance || instance.orgId !== orgId) {
           return res.status(404).json({ message: "Collector not found" });
         }
-        // Generate a random API key for the collector
-        const { randomBytes } = await import("crypto");
-        const apiKey = randomBytes(32).toString("hex");
-        const prefix = apiKey.slice(0, 8);
-        // Store the key hash in the instance config
+        // Generate a new collector API key and store its SHA-256 hash
+        const apiKey = `snc_${crypto.randomBytes(32).toString("hex")}`;
+        const apiKeyHash = crypto.createHash("sha256").update(apiKey).digest("hex");
+        const apiKeyPrefix = apiKey.slice(0, 12);
         const existingConfig = (
           instance.config && typeof instance.config === "object" ? instance.config : {}
         ) as Record<string, unknown>;
         await storage.updateCollectorInstance(instanceId, {
-          config: { ...existingConfig, apiKeyPrefix: prefix, apiKeySet: true },
+          config: { ...existingConfig, apiKeyHash, apiKeyPrefix, apiKeySet: true },
         });
-        res.json({ apiKey, prefix, createdAt: new Date().toISOString() });
+        res.json({ apiKey, prefix: apiKeyPrefix, createdAt: new Date().toISOString() });
       } catch (error) {
         log.error("API key generation error", { error: String(error) });
         replyError(res, 500, [{ code: "INTERNAL", message: "Failed to generate API key" }]);
