@@ -1178,40 +1178,122 @@ echo "[SecureNexus] Collector ID: ${instanceId}"
 echo "[SecureNexus] Check status: sudo launchctl list | grep securenexus"`;
   }
 
-  if (templateSlug === "network-monitor" || templateSlug === "syslog-receiver" || templateSlug === "asset-discovery") {
+  if (templateSlug === "network-monitor") {
     return `#!/bin/bash
-# SecureNexus ${template.name} — Docker Deployment
-# Uses the official SecureNexus collector image
+# SecureNexus Network Monitor — Docker Deployment
+# Collects network connections, listening ports, and ARP data
 set -euo pipefail
 
 COLLECTOR_ID="${instanceId}"
 API_ENDPOINT="${baseUrl}/api/native-collectors/instances/${instanceId}"
 SN_COLLECTOR_KEY=\${SN_COLLECTOR_KEY:-${collectorApiKey || "REPLACE_WITH_YOUR_COLLECTOR_KEY"}}
 
-echo "[SecureNexus] Deploying ${template.name}..."
+echo "[SecureNexus] Deploying Network Monitor..."
+
+# Create collector script
+cat > /tmp/sn-network-monitor.sh << 'COLLECTOR_EOF'
+#!/bin/bash
+API="\$1"; KEY="\$2"
+while true; do
+  EVENTS=\$(cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | head -30 | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType:"network_connection",severity:"info",source:"proc_net",rawData:{line:.}}]' 2>/dev/null || echo '[]')
+  EC=\$(echo "\$EVENTS" | jq 'length' 2>/dev/null || echo 0)
+  [ "\$EC" -gt 0 ] && curl -sS -X POST "\$API/ingest" -H "Content-Type: application/json" -H "X-Collector-Key: \$KEY" -d "{\\"events\\": \$EVENTS}" --max-time 10 2>/dev/null || true
+  HN=\$(hostname); IP=\$(hostname -i 2>/dev/null || echo 127.0.0.1); OS=\$(uname -sr); AR=\$(uname -m); CP=\$(nproc 2>/dev/null || echo 1)
+  curl -sS -X POST "\$API/heartbeat" -H "Content-Type: application/json" -H "X-Collector-Key: \$KEY" -d "{\\"hostInfo\\":{\\"hostname\\":\\"\$HN\\",\\"ipAddress\\":\\"\$IP\\",\\"os\\":\\"\$OS\\",\\"arch\\":\\"\$AR\\",\\"cpuCount\\":\$CP,\\"memoryGb\\":0,\\"agentVersion\\":\\"1.0.0-docker\\"},\\"metrics\\":{\\"eventsPerSecond\\":\$EC}}" --max-time 10 2>/dev/null || true
+  sleep \${SN_INTERVAL:-30}
+done
+COLLECTOR_EOF
+chmod +x /tmp/sn-network-monitor.sh
 
 docker run -d \\
-  --name securenexus-${templateSlug} \\
+  --name securenexus-network-monitor \\
   --restart unless-stopped \\
   --network host \\
-  -e COLLECTOR_ID=${instanceId} \\
-  -e API_ENDPOINT=$API_ENDPOINT \\
-  -e SN_COLLECTOR_KEY=$SN_COLLECTOR_KEY \\
-  -e SN_INTERVAL=30 \\
-  alpine:latest sh -c '
-    apk add --no-cache curl jq bash
-    while true; do
-      # Heartbeat
-      curl -sS -X POST "$API_ENDPOINT/heartbeat" \\
-        -H "Content-Type: application/json" \\
-        -H "X-Collector-Key: $SN_COLLECTOR_KEY" \\
-        -d "{\\\"hostInfo\\\": {\\\"hostname\\\": \\\"$(hostname)\\\", \\\"ipAddress\\\": \\\"$(hostname -i 2>/dev/null || echo 127.0.0.1)\\\", \\\"os\\\": \\\"$(uname -sr)\\\", \\\"arch\\\": \\\"$(uname -m)\\\", \\\"cpuCount\\\": $(nproc 2>/dev/null || echo 1), \\\"memoryGb\\\": 0, \\\"agentVersion\\\": \\\"1.0.0-docker\\\"}}" \\
-        --max-time 10 || true
-      sleep \${SN_INTERVAL:-30}
-    done
-  '
+  -v /tmp/sn-network-monitor.sh:/opt/collector.sh:ro \\
+  alpine:latest sh -c "apk add --no-cache curl jq bash && bash /opt/collector.sh '\$API_ENDPOINT' '\$SN_COLLECTOR_KEY'"
 
-echo "[SecureNexus] ${template.name} deployed."
+echo "[SecureNexus] Network Monitor deployed."
+echo "[SecureNexus] Collector ID: ${instanceId}"`;
+  }
+
+  if (templateSlug === "syslog-receiver") {
+    return `#!/bin/bash
+# SecureNexus Syslog Receiver — Docker Deployment
+# Collects kernel messages and syslog data
+set -euo pipefail
+
+COLLECTOR_ID="${instanceId}"
+API_ENDPOINT="${baseUrl}/api/native-collectors/instances/${instanceId}"
+SN_COLLECTOR_KEY=\${SN_COLLECTOR_KEY:-${collectorApiKey || "REPLACE_WITH_YOUR_COLLECTOR_KEY"}}
+
+echo "[SecureNexus] Deploying Syslog Receiver..."
+
+cat > /tmp/sn-syslog-receiver.sh << 'COLLECTOR_EOF'
+#!/bin/bash
+API="\$1"; KEY="\$2"
+while true; do
+  EVENTS=\$(dmesg --time-format iso 2>/dev/null | tail -20 | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType:"syslog",severity:"info",source:"dmesg",rawData:{message:.}}]' 2>/dev/null || echo '[]')
+  if [ -f /var/log/syslog ]; then
+    SYS=\$(tail -30 /var/log/syslog 2>/dev/null | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType:"syslog",severity:"info",source:"syslog",rawData:{message:.}}]' 2>/dev/null || echo '[]')
+    EVENTS=\$(echo "\$EVENTS" "\$SYS" | jq -s 'add' 2>/dev/null || echo '[]')
+  fi
+  EC=\$(echo "\$EVENTS" | jq 'length' 2>/dev/null || echo 0)
+  [ "\$EC" -gt 0 ] && curl -sS -X POST "\$API/ingest" -H "Content-Type: application/json" -H "X-Collector-Key: \$KEY" -d "{\\"events\\": \$EVENTS}" --max-time 10 2>/dev/null || true
+  HN=\$(hostname); IP=\$(hostname -i 2>/dev/null || echo 127.0.0.1); OS=\$(uname -sr); AR=\$(uname -m); CP=\$(nproc 2>/dev/null || echo 1)
+  curl -sS -X POST "\$API/heartbeat" -H "Content-Type: application/json" -H "X-Collector-Key: \$KEY" -d "{\\"hostInfo\\":{\\"hostname\\":\\"\$HN\\",\\"ipAddress\\":\\"\$IP\\",\\"os\\":\\"\$OS\\",\\"arch\\":\\"\$AR\\",\\"cpuCount\\":\$CP,\\"memoryGb\\":0,\\"agentVersion\\":\\"1.0.0-docker\\"},\\"metrics\\":{\\"eventsPerSecond\\":\$EC}}" --max-time 10 2>/dev/null || true
+  sleep \${SN_INTERVAL:-30}
+done
+COLLECTOR_EOF
+chmod +x /tmp/sn-syslog-receiver.sh
+
+docker run -d \\
+  --name securenexus-syslog-receiver \\
+  --restart unless-stopped \\
+  --network host \\
+  -v /var/log:/var/log:ro \\
+  -v /tmp/sn-syslog-receiver.sh:/opt/collector.sh:ro \\
+  alpine:latest sh -c "apk add --no-cache curl jq bash && bash /opt/collector.sh '\$API_ENDPOINT' '\$SN_COLLECTOR_KEY'"
+
+echo "[SecureNexus] Syslog Receiver deployed."
+echo "[SecureNexus] Collector ID: ${instanceId}"`;
+  }
+
+  if (templateSlug === "asset-discovery") {
+    return `#!/bin/bash
+# SecureNexus Asset Discovery — Docker Deployment
+# Discovers hosts via ARP and local service enumeration
+set -euo pipefail
+
+COLLECTOR_ID="${instanceId}"
+API_ENDPOINT="${baseUrl}/api/native-collectors/instances/${instanceId}"
+SN_COLLECTOR_KEY=\${SN_COLLECTOR_KEY:-${collectorApiKey || "REPLACE_WITH_YOUR_COLLECTOR_KEY"}}
+
+echo "[SecureNexus] Deploying Asset Discovery..."
+
+cat > /tmp/sn-asset-discovery.sh << 'COLLECTOR_EOF'
+#!/bin/bash
+API="\$1"; KEY="\$2"
+while true; do
+  ARP=\$(ip neigh show 2>/dev/null | head -20 | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType:"discovered_host",severity:"info",source:"arp",rawData:{line:.}}]' 2>/dev/null || echo '[]')
+  SVC=\$(cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | head -30 | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType:"service_discovery",severity:"info",source:"proc_net",rawData:{line:.}}]' 2>/dev/null || echo '[]')
+  EVENTS=\$(echo "\$ARP" "\$SVC" | jq -s 'add' 2>/dev/null || echo '[]')
+  EC=\$(echo "\$EVENTS" | jq 'length' 2>/dev/null || echo 0)
+  [ "\$EC" -gt 0 ] && curl -sS -X POST "\$API/ingest" -H "Content-Type: application/json" -H "X-Collector-Key: \$KEY" -d "{\\"events\\": \$EVENTS}" --max-time 10 2>/dev/null || true
+  HN=\$(hostname); IP=\$(hostname -i 2>/dev/null || echo 127.0.0.1); OS=\$(uname -sr); AR=\$(uname -m); CP=\$(nproc 2>/dev/null || echo 1)
+  curl -sS -X POST "\$API/heartbeat" -H "Content-Type: application/json" -H "X-Collector-Key: \$KEY" -d "{\\"hostInfo\\":{\\"hostname\\":\\"\$HN\\",\\"ipAddress\\":\\"\$IP\\",\\"os\\":\\"\$OS\\",\\"arch\\":\\"\$AR\\",\\"cpuCount\\":\$CP,\\"memoryGb\\":0,\\"agentVersion\\":\\"1.0.0-docker\\"},\\"metrics\\":{\\"eventsPerSecond\\":\$EC}}" --max-time 10 2>/dev/null || true
+  sleep \${SN_INTERVAL:-30}
+done
+COLLECTOR_EOF
+chmod +x /tmp/sn-asset-discovery.sh
+
+docker run -d \\
+  --name securenexus-asset-discovery \\
+  --restart unless-stopped \\
+  --network host \\
+  -v /tmp/sn-asset-discovery.sh:/opt/collector.sh:ro \\
+  alpine:latest sh -c "apk add --no-cache curl jq bash && bash /opt/collector.sh '\$API_ENDPOINT' '\$SN_COLLECTOR_KEY'"
+
+echo "[SecureNexus] Asset Discovery deployed."
 echo "[SecureNexus] Collector ID: ${instanceId}"`;
   }
 
