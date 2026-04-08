@@ -157,6 +157,27 @@ export function log(message: string, source = "express") {
 
   await bootstrapSuperAdmin();
 
+  // One-time cleanup: purge noise alerts from native collector telemetry dump
+  // (process_info, network_connection events that were blindly promoted to alerts)
+  // This is safe to run on every startup — it's idempotent and only deletes
+  // informational-severity alerts from native-collector sources.
+  (async () => {
+    try {
+      const { db } = await import("./db");
+      const { alerts } = await import("@shared/schema");
+      const { eq, and, ilike } = await import("drizzle-orm");
+      const result = await db
+        .delete(alerts)
+        .where(and(ilike(alerts.source, "%native-collector%"), eq(alerts.severity, "informational")))
+        .returning({ id: alerts.id });
+      if (result.length > 0) {
+        logger.child("cleanup").info(`Purged ${result.length} noise telemetry alerts from native collectors`);
+      }
+    } catch (cleanupErr) {
+      logger.child("cleanup").warn("Noise alert cleanup skipped", { error: String(cleanupErr) });
+    }
+  })();
+
   // Centralized error tracking middleware — captures all unhandled errors
   app.use(errorTrackingMiddleware);
 
