@@ -854,6 +854,10 @@ export interface IStorage {
   archiveAlerts(orgId: string, alertIds: string[], reason: string): Promise<number>;
   restoreArchivedAlerts(ids: string[]): Promise<number>;
   deleteArchivedAlerts(orgId: string, beforeDate: Date): Promise<number>;
+  bulkDeleteAlerts(
+    orgId: string,
+    filters: { sourcePattern?: string; severity?: string; titlePattern?: string },
+  ): Promise<number>;
 
   // Job Queue
   getJobs(orgId?: string, status?: string, type?: string, limit?: number): Promise<Job[]>;

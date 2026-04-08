@@ -68,7 +68,11 @@ export async function getAlertsByIncident(incidentId: string): Promise<Alert[]> 
   return db.select().from(alerts).where(eq(alerts.incidentId, incidentId)).orderBy(desc(alerts.detectedAt));
 }
 
-export async function findAlertByDedup(orgId: string | null, source: string, sourceEventId: string): Promise<Alert | undefined> {
+export async function findAlertByDedup(
+  orgId: string | null,
+  source: string,
+  sourceEventId: string,
+): Promise<Alert | undefined> {
   if (!sourceEventId) return undefined;
   const conditions = [eq(alerts.source, source), eq(alerts.sourceEventId, sourceEventId)];
   if (orgId) conditions.push(eq(alerts.orgId, orgId));
@@ -231,7 +235,10 @@ export async function createAlertDedupCluster(cluster: InsertAlertDedupCluster):
   return created;
 }
 
-export async function updateAlertDedupCluster(id: string, data: Partial<AlertDedupCluster>): Promise<AlertDedupCluster | undefined> {
+export async function updateAlertDedupCluster(
+  id: string,
+  data: Partial<AlertDedupCluster>,
+): Promise<AlertDedupCluster | undefined> {
   const [updated] = await db.update(alertDedupClusters).set(data).where(eq(alertDedupClusters.id, id)).returning();
   return updated;
 }
@@ -387,5 +394,32 @@ export async function deleteArchivedAlerts(orgId: string, beforeDate: Date): Pro
     .delete(alertsArchive)
     .where(and(eq(alertsArchive.orgId, orgId), lte(alertsArchive.archivedAt, beforeDate)))
     .returning();
+  return result.length;
+}
+
+export async function bulkDeleteAlerts(
+  orgId: string,
+  filters: {
+    sourcePattern?: string;
+    severity?: string;
+    titlePattern?: string;
+  },
+): Promise<number> {
+  const conditions = [eq(alerts.orgId, orgId)];
+
+  if (filters.sourcePattern) {
+    conditions.push(ilike(alerts.source, `%${filters.sourcePattern}%`));
+  }
+  if (filters.severity) {
+    conditions.push(eq(alerts.severity, filters.severity));
+  }
+  if (filters.titlePattern) {
+    conditions.push(ilike(alerts.title, `%${filters.titlePattern}%`));
+  }
+
+  const result = await db
+    .delete(alerts)
+    .where(and(...conditions))
+    .returning({ id: alerts.id });
   return result.length;
 }

@@ -434,4 +434,45 @@ export function registerAlertsRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to delete archived alerts" });
     }
   });
+
+  // ─── Bulk cleanup: delete noise/telemetry alerts by source pattern ──────────
+  app.delete(
+    "/api/alerts/bulk-cleanup",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requirePermission("incidents"),
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = getOrgId(req);
+        const sourcePattern = req.query.sourcePattern as string;
+        const severity = req.query.severity as string;
+        const titlePattern = req.query.titlePattern as string;
+
+        if (!sourcePattern && !severity && !titlePattern) {
+          return res.status(400).json({
+            message: "At least one filter required: sourcePattern, severity, or titlePattern",
+          });
+        }
+
+        // Use raw SQL via storage for bulk delete with filters
+        const deleted = await storage.bulkDeleteAlerts(orgId, {
+          sourcePattern: sourcePattern || undefined,
+          severity: severity || undefined,
+          titlePattern: titlePattern || undefined,
+        });
+
+        logger.child("alerts").info("Bulk cleanup completed", {
+          orgId,
+          deleted,
+          filters: { sourcePattern, severity, titlePattern },
+        });
+
+        res.json({ deleted });
+      } catch (error) {
+        logger.child("alerts").error("Bulk cleanup error", { error: String(error) });
+        res.status(500).json({ message: "Failed to bulk delete alerts" });
+      }
+    },
+  );
 }

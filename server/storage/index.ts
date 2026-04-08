@@ -69,6 +69,7 @@ export class DatabaseStorage implements IStorage {
   archiveAlerts = alertsFns.archiveAlerts;
   restoreArchivedAlerts = alertsFns.restoreArchivedAlerts;
   deleteArchivedAlerts = alertsFns.deleteArchivedAlerts;
+  bulkDeleteAlerts = alertsFns.bulkDeleteAlerts;
 
   // incidents
   getIncidents = incidentsFns.getIncidents;
