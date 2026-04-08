@@ -69,16 +69,25 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
   app.get("/api/integration-marketplace/stats", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const instanceCount = await storage.countMarketplaceInstances(orgId);
       const instances = await storage.getMarketplaceInstances(orgId);
+      const catalog = getMarketplaceCatalog(orgId);
       const activeCount = instances.filter((i) => i.status === "active").length;
+      const degradedCount = instances.filter((i) => i.status === "degraded").length;
       const errorCount = instances.filter((i) => i.status === "error").length;
 
+      // Build category counts from catalog
+      const categoryCounts: Record<string, number> = {};
+      for (const c of catalog) {
+        categoryCounts[c.category] = (categoryCounts[c.category] || 0) + 1;
+      }
+
       res.json({
-        totalInstances: instanceCount,
-        activeInstances: activeCount,
-        errorInstances: errorCount,
-        totalConnectors: getMarketplaceCatalog(orgId).length,
+        totalAvailable: catalog.length,
+        installed: instances.length,
+        active: activeCount,
+        degraded: degradedCount,
+        errors: errorCount,
+        categoryCounts,
       });
     } catch (err) {
       log.error("Stats error", { error: String(err) });

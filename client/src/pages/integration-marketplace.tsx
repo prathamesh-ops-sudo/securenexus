@@ -288,7 +288,7 @@ function StatsBar({ stats }: { stats: MarketplaceStats }) {
       </Card>
       <Card className="border-border/40 bg-card/50">
         <CardContent className="p-3 text-center">
-          <div className="text-2xl font-bold text-foreground">{Object.keys(stats.categoryCounts).length}</div>
+          <div className="text-2xl font-bold text-foreground">{Object.keys(stats.categoryCounts || {}).length}</div>
           <div className="text-xs text-muted-foreground">Categories</div>
         </CardContent>
       </Card>
