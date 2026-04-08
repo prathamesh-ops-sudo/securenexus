@@ -19,7 +19,13 @@ import { cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { sendEmail } from "../email-service";
 import { getConnectorHealthStatus } from "../connector-health-loop";
-import { getAllCircuitBreakerStates, getCircuitBreakerState, resetConnectorCircuitBreaker } from "../connector-circuit-breaker";
+import {
+  getAllCircuitBreakerStates,
+  getCircuitBreakerState,
+  resetConnectorCircuitBreaker,
+} from "../connector-circuit-breaker";
+import { resolveAndLinkEntities } from "../entity-resolver";
+import { correlateAlert } from "../correlation-engine";
 
 export function registerConnectorsRoutes(app: Express): void {
   // Connector Engine Routes
@@ -447,8 +453,16 @@ export function registerConnectorsRoutes(app: Express): void {
         const results = await Promise.allSettled(batch.map((alertData) => storage.upsertAlert(alertData as any)));
         for (const r of results) {
           if (r.status === "fulfilled") {
-            if (r.value.isNew) created++;
-            else deduped++;
+            if (r.value.isNew) {
+              created++;
+              // Extract entities and run correlation for new alerts
+              try {
+                await resolveAndLinkEntities(r.value.alert);
+                await correlateAlert(r.value.alert);
+              } catch (err) {
+                logger.child("connectors").warn("Entity/correlation warning during sync", { error: String(err) });
+              }
+            } else deduped++;
           } else {
             failed++;
             syncResult.errors.push(`DB insert failed: ${r.reason?.message ?? "unknown"}`);

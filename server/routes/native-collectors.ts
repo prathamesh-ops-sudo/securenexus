@@ -6,6 +6,8 @@ import { logger, getOrgId, reply, replyError } from "./shared";
 import { z } from "zod";
 import { storage } from "../storage";
 import { getCollectorTemplates, getTemplateBySlug, getDeploymentScript } from "../native-collectors-engine";
+import { resolveAndLinkEntities } from "../entity-resolver";
+import { correlateAlert } from "../correlation-engine";
 
 interface RequestWithUser extends Request {
   user?: { id?: string; orgId?: string; role?: string };
@@ -483,7 +485,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
           const hostname = (instance.hostInfo as Record<string, unknown> | null)?.hostname as string | undefined;
           const sourceIp = (instance.hostInfo as Record<string, unknown> | null)?.ipAddress as string | undefined;
 
-          await storage.upsertAlert({
+          const { alert: createdAlert, isNew } = await storage.upsertAlert({
             orgId,
             source: `native-collector:${instance.templateSlug}`,
             sourceEventId: event.id,
@@ -498,6 +500,19 @@ export function registerNativeCollectorRoutes(app: Express): void {
             detectedAt: new Date(),
           });
           alertsCreated++;
+
+          // Extract entities and run correlation (same pipeline as ingestion routes)
+          if (isNew) {
+            try {
+              await resolveAndLinkEntities(createdAlert);
+              await correlateAlert(createdAlert);
+            } catch (entityErr) {
+              log.warn("Entity/correlation processing warning for collector event", {
+                eventId: event.id,
+                error: String(entityErr),
+              });
+            }
+          }
         } catch (alertErr) {
           // Non-fatal: event was stored in collector_events, alert creation is best-effort
           log.warn("Failed to create alert from collector event", {
