@@ -209,6 +209,114 @@ function mapEventTypeToCategory(eventType: string): string {
   return "other";
 }
 
+/**
+ * Determine if a collector event is security-relevant and should be promoted to an alert.
+ * Raw telemetry (process listings, routine network connections, system stats) stays in
+ * collector_events for forensic queries but does NOT create noise in the alerts table.
+ */
+function isSecurityRelevant(evt: { eventType: string; severity: string; rawData: Record<string, unknown> }): boolean {
+  // Any event explicitly marked medium/high/critical by the collector is always relevant
+  if (evt.severity !== "info" && evt.severity !== "low") return true;
+
+  const eventType = evt.eventType.toLowerCase();
+  const rawLine = String(evt.rawData?.line || evt.rawData?.message || "").toLowerCase();
+
+  // Raw telemetry event types that are NOT security alerts
+  const telemetryTypes = [
+    "process_info",
+    "process_event",
+    "network_connection",
+    "system_stats",
+    "disk_usage",
+    "memory_usage",
+  ];
+  if (telemetryTypes.includes(eventType)) {
+    // Even within telemetry, flag specific security-relevant patterns
+    const securityPatterns = [
+      /failed/i,
+      /denied/i,
+      /unauthorized/i,
+      /attack/i,
+      /brute/i,
+      /exploit/i,
+      /malware/i,
+      /trojan/i,
+      /reverse.?shell/i,
+      /bind.?shell/i,
+      /c2/i,
+      /nc\s+-l/i,
+      /ncat.*listen/i,
+      /socat/i,
+      /meterpreter/i,
+      /mimikatz/i,
+      /passwd|shadow|sudoers/i,
+      /\.ssh\/authorized_keys/i,
+      /nmap/i,
+      /masscan/i,
+      /nikto/i,
+      /sqlmap/i,
+      /hydra/i,
+      /john/i,
+      /cryptominer|xmrig|minerd/i,
+      /kinsing/i,
+    ];
+    for (const pattern of securityPatterns) {
+      if (pattern.test(rawLine)) return true;
+    }
+    return false;
+  }
+
+  // Auth log events — only flag failures, privilege escalation, suspicious activity
+  if (eventType === "auth_log" || eventType === "auth_event") {
+    const securityAuthPatterns = [
+      /fail/i,
+      /invalid/i,
+      /denied/i,
+      /error/i,
+      /illegal/i,
+      /break-?in/i,
+      /authentication failure/i,
+      /pam_unix.*failed/i,
+      /sudo:.*incorrect/i,
+      /COMMAND=/i,
+      /session opened for user root/i,
+      /new user/i,
+      /password changed/i,
+      /accepted publickey/i,
+      /accepted password.*from/i,
+    ];
+    for (const pattern of securityAuthPatterns) {
+      if (pattern.test(rawLine)) return true;
+    }
+    // Routine auth log lines (cron sessions, systemd-logind, etc.) are not alerts
+    return false;
+  }
+
+  // Windows Security events are already filtered by the collector (logon failures, privilege use)
+  if (eventType === "windows_security" || eventType === "windows_powershell" || eventType === "windows_sysmon") {
+    return true;
+  }
+
+  // File integrity, vulnerability, cloud security, firewall events are always relevant
+  const alwaysRelevantTypes = [
+    "file_integrity",
+    "fim_event",
+    "vulnerability",
+    "firewall",
+    "cloud_security",
+    "guardduty",
+    "defender",
+    "dns_anomaly",
+    "intrusion_detection",
+    "malware_detection",
+    "policy_violation",
+  ];
+  if (alwaysRelevantTypes.some((t) => eventType.includes(t))) return true;
+
+  // Default: if severity > info, promote; otherwise keep as telemetry only
+  return evt.severity !== "info";
+}
+
 export function registerNativeCollectorRoutes(app: Express): void {
   // ─── Templates (static catalog) ───────────────────────────────────────────
   app.get("/api/native-collectors/templates", isAuthenticated, resolveOrgContext, requireOrgId, (_req, res) => {
@@ -472,8 +580,13 @@ export function registerNativeCollectorRoutes(app: Express): void {
         });
         created.push(event);
 
-        // Also create an alert in the main alerts table so collector events
-        // show up in the Alerts page alongside Wazuh/connector alerts
+        // Only promote security-relevant events to alerts — raw telemetry
+        // (process lists, routine connections, system stats) stays in collector_events
+        // for forensic use but does NOT flood the alerts table
+        if (!isSecurityRelevant(evt)) {
+          continue;
+        }
+
         try {
           const rawMsg =
             typeof evt.rawData === "object" && evt.rawData !== null

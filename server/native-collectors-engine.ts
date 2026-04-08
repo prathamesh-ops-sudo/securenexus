@@ -912,30 +912,97 @@ fi
 cat > /tmp/securenexus-collector.sh << 'COLLECTOR_SCRIPT'
 #!/bin/bash
 API="$1"
+LAST_AUTH_POS=0
+LAST_SYSLOG_POS=0
+
+# Track auth.log position to avoid re-sending old lines
+if [ -f /var/log/auth.log ]; then
+  LAST_AUTH_POS=$(wc -l < /var/log/auth.log 2>/dev/null || echo 0)
+elif [ -f /var/log/secure ]; then
+  LAST_AUTH_POS=$(wc -l < /var/log/secure 2>/dev/null || echo 0)
+fi
+
 while true; do
   EVENTS='[]'
 
-  # Collect auth events
-  if [ -f /var/log/auth.log ]; then
-    AUTH_EVENTS=$(tail -100 /var/log/auth.log 2>/dev/null | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "auth_log", severity: "info", source: "auth.log", rawData: {line: .}}]' 2>/dev/null || echo '[]')
-    EVENTS=$(echo "$EVENTS $AUTH_EVENTS" | jq -s 'add')
-  elif [ -f /var/log/secure ]; then
-    AUTH_EVENTS=$(tail -100 /var/log/secure 2>/dev/null | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "auth_log", severity: "info", source: "secure", rawData: {line: .}}]' 2>/dev/null || echo '[]')
-    EVENTS=$(echo "$EVENTS $AUTH_EVENTS" | jq -s 'add')
+  # ── Auth events: only security-relevant lines (failures, sudo, SSH, user changes) ──
+  AUTH_FILE=""
+  if [ -f /var/log/auth.log ]; then AUTH_FILE="/var/log/auth.log"
+  elif [ -f /var/log/secure ]; then AUTH_FILE="/var/log/secure"; fi
+
+  if [ -n "$AUTH_FILE" ]; then
+    CURRENT_LINES=$(wc -l < "$AUTH_FILE" 2>/dev/null || echo 0)
+    if [ "$CURRENT_LINES" -gt "$LAST_AUTH_POS" ]; then
+      NEW_LINES=$((CURRENT_LINES - LAST_AUTH_POS))
+      AUTH_EVENTS=$(tail -n "$NEW_LINES" "$AUTH_FILE" 2>/dev/null | \\
+        grep -iE "fail|invalid|denied|error|illegal|break-in|COMMAND=|session opened for user root|new user|password changed|accepted (publickey|password)|authentication failure|sudo:.*incorrect|Unable to negotiate" | \\
+        head -50 | \\
+        jq -Rs '[split("\\n")[] | select(length > 0) | {
+          eventType: "auth_log",
+          severity: (if (test("fail|invalid|denied|error|illegal|break-in|incorrect")) then "medium"
+                     elif test("COMMAND=|session opened for user root") then "high"
+                     else "low" end),
+          source: "auth.log",
+          rawData: {line: .}
+        }]' 2>/dev/null || echo '[]')
+      EVENTS=$(echo "$EVENTS $AUTH_EVENTS" | jq -s 'add')
+      LAST_AUTH_POS=$CURRENT_LINES
+    fi
   fi
 
-  # Collect process events
-  PROC_EVENTS=$(ps aux --no-headers 2>/dev/null | head -50 | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "process_event", severity: "info", source: "ps", rawData: {line: .}}]' 2>/dev/null || echo '[]')
-  EVENTS=$(echo "$EVENTS $PROC_EVENTS" | jq -s 'add')
+  # ── Suspicious processes: only flag known attack tools and anomalies ──
+  SUSPICIOUS_PROCS=$(ps aux --no-headers 2>/dev/null | \\
+    grep -iE "nmap|masscan|nikto|sqlmap|hydra|john|hashcat|mimikatz|meterpreter|netcat|ncat|socat|reverse|bind.*shell|cryptominer|xmrig|minerd|kinsing|chisel|pspy|linpeas|winpeas|enum4linux|gobuster|ffuf|dirsearch" | \\
+    grep -v grep | head -20)
+  if [ -n "$SUSPICIOUS_PROCS" ]; then
+    PROC_EVENTS=$(echo "$SUSPICIOUS_PROCS" | jq -Rs '[split("\\n")[] | select(length > 0) | {
+      eventType: "suspicious_process",
+      severity: "high",
+      source: "ps",
+      rawData: {line: .}
+    }]' 2>/dev/null || echo '[]')
+    EVENTS=$(echo "$EVENTS $PROC_EVENTS" | jq -s 'add')
+  fi
 
-  # Collect network connections
-  NET_EVENTS=$(ss -tunap 2>/dev/null | head -50 | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "network_connection", severity: "info", source: "ss", rawData: {line: .}}]' 2>/dev/null || echo '[]')
-  EVENTS=$(echo "$EVENTS $NET_EVENTS" | jq -s 'add')
+  # ── Network: only flag unusual listening ports and connections to suspicious destinations ──
+  # New listeners (excluding well-known services)
+  NEW_LISTENERS=$(ss -tlnp 2>/dev/null | grep LISTEN | \\
+    grep -vE ":(22|53|80|443|5432|3306|6379|9200|9300|55000|1514|1515)\\b" | head -10)
+  if [ -n "$NEW_LISTENERS" ]; then
+    NET_EVENTS=$(echo "$NEW_LISTENERS" | jq -Rs '[split("\\n")[] | select(length > 0) | {
+      eventType: "new_listener",
+      severity: "medium",
+      source: "ss",
+      rawData: {line: .}
+    }]' 2>/dev/null || echo '[]')
+    EVENTS=$(echo "$EVENTS $NET_EVENTS" | jq -s 'add')
+  fi
 
-  # Ship to API (limit to 200 events per batch)
-  BATCH=$(echo "$EVENTS" | jq '.[0:200]')
-  EVENT_COUNT=$(echo "$BATCH" | jq 'length')
+  # ── File integrity: check critical files for changes ──
+  for CRIT_FILE in /etc/passwd /etc/shadow /etc/sudoers /etc/ssh/sshd_config; do
+    if [ -f "$CRIT_FILE" ]; then
+      CURRENT_HASH=$(sha256sum "$CRIT_FILE" 2>/dev/null | awk '{print $1}')
+      HASH_FILE="/tmp/.sn_hash_$(echo "$CRIT_FILE" | tr '/' '_')"
+      if [ -f "$HASH_FILE" ]; then
+        OLD_HASH=$(cat "$HASH_FILE")
+        if [ "$CURRENT_HASH" != "$OLD_HASH" ]; then
+          FIM_EVENT=$(jq -n --arg f "$CRIT_FILE" --arg h "$CURRENT_HASH" '{
+            eventType: "file_integrity",
+            severity: "high",
+            source: "fim",
+            rawData: {file: $f, newHash: $h, message: ("Critical file modified: " + $f)}
+          }')
+          EVENTS=$(echo "$EVENTS [$FIM_EVENT]" | jq -s 'add')
+        fi
+      fi
+      echo "$CURRENT_HASH" > "$HASH_FILE"
+    fi
+  done
+
+  # Ship to API (only if there are security events)
+  EVENT_COUNT=$(echo "$EVENTS" | jq 'length')
   if [ "$EVENT_COUNT" -gt 0 ]; then
+    BATCH=$(echo "$EVENTS" | jq '.[0:100]')
     curl -sS -X POST "$API/ingest" \\
       -H "Content-Type: application/json" \\
       -H "X-Collector-Key: $SN_COLLECTOR_KEY" \\
@@ -954,7 +1021,7 @@ while true; do
   curl -sS -X POST "$API/heartbeat" \\
     -H "Content-Type: application/json" \\
     -H "X-Collector-Key: $SN_COLLECTOR_KEY" \\
-    -d "{\\"hostInfo\\": {\\"hostname\\": \\"$HOSTNAME_VAL\\", \\"ipAddress\\": \\"$IP_VAL\\", \\"os\\": \\"$OS_VAL\\", \\"arch\\": \\"$ARCH_VAL\\", \\"cpuCount\\": $CPU_COUNT, \\"memoryGb\\": $MEM_GB, \\"agentVersion\\": \\"1.0.0-script\\"}, \\"metrics\\": {\\"eventsPerSecond\\": $EVENT_COUNT}}" \\
+    -d "{\\"hostInfo\\": {\\"hostname\\": \\"$HOSTNAME_VAL\\", \\"ipAddress\\": \\"$IP_VAL\\", \\"os\\": \\"$OS_VAL\\", \\"arch\\": \\"$ARCH_VAL\\", \\"cpuCount\\": $CPU_COUNT, \\"memoryGb\\": $MEM_GB, \\"agentVersion\\": \\"1.1.0-script\\"}, \\"metrics\\": {\\"eventsPerSecond\\": $EVENT_COUNT}}" \\
     --max-time 10 || true
 
   sleep \${SN_INTERVAL:-30}
