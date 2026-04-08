@@ -99,7 +99,6 @@ export function httpRequest(
     headers?: Record<string, string>;
     body?: unknown;
     timeout?: number;
-    rejectUnauthorized?: boolean;
   },
 ): Promise<{ status: number; data: unknown }> {
   const controller = new AbortController();
@@ -108,34 +107,26 @@ export function httpRequest(
   const method = options.method || "GET";
   const bodyStr = options.body ? JSON.stringify(options.body) : undefined;
 
-  // For HTTPS URLs (especially self-signed certs like Wazuh Indexer),
-  // use undici's fetch directly with a custom Agent that skips TLS verification.
-  // Node 22's global fetch does NOT support the dispatcher option.
-  let fetchFn: typeof fetch = fetch;
-  const extraOpts: Record<string, unknown> = {};
-
-  if (url.startsWith("https://")) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const undici = require("undici");
-      fetchFn = undici.fetch;
-      extraOpts.dispatcher = new undici.Agent({
-        connect: { rejectUnauthorized: false },
-      });
-    } catch {
-      // Fall through to global fetch
-    }
+  // For HTTPS URLs with self-signed certs (Wazuh Indexer, on-prem connectors),
+  // temporarily disable TLS verification for this request only.
+  const needsTlsBypass = url.startsWith("https://");
+  const prevTlsSetting = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+  if (needsTlsBypass) {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
   }
 
-  return fetchFn(url, {
+  return fetch(url, {
     method,
     headers: options.headers,
     body: bodyStr,
     signal: controller.signal,
-    ...extraOpts,
-  } as RequestInit)
+  })
     .then(async (res) => {
       clearTimeout(timeoutId);
+      if (needsTlsBypass) {
+        if (prevTlsSetting === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+        else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prevTlsSetting;
+      }
       const text = await res.text();
       let data: unknown;
       try {
@@ -147,6 +138,10 @@ export function httpRequest(
     })
     .catch((err: Error) => {
       clearTimeout(timeoutId);
+      if (needsTlsBypass) {
+        if (prevTlsSetting === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+        else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prevTlsSetting;
+      }
       if (err.name === "AbortError") throw new Error("Request timed out");
       throw err;
     });
