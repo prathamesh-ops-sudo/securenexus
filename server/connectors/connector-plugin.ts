@@ -108,25 +108,26 @@ export function httpRequest(
   const bodyStr = options.body ? JSON.stringify(options.body) : undefined;
 
   // For HTTPS URLs with self-signed certs (Wazuh Indexer, on-prem connectors),
-  // temporarily disable TLS verification for this request only.
-  const needsTlsBypass = url.startsWith("https://");
-  const prevTlsSetting = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-  if (needsTlsBypass) {
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-  }
-
-  return fetch(url, {
+  // use undici's fetch with a custom Agent that skips TLS verification.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const undici = require("undici");
+  const fetchOpts: Record<string, unknown> = {
     method,
     headers: options.headers,
     body: bodyStr,
     signal: controller.signal,
-  })
-    .then(async (res) => {
+  };
+
+  if (url.startsWith("https://")) {
+    fetchOpts.dispatcher = new undici.Agent({
+      connect: { rejectUnauthorized: false },
+    });
+  }
+
+  return undici
+    .fetch(url, fetchOpts)
+    .then(async (res: Response) => {
       clearTimeout(timeoutId);
-      if (needsTlsBypass) {
-        if (prevTlsSetting === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-        else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prevTlsSetting;
-      }
       const text = await res.text();
       let data: unknown;
       try {
@@ -138,10 +139,6 @@ export function httpRequest(
     })
     .catch((err: Error) => {
       clearTimeout(timeoutId);
-      if (needsTlsBypass) {
-        if (prevTlsSetting === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-        else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prevTlsSetting;
-      }
       if (err.name === "AbortError") throw new Error("Request timed out");
       throw err;
     });
