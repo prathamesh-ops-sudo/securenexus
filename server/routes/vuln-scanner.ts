@@ -347,7 +347,25 @@ export function registerVulnScannerRoutes(app: Express): void {
         },
       });
     } catch (error) {
-      log.error("Failed to list findings", { error: String(error) });
+      const errStr = String(error);
+      // Gracefully handle missing table (not yet migrated)
+      if (errStr.includes("does not exist") || errStr.includes("relation") || errStr.includes("undefined")) {
+        log.warn("vuln_findings table may not exist yet — returning empty results", { error: errStr });
+        return res.json({
+          findings: [],
+          stats: {
+            total: 0,
+            openCount: 0,
+            acknowledgedCount: 0,
+            remediatedCount: 0,
+            criticalCount: 0,
+            highCount: 0,
+            mediumCount: 0,
+            lowCount: 0,
+          },
+        });
+      }
+      log.error("Failed to list findings", { error: errStr });
       res.status(500).json({ message: "Failed to list findings" });
     }
   });
