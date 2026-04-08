@@ -56,9 +56,9 @@ export const wazuhPlugin: ConnectorPlugin = {
     const auth = Buffer.from(`${config.username}:${config.password}`).toString("base64");
     const url = `${config.baseUrl}/${config.indexPattern || "wazuh-alerts*"}/_search`;
     const query: Record<string, unknown> = {
-      size: 100,
+      size: 500,
       sort: [{ timestamp: { order: "desc" } }],
-      query: { bool: { must: [{ range: { "rule.level": { gte: 7 } } }] as Record<string, unknown>[] } },
+      query: { bool: { must: [{ range: { "rule.level": { gte: 3 } } }] as Record<string, unknown>[] } },
     };
     if (since) {
       ((query.query as Record<string, any>).bool.must as Record<string, unknown>[]).push({

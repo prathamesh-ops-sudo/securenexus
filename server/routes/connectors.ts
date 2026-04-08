@@ -431,12 +431,40 @@ export function registerConnectorsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/connectors/:id/sync", isAuthenticated, validatePathId("id"), async (req, res) => {
+  // Reset connector sync state to force full re-sync
+  app.post("/api/connectors/:id/reset-sync", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId;
       const connector = await storage.getConnector(p(req.params.id));
       if (!connector || !orgId || connector.orgId !== orgId) {
         return res.status(404).json({ message: "Connector not found" });
+      }
+      await storage.updateConnectorSyncStatus(connector.id, {
+        lastSyncAt: null as unknown as Date,
+        lastSyncAlerts: 0,
+      });
+      sendEnvelope(res, { success: true, message: "Sync state reset — next sync will pull all historical alerts" });
+    } catch (error) {
+      logger.child("routes").error("Reset sync error", { error: String(error) });
+      res.status(500).json({ message: "Failed to reset sync state" });
+    }
+  });
+
+  app.post("/api/connectors/:id/sync", isAuthenticated, validatePathId("id"), async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId;
+      let connector = await storage.getConnector(p(req.params.id));
+      if (!connector || !orgId || connector.orgId !== orgId) {
+        return res.status(404).json({ message: "Connector not found" });
+      }
+
+      // Support ?fullSync=true to ignore lastSyncAt and pull all historical alerts
+      if (req.query.fullSync === "true" && connector.lastSyncAt) {
+        await storage.updateConnectorSyncStatus(connector.id, {
+          lastSyncAt: null as unknown as Date,
+          lastSyncAlerts: 0,
+        });
+        connector = (await storage.getConnector(connector.id))!;
       }
 
       await storage.updateConnector(connector.id, { status: "syncing" } as any);
