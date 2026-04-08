@@ -99,16 +99,36 @@ export function httpRequest(
     headers?: Record<string, string>;
     body?: unknown;
     timeout?: number;
+    rejectUnauthorized?: boolean;
   },
 ): Promise<{ status: number; data: unknown }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), options.timeout || 30000);
-  return fetch(url, {
+
+  // Build fetch options
+  const fetchOpts: RequestInit & { dispatcher?: unknown } = {
     method: options.method || "GET",
     headers: options.headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
     signal: controller.signal,
-  })
+  };
+
+  // For self-signed TLS certificates (e.g. Wazuh Indexer, on-prem connectors),
+  // use an undici Agent that skips certificate verification.
+  if (options.rejectUnauthorized === false || url.startsWith("https://")) {
+    try {
+      // Node 22 bundles undici — use its Agent to bypass TLS verification
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { Agent } = require("undici");
+      fetchOpts.dispatcher = new Agent({
+        connect: { rejectUnauthorized: false },
+      });
+    } catch {
+      // If undici is not available, fall through to native fetch
+    }
+  }
+
+  return fetch(url, fetchOpts)
     .then(async (res) => {
       clearTimeout(timeoutId);
       const text = await res.text();
