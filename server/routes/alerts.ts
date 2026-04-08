@@ -441,7 +441,7 @@ export function registerAlertsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
-    requirePermission("incidents"),
+    requirePermission("incidents", "write"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);

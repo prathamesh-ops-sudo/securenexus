@@ -1,7 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ErrorState } from "@/components/empty-state";
-import { queryClient, apiRequest, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
+import { queryClient, apiRequest, fetchPaginated, type PaginatedResponse, ensureArray } from "@/lib/queryClient";
+
+/** Unwrap ApiEnvelope: { data, meta, errors } → data. Passthrough if not an envelope. */
+function unwrap<T>(body: unknown): T {
+  if (
+    body &&
+    typeof body === "object" &&
+    !Array.isArray(body) &&
+    "data" in body &&
+    "meta" in body &&
+    "errors" in body
+  ) {
+    return (body as { data: T }).data;
+  }
+  return body as T;
+}
 import { formatDateShort, formatDateTime } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -214,7 +229,7 @@ function ConnectorObservabilityPanel({ connector }: { connector: ConnectorItem }
     queryFn: async () => {
       const res = await fetch(`/api/connectors/${connector.id}/jobs?limit=20`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch jobs");
-      return res.json();
+      return unwrap(await res.json());
     },
   });
 
@@ -223,7 +238,7 @@ function ConnectorObservabilityPanel({ connector }: { connector: ConnectorItem }
     queryFn: async () => {
       const res = await fetch(`/api/connectors/${connector.id}/metrics`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch metrics");
-      return res.json();
+      return unwrap(await res.json());
     },
   });
 
@@ -232,7 +247,7 @@ function ConnectorObservabilityPanel({ connector }: { connector: ConnectorItem }
     queryFn: async () => {
       const res = await fetch(`/api/connectors/${connector.id}/health?limit=5`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch health");
-      return res.json();
+      return unwrap(await res.json());
     },
   });
 
@@ -451,7 +466,7 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
         body: JSON.stringify({ secretField: newSecretField, rotationIntervalDays: parseInt(rotationDays, 10) }),
       });
       if (!res.ok) throw new Error("Failed to create rotation schedule");
-      return res.json();
+      return unwrap(await res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/connectors/${connectorId}/secret-rotations`] });
@@ -468,7 +483,7 @@ function ConnectorSecretRotationPanel({ connectorId }: { connectorId: string }) 
         body: JSON.stringify({ newSecretValue }),
       });
       if (!res.ok) throw new Error("Failed to rotate secret");
-      return res.json();
+      return unwrap(await res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/connectors/${connectorId}/secret-rotations`] });
@@ -801,7 +816,7 @@ function DeadLetterQueueView({ connectors }: { connectors: ConnectorItem[] }) {
     mutationFn: async (id: string) => {
       setRetryingId(id);
       const res = await apiRequest("POST", `/api/connectors/dead-letters/${id}/retry`);
-      return res.json();
+      return unwrap(await res.json());
     },
     onSuccess: (data: any) => {
       setRetryingId(null);
@@ -1010,7 +1025,7 @@ function ConnectorSyncHistory({ connectorId, connectorName }: { connectorId: str
     queryFn: async () => {
       const res = await fetch(`/api/connectors/${connectorId}/jobs?limit=20`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch sync history");
-      return res.json();
+      return unwrap(await res.json());
     },
   });
 
@@ -1093,7 +1108,7 @@ function ConnectorHealthDashboard() {
     queryFn: async () => {
       const res = await fetch("/api/connectors/health-summary", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch health summary");
-      return res.json();
+      return unwrap(await res.json());
     },
   });
 
@@ -1258,7 +1273,7 @@ function ConnectorPipelineStatus({ connectorId }: { connectorId: string }) {
     queryFn: async () => {
       const res = await fetch(`/api/connectors/${connectorId}/pipeline-status`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch pipeline status");
-      return res.json();
+      return unwrap(await res.json());
     },
   });
 
@@ -1348,7 +1363,7 @@ function ConnectorRateLimitPanel({ connectorId }: { connectorId: string }) {
     queryFn: async () => {
       const res = await fetch(`/api/connectors/${connectorId}/rate-limit-status`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch rate limit");
-      return res.json();
+      return unwrap(await res.json());
     },
   });
 
@@ -1435,7 +1450,7 @@ export default function ConnectorsPage() {
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
       const res = await apiRequest("POST", "/api/connectors", data);
-      return res.json();
+      return unwrap(await res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/v1/connectors"] });
@@ -1497,7 +1512,7 @@ export default function ConnectorsPage() {
     mutationFn: async (id: string) => {
       setSyncingId(id);
       const res = await apiRequest("POST", `/api/connectors/${id}/sync`);
-      return res.json();
+      return unwrap(await res.json());
     },
     onSuccess: (data: any) => {
       setSyncingId(null);
@@ -1524,7 +1539,7 @@ export default function ConnectorsPage() {
     mutationFn: async (id: string) => {
       setHealthCheckingId(id);
       const res = await apiRequest("POST", `/api/connectors/${id}/health-check`);
-      return res.json();
+      return unwrap(await res.json());
     },
     onSuccess: (data: any) => {
       setHealthCheckingId(null);
@@ -1544,7 +1559,7 @@ export default function ConnectorsPage() {
   const toggleMutation = useMutation({
     mutationFn: async ({ id, newStatus }: { id: string; newStatus: string }) => {
       const res = await apiRequest("PATCH", `/api/connectors/${id}`, { status: newStatus });
-      return res.json();
+      return unwrap(await res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/v1/connectors"] });
@@ -1840,6 +1855,7 @@ export default function ConnectorsPage() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  title="Health Check"
                                   onClick={() => healthCheckMutation.mutate(connector.id)}
                                   disabled={healthCheckingId === connector.id}
                                   aria-label="Health check"
@@ -1854,6 +1870,7 @@ export default function ConnectorsPage() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  title="Test Connection"
                                   onClick={() => testMutation.mutate(connector.id)}
                                   disabled={testingId === connector.id}
                                   aria-label="Test connection"
@@ -1868,6 +1885,7 @@ export default function ConnectorsPage() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  title="Sync Now"
                                   onClick={() => syncMutation.mutate(connector.id)}
                                   disabled={syncingId === connector.id}
                                   aria-label="Sync now"
@@ -1886,6 +1904,10 @@ export default function ConnectorsPage() {
                                     const newStatus = connector.status === "inactive" ? "active" : "inactive";
                                     toggleMutation.mutate({ id: connector.id, newStatus });
                                   }}
+                                  title={connector.status === "inactive" ? "Enable Connector" : "Disable Connector"}
+                                  aria-label={
+                                    connector.status === "inactive" ? "Enable connector" : "Disable connector"
+                                  }
                                   data-testid={`button-toggle-${connector.id}`}
                                 >
                                   {connector.status === "inactive" ? (
@@ -1897,6 +1919,7 @@ export default function ConnectorsPage() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  title="Delete Connector"
                                   onClick={() => {
                                     if (confirm("Delete this connector? This cannot be undone.")) {
                                       deleteMutation.mutate(connector.id);
