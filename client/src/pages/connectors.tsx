@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Component, type ReactNode, type ErrorInfo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ErrorState } from "@/components/empty-state";
 import { queryClient, apiRequest, fetchPaginated, type PaginatedResponse, ensureArray } from "@/lib/queryClient";
@@ -17,6 +17,30 @@ function unwrap<T>(body: unknown): T {
   }
   return body as T;
 }
+/** Inline error boundary so one crashed panel doesn't take down the whole page */
+class PanelBoundary extends Component<{ label: string; children: ReactNode }, { error: Error | null }> {
+  constructor(props: { label: string; children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`[PanelBoundary:${this.props.label}]`, error, info.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="px-4 py-2 text-xs text-destructive border border-destructive/20 rounded m-2 bg-destructive/5">
+          <span className="font-medium">{this.props.label}</span>: {this.state.error.message}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 import { formatDateShort, formatDateTime } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -842,7 +866,7 @@ function DeadLetterQueueView({ connectors }: { connectors: ConnectorItem[] }) {
     setAlertChecking(true);
     try {
       const res = await apiRequest("POST", "/api/connectors/dead-letters/check-alert");
-      const data = await res.json();
+      const data = unwrap<any>(await res.json());
       if (data.alerted) {
         toast({
           title: "Alert sent",
@@ -1480,7 +1504,7 @@ export default function ConnectorsPage() {
     mutationFn: async (id: string) => {
       setTestingId(id);
       const res = await apiRequest("POST", `/api/connectors/${id}/test`);
-      return { id, data: await res.json() };
+      return { id, data: unwrap<any>(await res.json()) };
     },
     onSuccess: ({
       id,
@@ -1944,11 +1968,21 @@ export default function ConnectorsPage() {
                                     />
                                   </div>
                                 )}
-                                <ConnectorObservabilityPanel connector={connector} />
-                                <ConnectorPipelineStatus connectorId={connector.id} />
-                                <ConnectorSyncHistory connectorId={connector.id} connectorName={connector.name} />
-                                <ConnectorRateLimitPanel connectorId={connector.id} />
-                                <ConnectorSecretRotationPanel connectorId={connector.id} />
+                                <PanelBoundary label="Observability">
+                                  <ConnectorObservabilityPanel connector={connector} />
+                                </PanelBoundary>
+                                <PanelBoundary label="Pipeline Status">
+                                  <ConnectorPipelineStatus connectorId={connector.id} />
+                                </PanelBoundary>
+                                <PanelBoundary label="Sync History">
+                                  <ConnectorSyncHistory connectorId={connector.id} connectorName={connector.name} />
+                                </PanelBoundary>
+                                <PanelBoundary label="Rate Limiting">
+                                  <ConnectorRateLimitPanel connectorId={connector.id} />
+                                </PanelBoundary>
+                                <PanelBoundary label="Secret Rotation">
+                                  <ConnectorSecretRotationPanel connectorId={connector.id} />
+                                </PanelBoundary>
                               </TableCell>
                             </TableRow>
                           )}

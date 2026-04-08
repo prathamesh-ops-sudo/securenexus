@@ -133,8 +133,8 @@ function ErrorFallbackUI({
           </Button>
         </motion.div>
 
-        {/* Error code (dev only) */}
-        {process.env.NODE_ENV === "development" && error && (
+        {/* Error details — temporarily shown in all environments for debugging */}
+        {error && (
           <motion.details
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
