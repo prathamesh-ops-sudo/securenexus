@@ -2,8 +2,11 @@ import type { Express, Request, Response } from "express";
 import { logger, p, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
 import { storage } from "../storage";
+import { db } from "../db";
+import { entities } from "@shared/schema";
 import type { InsertSecurityGraphAsset, InsertSecurityGraphRelationship } from "@shared/schema";
 import { createHash } from "crypto";
+import { eq } from "drizzle-orm";
 
 interface RequestWithUser extends Request {
   user?: { id?: string; email?: string };
@@ -522,6 +525,115 @@ export function registerSecurityGraphRoutes(app: Express): void {
     } catch (error) {
       log.error("Security graph delete relationship error", { error: String(error) });
       res.status(500).json({ message: "Failed to delete relationship" });
+    }
+  });
+
+  // Sync graph from real entity data
+  app.post("/api/security-graph/sync-from-entities", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const entityList = await db.select().from(entities).where(eq(entities.orgId, orgId)).limit(500);
+
+      const entityTypeToAssetType: Record<string, { type: AssetType; subType: string }> = {
+        ip: { type: "network", subType: "ip_address" },
+        host: { type: "endpoint", subType: "server" },
+        user: { type: "identity", subType: "user_account" },
+        domain: { type: "network", subType: "domain" },
+        email: { type: "identity", subType: "email_account" },
+        url: { type: "saas", subType: "url_endpoint" },
+        file_hash: { type: "data", subType: "file" },
+        process: { type: "runtime", subType: "process" },
+      };
+
+      let created = 0;
+      let skipped = 0;
+      const assetIds: Record<string, string> = {};
+
+      for (const entity of entityList) {
+        const mapping = entityTypeToAssetType[entity.type] || { type: "compute" as AssetType, subType: entity.type };
+        const resolutionKey = `entity:${entity.type}:${entity.value}`;
+
+        const existing = await storage.getSecurityGraphAssetByResolutionKey(orgId, resolutionKey);
+        if (existing) {
+          assetIds[entity.id] = existing.id;
+          skipped++;
+          continue;
+        }
+
+        const isAttackerIp =
+          entity.type === "ip" &&
+          !entity.value.startsWith("10.") &&
+          !entity.value.startsWith("192.168.") &&
+          !entity.value.startsWith("172.");
+        const riskScore = isAttackerIp ? 0.85 : entity.type === "user" ? 0.4 : 0.2;
+
+        const asset = await storage.createSecurityGraphAsset({
+          orgId,
+          name: entity.value,
+          type: mapping.type,
+          subType: mapping.subType,
+          environment: "production",
+          riskScore,
+          resolutionKey,
+          metadata: {
+            entityId: entity.id,
+            entityType: entity.type,
+            alertCount: entity.alertCount || 0,
+            firstSeen: entity.firstSeenAt,
+            lastSeen: entity.lastSeenAt,
+          },
+          tags: isAttackerIp ? ["external-attacker", "ssh-brute-force"] : [entity.type],
+        });
+        assetIds[entity.id] = asset.id;
+        created++;
+      }
+
+      // Create relationships between entities that share alerts
+      let relsCreated = 0;
+      const processedPairs = new Set<string>();
+
+      for (const entity of entityList) {
+        if (entity.type === "ip" && !assetIds[entity.id]) continue;
+
+        // Link IPs to hosts they attacked/belong to
+        for (const other of entityList) {
+          if (entity.id === other.id) continue;
+          if (!assetIds[entity.id] || !assetIds[other.id]) continue;
+
+          const pairKey = [assetIds[entity.id], assetIds[other.id]].sort().join(":");
+          if (processedPairs.has(pairKey)) continue;
+
+          let relType: RelationshipType | null = null;
+          if (entity.type === "ip" && other.type === "host") relType = "connects_to";
+          else if (entity.type === "user" && other.type === "host") relType = "authenticates_with";
+          else if (entity.type === "ip" && other.type === "user") relType = "accesses";
+          else if (entity.type === "host" && other.type === "ip") relType = "exposed_to";
+
+          if (relType) {
+            try {
+              await storage.createSecurityGraphRelationship({
+                orgId,
+                sourceId: assetIds[entity.id],
+                targetId: assetIds[other.id],
+                type: relType,
+                metadata: {},
+              });
+              relsCreated++;
+              processedPairs.add(pairKey);
+            } catch {
+              // Ignore duplicate relationship errors
+            }
+          }
+        }
+      }
+
+      log.info("Security graph synced from entities", { orgId, created, skipped, relsCreated });
+      res.json({
+        data: { assetsCreated: created, assetsSkipped: skipped, relationshipsCreated: relsCreated },
+      });
+    } catch (error) {
+      log.error("Security graph sync error", { error: String(error) });
+      res.status(500).json({ message: "Failed to sync security graph" });
     }
   });
 
