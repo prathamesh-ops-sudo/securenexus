@@ -483,13 +483,12 @@ export function registerConnectorsRoutes(app: Express): void {
           if (r.status === "fulfilled") {
             if (r.value.isNew) {
               created++;
-              // Extract entities and run correlation for new alerts
-              try {
-                await resolveAndLinkEntities(r.value.alert);
-                await correlateAlert(r.value.alert);
-              } catch (err) {
-                logger.child("connectors").warn("Entity/correlation warning during sync", { error: String(err) });
-              }
+              // Fire-and-forget entity extraction and correlation
+              resolveAndLinkEntities(r.value.alert)
+                .then(() => correlateAlert(r.value.alert))
+                .catch((err) => {
+                  logger.child("connectors").warn("Entity/correlation warning during sync", { error: String(err) });
+                });
             } else deduped++;
           } else {
             failed++;

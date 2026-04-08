@@ -501,17 +501,16 @@ export function registerNativeCollectorRoutes(app: Express): void {
           });
           alertsCreated++;
 
-          // Extract entities and run correlation (same pipeline as ingestion routes)
+          // Fire-and-forget entity extraction and correlation to avoid holding DB connections
           if (isNew) {
-            try {
-              await resolveAndLinkEntities(createdAlert);
-              await correlateAlert(createdAlert);
-            } catch (entityErr) {
-              log.warn("Entity/correlation processing warning for collector event", {
-                eventId: event.id,
-                error: String(entityErr),
+            resolveAndLinkEntities(createdAlert)
+              .then(() => correlateAlert(createdAlert))
+              .catch((entityErr) => {
+                log.warn("Entity/correlation processing warning for collector event", {
+                  eventId: event.id,
+                  error: String(entityErr),
+                });
               });
-            }
           }
         } catch (alertErr) {
           // Non-fatal: event was stored in collector_events, alert creation is best-effort
