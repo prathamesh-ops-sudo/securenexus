@@ -105,30 +105,35 @@ export function httpRequest(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), options.timeout || 30000);
 
-  // Build fetch options
-  const fetchOpts: RequestInit & { dispatcher?: unknown } = {
-    method: options.method || "GET",
-    headers: options.headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    signal: controller.signal,
-  };
+  const method = options.method || "GET";
+  const bodyStr = options.body ? JSON.stringify(options.body) : undefined;
 
-  // For self-signed TLS certificates (e.g. Wazuh Indexer, on-prem connectors),
-  // use an undici Agent that skips certificate verification.
-  if (options.rejectUnauthorized === false || url.startsWith("https://")) {
+  // For HTTPS URLs (especially self-signed certs like Wazuh Indexer),
+  // use undici's fetch directly with a custom Agent that skips TLS verification.
+  // Node 22's global fetch does NOT support the dispatcher option.
+  let fetchFn: typeof fetch = fetch;
+  const extraOpts: Record<string, unknown> = {};
+
+  if (url.startsWith("https://")) {
     try {
-      // Node 22 bundles undici — use its Agent to bypass TLS verification
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { Agent } = require("undici");
-      fetchOpts.dispatcher = new Agent({
+      const undici = require("undici");
+      fetchFn = undici.fetch;
+      extraOpts.dispatcher = new undici.Agent({
         connect: { rejectUnauthorized: false },
       });
     } catch {
-      // If undici is not available, fall through to native fetch
+      // Fall through to global fetch
     }
   }
 
-  return fetch(url, fetchOpts)
+  return fetchFn(url, {
+    method,
+    headers: options.headers,
+    body: bodyStr,
+    signal: controller.signal,
+    ...extraOpts,
+  } as RequestInit)
     .then(async (res) => {
       clearTimeout(timeoutId);
       const text = await res.text();
