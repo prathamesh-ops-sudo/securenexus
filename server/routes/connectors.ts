@@ -1142,8 +1142,8 @@ export function registerConnectorsRoutes(app: Express): void {
           const entry = summary.find((s) => s.id === dl.connectorId);
           if (entry) entry.dlqDepth++;
         }
-      } catch {
-        /* DLQ may be empty */
+      } catch (err) {
+        logger.child("routes-connectors").warn("DLQ summary fetch failed", { orgId, error: String(err) });
       }
 
       const healthy = summary.filter((s) => s.healthStatus === "healthy" || s.status === "active").length;

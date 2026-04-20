@@ -64,7 +64,9 @@ export function registerAiInvestigationRoutes(app: Express): void {
           details: { alertCount: incidentAlerts.length, confidence: result.investigationConfidence },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json(result);
       } catch (error: any) {
@@ -121,7 +123,9 @@ export function registerAiInvestigationRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json(result);
       } catch (error: any) {
@@ -175,7 +179,9 @@ export function registerAiInvestigationRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json(result);
       } catch (error: any) {
@@ -319,7 +325,9 @@ export function registerAiInvestigationRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json(result);
       } catch (error: any) {
@@ -395,7 +403,9 @@ export function registerAiInvestigationRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json({
           threadId: activeThreadId,
@@ -592,8 +602,8 @@ export function registerAiInvestigationRoutes(app: Express): void {
         total = parseInt(String(countResult.rows[0]?.total || "0"), 10);
         const dataResult = await pool.query(dataQuery, params);
         messages = dataResult.rows;
-      } catch {
-        // Table may not exist yet
+      } catch (err) {
+        log.debug("investigation_chat_messages query failed (table may not exist)", { error: String(err) });
       }
 
       res.json({ items: messages, total, limit, offset });

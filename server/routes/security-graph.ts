@@ -620,8 +620,14 @@ export function registerSecurityGraphRoutes(app: Express): void {
               });
               relsCreated++;
               processedPairs.add(pairKey);
-            } catch {
-              // Ignore duplicate relationship errors
+            } catch (err) {
+              log.debug("security-graph relationship insert skipped (duplicate?)", {
+                orgId,
+                sourceId: assetIds[entity.id],
+                targetId: assetIds[other.id],
+                type: relType,
+                error: String(err),
+              });
             }
           }
         }

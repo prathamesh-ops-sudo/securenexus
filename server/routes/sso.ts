@@ -634,8 +634,11 @@ export function registerSsoRoutes(app: Express): void {
           email = userinfo.email?.toLowerCase() || null;
           firstName = firstName || userinfo.given_name || null;
           lastName = lastName || userinfo.family_name || null;
-        } catch {
-          /* no userinfo available */
+        } catch (err) {
+          logger.child("sso").warn("OIDC userinfo fetch failed", {
+            userinfoEndpoint,
+            error: String(err),
+          });
         }
       }
 

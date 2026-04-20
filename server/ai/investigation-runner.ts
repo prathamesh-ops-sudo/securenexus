@@ -152,8 +152,9 @@ async function enrichAlert(alert: Alert, orgId: string): Promise<EnrichmentData>
       // Each active TI source increases match potential
       threatIntelMatches = tiConfigs.filter((c) => c.enabled).length > 0 ? 1 : 0;
     }
-  } catch {
-    // TI lookup failed — non-fatal
+  } catch (err) {
+    // TI lookup failure is non-fatal for investigation flow, but surface for observability.
+    log.debug("threat-intel lookup failed", { orgId, error: String(err) });
   }
 
   return { entities, threatIntelMatches, assetContext, userContext };

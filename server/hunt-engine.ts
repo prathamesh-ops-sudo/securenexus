@@ -127,8 +127,8 @@ export async function pivotOnIoc(
     );
     const ar = alertResult as unknown as { rows?: Record<string, unknown>[] };
     alertRows = Array.isArray(alertResult) ? (alertResult as unknown as Record<string, unknown>[]) : ar.rows || [];
-  } catch {
-    // table may not exist
+  } catch (err) {
+    log.debug("pivotOnIoc alerts query failed", { orgId, iocType, error: String(err) });
   }
 
   // Search ingestion logs
@@ -147,8 +147,8 @@ export async function pivotOnIoc(
     );
     const lr = logResult as unknown as { rows?: Record<string, unknown>[] };
     logRows = Array.isArray(logResult) ? (logResult as unknown as Record<string, unknown>[]) : lr.rows || [];
-  } catch {
-    // table may not exist
+  } catch (err) {
+    log.debug("pivotOnIoc ingestion_logs query failed", { orgId, iocType, error: String(err) });
   }
 
   return {

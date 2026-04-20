@@ -130,22 +130,22 @@ export function registerAiModelsRoutes(app: Express): void {
       try {
         const alerts = await storage.getAlerts(orgId);
         alertCount = alerts.length;
-      } catch {
-        /* table may not exist */
+      } catch (err) {
+        log.debug("models-datasources alerts count failed", { orgId, error: String(err) });
       }
 
       try {
         const incidents = await storage.getIncidents(orgId);
         incidentCount = incidents.length;
-      } catch {
-        /* table may not exist */
+      } catch (err) {
+        log.debug("models-datasources incidents count failed", { orgId, error: String(err) });
       }
 
       try {
         const entityResult = await pool.query(`SELECT COUNT(*) as cnt FROM entities WHERE org_id = $1`, [orgId]);
         entityCount = parseInt(String(entityResult.rows[0]?.cnt || "0"), 10);
-      } catch {
-        /* table may not exist */
+      } catch (err) {
+        log.debug("models-datasources entities count failed", { orgId, error: String(err) });
       }
 
       const dataSources = [

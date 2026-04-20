@@ -23,8 +23,13 @@ function decryptApiKey(ciphertext: string | null): string | null {
   if (!ciphertext) return null;
   try {
     return decryptSsoSecret(ciphertext);
-  } catch {
-    // Fallback: return as-is if it's a plaintext key from before encryption was added
+  } catch (err) {
+    // Legacy fallback for pre-encryption plaintext keys. Surface the failure so
+    // KMS / key-rotation issues are not masked — decrypt failure on a truly
+    // encrypted key would otherwise silently leak ciphertext downstream.
+    log.warn("dark-web api key decrypt failed — using value as-is (legacy key?)", {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return ciphertext;
   }
 }

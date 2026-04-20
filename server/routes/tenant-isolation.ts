@@ -54,8 +54,11 @@ async function detectOrgPlan(orgId: string): Promise<PlanTier> {
     if (planLimit && typeof planLimit.planTier === "string" && VALID_PLANS.has(planLimit.planTier)) {
       return planLimit.planTier as PlanTier;
     }
-  } catch {
-    /* fall through */
+  } catch (err) {
+    log.debug("detectOrgPlan fallback to free — plan lookup failed", {
+      orgId,
+      error: String(err),
+    });
   }
   return "free";
 }

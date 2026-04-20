@@ -2,7 +2,18 @@ import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, storage, strictLimiter } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { resolveOrgContext, requireMinRole, requireOrgId } from "../../rbac";
-import { checkModelHealth, getModelConfig, getInferenceMetrics, getInferenceHistory, getInferenceStats, clearModelCache, getAiOrgUsage, getAllAiOrgUsage, setAiOrgBudget, getPromptCatalogSummary } from "../../ai";
+import {
+  checkModelHealth,
+  getModelConfig,
+  getInferenceMetrics,
+  getInferenceHistory,
+  getInferenceStats,
+  clearModelCache,
+  getAiOrgUsage,
+  getAllAiOrgUsage,
+  setAiOrgBudget,
+  getPromptCatalogSummary,
+} from "../../ai";
 import { getCircuitBreakerStatus } from "../../ai/model-gateway";
 import { config as appConfig } from "../../config";
 import { pool } from "../../db";
@@ -500,8 +511,8 @@ export function registerAiSetupRoutes(app: Express): void {
               a.actualPct = parseFloat(a.actualPct.toFixed(1));
             }
           }
-        } catch {
-          /* inference logs table may not exist */
+        } catch (err) {
+          log.debug("ai budget inference_logs read failed", { orgId, error: String(err) });
         }
 
         res.json({ monthlyLimit, allocations });

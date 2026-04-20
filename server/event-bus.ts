@@ -129,8 +129,9 @@ class EventBus extends EventEmitter {
         try {
           const dropNotice = `event: backpressure_drop\ndata: ${JSON.stringify({ type: "backpressure_drop", dropped: client.dropped })}\n\n`;
           client.res.write(dropNotice);
-        } catch {
-          // Client may already be gone — removal handled elsewhere
+        } catch (err) {
+          // Client may already be gone — removal handled elsewhere.
+          logger.child("sse").debug("backpressure notice write failed", { clientId: client.id, error: String(err) });
         }
       }
       client.buffer.push(payload);
@@ -146,7 +147,8 @@ class EventBus extends EventEmitter {
           this.flushBuffer(client);
         });
       }
-    } catch {
+    } catch (err) {
+      logger.child("sse").debug("client write failed — removing", { clientId: client.id, error: String(err) });
       this.removeClient(client.id);
     }
   }
@@ -166,7 +168,8 @@ class EventBus extends EventEmitter {
           });
           return;
         }
-      } catch {
+      } catch (err) {
+        logger.child("sse").debug("buffer flush write failed — removing", { clientId: client.id, error: String(err) });
         this.removeClient(client.id);
         return;
       }
@@ -217,8 +220,11 @@ class EventBus extends EventEmitter {
       try {
         client.res.write('event: system:shutdown\ndata: {"reason":"pod_shutdown"}\n\n');
         client.res.end();
-      } catch {
-        /* client already gone */
+      } catch (err) {
+        logger.child("sse").debug("shutdown notify failed — client already gone", {
+          clientId: id,
+          error: String(err),
+        });
       }
       this.clients.delete(id);
     }

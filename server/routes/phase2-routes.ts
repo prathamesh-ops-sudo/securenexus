@@ -25,8 +25,8 @@ export function registerPhase2Routes(app: Express): void {
         if (typeof (storage as any).getVulnerabilities === "function") {
           vulns = await (storage as any).getVulnerabilities(orgId);
         }
-      } catch {
-        /* table may not exist yet */
+      } catch (err) {
+        log.debug("vulnerabilities fetch failed (table may not exist)", { orgId, error: String(err) });
       }
       const mapped = vulns
         .filter(
@@ -83,16 +83,12 @@ export function registerPhase2Routes(app: Express): void {
       }).length;
 
       // Pending Reviews: incidents in "investigating" or "open" status that need analyst attention
-      const pendingReviews = incidents.filter(
-        (i: any) => i.status === "investigating" || i.status === "open",
-      ).length;
+      const pendingReviews = incidents.filter((i: any) => i.status === "investigating" || i.status === "open").length;
 
       // MTTD: average minutes between detectedAt and createdAt for alerts with detectedAt set
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      const alertsWithDetection = alerts.filter(
-        (a: any) => a.detectedAt && new Date(a.createdAt) >= todayStart,
-      );
+      const alertsWithDetection = alerts.filter((a: any) => a.detectedAt && new Date(a.createdAt) >= todayStart);
       let mttdMinutes = 0;
       if (alertsWithDetection.length > 0) {
         const totalMs = alertsWithDetection.reduce((sum: number, a: any) => {
@@ -167,8 +163,8 @@ export function registerPhase2Routes(app: Express): void {
         if (typeof (storage as any).getOrgAiBudget === "function") {
           budget = await (storage as any).getOrgAiBudget(orgId);
         }
-      } catch {
-        /* table may not exist yet */
+      } catch (err) {
+        log.debug("ai budget fetch failed (table may not exist)", { orgId, error: String(err) });
       }
       sendEnvelope(res, {
         totalSpent: budget?.currentSpendUsd ?? 0,
@@ -300,8 +296,8 @@ export function registerPhase2Routes(app: Express): void {
         if (typeof (storage as any).getDataLakeRetentionPolicies === "function") {
           policies = await (storage as any).getDataLakeRetentionPolicies(orgId);
         }
-      } catch {
-        /* table may not exist yet */
+      } catch (err) {
+        log.debug("data-lake retention policies fetch failed (table may not exist)", { orgId, error: String(err) });
       }
       sendEnvelope(res, {
         policies,
