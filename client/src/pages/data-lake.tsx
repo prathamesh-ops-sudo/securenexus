@@ -55,6 +55,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/page-skeleton";
+import { formatBytes } from "@/lib/utils";
 
 const apiRequest = async (url: string, options?: RequestInit) => {
   const csrfMeta = document.querySelector('meta[name="csrf-token"]');
@@ -74,14 +75,6 @@ const apiRequest = async (url: string, options?: RequestInit) => {
   }
   return res.json();
 };
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
 
 function formatDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return "-";

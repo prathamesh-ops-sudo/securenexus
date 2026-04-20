@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { formatBytes, truncateHash } from "@/lib/utils";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -124,20 +125,6 @@ function formatTimestamp(ts: string | null): string {
     minute: "2-digit",
     second: "2-digit",
   });
-}
-
-function truncateHash(hash: string | null): string {
-  if (!hash) return "\u2014";
-  if (hash === "GENESIS" || hash === "genesis") return "GENESIS";
-  return `${hash.slice(0, 8)}\u2026${hash.slice(-6)}`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
 // ─── 19.1 Evidence Preview Panel ────────────────────────────────────────────

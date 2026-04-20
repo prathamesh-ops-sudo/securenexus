@@ -46,6 +46,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { formatBytes } from "@/lib/utils";
 
 interface CollectorTemplate {
   slug: string;
@@ -276,13 +277,6 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 type TabView = "catalog" | "deployed" | "events" | "scans" | "pipeline" | "health" | "coverage" | "parsers" | "certs";
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
-}
 
 function PipelineOverview({ stats }: { stats: PipelineStats }) {
   return (

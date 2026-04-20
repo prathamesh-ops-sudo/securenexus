@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { formatBytes } from "@/lib/utils";
 import {
   Shield,
   ShieldCheck,
@@ -131,14 +132,6 @@ interface Summary {
 function unwrap(data: unknown): any {
   if (data && typeof data === "object" && "data" in data) return (data as any).data;
   return data;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
 function formatDate(iso: string | null): string {
