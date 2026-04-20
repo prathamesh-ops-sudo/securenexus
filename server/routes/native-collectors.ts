@@ -9,10 +9,6 @@ import { getCollectorTemplates, getTemplateBySlug, getDeploymentScript } from ".
 import { resolveAndLinkEntities } from "../entity-resolver";
 import { correlateAlert } from "../correlation-engine";
 
-interface RequestWithUser extends Request {
-  user?: { id?: string; orgId?: string; role?: string };
-}
-
 const log = logger.child("native-collectors");
 
 const REDACTED = "***REDACTED***";
