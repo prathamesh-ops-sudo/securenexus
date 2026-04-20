@@ -1,6 +1,7 @@
 import { storage } from "./storage";
 import { dispatchAction } from "./action-dispatcher";
 import type { ResponseActionRollback } from "@shared/schema";
+import { errorMessage, errorStack } from "./utils/errors";
 
 const ROLLBACK_ACTIONS: Record<string, string> = {
   isolate_host: "unisolate_host",
@@ -64,11 +65,11 @@ export async function executeRollback(rollbackId: string, executedBy: string): P
       result,
       executedAt: new Date(),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return await storage.updateResponseActionRollback(rollbackId, {
       status: "failed",
       executedBy,
-      error: error.message,
+      error: errorMessage(error),
       executedAt: new Date(),
     });
   }

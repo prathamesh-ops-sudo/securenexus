@@ -2,6 +2,7 @@ import { db } from "./db";
 import { iocEntries, iocFeeds, type IocFeed, type InsertIocEntry } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
+import { errorMessage, errorStack } from "./utils/errors";
 
 export interface IngestionResult {
   feedId: string;
@@ -411,8 +412,8 @@ export async function ingestFeed(feed: IocFeed, rawData: any): Promise<Ingestion
       default:
         rawIocs = parseSTIXBundle(rawData);
     }
-  } catch (e: any) {
-    result.errors.push(`Parse error: ${e.message}`);
+  } catch (e: unknown) {
+    result.errors.push(`Parse error: ${errorMessage(e)}`);
     result.duration = Date.now() - start;
     return result;
   }
@@ -447,8 +448,8 @@ export async function ingestFeed(feed: IocFeed, rawData: any): Promise<Ingestion
       try {
         const inserted = await db.insert(iocEntries).values(chunk).onConflictDoNothing().returning();
         result.newEntries += inserted.length;
-      } catch (e: any) {
-        result.errors.push(`Batch insert error at chunk ${i}: ${e.message}`);
+      } catch (e: unknown) {
+        result.errors.push(`Batch insert error at chunk ${i}: ${errorMessage(e)}`);
       }
     }
   }
@@ -464,8 +465,8 @@ export async function ingestFeed(feed: IocFeed, rawData: any): Promise<Ingestion
         updatedAt: new Date(),
       })
       .where(eq(iocFeeds.id, feed.id));
-  } catch (e: any) {
-    result.errors.push(`Feed update error: ${e.message}`);
+  } catch (e: unknown) {
+    result.errors.push(`Feed update error: ${errorMessage(e)}`);
   }
 
   result.duration = Date.now() - start;
@@ -521,10 +522,10 @@ export async function fetchAndIngestFeed(feed: IocFeed): Promise<IngestionResult
     }
 
     return await ingestFeed(feed, rawData);
-  } catch (e: any) {
+  } catch (e: unknown) {
     await db
       .update(iocFeeds)
-      .set({ lastFetchAt: new Date(), lastFetchStatus: `error: ${e.message}`, updatedAt: new Date() })
+      .set({ lastFetchAt: new Date(), lastFetchStatus: `error: ${errorMessage(e)}`, updatedAt: new Date() })
       .where(eq(iocFeeds.id, feed.id));
     return {
       feedId: feed.id,
@@ -532,7 +533,7 @@ export async function fetchAndIngestFeed(feed: IocFeed): Promise<IngestionResult
       newEntries: 0,
       updatedEntries: 0,
       totalParsed: 0,
-      errors: [`Fetch error: ${e.message}`],
+      errors: [`Fetch error: ${errorMessage(e)}`],
       duration: 0,
     };
   }

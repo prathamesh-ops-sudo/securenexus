@@ -2,7 +2,18 @@ import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, storage, strictLimiter } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { resolveOrgContext, requireMinRole, requireOrgId } from "../../rbac";
-import { checkModelHealth, getModelConfig, getInferenceMetrics, getInferenceHistory, getInferenceStats, clearModelCache, getAiOrgUsage, getAllAiOrgUsage, setAiOrgBudget, getPromptCatalogSummary } from "../../ai";
+import {
+  checkModelHealth,
+  getModelConfig,
+  getInferenceMetrics,
+  getInferenceHistory,
+  getInferenceStats,
+  clearModelCache,
+  getAiOrgUsage,
+  getAllAiOrgUsage,
+  setAiOrgBudget,
+  getPromptCatalogSummary,
+} from "../../ai";
 import { getCircuitBreakerStatus } from "../../ai/model-gateway";
 import { config as appConfig } from "../../config";
 import { pool } from "../../db";
@@ -136,7 +147,7 @@ export function registerAiSetupRoutes(app: Express): void {
     try {
       const health = await checkModelHealth();
       res.json(health);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("routes").error("Route error", { error: String(error) });
       res.status(500).json({ status: "error", message: "An internal error occurred. Please try again." });
     }

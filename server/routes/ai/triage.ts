@@ -6,6 +6,7 @@ import { correlateAlerts, buildThreatIntelContext } from "../../ai";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
 import { withAiFallback } from "../../ai/fallback";
 import { enqueueJob } from "../../job-queue";
+import { errorMessage, errorStack } from "../../utils/errors";
 
 const log = logger.child("routes-ai-triage");
 
@@ -34,8 +35,8 @@ export function getAiTriageHandler(): (job: any) => Promise<any> {
       });
 
       return { alertId, result };
-    } catch (err: any) {
-      return { error: err.message || String(err), alertId };
+    } catch (err: unknown) {
+      return { error: errorMessage(err), alertId };
     }
   };
 }
@@ -96,7 +97,7 @@ export function registerAiTriageRoutes(app: Express): void {
           status: "accepted",
           pollUrl: `/api/ai/triage/jobs/${job.id}`,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("AI triage enqueue error", { error: String(error) });
         res.status(500).json({ message: "AI triage failed. Please try again." });
       }
@@ -125,7 +126,7 @@ export function registerAiTriageRoutes(app: Express): void {
         return res.json({ status: "failed", error: job.lastError || "Unknown error" });
       }
       res.json({ status: job.status }); // pending, running
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("ai").error("Job poll error", { error: String(error) });
       res.status(500).json({ message: "Failed to check job status" });
     }
@@ -189,8 +190,8 @@ export function registerAiTriageRoutes(app: Express): void {
           logger.child("ai").warn("Usage tracking failed", { error: String(e), orgId });
         }
         res.json(result);
-      } catch (error: any) {
-        const errMsg = error?.message || String(error);
+      } catch (error: unknown) {
+        const errMsg = errorMessage(error) || String(error);
         logger.child("ai").error("AI correlation error", { error: errMsg });
         let userMessage = "AI correlation failed. Please try again.";
         if (errMsg.includes("Circuit breaker open")) {
@@ -255,7 +256,7 @@ export function registerAiTriageRoutes(app: Express): void {
         details: { alertCount: group.alertIds.length, title: incident.title },
       });
       res.json(incident);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("routes").error("Apply correlation error", { error: String(error) });
       res.status(500).json({ message: "Failed to apply correlation. Please try again." });
     }

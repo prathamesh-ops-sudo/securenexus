@@ -6,6 +6,7 @@ import { querySchemas, validatePathId, validateQuery } from "../../request-valid
 import { dispatchAction, type ActionContext } from "../../action-dispatcher";
 import { canRollback, createRollbackRecord } from "../../rollback-engine";
 import { extractNodes } from "./utils";
+import { errorMessage, errorStack } from "../../utils/errors";
 
 export function registerPlaybooksExecutionRoutes(app: Express): void {
   app.post("/api/playbooks/:id/execute", isAuthenticated, validatePathId("id"), async (req, res) => {
@@ -356,8 +357,8 @@ export function registerPlaybooksExecutionRoutes(app: Express): void {
       });
 
       res.json({ message: `Created ${rollbacks.length} rollback records`, rollbacks });
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
+    } catch (error: unknown) {
+      if (errorMessage(error) === "ORG_CONTEXT_MISSING")
         return res.status(403).json({ message: "Organization context required" });
       logger.child("routes").error("Rollback creation error", { error: String(error) });
       res.status(500).json({ message: "Failed to create rollback records" });

@@ -878,8 +878,12 @@ function DeadLetterQueueView({ connectors }: { connectors: ConnectorItem[] }) {
           description: `Only ${data.count} dead-letter entries in the last hour (threshold: 10)`,
         });
       }
-    } catch (err: any) {
-      toast({ title: "Alert check failed", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({
+        title: "Alert check failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
     } finally {
       setAlertChecking(false);
     }

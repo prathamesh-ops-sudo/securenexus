@@ -9,6 +9,7 @@ import { findRelatedAlertsByEntity, getEntitiesForAlert } from "../entity-resolv
 import { cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { validateAlertFieldLengths } from "../normalizer";
+import { errorMessage, errorStack } from "../utils/errors";
 
 export function registerAlertsRoutes(app: Express): void {
   // Alerts
@@ -73,14 +74,14 @@ export function registerAlertsRoutes(app: Express): void {
           sortOrder,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       return sendEnvelope(res, null, {
         status: 500,
         errors: [
           {
             code: "ALERTS_LIST_FAILED",
             message: "Failed to fetch alerts",
-            details: error?.message,
+            details: errorMessage(error),
           },
         ],
       });

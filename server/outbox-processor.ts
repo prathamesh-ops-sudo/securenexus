@@ -11,6 +11,7 @@ import {
   redactDeliveryLog,
 } from "./outbound-security";
 import { startSpan } from "./tracing";
+import { errorMessage, errorStack } from "./utils/errors";
 
 const log = logger.child("outbox-processor");
 
@@ -56,14 +57,14 @@ async function processPendingEvents(): Promise<void> {
         dispatchedAt: new Date(),
       });
       processedCount++;
-    } catch (err: any) {
+    } catch (err: unknown) {
       const attempts = (event.attempts || 0) + 1;
       const maxAttempts = event.maxAttempts || 5;
 
       if (attempts >= maxAttempts) {
         await storage.updateOutboxEvent(event.id, {
           status: "failed",
-          lastError: err.message || String(err),
+          lastError: errorMessage(err),
           attempts,
         });
         failedCount++;
@@ -75,7 +76,7 @@ async function processPendingEvents(): Promise<void> {
         const nextRetryAt = new Date(Date.now() + backoffMs);
         await storage.updateOutboxEvent(event.id, {
           status: "pending",
-          lastError: err.message || String(err),
+          lastError: errorMessage(err),
           attempts,
           nextRetryAt,
         });
@@ -111,7 +112,9 @@ async function dispatchOutboxEvent(event: any): Promise<void> {
               responseBody: `Blocked: ${urlCheck.reason}`,
               success: false,
             })
-            .catch((err) => log.warn("Failed to log blocked webhook delivery", { error: String(err), webhookId: webhook.id }));
+            .catch((err) =>
+              log.warn("Failed to log blocked webhook delivery", { error: String(err), webhookId: webhook.id }),
+            );
           continue;
         }
         if (isCircuitOpen(webhook.id)) {
@@ -160,7 +163,9 @@ async function dispatchOutboxEvent(event: any): Promise<void> {
             responseBody: result.responseBody.slice(0, 2000),
             success: result.success,
           })
-          .catch((err) => log.warn("Failed to log webhook delivery result", { error: String(err), webhookId: webhook.id }));
+          .catch((err) =>
+            log.warn("Failed to log webhook delivery result", { error: String(err), webhookId: webhook.id }),
+          );
       }
     },
     { "outbox.eventId": event.id, "outbox.eventType": event.eventType },

@@ -1,3 +1,4 @@
+import { errorMessage, errorStack } from "./utils/errors";
 export interface OsintIndicator {
   type: "ip" | "domain" | "url" | "hash" | "cve";
   value: string;
@@ -144,9 +145,9 @@ async function fetchUrlhausFeed(): Promise<OsintFeedResult> {
       status: "success",
       responseTimeMs: Date.now() - startTime,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
-      ...errorResult(feedName, feedUrl, err.message || "Unknown error"),
+      ...errorResult(feedName, feedUrl, errorMessage(err) || "Unknown error"),
       responseTimeMs: Date.now() - startTime,
     };
   }
@@ -202,9 +203,9 @@ async function fetchThreatFoxFeed(): Promise<OsintFeedResult> {
       status: "success",
       responseTimeMs: Date.now() - startTime,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
-      ...errorResult(feedName, feedUrl, err.message || "Unknown error"),
+      ...errorResult(feedName, feedUrl, errorMessage(err) || "Unknown error"),
       responseTimeMs: Date.now() - startTime,
     };
   }
@@ -244,9 +245,9 @@ async function fetchSSLBlacklistFeed(): Promise<OsintFeedResult> {
       status: "success",
       responseTimeMs: Date.now() - startTime,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
-      ...errorResult(feedName, feedUrl, err.message || "Unknown error"),
+      ...errorResult(feedName, feedUrl, errorMessage(err) || "Unknown error"),
       responseTimeMs: Date.now() - startTime,
     };
   }
@@ -281,9 +282,9 @@ async function fetchCISAKevFeed(): Promise<OsintFeedResult> {
       status: "success",
       responseTimeMs: Date.now() - startTime,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
-      ...errorResult(feedName, feedUrl, err.message || "Unknown error"),
+      ...errorResult(feedName, feedUrl, errorMessage(err) || "Unknown error"),
       responseTimeMs: Date.now() - startTime,
     };
   }

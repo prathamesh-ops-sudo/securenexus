@@ -7,6 +7,7 @@ import { insertOutboundWebhookSchema } from "@shared/schema";
 import { redactDeliveryLog, secureOutboundFetch, validateWebhookUrl } from "../outbound-security";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { errorMessage, errorStack } from "../utils/errors";
 
 export function registerWebhooksRoutes(app: Express): void {
   // Outbound Webhooks
@@ -178,14 +179,14 @@ export function registerWebhooksRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const webhooks = await storage.getOutboundWebhooks(orgId);
         return sendEnvelope(res, webhooks);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
             {
               code: "WEBHOOKS_LIST_FAILED",
               message: "Failed to fetch outbound webhooks",
-              details: error?.message,
+              details: errorMessage(error),
             },
           ],
         });
@@ -225,14 +226,14 @@ export function registerWebhooksRoutes(app: Express): void {
         }
         const webhook = await storage.createOutboundWebhook(parsed.data);
         return sendEnvelope(res, webhook, { status: 201 });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
             {
               code: "WEBHOOK_CREATE_FAILED",
               message: "Failed to create outbound webhook",
-              details: error?.message,
+              details: errorMessage(error),
             },
           ],
         });
@@ -264,14 +265,14 @@ export function registerWebhooksRoutes(app: Express): void {
           });
         }
         return sendEnvelope(res, webhook);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
             {
               code: "WEBHOOK_UPDATE_FAILED",
               message: "Failed to update outbound webhook",
-              details: error?.message,
+              details: errorMessage(error),
             },
           ],
         });
@@ -303,14 +304,14 @@ export function registerWebhooksRoutes(app: Express): void {
           });
         }
         return sendEnvelope(res, { deleted: true });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
             {
               code: "WEBHOOK_DELETE_FAILED",
               message: "Failed to delete outbound webhook",
-              details: error?.message,
+              details: errorMessage(error),
             },
           ],
         });
@@ -341,14 +342,14 @@ export function registerWebhooksRoutes(app: Express): void {
         return sendEnvelope(res, items, {
           meta: { offset, limit, total: allLogs.length },
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
             {
               code: "WEBHOOK_LOGS_FAILED",
               message: "Failed to fetch webhook logs",
-              details: error?.message,
+              details: errorMessage(error),
             },
           ],
         });
@@ -390,11 +391,15 @@ export function registerWebhooksRoutes(app: Express): void {
         return sendEnvelope(res, enriched, {
           meta: { offset, limit, total: filtered.length, statusFilter: statusFilter || "all" },
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
-            { code: "DELIVERY_HISTORY_FAILED", message: "Failed to fetch delivery history", details: error?.message },
+            {
+              code: "DELIVERY_HISTORY_FAILED",
+              message: "Failed to fetch delivery history",
+              details: errorMessage(error),
+            },
           ],
         });
       }
@@ -471,10 +476,10 @@ export function registerWebhooksRoutes(app: Express): void {
             ? { algorithm: "hmac-sha256", timestamp: signatureTimestamp, value: signature }
             : null,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "WEBHOOK_TEST_FAILED", message: "Failed to test webhook", details: error?.message }],
+          errors: [{ code: "WEBHOOK_TEST_FAILED", message: "Failed to test webhook", details: errorMessage(error) }],
         });
       }
     },
@@ -598,10 +603,12 @@ export function registerWebhooksRoutes(app: Express): void {
           alertOnMaxRetries: true,
           timeoutMs: 10000,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "RETRY_CONFIG_FAILED", message: "Failed to fetch retry config", details: error?.message }],
+          errors: [
+            { code: "RETRY_CONFIG_FAILED", message: "Failed to fetch retry config", details: errorMessage(error) },
+          ],
         });
       }
     },
@@ -701,11 +708,15 @@ export function registerWebhooksRoutes(app: Express): void {
         }
         const webhook = await storage.updateOutboundWebhook(p(req.params.id), { events });
         return sendEnvelope(res, webhook);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
-            { code: "EVENT_FILTER_UPDATE_FAILED", message: "Failed to update event filter", details: error?.message },
+            {
+              code: "EVENT_FILTER_UPDATE_FAILED",
+              message: "Failed to update event filter",
+              details: errorMessage(error),
+            },
           ],
         });
       }

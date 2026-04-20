@@ -1,6 +1,7 @@
 import { users, type User, type UpsertUser } from "@shared/models/auth";
 import { db } from "../db";
 import { eq } from "drizzle-orm";
+import { errorMessage, errorStack } from "../utils/errors";
 
 export interface IAuthStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -33,8 +34,12 @@ class AuthStorage implements IAuthStorage {
         })
         .returning();
       return user;
-    } catch (err: any) {
-      if (err?.code === "23505" && userData.email) {
+    } catch (err: unknown) {
+      if (
+        (typeof err === "object" && err !== null && "code" in err ? (err as { code?: unknown }).code : undefined) ===
+          "23505" &&
+        userData.email
+      ) {
         const [existing] = await db.select().from(users).where(eq(users.email, userData.email));
         if (existing) {
           const [updated] = await db

@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { errorMessage, errorStack } from "./utils/errors";
 
 interface TestResult {
   name: string;
@@ -23,8 +24,8 @@ async function runTest(name: string, fn: () => Promise<void>): Promise<TestResul
   try {
     await fn();
     return { name, passed: true, duration: Date.now() - start };
-  } catch (err: any) {
-    return { name, passed: false, duration: Date.now() - start, error: err.message || String(err) };
+  } catch (err: unknown) {
+    return { name, passed: false, duration: Date.now() - start, error: errorMessage(err) };
   }
 }
 

@@ -7,6 +7,7 @@ import { entities } from "@shared/schema";
 import type { InsertSecurityGraphAsset, InsertSecurityGraphRelationship } from "@shared/schema";
 import { createHash } from "crypto";
 import { eq } from "drizzle-orm";
+import { errorMessage, errorStack } from "../utils/errors";
 
 interface RequestWithUser extends Request {
   user?: { id?: string; email?: string };
