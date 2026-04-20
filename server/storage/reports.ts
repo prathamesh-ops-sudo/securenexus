@@ -36,7 +36,10 @@ export async function createReportTemplate(template: InsertReportTemplate): Prom
   return t;
 }
 
-export async function updateReportTemplate(id: string, data: Partial<ReportTemplate>): Promise<ReportTemplate | undefined> {
+export async function updateReportTemplate(
+  id: string,
+  data: Partial<ReportTemplate>,
+): Promise<ReportTemplate | undefined> {
   const [t] = await db
     .update(reportTemplates)
     .set({ ...data, updatedAt: new Date() })
@@ -71,7 +74,10 @@ export async function createReportSchedule(schedule: InsertReportSchedule): Prom
   return s;
 }
 
-export async function updateReportSchedule(id: string, data: Partial<ReportSchedule>): Promise<ReportSchedule | undefined> {
+export async function updateReportSchedule(
+  id: string,
+  data: Partial<ReportSchedule>,
+): Promise<ReportSchedule | undefined> {
   const [s] = await db
     .update(reportSchedules)
     .set({ ...data, updatedAt: new Date() })
@@ -157,7 +163,9 @@ export async function getLatestTemplateVersion(templateId: string): Promise<Repo
   return row;
 }
 
-export async function createReportTemplateVersion(version: InsertReportTemplateVersion): Promise<ReportTemplateVersion> {
+export async function createReportTemplateVersion(
+  version: InsertReportTemplateVersion,
+): Promise<ReportTemplateVersion> {
   const [created] = await db.insert(reportTemplateVersions).values(version).returning();
   return created;
 }
@@ -175,5 +183,5 @@ export async function updateReportTemplateVersion(
 }
 
 // ==========================================
-// 8.4 — Evidence Attachments
+// Evidence Attachments
 // ==========================================

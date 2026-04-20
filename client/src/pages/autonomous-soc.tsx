@@ -317,7 +317,7 @@ function OverviewTab() {
         </Card>
       </div>
 
-      {/* 63.3 — Autonomous SOC Performance Metrics */}
+      {/* Autonomous SOC Performance Metrics */}
       <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
         <Card>
           <CardContent className="p-4">
@@ -455,7 +455,7 @@ function OverviewTab() {
             <TableBody>
               {stats.recentDecisions.map((d) => (
                 <TableRow key={d.id}>
-                  {/* 63.1 — Enhanced audit trail with action tracking */}
+                  {/* Enhanced audit trail with action tracking */}
                   <TableCell className="font-mono text-xs">{d.alertId?.slice(0, 8) || "—"}</TableCell>
                   <TableCell>
                     <TierBadge tier={d.tier} />
@@ -1181,7 +1181,7 @@ function OverrideTab() {
 }
 
 // ═══════════════════════════════════════════════
-// 63.2 — CONFIDENCE THRESHOLD TUNING TAB
+// CONFIDENCE THRESHOLD TUNING TAB
 // ═══════════════════════════════════════════════
 
 function ThresholdTuningTab() {
@@ -1248,7 +1248,7 @@ function ThresholdTuningTab() {
         </CardContent>
       </Card>
 
-      {/* 63.4 — Graceful degradation status */}
+      {/* Graceful degradation status */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -1289,7 +1289,7 @@ function ThresholdTuningTab() {
         </CardContent>
       </Card>
 
-      {/* 63.5 — Learning from overrides */}
+      {/* Learning from overrides */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

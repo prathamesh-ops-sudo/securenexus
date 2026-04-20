@@ -1549,22 +1549,22 @@ export default function AiPromptRegistryPage() {
           </Card>
         </TabsContent>
 
-        {/* 34.1: A/B Testing Dashboard */}
+        {/* A/B Testing Dashboard */}
         <TabsContent value="ab-testing" className="mt-4">
           <ABTestingDashboard promptId={selectedPromptId} />
         </TabsContent>
 
-        {/* 34.2: Variable Documentation */}
+        {/* Variable Documentation */}
         <TabsContent value="variables" className="mt-4">
           <VariableDocumentation promptId={selectedPromptId} />
         </TabsContent>
 
-        {/* 34.3: Categories */}
+        {/* Categories */}
         <TabsContent value="categories" className="mt-4">
           <CategoriesPanel />
         </TabsContent>
 
-        {/* 34.4: Quality Scores */}
+        {/* Quality Scores */}
         <TabsContent value="quality" className="mt-4">
           <QualityScoresPanel promptId={selectedPromptId} />
         </TabsContent>

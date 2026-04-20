@@ -497,7 +497,7 @@ export function registerVulnScannerRoutes(app: Express): void {
   // 49.x: VULNERABILITY SCANNER — ADVANCED FEATURES
   // ==========================================================================
 
-  // 49.1: Scan target configuration
+  // Scan target configuration
   app.get("/api/native/vuln/scan-targets", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -549,7 +549,7 @@ export function registerVulnScannerRoutes(app: Express): void {
     }
   });
 
-  // 49.3: Scan comparison (before/after)
+  // Scan comparison (before/after)
   app.post("/api/native/vuln/compare-scans", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -599,7 +599,7 @@ export function registerVulnScannerRoutes(app: Express): void {
     }
   });
 
-  // 49.4: Scan scheduling
+  // Scan scheduling
   app.get("/api/native/vuln/scan-schedules", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -671,7 +671,7 @@ export function registerVulnScannerRoutes(app: Express): void {
     }
   });
 
-  // 49.5: Authenticated scanning — credential support
+  // Authenticated scanning — credential support
   app.post(
     "/api/native/vuln/authenticated-scan",
     isAuthenticated,
@@ -711,7 +711,7 @@ export function registerVulnScannerRoutes(app: Express): void {
     },
   );
 
-  // 49.6: Container and image scanning
+  // Container and image scanning
   app.post("/api/native/vuln/container-scan", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -746,7 +746,7 @@ export function registerVulnScannerRoutes(app: Express): void {
     }
   });
 
-  // 49.7: Vuln Scanner → Asset Inventory sync
+  // Vuln Scanner → Asset Inventory sync
   app.post("/api/native/vuln/sync-to-assets", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -791,7 +791,7 @@ export function registerVulnScannerRoutes(app: Express): void {
     }
   });
 
-  // 49.8: Vuln Scanner → Patch management integration
+  // Vuln Scanner → Patch management integration
   app.get("/api/native/vuln/patch-status", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);

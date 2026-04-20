@@ -86,7 +86,10 @@ export async function createPlaybookExecution(execution: InsertPlaybookExecution
   return created;
 }
 
-export async function updatePlaybookExecution(id: string, data: Partial<PlaybookExecution>): Promise<PlaybookExecution | undefined> {
+export async function updatePlaybookExecution(
+  id: string,
+  data: Partial<PlaybookExecution>,
+): Promise<PlaybookExecution | undefined> {
   const [updated] = await db.update(playbookExecutions).set(data).where(eq(playbookExecutions.id, id)).returning();
   return updated;
 }
@@ -120,7 +123,10 @@ export async function createPlaybookApproval(approval: InsertPlaybookApproval): 
   return created;
 }
 
-export async function updatePlaybookApproval(id: string, data: Partial<PlaybookApproval>): Promise<PlaybookApproval | undefined> {
+export async function updatePlaybookApproval(
+  id: string,
+  data: Partial<PlaybookApproval>,
+): Promise<PlaybookApproval | undefined> {
   const [updated] = await db.update(playbookApprovals).set(data).where(eq(playbookApprovals.id, id)).returning();
   return updated;
 }
@@ -155,13 +161,16 @@ export async function createPlaybookVersion(version: InsertPlaybookVersion): Pro
   return created;
 }
 
-export async function updatePlaybookVersion(id: string, data: Partial<PlaybookVersion>): Promise<PlaybookVersion | undefined> {
+export async function updatePlaybookVersion(
+  id: string,
+  data: Partial<PlaybookVersion>,
+): Promise<PlaybookVersion | undefined> {
   const [updated] = await db.update(playbookVersions).set(data).where(eq(playbookVersions.id, id)).returning();
   return updated;
 }
 
 // ==========================================
-// 8.3 — Blast Radius Previews
+// Blast Radius Previews
 // ==========================================
 
 export async function getBlastRadiusPreviews(playbookId: string, orgId?: string): Promise<BlastRadiusPreview[]> {
@@ -185,7 +194,7 @@ export async function createBlastRadiusPreview(preview: InsertBlastRadiusPreview
 }
 
 // ==========================================
-// 8.3 — Playbook Simulations
+// Playbook Simulations
 // ==========================================
 
 export async function getPlaybookSimulations(playbookId: string, orgId?: string): Promise<PlaybookSimulation[]> {
@@ -217,7 +226,7 @@ export async function updatePlaybookSimulation(
 }
 
 // ==========================================
-// 8.3 — Playbook Rollback Plans
+// Playbook Rollback Plans
 // ==========================================
 
 export async function getPlaybookRollbackPlans(playbookId: string, orgId?: string): Promise<PlaybookRollbackPlan[]> {
@@ -253,5 +262,5 @@ export async function updatePlaybookRollbackPlan(
 }
 
 // ==========================================
-// 8.4 — Report Template Versions
+// Report Template Versions
 // ==========================================

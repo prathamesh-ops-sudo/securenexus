@@ -44,7 +44,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 
-/* 94.5 — social proof: customer logos / awards */
+/* social proof: customer logos / awards */
 const SOCIAL_PROOF_LOGOS = [
   "Series B Fintech",
   "Healthcare SaaS",
@@ -280,7 +280,7 @@ export default function LandingPage() {
     }
   }, []);
 
-  /* 94.2 — SEO: set document title + meta description */
+  /* SEO: set document title + meta description */
   useEffect(() => {
     document.title = "SecureNexus — Enterprise Security Platform | No EDR Required";
     const metaDesc = document.querySelector('meta[name="description"]');
@@ -296,7 +296,7 @@ export default function LandingPage() {
         "Enterprise-grade security operations — asset inventory, risk management, compliance assessments, AI-powered threat detection. Works standalone, no EDR/SIEM required.";
       document.head.appendChild(meta);
     }
-    /* 94.2 — OG tags */
+    /* OG tags */
     const ogTags: Record<string, string> = {
       "og:title": "SecureNexus — Enterprise Security Platform",
       "og:description":
@@ -316,7 +316,7 @@ export default function LandingPage() {
         document.head.appendChild(meta);
       }
     });
-    /* 94.2 — structured data (JSON-LD) */
+    /* structured data (JSON-LD) */
     const ld = document.createElement("script");
     ld.type = "application/ld+json";
     ld.textContent = JSON.stringify({
@@ -390,20 +390,13 @@ export default function LandingPage() {
   const authError = loginError;
   const isSubmitting = isLoggingIn;
 
-  /* 94.7 — contact / demo request form handler */
   const handleContactSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setContactSubmitted(true);
-    /* 94.8 — analytics integration hint: track demo request */
-    // window.gtag?.('event', 'demo_request', { method: 'contact_form' });
-    // window.mixpanel?.track('Demo Requested', { name: contactName, email: contactEmail });
   };
 
   return (
     <div data-testid="landing-page" className="min-h-screen bg-background text-foreground font-sans refined-ui">
-      {/* 94.8 — Google Analytics / Mixpanel integration hints */}
-      {/* <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX" />
-          <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-XXXXXXXXXX');</script> */}
       {/* Auth Modal */}
       {authMode && (
         <div
@@ -599,7 +592,7 @@ export default function LandingPage() {
         </div>
       )}
 
-      {/* 94.4 — accessibility: skip-to-content link (WCAG 2.1 AA) */}
+      {/* accessibility: skip-to-content link (WCAG 2.1 AA) */}
       <a
         href="#landing-main"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-white focus:text-slate-900 focus:rounded-md focus:outline-none focus:shadow-lg focus:ring-2 focus:ring-blue-500"
@@ -607,7 +600,7 @@ export default function LandingPage() {
         Skip to main content
       </a>
 
-      {/* Navigation — 94.3: responsive, 94.4: aria roles */}
+      {/* Navigation — responsive, aria roles */}
       <header role="banner">
         <nav className="fixed top-4 left-4 right-4 z-50 max-w-6xl mx-auto" aria-label="Main navigation">
           <div className="flex items-center justify-between h-14 px-5 bg-white/5 dark:bg-white/[0.03] backdrop-blur-2xl border border-white/[0.08] rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
@@ -662,7 +655,7 @@ export default function LandingPage() {
       </header>
 
       <main id="landing-main" role="main">
-        {/* Hero — 94.3: responsive, 94.4: semantic heading hierarchy */}
+        {/* Hero — responsive, semantic heading hierarchy */}
         <section className="relative pt-[8.5rem] pb-28 px-4 sm:px-6 overflow-hidden" aria-label="Hero">
           <div className="max-w-6xl mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
@@ -684,7 +677,7 @@ export default function LandingPage() {
                   SecureNexus gives you asset inventory, risk management, compliance assessments, and AI-powered threat
                   detection — all standalone, no third-party tools needed.
                 </p>
-                {/* 94.6 — CTA optimization: clear primary + secondary CTAs */}
+                {/* CTA optimization: clear primary + secondary CTAs */}
                 <div className="flex flex-wrap items-center gap-3 mb-8">
                   <button
                     onClick={() => setAuthMode("login")}
@@ -723,7 +716,7 @@ export default function LandingPage() {
                 </div>
               </div>
 
-              {/* Dashboard mockup — 94.1: lazy-load image, 94.4: alt text */}
+              {/* Dashboard mockup — lazy-load image, alt text */}
               <div className="relative hidden lg:block" aria-hidden="true">
                 <div className="bg-card border border-border rounded-xl shadow-[0_4px_30px_rgba(0,0,0,0.4)] overflow-hidden">
                   <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-muted/30">
@@ -800,7 +793,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* 94.5 — social proof: trusted by section */}
+        {/* social proof: trusted by section */}
         <section className="py-10 px-4 sm:px-6" aria-label="Trusted by">
           <div className="max-w-5xl mx-auto text-center">
             <p className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-4">
@@ -830,7 +823,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Metrics bar — 94.3: responsive grid */}
+        {/* Metrics bar — responsive grid */}
         <section className="py-12 px-4 sm:px-6" aria-label="Key metrics">
           <div className="max-w-5xl mx-auto">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -851,7 +844,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Problem section — 94.3: responsive */}
+        {/* Problem section — responsive */}
         <section className="py-24 px-4 sm:px-6 bg-gradient-to-b from-background to-[#020617]" aria-label="The problem">
           <div className="max-w-5xl mx-auto">
             <div className="text-center mb-14">
@@ -882,7 +875,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* How It Works — 94.4: section role */}
+        {/* How It Works — section role */}
         <section ref={howItWorksRef} id="how-it-works" className="py-20 px-4 sm:px-6" aria-label="How it works">
           <div className="max-w-5xl mx-auto">
             <div className="text-center mb-14">
@@ -924,7 +917,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Integrations — 94.3: responsive */}
+        {/* Integrations — responsive */}
         <section
           className="py-16 overflow-hidden bg-gradient-to-b from-background to-[#020617]"
           aria-label="Integrations"
@@ -958,7 +951,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Capabilities — 94.4: ARIA */}
+        {/* Capabilities — ARIA */}
         <section id="features" className="py-24 px-4 sm:px-6" aria-label="Platform capabilities">
           <div className="max-w-5xl mx-auto">
             <div className="text-center mb-14">
@@ -989,7 +982,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Testimonials — 94.4: ARIA, 94.5: social proof */}
+        {/* Testimonials — ARIA, social proof */}
         <section
           className="pt-28 pb-20 px-4 sm:px-6 bg-gradient-to-b from-[#0f172a] to-[#0c1220]"
           aria-label="Customer testimonials"
@@ -1035,7 +1028,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Pricing — 94.3: responsive, 94.6: CTA optimization */}
+        {/* Pricing — responsive, CTA optimization */}
         <section id="pricing" className="py-24 px-4 sm:px-6" aria-label="Pricing plans">
           <div className="max-w-5xl mx-auto">
             <div className="text-center mb-14">
@@ -1158,7 +1151,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* FAQ — 94.4: aria-label */}
+        {/* FAQ — aria-label */}
         <section id="faq" className="py-20 px-4 sm:px-6" aria-label="Frequently asked questions">
           <div className="max-w-3xl mx-auto">
             <div className="text-center mb-10">
@@ -1175,7 +1168,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* 94.7 — Contact / Demo Request Form */}
+        {/* Contact / Demo Request Form */}
         <section
           id="contact-demo"
           className="py-20 px-4 sm:px-6 bg-gradient-to-b from-background to-[#0f172a]"
@@ -1267,7 +1260,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* CTA — 94.6: optimized CTAs */}
+        {/* CTA — optimized CTAs */}
         <section className="py-16 px-4 sm:px-6" aria-label="Call to action">
           <div className="max-w-2xl mx-auto text-center">
             <div className="bg-white/[0.02] border border-white/[0.08] rounded-xl p-10 shadow-[0_8px_40px_rgba(0,0,0,0.3)]">
@@ -1307,7 +1300,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Further Reading — 94.4: ARIA */}
+        {/* Further Reading — ARIA */}
         <section className="py-20 px-4 sm:px-6 border-t border-border/30" aria-label="Further reading">
           <div className="max-w-5xl mx-auto">
             <div className="text-center mb-10">
@@ -1356,7 +1349,7 @@ export default function LandingPage() {
         </section>
       </main>
 
-      {/* Footer — 94.4: semantic role */}
+      {/* Footer — semantic role */}
       <footer className="border-t border-border/30 py-10 px-4 sm:px-6" role="contentinfo">
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">

@@ -132,7 +132,7 @@ export default function MfaSetupPage() {
         </CardHeader>
       </Card>
 
-      {/* 93.2 — supported MFA methods */}
+      {/* supported MFA methods */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Supported Methods</CardTitle>
@@ -233,7 +233,7 @@ export default function MfaSetupPage() {
               </div>
             </div>
 
-            {/* 93.2 — backup codes with download option */}
+            {/* backup codes with download option */}
             <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/5 space-y-2">
               <p className="text-sm font-medium flex items-center gap-1.5">
                 <Download className="h-3.5 w-3.5 text-amber-500" />

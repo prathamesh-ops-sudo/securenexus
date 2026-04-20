@@ -374,7 +374,7 @@ function DashboardTab() {
         </Card>
       </div>
 
-      {/* 59.1 — Sharing Dashboard with gamification */}
+      {/* Sharing Dashboard with gamification */}
       {org && (
         <Card>
           <CardHeader>
@@ -746,7 +746,7 @@ function CommunityFeedsTab() {
 
   const feeds = data?.feeds || [];
 
-  // 59.2 — Industry feed curation: extract unique sectors
+  // Industry feed curation: extract unique sectors
   const sectors = Array.from(new Set(feeds.map((f) => f.industrySector).filter(Boolean) as string[]));
   const filteredFeeds = sectorFilter === "all" ? feeds : feeds.filter((f) => f.industrySector === sectorFilter);
 
@@ -761,7 +761,7 @@ function CommunityFeedsTab() {
         </div>
       </div>
 
-      {/* 59.2 — Industry Feed Curation Filter */}
+      {/* Industry Feed Curation Filter */}
       {sectors.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
@@ -1039,7 +1039,7 @@ function CampaignsTab() {
         </Button>
       </div>
 
-      {/* 59.3 — Campaign Correlation Visualization */}
+      {/* Campaign Correlation Visualization */}
       {campaigns.length >= 2 &&
         (() => {
           // Build shared infrastructure / common targets visualization

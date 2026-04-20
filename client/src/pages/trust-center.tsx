@@ -121,10 +121,10 @@ interface Summary {
   expiredArtifacts: number;
   totalDownloads: number;
   totalControlMappings: number;
-  /* 79.4 — auto-update from platform data */
+  /* auto-update from platform data */
   lastSyncedAt?: string | null;
   syncSource?: string;
-  /* 79.5 — access analytics */
+  /* access analytics */
   uniqueVisitors?: number;
   avgSessionDuration?: number;
 }
@@ -276,7 +276,7 @@ function OverviewTab() {
         </div>
       )}
 
-      {/* 79.4 — auto-update sync status from platform data */}
+      {/* auto-update sync status from platform data */}
       {summary?.lastSyncedAt && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-cyan-500/5 border border-cyan-500/20 text-xs text-muted-foreground">
           <Activity className="h-3.5 w-3.5 text-cyan-400" />
@@ -286,7 +286,7 @@ function OverviewTab() {
         </div>
       )}
 
-      {/* 79.5 — access analytics summary */}
+      {/* access analytics summary */}
       {(summary?.uniqueVisitors ?? 0) > 0 && (
         <div className="grid grid-cols-2 gap-4">
           <div className="rounded-xl border border-border/50 bg-card/50 p-4">
@@ -497,14 +497,14 @@ function ArtifactsTab() {
                         <Download className="h-3.5 w-3.5" />
                         {artifact.downloadCount} downloads
                       </span>
-                      {/* 79.2 — NDA gate indicator */}
+                      {/* NDA gate indicator */}
                       {artifact.accessLevel === "nda_required" && (
                         <span className="flex items-center gap-1 text-amber-400">
                           <Lock className="h-3.5 w-3.5" />
                           NDA Required
                         </span>
                       )}
-                      {/* 79.3 — expiration tracking */}
+                      {/* expiration tracking */}
                       {artifact.nextReviewDue && (
                         <span className="flex items-center gap-1">
                           <Calendar className="h-3.5 w-3.5" />
@@ -712,7 +712,7 @@ function AuditLogTab() {
 
   return (
     <div className="space-y-4">
-      {/* 79.5 — access analytics: download audit with summary */}
+      {/* access analytics: download audit with summary */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{entries.length} download records</p>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">

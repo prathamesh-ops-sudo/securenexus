@@ -133,7 +133,7 @@ describe("correlation-aggregator", () => {
 
       const result = aggregateCorrelationScores(scores);
 
-      // 0.9*0.5 + 0.8*0.3 + 0.6*0.2 = 0.45 + 0.24 + 0.12 = 0.81
+      // *0.5 + 0.8*0.3 + 0.6*0.2 = 0.45 + 0.24 + 0.12 = 0.81
       expect(result.finalConfidence).toBe(0.81);
       // spread = 0.9 - 0.6 ~ 0.3 (IEEE 754: 0.30000000000000004, so > 0.3 triggers needsReview)
       expect(result.divergenceSpread).toBeCloseTo(0.3, 1);

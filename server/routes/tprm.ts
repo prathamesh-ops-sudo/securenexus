@@ -1190,7 +1190,7 @@ export function registerTprmRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 65.1 — VENDOR RISK HEATMAP DATA
+  // VENDOR RISK HEATMAP DATA
   // ==========================================================================
 
   app.get(
@@ -1223,7 +1223,7 @@ export function registerTprmRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 65.2 — QUESTIONNAIRE AUTO-SCORING
+  // QUESTIONNAIRE AUTO-SCORING
   // ==========================================================================
 
   app.post(
@@ -1283,7 +1283,7 @@ export function registerTprmRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 65.3 — CONTINUOUS MONITORING DEPTH
+  // CONTINUOUS MONITORING DEPTH
   // ==========================================================================
 
   app.get(
@@ -1329,7 +1329,7 @@ export function registerTprmRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 65.4 — FOURTH-PARTY CONCENTRATION RISK
+  // FOURTH-PARTY CONCENTRATION RISK
   // ==========================================================================
 
   app.get(
@@ -1363,7 +1363,7 @@ export function registerTprmRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 65.5 — CONTRACT RISK EXTRACTION
+  // CONTRACT RISK EXTRACTION
   // ==========================================================================
 
   app.get(
@@ -1414,7 +1414,7 @@ export function registerTprmRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 65.6 — VENDOR BENCHMARKING / COMPARISON
+  // VENDOR BENCHMARKING / COMPARISON
   // ==========================================================================
 
   app.get(

@@ -291,7 +291,7 @@ export function registerMsspRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 73.5 — Cross-Tenant Analytics
+  // Cross-Tenant Analytics
   // ==========================================================================
 
   // GET /api/mssp/cross-tenant-analytics
@@ -365,7 +365,7 @@ export function registerMsspRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 73.6 — Tenant Data Isolation Verification
+  // Tenant Data Isolation Verification
   // ==========================================================================
 
   // GET /api/mssp/isolation-check

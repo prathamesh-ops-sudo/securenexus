@@ -219,7 +219,7 @@ export default function UebaPage() {
     },
   });
 
-  // 51.5: Baseline learning period
+  // Baseline learning period
   const { data: learningData } = useQuery<{
     entities: Array<{
       entityId: string;
@@ -237,7 +237,7 @@ export default function UebaPage() {
     queryFn: () => apiFetch("/api/ueba/learning-progress"),
   });
 
-  // 51.7: ML model transparency
+  // ML model transparency
   const { data: mlTransparency } = useQuery<{
     features: Array<{ name: string; importance: number; description: string }>;
     modelVersion: string;
@@ -476,7 +476,7 @@ export default function UebaPage() {
           </Card>
         </TabsContent>
 
-        {/* 51.1: Risk Score Dashboard with Trend Indicators */}
+        {/* Risk Score Dashboard with Trend Indicators */}
         <TabsContent value="leaderboard" className="mt-4 space-y-4">
           {/* Risk distribution chart */}
           <Card className="bg-zinc-900/50 border-zinc-800">
@@ -609,7 +609,7 @@ export default function UebaPage() {
             </CardContent>
           </Card>
         </TabsContent>
-        {/* 51.4: Activity Timeline per Entity */}
+        {/* Activity Timeline per Entity */}
         <TabsContent value="timeline" className="mt-4 space-y-4">
           <Card className="bg-zinc-900/50 border-zinc-800">
             <CardHeader>
@@ -645,7 +645,7 @@ export default function UebaPage() {
                             </span>
                           </div>
                           {a.description && <p className="text-xs text-muted-foreground">{a.description}</p>}
-                          {/* 51.2: Anomaly Detail with Context */}
+                          {/* Anomaly Detail with Context */}
                           {a.details && (
                             <div className="mt-2 bg-zinc-800/50 rounded p-2 text-xs space-y-1">
                               {(a.details as Record<string, unknown>).deviation !== undefined && (
@@ -688,7 +688,7 @@ export default function UebaPage() {
           </Card>
         </TabsContent>
 
-        {/* 51.3: Peer Group Comparison */}
+        {/* Peer Group Comparison */}
         <TabsContent value="peer-compare" className="mt-4 space-y-4">
           <Card className="bg-zinc-900/50 border-zinc-800">
             <CardHeader>
@@ -762,7 +762,7 @@ export default function UebaPage() {
           </Card>
         </TabsContent>
 
-        {/* 51.5: Baseline Learning Period */}
+        {/* Baseline Learning Period */}
         <TabsContent value="learning" className="mt-4 space-y-4">
           <Card className="bg-zinc-900/50 border-zinc-800">
             <CardHeader>
@@ -814,7 +814,7 @@ export default function UebaPage() {
           </Card>
         </TabsContent>
 
-        {/* 51.7: ML Model Transparency */}
+        {/* ML Model Transparency */}
         <TabsContent value="ml-model" className="mt-4 space-y-4">
           <Card className="bg-zinc-900/50 border-zinc-800">
             <CardHeader>

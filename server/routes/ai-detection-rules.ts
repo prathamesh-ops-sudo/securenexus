@@ -962,7 +962,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
   });
 
   // ==========================================================================
-  // 62.4 — RULE QUALITY VALIDATION PIPELINE
+  // RULE QUALITY VALIDATION PIPELINE
   // ==========================================================================
 
   app.post(
@@ -1033,7 +1033,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 62.5 — MARKETPLACE MODERATION REVIEW
+  // MARKETPLACE MODERATION REVIEW
   // ==========================================================================
 
   app.post(

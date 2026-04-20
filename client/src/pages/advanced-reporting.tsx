@@ -718,7 +718,7 @@ export default function AdvancedReportingPage() {
         </TabsContent>
       </Tabs>
 
-      {/* 77.1 — Report Generation Summary */}
+      {/* Report Generation Summary */}
       <Card>
         <CardContent className="p-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -745,7 +745,7 @@ export default function AdvancedReportingPage() {
         </CardContent>
       </Card>
 
-      {/* 77.4 — Financial Impact Analysis Summary */}
+      {/* Financial Impact Analysis Summary */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">

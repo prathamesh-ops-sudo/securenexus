@@ -1003,7 +1003,7 @@ export function registerIncidentsRoutes(app: Express): void {
   });
 
   // ==========================================
-  // 8.2 — Evidence Chain (Immutable Audit Trail)
+  // Evidence Chain (Immutable Audit Trail)
   // ==========================================
 
   app.get(
@@ -1156,7 +1156,7 @@ export function registerIncidentsRoutes(app: Express): void {
   );
 
   // ==========================================
-  // 8.2 — Incident Response Approvals
+  // Incident Response Approvals
   // ==========================================
 
   app.get("/api/incidents/:incidentId/approvals", isAuthenticated, validatePathId("incidentId"), async (req, res) => {
@@ -1319,7 +1319,7 @@ export function registerIncidentsRoutes(app: Express): void {
   );
 
   // ==========================================
-  // 8.2 — PIR Action Items
+  // PIR Action Items
   // ==========================================
 
   app.get("/api/pir/:reviewId/action-items", isAuthenticated, validatePathId("reviewId"), async (req, res) => {

@@ -155,7 +155,7 @@ export default function WarRoomPage() {
     enabled: !!selectedRoom && activeTab === "canvas",
   });
 
-  // 15.5: Activity log query
+  // Activity log query
   const { data: activityData } = useQuery({
     queryKey: ["/api/war-rooms", selectedRoom, "activity-log"],
     queryFn: async () => {
@@ -165,7 +165,7 @@ export default function WarRoomPage() {
     enabled: !!selectedRoom && activeTab === "activity",
   });
 
-  // 15.3: Templates query
+  // Templates query
   const { data: templatesData } = useQuery({
     queryKey: ["/api/war-room-templates"],
     queryFn: async () => {
@@ -175,7 +175,7 @@ export default function WarRoomPage() {
     enabled: showTemplateCreate,
   });
 
-  // 15.6: Archived rooms query
+  // Archived rooms query
   const { data: archivedData } = useQuery({
     queryKey: ["/api/war-rooms/archived", archivedSearch],
     queryFn: async () => {
@@ -185,7 +185,7 @@ export default function WarRoomPage() {
     enabled: showArchived,
   });
 
-  // 15.2: Thread query
+  // Thread query
   const { data: threadData } = useQuery({
     queryKey: ["/api/war-rooms", selectedRoom, "messages", threadMessageId, "thread"],
     queryFn: async () => {
@@ -209,7 +209,7 @@ export default function WarRoomPage() {
     onError: () => toast({ title: "Failed to create war room", variant: "destructive" }),
   });
 
-  // 15.1 + 15.2: Enhanced timeline mutation with contentFormat + threading
+  // + 15.2: Enhanced timeline mutation with contentFormat + threading
   const postTimelineMutation = useMutation({
     mutationFn: async ({
       content,
@@ -331,7 +331,7 @@ export default function WarRoomPage() {
     },
   });
 
-  // 15.4: Start Call mutation
+  // Start Call mutation
   const startCallMutation = useMutation({
     mutationFn: async (provider: string) => {
       const r = await apiRequest("POST", `/api/war-rooms/${selectedRoom}/start-call`, { provider });
@@ -348,7 +348,7 @@ export default function WarRoomPage() {
     onError: () => toast({ title: "Failed to start call", variant: "destructive" }),
   });
 
-  // 15.6: Archive mutation
+  // Archive mutation
   const archiveMutation = useMutation({
     mutationFn: async () => {
       const r = await apiRequest("POST", `/api/war-rooms/${selectedRoom}/archive`);
@@ -362,7 +362,7 @@ export default function WarRoomPage() {
     onError: () => toast({ title: "Failed to archive", variant: "destructive" }),
   });
 
-  // 15.6: Export mutation
+  // Export mutation
   const exportMutation = useMutation({
     mutationFn: async () => {
       const r = await apiRequest("GET", `/api/war-rooms/${selectedRoom}/export`);
@@ -382,7 +382,7 @@ export default function WarRoomPage() {
     onError: () => toast({ title: "Failed to export", variant: "destructive" }),
   });
 
-  // 15.7: Role change mutation
+  // Role change mutation
   const roleChangeMutation = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
       const r = await apiRequest("PATCH", `/api/war-rooms/${selectedRoom}/participants/${userId}/role`, { role });
@@ -395,7 +395,7 @@ export default function WarRoomPage() {
     onError: () => toast({ title: "Failed to update role", variant: "destructive" }),
   });
 
-  // 15.8: Run playbook mutation
+  // Run playbook mutation
   const runPlaybookMutation = useMutation({
     mutationFn: async (data: typeof playbookForm) => {
       const r = await apiRequest("POST", `/api/war-rooms/${selectedRoom}/run-playbook`, data);
@@ -410,7 +410,7 @@ export default function WarRoomPage() {
     onError: () => toast({ title: "Failed to trigger playbook", variant: "destructive" }),
   });
 
-  // 15.9: Generate Review mutation
+  // Generate Review mutation
   const generateReviewMutation = useMutation({
     mutationFn: async () => {
       const r = await apiRequest("POST", `/api/war-rooms/${selectedRoom}/generate-review`);
@@ -419,7 +419,7 @@ export default function WarRoomPage() {
     onError: () => toast({ title: "Failed to generate review", variant: "destructive" }),
   });
 
-  // 15.3: Create from template mutation
+  // Create from template mutation
   const createFromTemplateMutation = useMutation({
     mutationFn: async (data: { templateId: string; incidentId: string; name: string }) => {
       const r = await apiRequest("POST", "/api/war-rooms/from-template", data);
@@ -435,7 +435,7 @@ export default function WarRoomPage() {
     onError: () => toast({ title: "Failed to create from template", variant: "destructive" }),
   });
 
-  // 15.3: Seed templates mutation
+  // Seed templates mutation
   const seedTemplatesMutation = useMutation({
     mutationFn: async () => {
       const r = await apiRequest("POST", "/api/war-room-templates/seed");
@@ -485,12 +485,12 @@ export default function WarRoomPage() {
           <p className="text-sm text-muted-foreground mt-1">Persistent collaborative incident response coordination</p>
         </div>
         <div className="flex gap-2">
-          {/* 15.6: Archived rooms toggle */}
+          {/* Archived rooms toggle */}
           <Button variant="outline" onClick={() => setShowArchived(!showArchived)}>
             <Archive className="h-4 w-4 mr-2" />
             Archived
           </Button>
-          {/* 15.3: Create from template */}
+          {/* Create from template */}
           <Button variant="outline" onClick={() => setShowTemplateCreate(!showTemplateCreate)}>
             <LayoutTemplate className="h-4 w-4 mr-2" />
             From Template
@@ -502,7 +502,7 @@ export default function WarRoomPage() {
         </div>
       </div>
 
-      {/* 15.3: Template-based creation */}
+      {/* Template-based creation */}
       {showTemplateCreate && (
         <Card className="border-purple-500/20 bg-card/50">
           <CardHeader>
@@ -598,7 +598,7 @@ export default function WarRoomPage() {
         </Card>
       )}
 
-      {/* 15.6: Archived rooms panel */}
+      {/* Archived rooms panel */}
       {showArchived && (
         <Card className="border-gray-500/20 bg-card/50">
           <CardHeader>
@@ -774,14 +774,14 @@ export default function WarRoomPage() {
                         <LogOut className="h-4 w-4 mr-1" />
                         Leave
                       </Button>
-                      {/* 15.4: Start Call button */}
+                      {/* Start Call button */}
                       {(detailData.status as string) !== "closed" && (
                         <Button size="sm" variant="outline" onClick={() => setShowCallPanel(!showCallPanel)}>
                           <Phone className="h-4 w-4 mr-1" />
                           Call
                         </Button>
                       )}
-                      {/* 15.8: Run Playbook button */}
+                      {/* Run Playbook button */}
                       {(detailData.status as string) !== "closed" && (
                         <Button size="sm" variant="outline" onClick={() => setShowPlaybookPanel(!showPlaybookPanel)}>
                           <Workflow className="h-4 w-4 mr-1" />
@@ -800,7 +800,7 @@ export default function WarRoomPage() {
                           </Button>
                         </>
                       )}
-                      {/* 15.6: Archive + Export */}
+                      {/* Archive + Export */}
                       {(detailData.status as string) === "closed" && (
                         <>
                           <Button size="sm" variant="outline" onClick={() => archiveMutation.mutate()}>
@@ -830,7 +830,7 @@ export default function WarRoomPage() {
                 </CardHeader>
               </Card>
 
-              {/* 15.4: Call Panel */}
+              {/* Call Panel */}
               {showCallPanel && (
                 <Card className="border-blue-500/20 bg-card/50">
                   <CardHeader className="pb-2">
@@ -863,7 +863,7 @@ export default function WarRoomPage() {
                 </Card>
               )}
 
-              {/* 15.8: Playbook Panel */}
+              {/* Playbook Panel */}
               {showPlaybookPanel && (
                 <Card className="border-green-500/20 bg-card/50">
                   <CardHeader className="pb-2">
@@ -1004,7 +1004,7 @@ export default function WarRoomPage() {
                                 <Badge variant="outline" className="text-xs">
                                   {entry.type as string}
                                 </Badge>
-                                {/* 15.1: Content format badge */}
+                                {/* Content format badge */}
                                 {(entry.contentFormat as string) === "markdown" && (
                                   <Badge variant="outline" className="text-xs border-blue-500/30 text-blue-400">
                                     <Code className="h-3 w-3 mr-1" />
@@ -1015,14 +1015,14 @@ export default function WarRoomPage() {
                                   {new Date((entry.createdAt || entry.timestamp) as string).toLocaleTimeString()}
                                 </span>
                               </div>
-                              {/* 15.2: Thread indicator */}
+                              {/* Thread indicator */}
                               {(entry.parentMessageId as string) && (
                                 <div className="text-xs text-blue-400 flex items-center gap-1 mt-0.5">
                                   <Reply className="h-3 w-3" />
                                   <span>Threaded reply</span>
                                 </div>
                               )}
-                              {/* 15.1: Render content with markdown support */}
+                              {/* Render content with markdown support */}
                               <div className="text-sm text-muted-foreground mt-1">
                                 {(entry.contentFormat as string) === "markdown" ? (
                                   <pre className="whitespace-pre-wrap font-mono text-xs bg-muted/30 p-2 rounded">
@@ -1032,7 +1032,7 @@ export default function WarRoomPage() {
                                   <p>{entry.content as string}</p>
                                 )}
                               </div>
-                              {/* 15.2: Reply + Thread buttons */}
+                              {/* Reply + Thread buttons */}
                               <div className="flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button
                                   className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
@@ -1058,7 +1058,7 @@ export default function WarRoomPage() {
                                   Thread
                                 </button>
                               </div>
-                              {/* 15.2: Thread expansion */}
+                              {/* Thread expansion */}
                               {threadMessageId === (entry.id as string) && (
                                 <ThreadView
                                   data={threadData}
@@ -1078,7 +1078,7 @@ export default function WarRoomPage() {
 
                       {(detailData.status as string) !== "closed" && (
                         <div className="mt-3 pt-3 border-t border-border space-y-2">
-                          {/* 15.2: Reply indicator */}
+                          {/* Reply indicator */}
                           {replyTo && (
                             <div className="flex items-center justify-between text-xs text-blue-400 bg-blue-500/10 px-2 py-1 rounded">
                               <span className="flex items-center gap-1">
@@ -1108,7 +1108,7 @@ export default function WarRoomPage() {
                               <option value="decision">Decision</option>
                               <option value="action">Action</option>
                             </select>
-                            {/* 15.1: Content format toggle */}
+                            {/* Content format toggle */}
                             <div className="flex border border-border rounded overflow-hidden">
                               <button
                                 onClick={() => setContentFormat("plain")}
@@ -1125,7 +1125,7 @@ export default function WarRoomPage() {
                                 <Code className="h-3 w-3" />
                               </button>
                             </div>
-                            {/* 15.1: Rich text formatting toolbar */}
+                            {/* Rich text formatting toolbar */}
                             {contentFormat === "markdown" && (
                               <div className="flex border border-border rounded overflow-hidden">
                                 <button
@@ -1410,7 +1410,7 @@ export default function WarRoomPage() {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-// 15.2: Thread View component
+// Thread View component
 function ThreadView({
   data,
   parentId,
@@ -1452,7 +1452,7 @@ function ThreadView({
   );
 }
 
-// 15.5: Activity Log View
+// Activity Log View
 function ActivityLogView({ data }: { data: unknown }) {
   const list = Array.isArray(data) ? data : ((data as Record<string, unknown>)?.data as unknown[]) || [];
 
@@ -1517,7 +1517,7 @@ function ActivityLogView({ data }: { data: unknown }) {
   );
 }
 
-// 15.7: Roles View
+// Roles View
 function RolesView({
   participants,
   isClosed,
@@ -1780,7 +1780,7 @@ function ReplayView({ data }: { data: unknown }) {
   );
 }
 
-// 15.9: Enhanced Post-Mortem View with auto-generated PIR
+// Enhanced Post-Mortem View with auto-generated PIR
 function PostMortemView({
   detail,
   mutation,
@@ -1803,7 +1803,7 @@ function PostMortemView({
     }
   };
 
-  // 15.9: Auto-generate review
+  // Auto-generate review
   const handleAutoReview = async () => {
     try {
       const result = await generateReviewMutation.mutateAsync();
@@ -1838,7 +1838,7 @@ function PostMortemView({
               {mutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Generate Post-Mortem
             </Button>
-            {/* 15.9: Auto-generate comprehensive review */}
+            {/* Auto-generate comprehensive review */}
             <Button variant="outline" onClick={handleAutoReview} disabled={generateReviewMutation.isPending}>
               {generateReviewMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               <ScrollText className="h-4 w-4 mr-2" />
@@ -1850,7 +1850,7 @@ function PostMortemView({
     );
   }
 
-  // 15.9: Show auto-generated review
+  // Show auto-generated review
   if (reviewData) {
     const exec = (reviewData.executiveSummary || {}) as Record<string, unknown>;
     const tl = (reviewData.timeline || {}) as Record<string, unknown>;

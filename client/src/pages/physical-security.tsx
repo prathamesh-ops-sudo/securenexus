@@ -133,9 +133,9 @@ interface Dashboard {
   openIncidents: number;
   activeVisitors: number;
   recentEvents: BadgeEvent[];
-  // 67.1 — Facility zone status
+  // Facility zone status
   assetsByZone?: Array<{ zone: string; assetType: string; online: number; offline: number; total: number }>;
-  // 67.2 — Recent anomalies for convergence display
+  // Recent anomalies for convergence display
   recentAnomalies?: Array<{
     id: string;
     eventType: string;
@@ -144,7 +144,7 @@ interface Dashboard {
     anomalyReason: string | null;
     occurredAt: string;
   }>;
-  // 67.3 — Visitor stats
+  // Visitor stats
   visitorStats?: { total: number; preRegistered: number; checkedIn: number; checkedOut: number };
 }
 
@@ -506,7 +506,7 @@ export default function PhysicalSecurityPage() {
             </Card>
           </div>
 
-          {/* 67.1 — Facility Floor Plan Status (zone-level asset summary) */}
+          {/* Facility Floor Plan Status (zone-level asset summary) */}
           {dashboard?.assetsByZone && dashboard.assetsByZone.length > 0 && (
             <Card>
               <CardHeader>
@@ -546,7 +546,7 @@ export default function PhysicalSecurityPage() {
             </Card>
           )}
 
-          {/* 67.4 — Physical-Cyber Convergence (recent anomalies) */}
+          {/* Physical-Cyber Convergence (recent anomalies) */}
           {dashboard?.recentAnomalies && dashboard.recentAnomalies.length > 0 && (
             <Card>
               <CardHeader>
@@ -590,7 +590,7 @@ export default function PhysicalSecurityPage() {
             </Card>
           )}
 
-          {/* 67.3 — Visitor Stats */}
+          {/* Visitor Stats */}
           {dashboard?.visitorStats && (
             <Card>
               <CardHeader>
@@ -656,7 +656,7 @@ export default function PhysicalSecurityPage() {
                             Anomaly
                           </Badge>
                         )}
-                        {/* 67.5 — Camera feed indicator */}
+                        {/* Camera feed indicator */}
                         <Camera className="h-3 w-3 text-muted-foreground opacity-50" />
                         <span className="text-xs text-muted-foreground">{formatDateTime(event.occurredAt)}</span>
                       </div>
@@ -830,7 +830,7 @@ export default function PhysicalSecurityPage() {
                             <AlertTriangle className="h-3 w-3 mr-1" /> Anomaly
                           </Badge>
                         )}
-                        {/* 67.2 — Anomaly reason display */}
+                        {/* Anomaly reason display */}
                         {event.isAnomaly && event.anomalyReason && (
                           <span
                             className="text-[10px] text-orange-400 max-w-[200px] truncate"
@@ -839,7 +839,7 @@ export default function PhysicalSecurityPage() {
                             {event.anomalyReason}
                           </span>
                         )}
-                        {/* 67.5 — Camera indicator */}
+                        {/* Camera indicator */}
                         <Camera className="h-3 w-3 text-muted-foreground opacity-40" />
                         <span className="text-xs text-muted-foreground whitespace-nowrap">
                           {formatDateTime(event.occurredAt)}
@@ -1006,7 +1006,7 @@ export default function PhysicalSecurityPage() {
                           </Badge>
                           {visitor.purpose && <span className="text-xs text-muted-foreground">{visitor.purpose}</span>}
                         </div>
-                        {/* 67.3 — Temporary badge display */}
+                        {/* Temporary badge display */}
                         {visitor.badgeNumber && (
                           <p className="text-xs text-muted-foreground mt-1">
                             <Shield className="h-3 w-3 inline mr-1" />

@@ -1308,7 +1308,7 @@ export const responseActionRollbacks = pgTable("response_action_rollbacks", {
 });
 
 // ==========================================
-// 8.2 — Incident Response Lifecycle
+// Incident Response Lifecycle
 // ==========================================
 
 export const EVIDENCE_CHAIN_ENTRY_TYPES = [
@@ -1457,7 +1457,7 @@ export const pirActionItems = pgTable(
 );
 
 // ==========================================
-// 8.3 — Playbook Governance
+// Playbook Governance
 // ==========================================
 
 export const PLAYBOOK_VERSION_STATUSES = ["draft", "active", "deprecated", "archived"] as const;
@@ -1585,7 +1585,7 @@ export const playbookRollbackPlans = pgTable(
 );
 
 // ==========================================
-// 9.0 — Attack Graph Persistence (AI Deep Investigation)
+// Attack Graph Persistence (AI Deep Investigation)
 // ==========================================
 
 export const ATTACK_GRAPH_NODE_TYPES = [
@@ -3692,7 +3692,7 @@ export const evidenceLockerItems = pgTable(
 );
 
 // ==========================================
-// 8.4 — Reporting & Compliance as First-Class Products
+// Reporting & Compliance as First-Class Products
 // ==========================================
 
 export const REPORT_TEMPLATE_VERSION_STATUSES = ["draft", "active", "deprecated", "archived"] as const;
@@ -4916,7 +4916,7 @@ export const approvalDecisionRecordsRelations = relations(approvalDecisionRecord
   organization: one(organizations, { fields: [approvalDecisionRecords.orgId], references: [organizations.id] }),
 }));
 
-// ── 10.3 Large-table archival tables ────────────────────────────────────────
+// Large-table archival tables
 
 export const endpointTelemetryArchive = pgTable(
   "endpoint_telemetry_archive",
@@ -4989,7 +4989,7 @@ export const connectorJobRunsArchive = pgTable(
   ],
 );
 
-// ── 10.3 Partition management tracking ──────────────────────────────────────
+// Partition management tracking
 
 export const tablePartitions = pgTable(
   "table_partitions",
@@ -5013,7 +5013,7 @@ export const tablePartitions = pgTable(
   ],
 );
 
-// ── 11.1 SLI metrics rollup tables ─────────────────────────────────────────
+// SLI metrics rollup tables
 
 export const sliMetricsHourly = pgTable(
   "sli_metrics_hourly",

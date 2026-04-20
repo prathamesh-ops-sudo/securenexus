@@ -118,7 +118,7 @@ export function registerModelGatewayRoutes(app: Express): void {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 33.4 Model Health Monitoring with Auto-Failover
+  // Model Health Monitoring with Auto-Failover
   // ═══════════════════════════════════════════════════════════════════════════
 
   interface ModelHealthStatus {
@@ -227,7 +227,7 @@ export function registerModelGatewayRoutes(app: Express): void {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 33.5 Token Usage Tracking Per Request
+  // Token Usage Tracking Per Request
   // ═══════════════════════════════════════════════════════════════════════════
 
   interface TokenUsageRecord {
@@ -312,7 +312,7 @@ export function registerModelGatewayRoutes(app: Express): void {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 33.6 Model Version Management
+  // Model Version Management
   // ═══════════════════════════════════════════════════════════════════════════
 
   interface ModelVersion {
@@ -487,7 +487,7 @@ export function registerModelGatewayRoutes(app: Express): void {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 33.3 Cost Forecasting Endpoint
+  // Cost Forecasting Endpoint
   // ═══════════════════════════════════════════════════════════════════════════
 
   app.get("/api/model-gateway/cost-forecast", ...authChain, async (req, res) => {
@@ -554,7 +554,7 @@ export function registerModelGatewayRoutes(app: Express): void {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 33.1 & 33.2 Model Comparison Data + Routing Rules
+  // & 33.2 Model Comparison Data + Routing Rules
   // ═══════════════════════════════════════════════════════════════════════════
 
   interface RoutingRule {

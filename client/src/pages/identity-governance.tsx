@@ -1117,7 +1117,7 @@ function BlastRadiusTab() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {/* 53.2: Blast Radius Visual Graph */}
+          {/* Blast Radius Visual Graph */}
           {profiles.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
@@ -1243,7 +1243,7 @@ function BlastRadiusTab() {
 }
 
 // ============================================================================
-// 53.3: Privilege Creep Detection
+// Privilege Creep Detection
 // ============================================================================
 
 function PrivilegeCreepTab() {
@@ -1375,7 +1375,7 @@ function PrivilegeCreepTab() {
 }
 
 // ============================================================================
-// 53.4: Orphaned Account Detection (enhanced with HR cross-reference)
+// Orphaned Account Detection (enhanced with HR cross-reference)
 // ============================================================================
 
 function OrphanedAccountsTab() {

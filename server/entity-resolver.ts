@@ -193,10 +193,7 @@ function calculateEntityRisk(alert: Alert, entity: ExtractedEntity): number {
   return Math.round(risk * 100) / 100;
 }
 
-export async function getEntitiesForAlert(
-  alertId: string,
-  orgId?: string,
-): Promise<(Entity & { role: string })[]> {
+export async function getEntitiesForAlert(alertId: string, orgId?: string): Promise<(Entity & { role: string })[]> {
   const cacheKey = `entity-graph:${orgId || "global"}:alert:${alertId}`;
   return cacheGetOrLoad(
     cacheKey,
@@ -374,13 +371,13 @@ export async function mergeEntities(targetId: string, sourceId: string, mergedBy
       .from(entityAliases)
       .where(eq(entityAliases.entityId, sourceId));
 
-    // 14.4: Cascading merge — move alert_entities references
+    // Cascading merge — move alert_entities references
     await tx.update(alertEntities).set({ entityId: targetId }).where(eq(alertEntities.entityId, sourceId));
 
-    // 14.4: Cascading merge — move aliases
+    // Cascading merge — move aliases
     await tx.update(entityAliases).set({ entityId: targetId }).where(eq(entityAliases.entityId, sourceId));
 
-    // 14.4: Cascading merge — update attackPaths entityIds arrays
+    // Cascading merge — update attackPaths entityIds arrays
     const allPaths = await tx
       .select()
       .from(attackPaths)
@@ -416,7 +413,7 @@ export async function mergeEntities(targetId: string, sourceId: string, mergedBy
       .where(eq(entities.id, targetId))
       .returning();
 
-    // 14.2: Log merge history for undo
+    // Log merge history for undo
     await tx.insert(entityMergeHistory).values({
       orgId: targetEntity.orgId,
       targetEntityId: targetId,

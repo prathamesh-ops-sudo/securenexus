@@ -800,7 +800,7 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   });
 
   // ═══════════════════════════════════════════════
-  // 64.1 — SECURITY DEBT DASHBOARD
+  // SECURITY DEBT DASHBOARD
   // ═══════════════════════════════════════════════
 
   app.get("/api/developer-security/security-debt/summary", ...authChain, async (req, res) => {
@@ -840,7 +840,7 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   });
 
   // ═══════════════════════════════════════════════
-  // 64.3 — CI/CD PIPELINE INTEGRATION STATUS
+  // CI/CD PIPELINE INTEGRATION STATUS
   // ═══════════════════════════════════════════════
 
   app.get("/api/developer-security/pipeline-status", ...authChain, async (req, res) => {
@@ -876,7 +876,7 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   });
 
   // ═══════════════════════════════════════════════
-  // 64.4 — DEVELOPER LEADERBOARD
+  // DEVELOPER LEADERBOARD
   // ═══════════════════════════════════════════════
 
   app.get("/api/developer-security/leaderboard", ...authChain, async (req, res) => {
@@ -912,7 +912,7 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   });
 
   // ═══════════════════════════════════════════════
-  // 64.5 — SAST ENGINE ACCURACY METRICS
+  // SAST ENGINE ACCURACY METRICS
   // ═══════════════════════════════════════════════
 
   app.get("/api/developer-security/sast-accuracy", ...authChain, async (req, res) => {
@@ -950,7 +950,7 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   });
 
   // ═══════════════════════════════════════════════
-  // 64.6 — SECRET SCANNING DEPTH
+  // SECRET SCANNING DEPTH
   // ═══════════════════════════════════════════════
 
   app.get("/api/developer-security/secret-scan-depth", ...authChain, async (req, res) => {

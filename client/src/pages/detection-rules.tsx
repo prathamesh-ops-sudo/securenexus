@@ -621,7 +621,7 @@ function CreateRuleDialog({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-// 48.1: Rule Editor with Syntax Highlighting (Monaco-style)
+// Rule Editor with Syntax Highlighting (Monaco-style)
 function RuleEditorPanel({ rule }: { rule: DetectionRule }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -764,7 +764,7 @@ function RuleEditorPanel({ rule }: { rule: DetectionRule }) {
   );
 }
 
-// 48.2: Rule Testing Sandbox
+// Rule Testing Sandbox
 function RuleTestSandbox({ rule }: { rule: DetectionRule }) {
   const { toast } = useToast();
   const [testDays, setTestDays] = useState("7");
@@ -894,7 +894,7 @@ function RuleTestSandbox({ rule }: { rule: DetectionRule }) {
   );
 }
 
-// 48.3: Rule Effectiveness Scoring
+// Rule Effectiveness Scoring
 function RuleEffectivenessPanel({ rules }: { rules: DetectionRule[] }) {
   const { data: effectivenessData } = useQuery({
     queryKey: ["/api/detection-rules/effectiveness"],
@@ -1021,7 +1021,7 @@ function RuleEffectivenessPanel({ rules }: { rules: DetectionRule[] }) {
   );
 }
 
-// 48.4: Rule Dependency Management
+// Rule Dependency Management
 function RuleDependencyPanel({ rules }: { rules: DetectionRule[] }) {
   const { data: depsData } = useQuery({
     queryKey: ["/api/detection-rules/dependencies"],
@@ -1668,11 +1668,11 @@ export default function DetectionRulesPage() {
                   </div>
                 )}
               </TabsContent>
-              {/* 48.1: Rule Editor */}
+              {/* Rule Editor */}
               <TabsContent value="editor" className="mt-4">
                 <RuleEditorPanel rule={ruleDetail.rule} />
               </TabsContent>
-              {/* 48.2: Rule Testing Sandbox */}
+              {/* Rule Testing Sandbox */}
               <TabsContent value="test" className="mt-4">
                 <RuleTestSandbox rule={ruleDetail.rule} />
               </TabsContent>
@@ -1714,11 +1714,11 @@ export default function DetectionRulesPage() {
                   </div>
                 )}
               </TabsContent>
-              {/* 48.5: Rule Version History */}
+              {/* Rule Version History */}
               <TabsContent value="versions" className="mt-4">
                 <RuleVersionHistory ruleId={ruleDetail.rule.id} />
               </TabsContent>
-              {/* 48.6: Rule Performance */}
+              {/* Rule Performance */}
               <TabsContent value="perf" className="mt-4">
                 <RulePerformancePanel ruleId={ruleDetail.rule.id} ruleName={ruleDetail.rule.name} />
               </TabsContent>
@@ -1727,7 +1727,7 @@ export default function DetectionRulesPage() {
         </Card>
       )}
 
-      {/* 48.3: Rule Effectiveness Scoring */}
+      {/* Rule Effectiveness Scoring */}
       {!selectedRule && rules.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
@@ -1760,7 +1760,7 @@ export default function DetectionRulesPage() {
   );
 }
 
-// 48.5: Rule Version History
+// Rule Version History
 function RuleVersionHistory({ ruleId }: { ruleId: string }) {
   const { data } = useQuery({
     queryKey: ["/api/detection-rules", ruleId, "versions"],
@@ -1852,7 +1852,7 @@ function RuleVersionHistory({ ruleId }: { ruleId: string }) {
   );
 }
 
-// 48.6: Rule Performance Monitoring
+// Rule Performance Monitoring
 function RulePerformancePanel({ ruleId, ruleName }: { ruleId: string; ruleName: string }) {
   const { data } = useQuery({
     queryKey: ["/api/detection-rules", ruleId, "performance"],

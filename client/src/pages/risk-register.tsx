@@ -270,7 +270,7 @@ function CreateRiskDialog({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-// 46.2: Risk Trend Tracking
+// Risk Trend Tracking
 function RiskTrendPanel({ risks }: { risks: RiskEntry[] }) {
   const byMonth: Record<string, { count: number; avgScore: number; avgResidual: number }> = {};
   risks.forEach((r) => {
@@ -340,7 +340,7 @@ function RiskTrendPanel({ risks }: { risks: RiskEntry[] }) {
   );
 }
 
-// 46.3: Risk Ownership & Accountability
+// Risk Ownership & Accountability
 function RiskOwnershipPanel({ risks }: { risks: RiskEntry[] }) {
   const owners: Record<string, { total: number; critical: number; overdue: number; treating: number }> = {};
   risks.forEach((r) => {
@@ -400,7 +400,7 @@ function RiskOwnershipPanel({ risks }: { risks: RiskEntry[] }) {
   );
 }
 
-// 46.4: Risk Treatment Plans
+// Risk Treatment Plans
 function RiskTreatmentPanel({ risks, onUpdate }: { risks: RiskEntry[]; onUpdate: () => void }) {
   const { toast } = useToast();
   const updateMutation = useMutation({

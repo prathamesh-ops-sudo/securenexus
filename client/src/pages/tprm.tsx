@@ -420,7 +420,7 @@ export default function TprmPage() {
         </div>
       </div>
 
-      {/* 65.1 — Vendor Risk Dashboard with heatmap scatter */}
+      {/* Vendor Risk Dashboard with heatmap scatter */}
       {summary && (
         <Card className="mb-4">
           <CardHeader>
@@ -734,7 +734,7 @@ export default function TprmPage() {
               <CardDescription>Domain, SSL, HTTP, and security header checks</CardDescription>
             </CardHeader>
             <CardContent>
-              {/* 65.3 — Continuous monitoring depth indicators */}
+              {/* Continuous monitoring depth indicators */}
               {!monitoringStatus?.recentAlerts || monitoringStatus.recentAlerts.length === 0 ? (
                 <div className="text-center py-8 text-sm text-muted-foreground">
                   No monitoring alerts. Run a monitoring sweep to check vendor attack surfaces.
@@ -923,7 +923,7 @@ export default function TprmPage() {
                 <div className="text-2xl font-semibold">{fourthPartyData?.byVendor?.length || 0}</div>
               </CardContent>
             </Card>
-            {/* 65.4 — concentration risk */}
+            {/* concentration risk */}
             <Card>
               <CardContent className="pt-4 pb-3">
                 <div className="flex items-center gap-2 mb-1">
@@ -1118,7 +1118,7 @@ export default function TprmPage() {
                   </div>
                 )}
 
-                {/* 65.5 — Contract risk extraction with clause highlighting */}
+                {/* Contract risk extraction with clause highlighting */}
                 {vendorDetail.vendor.contractStartDate && (
                   <Card>
                     <CardContent className="pt-3 pb-3">
@@ -1151,7 +1151,7 @@ export default function TprmPage() {
                   </Card>
                 )}
 
-                {/* 65.2 — Questionnaire automation with auto-scoring */}
+                {/* Questionnaire automation with auto-scoring */}
                 {/* Assessments */}
                 <div>
                   <h4 className="text-sm font-medium mb-2 flex items-center gap-2">

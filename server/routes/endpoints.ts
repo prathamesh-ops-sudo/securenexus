@@ -423,7 +423,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 25.1 Cloud Resource Inventory Tree View ─────────────────────────────
+  // Cloud Resource Inventory Tree View
 
   app.get(
     "/api/cspm/resources/tree",
@@ -516,7 +516,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 25.2 Compliance Posture by Framework per Cloud Account ───────────────
+  // Compliance Posture by Framework per Cloud Account
 
   const COMPLIANCE_FRAMEWORKS = [
     {
@@ -692,7 +692,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 25.3 Drift Detection Visualization ──────────────────────────────────
+  // Drift Detection Visualization
 
   app.get(
     "/api/cspm/drift/:resourceId/detail",
@@ -766,7 +766,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 25.4 Multi-Cloud Unified Dashboard ──────────────────────────────────
+  // Multi-Cloud Unified Dashboard
 
   app.get(
     "/api/cspm/multi-cloud/dashboard",
@@ -880,7 +880,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 25.5 Scheduled Scanning ─────────────────────────────────────────────
+  // Scheduled Scanning
 
   function computeNextScan(interval: string, from: Date = new Date()): string {
     const next = new Date(from);
@@ -1009,7 +1009,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 25.6 Auto-Remediation Safety Controls ───────────────────────────────
+  // Auto-Remediation Safety Controls
 
   app.post(
     "/api/cspm/remediation/dry-run",
@@ -1190,7 +1190,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 25.7 Resource Change Tracking ────────────────────────────────────────
+  // Resource Change Tracking
 
   app.get(
     "/api/cspm/resource-changes",
@@ -1265,7 +1265,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 25.8 CSPM -> Attack Path Analysis Integration ───────────────────────
+  // CSPM -> Attack Path Analysis Integration
 
   app.get(
     "/api/cspm/integrations/attack-paths",
@@ -1311,7 +1311,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 25.9 CSPM -> Compliance Center Mapping ──────────────────────────────
+  // CSPM -> Compliance Center Mapping
 
   app.get(
     "/api/cspm/integrations/compliance-mapping",
@@ -1379,7 +1379,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 25.10 CSPM -> Incident Correlation ──────────────────────────────────
+  // CSPM -> Incident Correlation
 
   app.get(
     "/api/cspm/integrations/incidents",
@@ -1739,7 +1739,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 26.1 Endpoint Detail Page (Rich Detail) ──────────────────────────────
+  // Endpoint Detail Page (Rich Detail)
 
   app.get(
     "/api/endpoints/:id/detail",
@@ -1949,7 +1949,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 26.2 Endpoint Status At-a-Glance Dashboard ───────────────────────────
+  // Endpoint Status At-a-Glance Dashboard
 
   app.get(
     "/api/endpoints/dashboard",
@@ -2030,7 +2030,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 26.3 Endpoint Group Management ────────────────────────────────────────
+  // Endpoint Group Management
 
   const endpointGroups = new Map<
     string,
@@ -2167,7 +2167,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 26.4 Real-time Endpoint Status via Heartbeat ─────────────────────────
+  // Real-time Endpoint Status via Heartbeat
 
   app.post("/api/endpoints/:id/heartbeat", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
@@ -2252,7 +2252,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 26.5 Endpoint Software Inventory Sync ────────────────────────────────
+  // Endpoint Software Inventory Sync
 
   app.get(
     "/api/endpoints/:id/software-inventory",
@@ -2333,7 +2333,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 26.6 Endpoint → Vuln Scanner Correlation ─────────────────────────────
+  // Endpoint → Vuln Scanner Correlation
 
   app.get(
     "/api/endpoints/:id/vulnerabilities",
@@ -2464,7 +2464,7 @@ export function registerEndpointsRoutes(app: Express): void {
     },
   );
 
-  // ─── 26.7 Endpoint → Native Sensor Deployment Status ──────────────────────
+  // Endpoint → Native Sensor Deployment Status
 
   app.get(
     "/api/endpoints/sensor-coverage",

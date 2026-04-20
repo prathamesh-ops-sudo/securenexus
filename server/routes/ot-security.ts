@@ -910,7 +910,7 @@ export function registerOtSecurityRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 55.4 — PASSIVE NETWORK MONITORING VERIFICATION
+  // PASSIVE NETWORK MONITORING VERIFICATION
   // =========================================================================
 
   /**
@@ -984,7 +984,7 @@ export function registerOtSecurityRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 55.5 — OT VULNERABILITY TRACKING (ICS-CERT cross-reference)
+  // OT VULNERABILITY TRACKING (ICS-CERT cross-reference)
   // =========================================================================
 
   /**

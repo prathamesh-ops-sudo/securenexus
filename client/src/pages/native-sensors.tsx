@@ -636,7 +636,7 @@ function timeAgo(dateStr: string | null): string {
   return `${Math.floor(diffSec / 86400)}d ago`;
 }
 
-// 47.1: Sensor Deployment Wizard (multi-step)
+// Sensor Deployment Wizard (multi-step)
 function SensorDeploymentWizard() {
   const [step, setStep] = useState(1);
   const [selectedPlatform, setSelectedPlatform] = useState("linux");
@@ -856,7 +856,7 @@ function SensorDeploymentWizard() {
   );
 }
 
-// 47.2: Sensor Fleet Dashboard
+// Sensor Fleet Dashboard
 function SensorFleetDashboard({ sensors, stats }: { sensors: Sensor[]; stats: SensorStats }) {
   const platformBreakdown: Record<string, number> = {};
   sensors.forEach((s) => {
@@ -970,7 +970,7 @@ function SensorFleetDashboard({ sensors, stats }: { sensors: Sensor[]; stats: Se
   );
 }
 
-// 47.3: Sensor Policy Management
+// Sensor Policy Management
 function SensorPolicyPanel() {
   const { toast } = useToast();
   const [showCreate, setShowCreate] = useState(false);
@@ -1148,7 +1148,7 @@ function SensorPolicyPanel() {
   );
 }
 
-// 47.4: Sensor Version Management
+// Sensor Version Management
 function SensorVersionPanel({ sensors }: { sensors: Sensor[] }) {
   const { toast } = useToast();
   const [rolloutTarget, setRolloutTarget] = useState<string | null>(null);
@@ -1638,10 +1638,10 @@ function LogSourceConfigPanel() {
 }
 
 // ==========================================================================
-// 50.1: Command execution with live output
-// 50.2: Command templates library
-// 50.3: Command approval workflow
-// 50.4: Multi-agent batch commands
+// Command execution with live output
+// Command templates library
+// Command approval workflow
+// Multi-agent batch commands
 // ==========================================================================
 
 const COMMAND_TEMPLATES = [
@@ -1756,7 +1756,7 @@ function CommandTemplatesPanel({ sensors }: { sensors: Sensor[] }) {
       return res.json();
     },
     onSuccess: (data) => {
-      // 50.1: Simulate streaming output
+      // Simulate streaming output
       setIsStreaming(true);
       setCommandOutput([`[${new Date().toISOString()}] Command dispatched to agent...`]);
       const lines = [
@@ -1851,7 +1851,7 @@ function CommandTemplatesPanel({ sensors }: { sensors: Sensor[] }) {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {/* 50.3: Approval warning for destructive commands */}
+            {/* Approval warning for destructive commands */}
             {selectedTemplate && (selectedTemplate.risk === "high" || selectedTemplate.risk === "critical") && (
               <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3 flex items-start gap-2">
                 <ShieldCheck className="h-4 w-4 text-orange-400 mt-0.5 flex-shrink-0" />
@@ -1916,7 +1916,7 @@ function CommandTemplatesPanel({ sensors }: { sensors: Sensor[] }) {
               )}
             </Button>
 
-            {/* 50.1: Live output streaming */}
+            {/* Live output streaming */}
             {commandOutput.length > 0 && (
               <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
                 <div className="flex items-center justify-between mb-2">
@@ -1949,7 +1949,7 @@ function CommandTemplatesPanel({ sensors }: { sensors: Sensor[] }) {
   );
 }
 
-// 50.3: Command approval workflow
+// Command approval workflow
 function CommandApprovalPanel() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -2064,7 +2064,7 @@ function CommandApprovalPanel() {
   );
 }
 
-// 50.4: Multi-agent batch commands
+// Multi-agent batch commands
 function BatchCommandPanel({ sensors }: { sensors: Sensor[] }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();

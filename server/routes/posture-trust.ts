@@ -979,7 +979,7 @@ export function registerPostureTrustRoutes(app: Express): void {
   });
 
   // ==========================================================================
-  // 60.5 — CONTINUOUS POSTURE RECALCULATION (webhook trigger)
+  // CONTINUOUS POSTURE RECALCULATION (webhook trigger)
   // ==========================================================================
 
   app.post("/api/posture-trust/recalculate", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -1061,7 +1061,7 @@ export function registerPostureTrustRoutes(app: Express): void {
   });
 
   // ==========================================================================
-  // 60.6 — QUESTIONNAIRE RESPONSE AUTO-POPULATION
+  // QUESTIONNAIRE RESPONSE AUTO-POPULATION
   // ==========================================================================
 
   app.post(

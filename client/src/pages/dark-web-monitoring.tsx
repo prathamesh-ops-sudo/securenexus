@@ -140,7 +140,7 @@ interface DashboardData {
   lastScan: ScanHistoryEntry | null;
 }
 
-// 66.2 — Brand mention threat levels
+// Brand mention threat levels
 const BRAND_THREAT_LEVELS: Record<string, { label: string; color: string }> = {
   active_targeting: { label: "Active Targeting", color: "bg-red-500/10 text-red-500 border-red-500/20" },
   marketplace_listing: { label: "Marketplace Listing", color: "bg-orange-500/10 text-orange-500 border-orange-500/20" },
@@ -149,7 +149,7 @@ const BRAND_THREAT_LEVELS: Record<string, { label: string; color: string }> = {
   historical: { label: "Historical", color: "bg-slate-500/10 text-slate-500 border-slate-500/20" },
 };
 
-// 66.1 — Credential type labels
+// Credential type labels
 const CREDENTIAL_TYPES: Record<string, { label: string; icon: typeof Key }> = {
   email_password: { label: "Email + Password", icon: Mail },
   api_key: { label: "API Key", icon: Key },
@@ -159,7 +159,7 @@ const CREDENTIAL_TYPES: Record<string, { label: string; icon: typeof Key }> = {
   session_cookie: { label: "Session Cookie", icon: Globe },
 };
 
-// 66.4 — Data source freshness indicators
+// Data source freshness indicators
 const SOURCE_FRESHNESS: Record<string, { label: string; color: string }> = {
   live: { label: "Live (< 24h)", color: "bg-green-500/10 text-green-500" },
   recent: { label: "Recent (< 7d)", color: "bg-blue-500/10 text-blue-500" },
@@ -176,7 +176,7 @@ function getSourceFreshness(discoveredAt: string): string {
   return "recycled";
 }
 
-// 66.5 — Credential validation status
+// Credential validation status
 function credentialValidationBadge(exposure: DarkWebExposure) {
   // Heuristic: if breach is very recent and credential type is email_password, likely still valid
   if (exposure.exposureType !== "credential_leak") return null;
@@ -716,9 +716,9 @@ export default function DarkWebMonitoringPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          {/* 66.5 — credential validation status */}
+                          {/* credential validation status */}
                           {credentialValidationBadge(exposure)}
-                          {/* 66.4 — data freshness indicator */}
+                          {/* data freshness indicator */}
                           {(() => {
                             const freshness = getSourceFreshness(exposure.discoveredAt);
                             const info = SOURCE_FRESHNESS[freshness];
@@ -1169,7 +1169,7 @@ export default function DarkWebMonitoringPage() {
                 </div>
               </div>
 
-              {/* 66.1 — Where found, credential type, affected user */}
+              {/* Where found, credential type, affected user */}
               <div className="rounded-md border p-3 space-y-2">
                 <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                   <Database className="h-3.5 w-3.5" /> Source Details
@@ -1262,7 +1262,7 @@ export default function DarkWebMonitoringPage() {
                 </div>
               )}
 
-              {/* 66.1 — Action buttons: reset password, notify user, disable account */}
+              {/* Action buttons: reset password, notify user, disable account */}
               {exposureDetail.exposureType === "credential_leak" && exposureDetail.status !== "mitigated" && (
                 <div className="rounded-md border p-3 space-y-2">
                   <div className="text-xs font-medium text-muted-foreground">Response Actions</div>

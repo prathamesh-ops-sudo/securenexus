@@ -266,7 +266,7 @@ function DashboardTab() {
         </Card>
       </div>
 
-      {/* 56.1 — Device Posture At-a-Glance */}
+      {/* Device Posture At-a-Glance */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm flex items-center gap-2">
@@ -775,7 +775,7 @@ function ZtnaTab() {
 
   return (
     <div className="space-y-4">
-      {/* 56.2 — Visual Policy Builder Summary */}
+      {/* Visual Policy Builder Summary */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
@@ -1023,7 +1023,7 @@ function SessionsTab() {
         </Card>
       )}
 
-      {/* 56.3 — Remote Worker Risk Map (geographic summary) */}
+      {/* Remote Worker Risk Map (geographic summary) */}
       {sessions.length > 0 && (
         <Card>
           <CardHeader className="pb-2">

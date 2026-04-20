@@ -50,9 +50,9 @@ const TABS = [
   { id: "activations", label: "My Activations", icon: CheckCircle2 },
   { id: "changelog", label: "Changelogs", icon: GitBranch },
   { id: "presets", label: "Strictness Presets", icon: ArrowUpDown },
-  /* 82.3 — acknowledgment tracking tab */
+  /* acknowledgment tracking tab */
   { id: "acknowledgments", label: "Acknowledgments", icon: FileCheck2 },
-  /* 82.6 — distribution tab */
+  /* distribution tab */
   { id: "distribution", label: "Distribution", icon: Send },
 ] as const;
 
@@ -478,7 +478,7 @@ function CatalogTab() {
                         ))}
                       </div>
 
-                      {/* 82.2 — customization workflow: show customizable fields */}
+                      {/* customization workflow: show customizable fields */}
                       {pack.customizable && (
                         <div className="p-2 rounded-md bg-cyan-500/5 border border-cyan-500/20">
                           <div className="flex items-center gap-1.5 mb-1">
@@ -491,7 +491,7 @@ function CatalogTab() {
                         </div>
                       )}
 
-                      {/* 82.4 — version management: version history link */}
+                      {/* version management: version history link */}
                       {pack.previousVersions && pack.previousVersions > 0 && (
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <History className="h-3 w-3" />
@@ -501,7 +501,7 @@ function CatalogTab() {
                         </div>
                       )}
 
-                      {/* 82.5 — compliance checking indicator */}
+                      {/* compliance checking indicator */}
                       {pack.complianceFrameworks && pack.complianceFrameworks.length > 0 && (
                         <div className="flex items-center gap-2 flex-wrap">
                           <FileCheck2 className="h-3 w-3 text-emerald-400" />
@@ -922,7 +922,7 @@ export default function PolicyPacksPage() {
       {activeTab === "activations" && <ActivationsTab />}
       {activeTab === "changelog" && <ChangelogTab />}
       {activeTab === "presets" && <PresetsTab />}
-      {/* 82.3 — Acknowledgment Tracking */}
+      {/* Acknowledgment Tracking */}
       {activeTab === "acknowledgments" && (
         <Card className="glass-subtle">
           <CardHeader>
@@ -957,7 +957,7 @@ export default function PolicyPacksPage() {
           </CardContent>
         </Card>
       )}
-      {/* 82.6 — Distribution */}
+      {/* Distribution */}
       {activeTab === "distribution" && (
         <Card className="glass-subtle">
           <CardHeader>

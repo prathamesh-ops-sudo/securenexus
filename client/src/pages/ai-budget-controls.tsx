@@ -52,7 +52,7 @@ interface BudgetAlert {
   createdAt: string;
 }
 
-// ── 36.1: Burn-Down Chart Data ──
+// Burn-Down Chart Data
 interface BurnDownData {
   monthlyLimit: number;
   totalSpent: number;
@@ -65,7 +65,7 @@ interface BurnDownData {
   dailyPoints: { day: number; consumed: number; remaining: number; projected: number }[];
 }
 
-// ── 36.2: Budget Alert Thresholds ──
+// Budget Alert Thresholds
 interface BudgetThresholdData {
   thresholds: { level: number; label: string; breached: boolean; currentPct: number }[];
   currentPct: number;
@@ -73,13 +73,13 @@ interface BudgetThresholdData {
   currentSpend: number;
 }
 
-// ── 36.3: Budget Allocation ──
+// Budget Allocation
 interface BudgetAllocation {
   monthlyLimit: number;
   allocations: { useCase: string; allocatedPct: number; allocatedUsd: number; actualUsd: number; actualPct: number }[];
 }
 
-// ── 36.4: Cost Breakdown ──
+// Cost Breakdown
 interface CostBreakdown {
   avgCostPerInvocation: number;
   dailySpend: number;
@@ -93,7 +93,7 @@ interface CostBreakdown {
   }[];
 }
 
-// ── 36.5: Enforcement Status ──
+// Enforcement Status
 interface EnforcementStatus {
   enforcementLevel: string;
   actions: string[];
@@ -105,7 +105,7 @@ interface EnforcementStatus {
   currentInvocations: number;
 }
 
-// ── 36.1: Burn-Down Chart Component ──
+// Burn-Down Chart Component
 function BurnDownChart({ data }: { data: BurnDownData }) {
   const maxVal = data.monthlyLimit;
   const barWidth = 100 / data.dailyPoints.length;
@@ -192,7 +192,7 @@ function BurnDownChart({ data }: { data: BurnDownData }) {
   );
 }
 
-// ── 36.2: Alert Thresholds Component ──
+// Alert Thresholds Component
 function AlertThresholdsPanel({ data }: { data: BudgetThresholdData }) {
   return (
     <Card>
@@ -228,7 +228,7 @@ function AlertThresholdsPanel({ data }: { data: BudgetThresholdData }) {
   );
 }
 
-// ── 36.3: Budget Allocation Component ──
+// Budget Allocation Component
 function BudgetAllocationPanel({ data }: { data: BudgetAllocation }) {
   return (
     <Card>
@@ -271,7 +271,7 @@ function BudgetAllocationPanel({ data }: { data: BudgetAllocation }) {
   );
 }
 
-// ── 36.4: Cost Breakdown Component ──
+// Cost Breakdown Component
 function CostBreakdownPanel({ data }: { data: CostBreakdown }) {
   return (
     <Card>
@@ -313,7 +313,7 @@ function CostBreakdownPanel({ data }: { data: CostBreakdown }) {
   );
 }
 
-// ── 36.5: Enforcement Status Component ──
+// Enforcement Status Component
 function EnforcementStatusPanel({ data }: { data: EnforcementStatus }) {
   const levelColors: Record<string, string> = {
     normal: "text-green-500",
@@ -533,10 +533,10 @@ export default function AiBudgetControlsPage() {
         </Card>
       </div>
 
-      {/* 36.1: Burn-Down Chart */}
+      {/* Burn-Down Chart */}
       {burnDown && <BurnDownChart data={burnDown} />}
 
-      {/* 36.5: Enforcement Status */}
+      {/* Enforcement Status */}
       {enforcement && <EnforcementStatusPanel data={enforcement} />}
 
       <Tabs defaultValue="models">
@@ -609,7 +609,7 @@ export default function AiBudgetControlsPage() {
           )}
         </TabsContent>
 
-        {/* 36.2: Alert Thresholds Tab */}
+        {/* Alert Thresholds Tab */}
         <TabsContent value="thresholds" className="space-y-3">
           {thresholds ? (
             <AlertThresholdsPanel data={thresholds} />
@@ -623,7 +623,7 @@ export default function AiBudgetControlsPage() {
           )}
         </TabsContent>
 
-        {/* 36.3: Allocation Tab */}
+        {/* Allocation Tab */}
         <TabsContent value="allocation" className="space-y-3">
           {allocation ? (
             <BudgetAllocationPanel data={allocation} />
@@ -637,7 +637,7 @@ export default function AiBudgetControlsPage() {
           )}
         </TabsContent>
 
-        {/* 36.4: Cost Breakdown Tab */}
+        {/* Cost Breakdown Tab */}
         <TabsContent value="cost-breakdown" className="space-y-3">
           {costBreakdown ? (
             <CostBreakdownPanel data={costBreakdown} />
@@ -717,7 +717,7 @@ export default function AiBudgetControlsPage() {
               </div>
             </CardContent>
           </Card>
-          {/* 36.6: Budget Rollover */}
+          {/* Budget Rollover */}
           <Card className="mt-4">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">

@@ -111,12 +111,7 @@ export async function getIncidentsPaginatedWithSort(params: {
   const orderFn = params.sortOrder === "asc" ? asc : desc;
 
   const totalQuery = db.select({ total: count() }).from(incidents);
-  const itemsQuery = db
-    .select()
-    .from(incidents)
-    .orderBy(orderFn(sortColumn))
-    .limit(params.limit)
-    .offset(params.offset);
+  const itemsQuery = db.select().from(incidents).orderBy(orderFn(sortColumn)).limit(params.limit).offset(params.offset);
 
   const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
   const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
@@ -179,7 +174,10 @@ export async function createIncidentSlaPolicy(policy: InsertIncidentSlaPolicy): 
   return created;
 }
 
-export async function updateIncidentSlaPolicy(id: string, data: Partial<IncidentSlaPolicy>): Promise<IncidentSlaPolicy | undefined> {
+export async function updateIncidentSlaPolicy(
+  id: string,
+  data: Partial<IncidentSlaPolicy>,
+): Promise<IncidentSlaPolicy | undefined> {
   const [updated] = await db
     .update(incidentSlaPolicies)
     .set({ ...data, updatedAt: new Date() })
@@ -256,7 +254,10 @@ export async function createPirActionItem(item: InsertPirActionItem): Promise<Pi
   return created;
 }
 
-export async function updatePirActionItem(id: string, data: Partial<PirActionItem>): Promise<PirActionItem | undefined> {
+export async function updatePirActionItem(
+  id: string,
+  data: Partial<PirActionItem>,
+): Promise<PirActionItem | undefined> {
   const [updated] = await db.update(pirActionItems).set(data).where(eq(pirActionItems.id, id)).returning();
   return updated;
 }
@@ -267,7 +268,7 @@ export async function deletePirActionItem(id: string): Promise<boolean> {
 }
 
 // ==========================================
-// 8.3 — Playbook Versions
+// Playbook Versions
 // ==========================================
 
 export async function getIncidentResponseApprovals(
@@ -290,7 +291,9 @@ export async function getIncidentResponseApproval(id: string): Promise<IncidentR
   return approval;
 }
 
-export async function createIncidentResponseApproval(approval: InsertIncidentResponseApproval): Promise<IncidentResponseApproval> {
+export async function createIncidentResponseApproval(
+  approval: InsertIncidentResponseApproval,
+): Promise<IncidentResponseApproval> {
   const [created] = await db.insert(incidentResponseApprovals).values(approval).returning();
   return created;
 }
@@ -308,5 +311,5 @@ export async function updateIncidentResponseApproval(
 }
 
 // ==========================================
-// 8.2 — PIR Action Items
+// PIR Action Items
 // ==========================================

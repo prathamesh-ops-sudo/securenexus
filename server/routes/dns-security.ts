@@ -596,7 +596,7 @@ export function registerDnsSecurityRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 71.5 — DNS Log Ingestion Verification
+  // DNS Log Ingestion Verification
   // ==========================================================================
 
   // GET /api/dns-security/ingestion-status
@@ -657,7 +657,7 @@ export function registerDnsSecurityRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 71.6 — DNS Policy Enforcement
+  // DNS Policy Enforcement
   // ==========================================================================
 
   // GET /api/dns-security/policy-stats

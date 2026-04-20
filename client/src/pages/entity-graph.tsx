@@ -358,7 +358,7 @@ function EntityTypeIcon({ type, className }: { type: string; className?: string 
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 11.2: Layout Algorithms
+// Layout Algorithms
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function computeLayout(
@@ -787,7 +787,7 @@ function EntityAliasManager({ entityId }: { entityId: string }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 14.1: Enhanced Entity Merge Dialog with side-by-side comparison
+// Enhanced Entity Merge Dialog with side-by-side comparison
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function EntityMergeDialog({
@@ -998,7 +998,7 @@ function EntityMergeDialog({
             </div>
           </div>
         ) : (
-          /* 14.1: Side-by-side merge preview */
+          /* Side-by-side merge preview */
           <div className="space-y-4">
             {previewLoading ? (
               <div className="space-y-3">
@@ -1203,7 +1203,7 @@ function EntityMergeDialog({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 14.2: Merge History and Undo Panel
+// Merge History and Undo Panel
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function MergeHistoryPanel({ entityId }: { entityId?: string }) {
@@ -1315,7 +1315,7 @@ function MergeHistoryPanel({ entityId }: { entityId?: string }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 14.3: Auto-Suggested Merges Queue
+// Auto-Suggested Merges Queue
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function MergeSuggestionsPanel({ onMerge }: { onMerge?: (sourceId: string, targetId: string) => void }) {
@@ -1483,10 +1483,10 @@ function MergeSuggestionsPanel({ onMerge }: { onMerge?: (sourceId: string, targe
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 13.1: Rich Entity Profile Page — activity timeline, risk factors, pivots
-// 13.3: Risk scoring visualization with factor breakdown
-// 13.6: Entity → Alert/Incident pivot
-// 13.7: Entity → Threat Hunting pivot
+// Rich Entity Profile Page — activity timeline, risk factors, pivots
+// Risk scoring visualization with factor breakdown
+// Entity → Alert/Incident pivot
+// Entity → Threat Hunting pivot
 // ═══════════════════════════════════════════════════════════════════════════════
 
 interface EntityProfile {
@@ -1562,7 +1562,7 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [detailTab, setDetailTab] = useState<string>("profile");
 
-  // 13.1: Rich entity profile
+  // Rich entity profile
   const { data: profile, isLoading: profileLoading } = useQuery<EntityProfile>({
     queryKey: ["/api/entities", entityId, "profile"],
     queryFn: async () => {
@@ -1572,7 +1572,7 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
     enabled: !!entityId,
   });
 
-  // 13.3: Dynamic risk scoring
+  // Dynamic risk scoring
   const { data: riskDetail } = useQuery<RiskScoreDetail>({
     queryKey: ["/api/entities", entityId, "risk-score"],
     queryFn: async () => {
@@ -1582,7 +1582,7 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
     enabled: !!entityId && detailTab === "risk",
   });
 
-  // 13.6: Alert/Incident pivot
+  // Alert/Incident pivot
   const { data: pivotData } = useQuery<PivotData>({
     queryKey: ["/api/entities", entityId, "pivot"],
     queryFn: async () => {
@@ -1592,7 +1592,7 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
     enabled: !!entityId && detailTab === "pivot",
   });
 
-  // 13.7: Threat hunt queries
+  // Threat hunt queries
   const { data: huntData } = useQuery<HuntQueryData>({
     queryKey: ["/api/entities", entityId, "hunt-query"],
     queryFn: async () => {
@@ -1711,7 +1711,7 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
               </TabsTrigger>
             </TabsList>
 
-            {/* 13.1: Profile tab — timeline, aliases, relationships, incidents */}
+            {/* Profile tab — timeline, aliases, relationships, incidents */}
             <TabsContent value="profile" className="mt-2 space-y-3">
               {/* Activity timeline mini-chart */}
               {profile?.activityTimeline && profile.activityTimeline.length > 0 && (
@@ -1839,7 +1839,7 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
               )}
             </TabsContent>
 
-            {/* 13.3: Risk scoring visualization */}
+            {/* Risk scoring visualization */}
             <TabsContent value="risk" className="mt-2 space-y-3">
               {riskDetail ? (
                 <>
@@ -1932,7 +1932,7 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
               )}
             </TabsContent>
 
-            {/* 13.6: Entity → Alert/Incident pivot */}
+            {/* Entity → Alert/Incident pivot */}
             <TabsContent value="pivot" className="mt-2 space-y-3">
               {pivotData ? (
                 <>
@@ -2013,7 +2013,7 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
               )}
             </TabsContent>
 
-            {/* 13.7: Entity → Threat Hunting pivot */}
+            {/* Entity → Threat Hunting pivot */}
             <TabsContent value="hunt" className="mt-2 space-y-3">
               {huntData ? (
                 <>
@@ -2105,9 +2105,9 @@ function EntityDetailPanel({ entityId, allNodes }: { entityId: string; allNodes:
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 11.1: Canvas-based graph rendering with level-of-detail + zoom/pan
-// 11.2: Multiple layout algorithms
-// 11.9: UEBA anomaly overlay (pulsing nodes)
+// Canvas-based graph rendering with level-of-detail + zoom/pan
+// Multiple layout algorithms
+// UEBA anomaly overlay (pulsing nodes)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function VisualGraph({
@@ -2159,7 +2159,7 @@ function VisualGraph({
     return computeLayout(visibleNodes, visibleEdges, layoutType, WIDTH, HEIGHT);
   }, [visibleNodes, visibleEdges, layoutType]);
 
-  // 11.1: Level-of-detail — cluster nodes when zoomed out with many nodes
+  // Level-of-detail — cluster nodes when zoomed out with many nodes
   const useClusterMode = visibleNodes.length > 100 && zoom < 0.6;
 
   const clusters = useMemo(() => {
@@ -2184,7 +2184,7 @@ function VisualGraph({
     return typeGroups;
   }, [useClusterMode, visibleNodes, layout]);
 
-  // 11.1: Canvas rendering for performance with large datasets
+  // Canvas rendering for performance with large datasets
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -2275,7 +2275,7 @@ function VisualGraph({
             );
           const dimmed = selectedId && !isSelected && !connectedToSelected && !isPathNode;
 
-          // 11.9: UEBA pulsing glow
+          // UEBA pulsing glow
           const uebaData = uebaOverlay?.overlay?.[node.id];
           if (uebaData && uebaData.uebaRiskScore >= 40) {
             const glowRadius = radius + 8 + pulseScale * 6;
@@ -2333,7 +2333,7 @@ function VisualGraph({
             ctx.globalAlpha = 1;
           }
 
-          // 11.9: UEBA badge
+          // UEBA badge
           if (uebaData && uebaData.uebaRiskScore >= 20) {
             const badgeX = pos.x + radius;
             const badgeY = pos.y - radius;
@@ -2548,7 +2548,7 @@ function VisualGraph({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 11.3: Filter Panel
+// Filter Panel
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function FilterPanel({
@@ -2634,7 +2634,7 @@ function FilterPanel({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 11.4: Path Finding Panel
+// Path Finding Panel
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function PathFindingPanel({
@@ -2813,7 +2813,7 @@ function PathFindingPanel({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 11.5: Snapshot Panel
+// Snapshot Panel
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function SnapshotPanel() {
@@ -2955,7 +2955,7 @@ function SnapshotPanel() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 11.6: Graph Query Language Panel
+// Graph Query Language Panel
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function GraphQueryPanel() {
@@ -3053,7 +3053,7 @@ function GraphQueryPanel() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 13.2: Type-Ahead Entity Search
+// Type-Ahead Entity Search
 // ═══════════════════════════════════════════════════════════════════════════════
 
 interface TypeaheadSuggestion {
@@ -3168,7 +3168,7 @@ function TypeAheadSearch({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 11.8: Create Incident from Graph Dialog
+// Create Incident from Graph Dialog
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function CreateIncidentDialog({
@@ -3319,7 +3319,7 @@ export default function EntityGraphPage() {
   const [showSidebar, setShowSidebar] = useState(true);
   const [activeToolTab, setActiveToolTab] = useState<string>("filter");
 
-  // 11.7: Real-time graph updates via SSE
+  // Real-time graph updates via SSE
   const [sseConnected, setSseConnected] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
@@ -3339,7 +3339,7 @@ export default function EntityGraphPage() {
     },
   });
 
-  // 11.9: UEBA anomaly overlay
+  // UEBA anomaly overlay
   const { data: uebaOverlay } = useQuery<UebaOverlay>({
     queryKey: ["/api/entity-graph/ueba-overlay"],
     queryFn: async () => {
@@ -3349,7 +3349,7 @@ export default function EntityGraphPage() {
     enabled: showUebaOverlay,
   });
 
-  // 11.7: Real-time SSE updates
+  // Real-time SSE updates
   useEffect(() => {
     if (!autoRefresh) return;
     const eventSource = new EventSource("/api/events/stream", { withCredentials: true });
@@ -3443,7 +3443,7 @@ export default function EntityGraphPage() {
     setVisibleEdgeTypes(new Set());
   }, []);
 
-  // 11.8: Context menu for creating incidents
+  // Context menu for creating incidents
   const handleGraphContextMenu = useCallback(
     (entityId: string, _x: number, _y: number) => {
       const ids = selectedEntityId ? [selectedEntityId, entityId] : [entityId];
@@ -3514,7 +3514,7 @@ export default function EntityGraphPage() {
           <div className="gradient-accent-line w-24 mt-2" />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* 11.7: SSE connection status */}
+          {/* SSE connection status */}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -3533,7 +3533,7 @@ export default function EntityGraphPage() {
             </Tooltip>
           </TooltipProvider>
 
-          {/* 11.9: UEBA overlay toggle */}
+          {/* UEBA overlay toggle */}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -3558,7 +3558,7 @@ export default function EntityGraphPage() {
             </Tooltip>
           </TooltipProvider>
 
-          {/* 11.2: Layout selector */}
+          {/* Layout selector */}
           <Select value={layoutType} onValueChange={(v) => setLayoutType(v as LayoutType)}>
             <SelectTrigger className="w-40 h-8 text-xs">
               <Layout className="h-3 w-3 mr-1" />
@@ -3601,7 +3601,7 @@ export default function EntityGraphPage() {
 
       {graph && <EntityGraphStats graph={graph} />}
 
-      {/* 13.2: Search with type-ahead and filters */}
+      {/* Search with type-ahead and filters */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex-1 min-w-[200px] max-w-sm">
           <TypeAheadSearch value={search} onChange={setSearch} onSelectEntity={handleSelectEntity} />
@@ -3792,7 +3792,7 @@ export default function EntityGraphPage() {
         )}
       </div>
 
-      {/* 11.8: Incident creation dialog */}
+      {/* Incident creation dialog */}
       <CreateIncidentDialog
         open={incidentDialogOpen}
         onOpenChange={setIncidentDialogOpen}

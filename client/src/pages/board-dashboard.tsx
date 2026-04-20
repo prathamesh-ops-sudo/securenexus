@@ -464,7 +464,7 @@ export default function BoardDashboardPage() {
         <div>
           <h1 className="text-2xl font-bold">Board Dashboard</h1>
           <p className="text-muted-foreground text-sm">Security metrics intelligence for executive reporting</p>
-          {/* 85.1 — executive-friendly visualization indicator */}
+          {/* executive-friendly visualization indicator */}
           <div className="flex items-center gap-1.5 mt-1">
             <Users className="h-3 w-3 text-blue-500" />
             <span className="text-[10px] text-muted-foreground">
@@ -485,7 +485,7 @@ export default function BoardDashboardPage() {
               <SelectItem value="365">Last year</SelectItem>
             </SelectContent>
           </Select>
-          {/* 85.6 — board report generation button */}
+          {/* board report generation button */}
           <Button variant="outline" size="sm" onClick={() => snapshotMut.mutate()} disabled={snapshotMut.isPending}>
             <FileText className="h-4 w-4 mr-1" />
             Export Board Report
@@ -507,7 +507,7 @@ export default function BoardDashboardPage() {
             <TabsTrigger value="coverage">Coverage</TabsTrigger>
             <TabsTrigger value="benchmark">Benchmarking</TabsTrigger>
             <TabsTrigger value="budget">Budget</TabsTrigger>
-            {/* 85.5 — board report generation tab */}
+            {/* board report generation tab */}
             <TabsTrigger value="report">
               <FileText className="h-4 w-4 mr-1" />
               Board Report
@@ -518,7 +518,7 @@ export default function BoardDashboardPage() {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
-            {/* 85.7 — data aggregation + historical trends indicator */}
+            {/* data aggregation + historical trends indicator */}
             <Card>
               <CardContent className="py-3">
                 <div className="flex items-center gap-4 text-sm">
@@ -576,7 +576,7 @@ export default function BoardDashboardPage() {
               />
             </div>
 
-            {/* 85.2 — financial risk quantification card */}
+            {/* financial risk quantification card */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
@@ -603,7 +603,7 @@ export default function BoardDashboardPage() {
               </CardContent>
             </Card>
 
-            {/* 85.3 — compliance status summary */}
+            {/* compliance status summary */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
@@ -626,7 +626,7 @@ export default function BoardDashboardPage() {
               </CardContent>
             </Card>
 
-            {/* 85.4 — incident summary card */}
+            {/* incident summary card */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
@@ -729,7 +729,7 @@ export default function BoardDashboardPage() {
             <BudgetOptimizationSection />
           </TabsContent>
 
-          {/* 85.5 — Board report generation tab content */}
+          {/* Board report generation tab content */}
           <TabsContent value="report" className="space-y-4">
             <Card>
               <CardHeader>

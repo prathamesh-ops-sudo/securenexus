@@ -548,7 +548,7 @@ export function registerSupplyChainRoutes(app: Express): void {
     },
   );
 
-  // ── 52.4: SBOM Auto-Generation from CI/CD ──────────────────────────
+  // SBOM Auto-Generation from CI/CD
   app.post(
     "/api/supply-chain/sbom/auto-generate",
     isAuthenticated,
@@ -639,7 +639,7 @@ export function registerSupplyChainRoutes(app: Express): void {
     },
   );
 
-  // ── 52.5: Continuous Dependency Monitoring ─────────────────────────
+  // Continuous Dependency Monitoring
   app.post(
     "/api/supply-chain/dependency-monitor/scan",
     isAuthenticated,
@@ -706,7 +706,7 @@ export function registerSupplyChainRoutes(app: Express): void {
     },
   );
 
-  // ── 52.6: License Compliance Checking ──────────────────────────────
+  // License Compliance Checking
   app.post(
     "/api/supply-chain/license-compliance/check",
     isAuthenticated,
@@ -827,7 +827,7 @@ export function registerSupplyChainRoutes(app: Express): void {
     },
   );
 
-  // ── 52.2: SBOM Dashboard data ──────────────────────────────────────
+  // SBOM Dashboard data
   app.get(
     "/api/supply-chain/sbom-dashboard",
     isAuthenticated,
@@ -869,7 +869,7 @@ export function registerSupplyChainRoutes(app: Express): void {
     },
   );
 
-  // ── 52.3: Typosquatting Review data ────────────────────────────────
+  // Typosquatting Review data
   app.get(
     "/api/supply-chain/typosquatting-review",
     isAuthenticated,
@@ -893,7 +893,7 @@ export function registerSupplyChainRoutes(app: Express): void {
     },
   );
 
-  // ── 52.3: Whitelist a dependency (mark as non-typosquat) ───────────
+  // Whitelist a dependency (mark as non-typosquat)
   app.post(
     "/api/supply-chain/dependencies/:id/whitelist",
     isAuthenticated,

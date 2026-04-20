@@ -243,7 +243,7 @@ const FRAMEWORK_DISPLAY: Record<string, { label: string; color: string }> = {
   ccpa: { label: "CCPA/CPRA", color: "text-lime-400 border-lime-500/30" },
 };
 
-/* 78.7 — Continuous compliance monitoring status labels */
+/* Continuous compliance monitoring status labels */
 const MONITORING_STATUS: Record<string, { label: string; color: string }> = {
   passing: { label: "Passing", color: "text-green-500 bg-green-500/10" },
   degraded: { label: "Degraded", color: "text-amber-500 bg-amber-500/10" },
@@ -266,13 +266,13 @@ interface ComplianceCenterData {
       lastDeletedCount: number;
     };
     dataResidency: string;
-    /* 78.4 — audit readiness score */
+    /* audit readiness score */
     auditReadiness?: number;
-    /* 78.6 — automated evidence sources */
+    /* automated evidence sources */
     automatedEvidenceSources?: number;
-    /* 78.7 — continuous monitoring status per framework */
+    /* continuous monitoring status per framework */
     monitoringStatus?: Record<string, string>;
-    /* 78.8 — framework version metadata */
+    /* framework version metadata */
     frameworkVersions?: Record<string, { version: string; lastUpdated: string | null }>;
   };
   frameworkCoverage: Record<
@@ -365,7 +365,7 @@ function ComplianceCenterTab() {
 
   const { overview, frameworkCoverage } = centerData;
 
-  /* 78.4 — compute audit readiness from coverage data */
+  /* compute audit readiness from coverage data */
   const auditReadiness =
     overview.auditReadiness ??
     (() => {
@@ -377,7 +377,7 @@ function ComplianceCenterTab() {
 
   return (
     <div className="space-y-6">
-      {/* 78.1 — framework selector with progress */}
+      {/* framework selector with progress */}
       <div className="flex items-center gap-3 flex-wrap">
         <Label className="text-xs text-muted-foreground">Framework</Label>
         <Select value={selectedFw} onValueChange={setSelectedFw}>
@@ -457,7 +457,7 @@ function ComplianceCenterTab() {
             <p className="text-xs text-muted-foreground">primary data region</p>
           </CardContent>
         </Card>
-        {/* 78.4 — Audit Readiness KPI */}
+        {/* Audit Readiness KPI */}
         <Card>
           <CardContent className="pt-4 pb-3 px-4">
             <div className="flex items-center gap-2 mb-2">
@@ -521,7 +521,7 @@ function ComplianceCenterTab() {
         </CardContent>
       </Card>
 
-      {/* 78.5 — Cross-framework control mapping summary */}
+      {/* Cross-framework control mapping summary */}
       {Object.keys(frameworkCoverage).length > 1 && (
         <Card>
           <CardHeader className="pb-3">
@@ -540,9 +540,9 @@ function ComplianceCenterTab() {
                     <TableHead className="text-xs">Partial</TableHead>
                     <TableHead className="text-xs">Non-Compliant</TableHead>
                     <TableHead className="text-xs">Coverage</TableHead>
-                    {/* 78.7 — monitoring column */}
+                    {/* monitoring column */}
                     <TableHead className="text-xs">Monitoring</TableHead>
-                    {/* 78.8 — version column */}
+                    {/* version column */}
                     <TableHead className="text-xs">Version</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -581,7 +581,7 @@ function ComplianceCenterTab() {
         </Card>
       )}
 
-      {/* 78.6 — Automated evidence collection summary */}
+      {/* Automated evidence collection summary */}
       {(overview.automatedEvidenceSources ?? 0) > 0 && (
         <Card>
           <CardHeader className="pb-3">
@@ -1904,7 +1904,7 @@ function ControlsTab() {
                         <TableHead className="text-xs">Control ID</TableHead>
                         <TableHead className="text-xs">Title</TableHead>
                         <TableHead className="text-xs">Description</TableHead>
-                        {/* 78.2 — additional columns for control detail */}
+                        {/* additional columns for control detail */}
                         <TableHead className="text-xs">Responsible</TableHead>
                         <TableHead className="text-xs">Next Review</TableHead>
                       </TableRow>
@@ -1939,7 +1939,7 @@ function ControlsTab() {
                               {ctrl.description || "—"}
                             </span>
                           </TableCell>
-                          {/* 78.2 — control detail: responsible person & review date */}
+                          {/* control detail: responsible person & review date */}
                           <TableCell>
                             <span className="text-xs text-muted-foreground">—</span>
                           </TableCell>
@@ -2068,7 +2068,7 @@ function ControlsTab() {
                     <TableHead className="text-xs">Resource</TableHead>
                     <TableHead className="text-xs">Status</TableHead>
                     <TableHead className="text-xs">Evidence</TableHead>
-                    {/* 78.3 — evidence collection workflow link */}
+                    {/* evidence collection workflow link */}
                     <TableHead className="text-xs">Source</TableHead>
                     <TableHead className="text-xs">Last Assessed</TableHead>
                   </TableRow>
@@ -2103,7 +2103,7 @@ function ControlsTab() {
                           {mapping.evidenceNotes || "—"}
                         </span>
                       </TableCell>
-                      {/* 78.3 — evidence source type */}
+                      {/* evidence source type */}
                       <TableCell>
                         <Badge variant="outline" className="text-[10px]">
                           {mapping.resourceType === "cspm_finding" ? "Auto" : "Manual"}

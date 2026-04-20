@@ -685,7 +685,7 @@ export function registerIngestionRoutes(app: Express): void {
     });
   });
 
-  // 41.1 — Real-time ingestion rate data
+  // Real-time ingestion rate data
   app.get("/api/ingestion/rate", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -734,7 +734,7 @@ export function registerIngestionRoutes(app: Express): void {
     }
   });
 
-  // 41.2 — Per-source ingestion breakdown
+  // Per-source ingestion breakdown
   app.get("/api/ingestion/source-breakdown", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -765,7 +765,7 @@ export function registerIngestionRoutes(app: Express): void {
     }
   });
 
-  // 41.3 — Ingestion pipeline health
+  // Ingestion pipeline health
   app.get("/api/ingestion/pipeline-health", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -829,7 +829,7 @@ export function registerIngestionRoutes(app: Express): void {
     }
   });
 
-  // 41.4 — Ingestion backpressure status
+  // Ingestion backpressure status
   app.get("/api/ingestion/backpressure", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -870,7 +870,7 @@ export function registerIngestionRoutes(app: Express): void {
     }
   });
 
-  // 41.5 — Ingestion data quality metrics
+  // Ingestion data quality metrics
   app.get("/api/ingestion/data-quality", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);

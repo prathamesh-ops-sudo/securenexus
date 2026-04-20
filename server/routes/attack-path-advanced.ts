@@ -148,7 +148,7 @@ const KILL_CHAIN_ORDER = [
 ];
 
 // -----------------------------------------------------------------------
-// 12.1: Attack Path Risk Scoring
+// Attack Path Risk Scoring
 // -----------------------------------------------------------------------
 interface RiskScoringResult {
   pathId: string;
@@ -316,7 +316,7 @@ function detectCompensatingControls(
 }
 
 // -----------------------------------------------------------------------
-// 12.2: What-If Simulation
+// What-If Simulation
 // -----------------------------------------------------------------------
 interface WhatIfDetail {
   pathId: string;
@@ -486,7 +486,7 @@ function simulateWhatIf(
 }
 
 // -----------------------------------------------------------------------
-// 12.3: Remediation Recommendations
+// Remediation Recommendations
 // -----------------------------------------------------------------------
 interface RemediationRec {
   rank: number;
@@ -693,7 +693,7 @@ function generateRemediations(
 }
 
 // -----------------------------------------------------------------------
-// 12.5: MITRE ATT&CK Mapping
+// MITRE ATT&CK Mapping
 // -----------------------------------------------------------------------
 interface MitreStepMapping {
   stepIndex: number;
@@ -797,7 +797,7 @@ function mapPathToMitre(path: { id: string; nodes: unknown; tacticsSequence: unk
 }
 
 // -----------------------------------------------------------------------
-// 12.6: CSPM Correlation
+// CSPM Correlation
 // -----------------------------------------------------------------------
 async function correlateCSPMFindings(
   orgId: string,
@@ -900,7 +900,7 @@ async function correlateCSPMFindings(
 }
 
 // -----------------------------------------------------------------------
-// 12.7: Vulnerability Prioritization via Attack Path Context
+// Vulnerability Prioritization via Attack Path Context
 // -----------------------------------------------------------------------
 async function computeVulnPrioritization(
   orgId: string,
@@ -1009,7 +1009,7 @@ async function computeVulnPrioritization(
 // Register all routes
 // -----------------------------------------------------------------------
 export function registerAttackPathAdvancedRoutes(app: Express): void {
-  // 12.1: Risk scores for all paths
+  // Risk scores for all paths
   app.get(
     "/api/attack-paths/risk-scores",
     isAuthenticated,
@@ -1048,7 +1048,7 @@ export function registerAttackPathAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 12.1: Risk score for single path
+  // Risk score for single path
   app.get(
     "/api/attack-paths/:id/risk-score",
     isAuthenticated,
@@ -1072,7 +1072,7 @@ export function registerAttackPathAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 12.2: What-if simulation
+  // What-if simulation
   app.post(
     "/api/attack-paths/simulate",
     isAuthenticated,
@@ -1127,7 +1127,7 @@ export function registerAttackPathAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 12.3: Remediation recommendations for a single path
+  // Remediation recommendations for a single path
   app.get(
     "/api/attack-paths/:id/remediation",
     isAuthenticated,
@@ -1153,7 +1153,7 @@ export function registerAttackPathAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 12.3: Cross-path global remediation impact analysis
+  // Cross-path global remediation impact analysis
   app.get(
     "/api/attack-paths/global-remediation",
     isAuthenticated,
@@ -1231,7 +1231,7 @@ export function registerAttackPathAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 12.4: Automated attack path discovery
+  // Automated attack path discovery
   app.post(
     "/api/attack-paths/discover",
     isAuthenticated,
@@ -1273,7 +1273,7 @@ export function registerAttackPathAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 12.5: MITRE ATT&CK mapping for path steps
+  // MITRE ATT&CK mapping for path steps
   app.get(
     "/api/attack-paths/:id/mitre-mapping",
     isAuthenticated,
@@ -1297,7 +1297,7 @@ export function registerAttackPathAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 12.6: CSPM correlation with attack paths
+  // CSPM correlation with attack paths
   app.get(
     "/api/attack-paths/cspm-correlation",
     isAuthenticated,
@@ -1323,7 +1323,7 @@ export function registerAttackPathAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 12.7: Vulnerability prioritization based on attack paths
+  // Vulnerability prioritization based on attack paths
   app.get(
     "/api/attack-paths/vuln-prioritization",
     isAuthenticated,

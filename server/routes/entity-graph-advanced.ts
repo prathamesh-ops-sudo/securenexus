@@ -22,7 +22,7 @@ import { broadcastEvent } from "../event-bus";
 const log = logger.child("entity-graph-advanced");
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 11.4: Path finding between two entities (BFS shortest path)
+// Path finding between two entities (BFS shortest path)
 // ═══════════════════════════════════════════════════════════════════════════
 
 interface PathNode {
@@ -167,7 +167,7 @@ async function findPathBetweenEntities(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 11.6: Graph Query Language
+// Graph Query Language
 // ═══════════════════════════════════════════════════════════════════════════
 
 interface GraphQueryResult {
@@ -268,7 +268,7 @@ function parseGraphQuery(query: string): {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function registerEntityGraphAdvancedRoutes(app: Express): void {
-  // 11.4: Path finding
+  // Path finding
   app.get(
     "/api/entity-graph/path",
     isAuthenticated,
@@ -295,7 +295,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 11.5: Graph snapshot — save current state
+  // Graph snapshot — save current state
   app.post(
     "/api/entity-graph/snapshots",
     isAuthenticated,
@@ -350,7 +350,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 11.5: List snapshots
+  // List snapshots
   app.get(
     "/api/entity-graph/snapshots",
     isAuthenticated,
@@ -378,7 +378,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 11.5: Compare snapshot with current state
+  // Compare snapshot with current state
   app.get(
     "/api/entity-graph/snapshots/:id/compare",
     isAuthenticated,
@@ -476,7 +476,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 11.6: Graph query language
+  // Graph query language
   app.post(
     "/api/entity-graph/query",
     isAuthenticated,
@@ -562,7 +562,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 11.8: Create incident from graph subgraph
+  // Create incident from graph subgraph
   app.post(
     "/api/entity-graph/create-incident",
     isAuthenticated,
@@ -655,7 +655,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 13.2: Entity search with type-ahead
+  // Entity search with type-ahead
   // ═══════════════════════════════════════════════════════════════════════
 
   app.get(
@@ -718,7 +718,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 13.3: Entity risk scoring (dynamic, multi-factor)
+  // Entity risk scoring (dynamic, multi-factor)
   // ═══════════════════════════════════════════════════════════════════════
 
   app.get(
@@ -901,7 +901,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 13.5: Entity deduplication suggestions
+  // Entity deduplication suggestions
   // ═══════════════════════════════════════════════════════════════════════
 
   app.get(
@@ -1026,7 +1026,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 13.1: Entity profile — rich detail page data
+  // Entity profile — rich detail page data
   // ═══════════════════════════════════════════════════════════════════════
 
   app.get(
@@ -1194,7 +1194,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 13.6: Entity → Alert/Incident pivot
+  // Entity → Alert/Incident pivot
   // ═══════════════════════════════════════════════════════════════════════
 
   app.get(
@@ -1301,7 +1301,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 13.7: Entity → Threat Hunting pivot (pre-populated query)
+  // Entity → Threat Hunting pivot (pre-populated query)
   // ═══════════════════════════════════════════════════════════════════════
 
   app.get(
@@ -1475,7 +1475,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
     },
   );
 
-  // 11.9: UEBA anomaly overlay for graph nodes
+  // UEBA anomaly overlay for graph nodes
   app.get(
     "/api/entity-graph/ueba-overlay",
     isAuthenticated,
@@ -1541,7 +1541,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 14.1: Merge preview — side-by-side comparison
+  // Merge preview — side-by-side comparison
   // ═══════════════════════════════════════════════════════════════════════
 
   app.post(
@@ -1654,7 +1654,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 14.4: Cascading merge with field selection (enhanced merge endpoint)
+  // Cascading merge with field selection (enhanced merge endpoint)
   // ═══════════════════════════════════════════════════════════════════════
 
   app.post(
@@ -1724,7 +1724,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 14.2: Merge history and undo
+  // Merge history and undo
   // ═══════════════════════════════════════════════════════════════════════
 
   app.get(
@@ -1877,7 +1877,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 14.3: Auto-suggested merges with confidence scores
+  // Auto-suggested merges with confidence scores
   // ═══════════════════════════════════════════════════════════════════════
 
   app.get(
@@ -2110,7 +2110,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 14.5: Alias management — bulk add, delete, search by alias
+  // Alias management — bulk add, delete, search by alias
   // ═══════════════════════════════════════════════════════════════════════
 
   app.post(

@@ -295,7 +295,7 @@ export default function ReportsPage() {
             Reports & Executive Briefs
           </h1>
           <p className="text-sm text-muted-foreground">Generate, schedule, and download security reports</p>
-          {/* 83.4 — data accuracy indicator */}
+          {/* data accuracy indicator */}
           <div className="flex items-center gap-1.5 mt-1">
             <Hash className="h-3 w-3 text-emerald-500" />
             <span className="text-[10px] text-muted-foreground">
@@ -327,12 +327,12 @@ export default function ReportsPage() {
             <GitBranch className="h-3.5 w-3.5 mr-1.5" />
             Versioning
           </TabsTrigger>
-          {/* 83.3 — sharing & permissions tab */}
+          {/* sharing & permissions tab */}
           <TabsTrigger value="sharing" data-testid="tab-sharing">
             <Share2 className="h-3.5 w-3.5 mr-1.5" />
             Sharing
           </TabsTrigger>
-          {/* 83.5 — delivery channels tab */}
+          {/* delivery channels tab */}
           <TabsTrigger value="delivery" data-testid="tab-delivery">
             <Mail className="h-3.5 w-3.5 mr-1.5" />
             Delivery
@@ -406,7 +406,7 @@ export default function ReportsPage() {
                         Built-in
                       </Badge>
                     )}
-                    {/* 83.1 — template gallery: show category indicator */}
+                    {/* template gallery: show category indicator */}
                     {t.reportType && (
                       <Badge
                         variant="outline"
@@ -466,7 +466,7 @@ export default function ReportsPage() {
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
               <h2 className="text-lg font-semibold">Scheduled Reports</h2>
-              {/* 83.2 — scheduling calendar automation indicator */}
+              {/* scheduling calendar automation indicator */}
               <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                 <Calendar className="h-3 w-3" />
                 Automated delivery via cron-based scheduler &middot; Supports daily, weekly, monthly, and quarterly
@@ -997,7 +997,7 @@ export default function ReportsPage() {
 
         <TemplateVersioningTab templates={templates || []} />
 
-        {/* 83.3 — Sharing & Permissions tab */}
+        {/* Sharing & Permissions tab */}
         <TabsContent value="sharing" className="space-y-4 mt-4">
           <h2 className="text-lg font-semibold">Sharing & Permissions</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1036,7 +1036,7 @@ export default function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* 83.5 — Delivery Channels tab */}
+        {/* Delivery Channels tab */}
         <TabsContent value="delivery" className="space-y-4 mt-4">
           <h2 className="text-lg font-semibold">Delivery Channels</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

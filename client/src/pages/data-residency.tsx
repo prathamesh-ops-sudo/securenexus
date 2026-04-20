@@ -124,7 +124,7 @@ function OverviewTab() {
 
   return (
     <div className="space-y-6">
-      {/* 84.1 — data flow map visual indicator */}
+      {/* data flow map visual indicator */}
       <Card>
         <CardContent className="py-3">
           <div className="flex items-center gap-2 text-sm">
@@ -240,7 +240,7 @@ function OverviewTab() {
         </CardContent>
       </Card>
 
-      {/* 84.3 — compliance mapping indicator */}
+      {/* compliance mapping indicator */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
@@ -379,7 +379,7 @@ function ByokKeysTab() {
           <p className="text-sm text-muted-foreground">
             Register and manage customer-managed encryption keys for data sovereignty compliance
           </p>
-          {/* 84.2 — BYOK key management indicator */}
+          {/* BYOK key management indicator */}
           <div className="flex items-center gap-1.5 mt-1">
             <BadgeCheck className="h-3 w-3 text-emerald-500" />
             <span className="text-[10px] text-muted-foreground">
@@ -635,7 +635,7 @@ function FlowControlsTab() {
 
   return (
     <div className="space-y-4">
-      {/* 84.4 — cross-border enforcement indicator */}
+      {/* cross-border enforcement indicator */}
       <Card>
         <CardContent className="py-3">
           <div className="flex items-center gap-2 text-sm">
@@ -1115,7 +1115,7 @@ export default function DataResidencyPage() {
             <Key className="h-4 w-4" />
             BYOK Keys
           </TabsTrigger>
-          {/* 84.5 — BYOK verification tab trigger */}
+          {/* BYOK verification tab trigger */}
           <TabsTrigger value="flow-controls" className="gap-1">
             <ArrowRightLeft className="h-4 w-4" />
             Flow Controls

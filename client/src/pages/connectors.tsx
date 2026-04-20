@@ -1106,7 +1106,7 @@ function ConnectorSyncHistory({ connectorId, connectorName }: { connectorId: str
   );
 }
 
-// ── 37.2: Connector Health Dashboard Component ──
+// Connector Health Dashboard Component
 interface ConnectorHealthSummary {
   total: number;
   healthy: number;
@@ -1283,7 +1283,7 @@ function ConnectorHealthDashboard() {
   );
 }
 
-// ── 37.8: Pipeline Verification Component ──
+// Pipeline Verification Component
 interface PipelineStatus {
   connectorId: string;
   connectorName: string;
@@ -1368,7 +1368,7 @@ function ConnectorPipelineStatus({ connectorId }: { connectorId: string }) {
   );
 }
 
-// ── 37.6: Rate Limit Status Component ──
+// Rate Limit Status Component
 interface RateLimitStatus {
   connectorId: string;
   connectorName: string;
@@ -1730,7 +1730,7 @@ export default function ConnectorsPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* 37.2: Health Dashboard Tab */}
+        {/* Health Dashboard Tab */}
         <TabsContent value="health-dashboard">
           <ConnectorHealthDashboard />
         </TabsContent>

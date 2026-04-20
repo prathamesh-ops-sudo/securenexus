@@ -515,7 +515,7 @@ export default function SecurityAssessmentsPage() {
         </div>
       </div>
 
-      {/* 75.1 — Assessment Summary Dashboard */}
+      {/* Assessment Summary Dashboard */}
       {list.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card>
@@ -547,7 +547,7 @@ export default function SecurityAssessmentsPage() {
         </div>
       )}
 
-      {/* 75.2 — Framework Templates with control counts */}
+      {/* Framework Templates with control counts */}
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
           Available Frameworks

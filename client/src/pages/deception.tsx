@@ -68,7 +68,7 @@ const TOKEN_TYPE_LABELS: Record<string, { label: string; icon: typeof Key; descr
   kubeconfig: { label: "Kubeconfig", icon: Terminal, description: "Fake Kubernetes config" },
   ssh_key: { label: "SSH Key", icon: Key, description: "Fake SSH private key" },
   slack_webhook: { label: "Slack Webhook", icon: Link, description: "Fake Slack webhook URL" },
-  // 54.4 — New canary token types
+  // New canary token types
   usb_canary: { label: "USB Canary", icon: Usb, description: "Triggers on USB mount/autorun" },
   web_bug: { label: "Web Bug", icon: Bug, description: "Invisible tracking in web pages" },
   document_canary: { label: "Document Canary", icon: FileText, description: "Macro-based phone-home in Office/PDF" },
@@ -342,7 +342,7 @@ function RecentHitsCard({ hits }: { hits: Array<Record<string, unknown>> }) {
 // DECEPTION COVERAGE CARD
 // =========================================================================
 
-// 54.1 — Network segment constants for coverage gap analysis
+// Network segment constants for coverage gap analysis
 const NETWORK_SEGMENTS = [
   { id: "corporate_lan", label: "Corporate LAN", icon: Network },
   { id: "dmz", label: "DMZ", icon: Shield },
@@ -366,7 +366,7 @@ function DeceptionCoverageCard({
   const tokenTypes = new Set(tokens.map((t) => String(t.tokenType)));
   const assetTypes = new Set(assets.map((a) => String(a.assetType)));
 
-  // 54.1 — Build segment coverage from deployment targets
+  // Build segment coverage from deployment targets
   const deployedSegments = new Set<string>();
   tokens.forEach((t) => {
     if (t.deployedTo) deployedSegments.add(String(t.deployedTo));
@@ -574,7 +574,7 @@ function CanaryTokensSection({ tokens }: { tokens: Array<Record<string, unknown>
                     </div>
                   </div>
 
-                  {/* 54.3 — Decoy authenticity scoring */}
+                  {/* Decoy authenticity scoring */}
                   <div className="mt-3 grid grid-cols-4 gap-2 text-center">
                     <div>
                       <p className="text-lg font-bold">{String(token.hitCount || 0)}</p>
@@ -743,7 +743,7 @@ function HoneypotAssetsSection({ assets }: { assets: Array<Record<string, unknow
                     {asset.protocol ? <p>Protocol: {String(asset.protocol).toUpperCase()}</p> : null}
                   </div>
 
-                  {/* 54.3 — Decoy authenticity scoring for honeypots */}
+                  {/* Decoy authenticity scoring for honeypots */}
                   <div className="mt-3 pt-2 border-t">
                     <div className="flex items-center gap-4 mb-2">
                       <span className="text-sm">
@@ -806,7 +806,7 @@ function HoneypotAssetsSection({ assets }: { assets: Array<Record<string, unknow
 // DECEPTION HITS SECTION
 // =========================================================================
 
-// 54.2 — Alert drill-down for deception triggers
+// Alert drill-down for deception triggers
 function DeceptionHitsSection({ hits }: { hits: Array<Record<string, unknown>> }) {
   const [expandedHit, setExpandedHit] = useState<string | null>(null);
 
@@ -899,7 +899,7 @@ function DeceptionHitsSection({ hits }: { hits: Array<Record<string, unknown>> }
                   </div>
                 </div>
 
-                {/* 54.2 — Expanded drill-down panel */}
+                {/* Expanded drill-down panel */}
                 {isExpanded && (
                   <div className="mt-4 pt-4 border-t space-y-4">
                     {/* Who / What triggered */}

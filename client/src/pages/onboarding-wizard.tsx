@@ -52,10 +52,10 @@ interface WizardStatus {
   isComplete: boolean;
   tourCompleted: boolean;
   steps: string[];
-  /* 86.1 — server-side progress persistence */
+  /* server-side progress persistence */
   savedProgress?: Record<string, unknown>;
   lastSavedAt?: string;
-  /* 86.5 — onboarding analytics */
+  /* onboarding analytics */
   analytics?: {
     startedAt?: string;
     stepTimestamps?: Record<string, string>;
@@ -371,7 +371,7 @@ function InviteTeamStep({
   };
 
   const validEntries = entries.filter((e) => e.email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.email.trim()));
-  /* 86.2 — step validation: highlight invalid email entries */
+  /* step validation: highlight invalid email entries */
   const invalidEntries = entries.filter((e) => e.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.email.trim()));
 
   return (
@@ -381,7 +381,7 @@ function InviteTeamStep({
         <p className="text-sm text-muted-foreground mt-1">
           Add team members to collaborate on security operations. You can always add more later.
         </p>
-        {/* 86.3 — skip and revisit indicator */}
+        {/* skip and revisit indicator */}
         <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
           <SkipForward className="h-3 w-3" />
           Optional step &mdash; skip now and invite team members later from Team Management
@@ -422,7 +422,7 @@ function InviteTeamStep({
         ))}
       </div>
 
-      {/* 86.2 — validation error for invalid emails */}
+      {/* validation error for invalid emails */}
       {invalidEntries.length > 0 && (
         <p className="text-xs text-destructive flex items-center gap-1">
           <AlertCircle className="h-3 w-3" />
@@ -803,7 +803,7 @@ export default function OnboardingWizardPage() {
 
   const [activeStep, setActiveStep] = useState(0);
 
-  /* 86.1 — resume from server-persisted progress on reload */
+  /* resume from server-persisted progress on reload */
   useEffect(() => {
     if (status && !status.isComplete) {
       setActiveStep(status.currentStep);
@@ -1017,7 +1017,7 @@ export default function OnboardingWizardPage() {
                 <h2 className="text-xl font-semibold">All Set!</h2>
                 <p className="text-sm text-muted-foreground">Your workspace is configured and ready to go.</p>
 
-                {/* 86.3 — skipped steps reminder */}
+                {/* skipped steps reminder */}
                 {(status?.skippedSteps?.length ?? 0) > 0 && (
                   <div className="text-left mx-auto max-w-sm rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
                     <p className="text-xs font-medium text-amber-500 flex items-center gap-1 mb-1.5">
@@ -1034,7 +1034,7 @@ export default function OnboardingWizardPage() {
                   </div>
                 )}
 
-                {/* 86.4 — getting started checklist post-onboarding */}
+                {/* getting started checklist post-onboarding */}
                 <div className="text-left mx-auto max-w-sm rounded-lg border p-3 space-y-2">
                   <p className="text-xs font-medium flex items-center gap-1">
                     <ListChecks className="h-3 w-3 text-primary" /> Getting Started Checklist
@@ -1085,7 +1085,7 @@ export default function OnboardingWizardPage() {
           </div>
         )}
 
-        {/* 86.1 — progress persistence indicator */}
+        {/* progress persistence indicator */}
         {status?.lastSavedAt && (
           <p className="text-center text-[10px] text-muted-foreground mt-2 flex items-center justify-center gap-1">
             <Save className="h-2.5 w-2.5" />
@@ -1093,7 +1093,7 @@ export default function OnboardingWizardPage() {
           </p>
         )}
 
-        {/* 86.5 — onboarding analytics indicator */}
+        {/* onboarding analytics indicator */}
         {status?.analytics?.startedAt ? (
           <p className="text-center text-[10px] text-muted-foreground mt-1 flex items-center justify-center gap-1">
             <TrendingUp className="h-2.5 w-2.5" />
@@ -1101,7 +1101,7 @@ export default function OnboardingWizardPage() {
           </p>
         ) : null}
 
-        {/* 86.6 — invited user simplified onboarding indicator */}
+        {/* invited user simplified onboarding indicator */}
         {status?.savedProgress && (status.savedProgress as Record<string, unknown>).isInvitedUser ? (
           <div className="text-center mt-2">
             <Badge variant="outline" className="text-[10px]">

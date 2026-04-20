@@ -734,7 +734,7 @@ export function registerDataLakeRoutes(app: Express): void {
     }
   });
 
-  // 44.1 — Storage tier visualization data
+  // Storage tier visualization data
   app.get("/api/data-lake/tier-visualization", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -793,7 +793,7 @@ export function registerDataLakeRoutes(app: Express): void {
     }
   });
 
-  // 44.2 — Query cost estimation
+  // Query cost estimation
   app.post("/api/data-lake/estimate-query", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
       const { query, dataTypes, dateRange } = req.body as {
@@ -827,7 +827,7 @@ export function registerDataLakeRoutes(app: Express): void {
     }
   });
 
-  // 44.3 — Data catalog / schema browser
+  // Data catalog / schema browser
   app.get("/api/data-lake/catalog", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
       const catalog = [
@@ -955,7 +955,7 @@ export function registerDataLakeRoutes(app: Express): void {
     }
   });
 
-  // 44.5 — Automated data tiering config
+  // Automated data tiering config
   app.get("/api/data-lake/auto-tiering", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
       const rules = [
@@ -1021,7 +1021,7 @@ export function registerDataLakeRoutes(app: Express): void {
     }
   });
 
-  // 44.5 — Update auto-tiering rule
+  // Update auto-tiering rule
   app.patch(
     "/api/data-lake/auto-tiering/:dataType",
     isAuthenticated,
@@ -1051,7 +1051,7 @@ export function registerDataLakeRoutes(app: Express): void {
     },
   );
 
-  // 44.6 — Data compaction status
+  // Data compaction status
   app.get("/api/data-lake/compaction-status", isAuthenticated, resolveOrgContext, async (_req, res) => {
     try {
       const status = {
@@ -1101,7 +1101,7 @@ export function registerDataLakeRoutes(app: Express): void {
     }
   });
 
-  // 44.6 — Trigger compaction
+  // Trigger compaction
   app.post("/api/data-lake/compact", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
     try {
       return reply(res, { jobId: crypto.randomUUID(), status: "started", startedAt: new Date().toISOString() });
@@ -1111,7 +1111,7 @@ export function registerDataLakeRoutes(app: Express): void {
     }
   });
 
-  // 44.7 — Cross-tier query metadata
+  // Cross-tier query metadata
   app.get("/api/data-lake/cross-tier-stats", isAuthenticated, resolveOrgContext, async (_req, res) => {
     try {
       const recentQueries = [

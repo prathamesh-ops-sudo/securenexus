@@ -1556,7 +1556,7 @@ export default function MsspPartnerPortalPage() {
                 />
               </div>
 
-              {/* 74.2 — Usage and Billing Dashboard Summary */}
+              {/* Usage and Billing Dashboard Summary */}
               <Card className="glass-subtle">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
@@ -1590,7 +1590,7 @@ export default function MsspPartnerPortalPage() {
                 </CardContent>
               </Card>
 
-              {/* 74.1 — Partner Onboarding Wizard Quick Actions */}
+              {/* Partner Onboarding Wizard Quick Actions */}
               <Card className="glass-subtle">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">Quick Actions</CardTitle>

@@ -408,7 +408,7 @@ function GenerateTab() {
             </div>
           </div>
 
-          {/* 62.1 — Natural language description */}
+          {/* Natural language description */}
           <Textarea
             placeholder="Describe what you want to detect in plain English, e.g. 'Detect PowerShell downloading and executing scripts from external URLs' or 'Alert on suspicious lateral movement using PsExec'..."
             value={context}
@@ -416,8 +416,8 @@ function GenerateTab() {
             rows={6}
           />
           <p className="text-[10px] text-muted-foreground">
-            62.1 — Describe your detection intent in natural language. The AI will generate a {ruleFormat.toUpperCase()}{" "}
-            rule with an explanation of the logic.
+            Describe your detection intent in natural language. The AI will generate a {ruleFormat.toUpperCase()} rule
+            with an explanation of the logic.
           </p>
 
           <div className="flex gap-2">
@@ -542,7 +542,7 @@ function GenerateTab() {
                     <span>{new Date(job.createdAt).toLocaleDateString()}</span>
                   </div>
 
-                  {/* 62.2 — Rule quality report card */}
+                  {/* Rule quality report card */}
                   {job.status === "completed" && job.qualityScore != null && (
                     <div className="grid grid-cols-4 gap-2 mt-2 p-2 rounded border border-border/50 bg-muted/10">
                       <div className="text-center">
@@ -1019,7 +1019,7 @@ function MarketplaceTab() {
                   </div>
                 )}
 
-                {/* 62.5 — Moderation indicators */}
+                {/* Moderation indicators */}
                 <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                   <Badge variant="outline" className="text-[9px] text-green-400 border-green-500/30">
                     <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" /> Quality Verified

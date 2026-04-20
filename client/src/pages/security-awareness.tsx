@@ -152,11 +152,11 @@ interface Dashboard {
   avgClickRate: number;
   topRiskyEmployees: EmployeeRiskScore[];
   recentCampaigns: PhishingCampaign[];
-  // 68.2 — Campaign results summary
+  // Campaign results summary
   campaignResults?: Array<{ id: string; name: string; clickRate: number; reportRate: number; submissionRate: number }>;
-  // 68.5 — Email delivery stats
+  // Email delivery stats
   deliveryStats?: { totalSent: number; totalOpened: number; totalClicked: number; totalReported: number };
-  // 68.6 — Click/submission tracking accuracy
+  // Click/submission tracking accuracy
   trackingAccuracy?: number;
 }
 
@@ -531,7 +531,7 @@ export default function SecurityAwarenessPage() {
             </CardContent>
           </Card>
 
-          {/* 68.2 — Campaign Results Dashboard */}
+          {/* Campaign Results Dashboard */}
           {dashboard?.campaignResults && dashboard.campaignResults.length > 0 && (
             <Card>
               <CardHeader>
@@ -586,7 +586,7 @@ export default function SecurityAwarenessPage() {
             </Card>
           )}
 
-          {/* 68.5 — Email Delivery Stats */}
+          {/* Email Delivery Stats */}
           {dashboard?.deliveryStats && (
             <Card>
               <CardHeader>
@@ -612,7 +612,7 @@ export default function SecurityAwarenessPage() {
                     <p className="text-xs text-muted-foreground">Total Reported</p>
                   </div>
                 </div>
-                {/* 68.6 — Tracking Accuracy */}
+                {/* Tracking Accuracy */}
                 {dashboard.trackingAccuracy != null && (
                   <div className="mt-4 p-3 border border-border/50 rounded-lg text-center">
                     <p className="text-xs text-muted-foreground">Click/Submission Tracking Accuracy</p>
@@ -833,7 +833,7 @@ export default function SecurityAwarenessPage() {
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">Subject: {template.subject}</p>
-                    {/* 68.4 — Template library with categorization */}
+                    {/* Template library with categorization */}
                     <div className="flex items-center gap-3 mt-2">
                       <Badge variant="outline" className="text-[10px]">
                         {formatLabel(template.category)}
@@ -1015,7 +1015,7 @@ export default function SecurityAwarenessPage() {
                           {assignment.assignedReason ? formatLabel(assignment.assignedReason) : "Manual"} &middot;
                           {assignment.dueAt ? ` Due: ${formatDateTime(assignment.dueAt)}` : ""}
                         </p>
-                        {/* 68.3 — Training assignment reason indicator */}
+                        {/* Training assignment reason indicator */}
                         {assignment.assignedReason === "phishing_failure_remedial" && (
                           <Badge
                             variant="outline"

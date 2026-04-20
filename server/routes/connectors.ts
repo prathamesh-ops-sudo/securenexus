@@ -783,7 +783,7 @@ export function registerConnectorsRoutes(app: Express): void {
     },
   );
 
-  // ── 37.5: Connector Credential Rotation Status ──
+  // Connector Credential Rotation Status
   app.get("/api/connectors/:id/credential-status", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId;
@@ -821,7 +821,7 @@ export function registerConnectorsRoutes(app: Express): void {
     }
   });
 
-  // ── 37.6: Connector Rate Limiting Status ──
+  // Connector Rate Limiting Status
   app.get("/api/connectors/:id/rate-limit-status", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId;
@@ -863,7 +863,7 @@ export function registerConnectorsRoutes(app: Express): void {
     }
   });
 
-  // ── 37.7: Connector Data Mapping Configuration ──
+  // Connector Data Mapping Configuration
   app.get("/api/connectors/:id/field-mapping", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId;
@@ -929,7 +929,7 @@ export function registerConnectorsRoutes(app: Express): void {
     }
   });
 
-  // ── 37.8: Connector Pipeline Verification ──
+  // Connector Pipeline Verification
   app.get("/api/connectors/:id/pipeline-status", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId;
@@ -997,7 +997,7 @@ export function registerConnectorsRoutes(app: Express): void {
     }
   });
 
-  // ── 37.9: Connector Response Action Capabilities ──
+  // Connector Response Action Capabilities
   app.get("/api/connectors/:id/response-actions", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId;
@@ -1106,7 +1106,7 @@ export function registerConnectorsRoutes(app: Express): void {
     }
   });
 
-  // ── 37.8: Connector Health Summary (all connectors) ──
+  // Connector Health Summary (all connectors)
   app.get("/api/connectors/health-summary", isAuthenticated, async (req, res) => {
     try {
       const orgId = (req as any).user?.orgId;

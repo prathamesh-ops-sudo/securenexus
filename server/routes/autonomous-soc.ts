@@ -331,7 +331,7 @@ export function registerAutonomousSocRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        // 63.2 — Confidence threshold tuning per action type
+        // Confidence threshold tuning per action type
         return res.json({
           tier1: {
             enabled: true,
@@ -356,7 +356,7 @@ export function registerAutonomousSocRoutes(app: Express): void {
             fpRateLearning: true,
             autoCloseOnFp: true,
           },
-          // 63.2 — Per-action confidence thresholds
+          // Per-action confidence thresholds
           actionThresholds: {
             auto_resolve: { minConfidence: 0.9, label: "Auto-Resolve (Benign)" },
             auto_contain: { minConfidence: 0.95, label: "Auto-Contain (Isolate)" },
@@ -375,7 +375,7 @@ export function registerAutonomousSocRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════
-  // 63.3 — PERFORMANCE METRICS
+  // PERFORMANCE METRICS
   // ═══════════════════════════════════════════════
 
   app.get(
@@ -426,7 +426,7 @@ export function registerAutonomousSocRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════
-  // 63.4 — GRACEFUL DEGRADATION STATUS
+  // GRACEFUL DEGRADATION STATUS
   // ═══════════════════════════════════════════════
 
   app.get(
@@ -454,7 +454,7 @@ export function registerAutonomousSocRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════
-  // 63.5 — LEARNING FROM OVERRIDES
+  // LEARNING FROM OVERRIDES
   // ═══════════════════════════════════════════════
 
   app.get(
