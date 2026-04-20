@@ -2,10 +2,9 @@ import type { Request, Response, NextFunction } from "express";
 import { replyRateLimit, ERROR_CODES } from "../api-response";
 import { logger } from "../logger";
 import { storage } from "../storage";
+import type { PlanTier } from "@shared/types/plan-tier";
 
 const log = logger.child("org-rate-limit");
-
-type PlanTier = "free" | "pro" | "enterprise";
 
 const WINDOW_MS = 15 * 60 * 1000;
 

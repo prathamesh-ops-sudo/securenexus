@@ -3,11 +3,13 @@ import { sql } from "drizzle-orm";
 import { storage } from "./storage";
 import { logger } from "./logger";
 import { getPodId } from "./scaling-state";
+import type { PlanTier } from "@shared/types/plan-tier";
+
+export type { PlanTier };
 
 const log = logger.child("tenant-isolation");
 
 export type IsolationLevel = "shared" | "dedicated-schema" | "dedicated-instance" | "dedicated-cluster";
-export type PlanTier = "free" | "pro" | "enterprise";
 
 export interface TenantIsolationConfig {
   orgId: string;

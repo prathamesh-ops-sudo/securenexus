@@ -9,10 +9,7 @@ import {
   getControlMappingsForFramework,
 } from "../trust-center-engine";
 import { storage } from "../storage";
-
-interface RequestWithUser extends Request {
-  user?: { id?: string; email?: string };
-}
+import type { RequestWithUser } from "./types";
 
 const log = logger.child("trust-center");
 

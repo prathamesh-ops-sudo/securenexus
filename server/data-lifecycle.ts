@@ -7,6 +7,9 @@ import { getPodId } from "./scaling-state";
 import zlib from "zlib";
 import { promisify } from "util";
 import { createHash } from "crypto";
+import type { PlanTier } from "@shared/types/plan-tier";
+
+export type { PlanTier };
 
 const log = logger.child("data-lifecycle");
 const gzip = promisify(zlib.gzip);
@@ -22,7 +25,6 @@ export type DataType =
   | "outbox_events"
   | "ingestion_logs";
 export type StorageTier = "hot" | "warm" | "cold" | "deleted";
-export type PlanTier = "free" | "pro" | "enterprise";
 
 export interface RetentionPolicy {
   dataType: DataType;

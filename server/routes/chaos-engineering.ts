@@ -3,10 +3,8 @@ import { logger, getOrgId, reply, replyError } from "./shared";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId } from "../rbac";
 import { storage } from "../storage";
+import type { RequestWithUser } from "./types";
 
-interface RequestWithUser extends Request {
-  user?: { id?: string; orgId?: string; role?: string };
-}
 import {
   getAttackLibrary,
   getPurpleTeamScenarios,

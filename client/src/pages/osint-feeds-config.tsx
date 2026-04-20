@@ -26,28 +26,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { SuccessIcon } from "@/components/ui/animated-state-icons";
-
-interface FeedStatus {
-  name: string;
-  slug: string;
-  url: string;
-  description: string;
-  category: string;
-  indicatorTypes: string[];
-  lastFetched: string | null;
-  lastSuccess: string | null;
-  lastError: string | null;
-  lastErrorMessage: string | null;
-  totalIndicators: number;
-  status: "success" | "error" | "never_fetched";
-  enabled: boolean;
-  refreshIntervalMinutes: number;
-  successRate: number;
-  avgResponseTimeMs: number;
-  totalFetches: number;
-  consecutiveErrors: number;
-  requiresApiKey: false;
-}
+import type { FeedStatus } from "@shared/types/osint-feeds";
 
 interface FeedSubscription {
   slug: string;

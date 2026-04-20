@@ -8,10 +8,6 @@ import type { InsertSecurityGraphAsset, InsertSecurityGraphRelationship } from "
 import { createHash } from "crypto";
 import { eq } from "drizzle-orm";
 
-interface RequestWithUser extends Request {
-  user?: { id?: string; email?: string };
-}
-
 type AssetType =
   | "code"
   | "cloud"
