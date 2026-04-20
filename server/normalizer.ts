@@ -1,29 +1,8 @@
 import type { InsertAlert } from "@shared/schema";
 import { toOCSFSecurityFinding } from "./ocsf";
+import type { NormalizedAlert } from "./normalizer-types";
 
-export interface NormalizedAlert {
-  source: string;
-  sourceEventId: string;
-  category: string;
-  severity: string;
-  title: string;
-  description: string;
-  rawData: any;
-  normalizedData: any;
-  sourceIp?: string;
-  destIp?: string;
-  sourcePort?: number;
-  destPort?: number;
-  protocol?: string;
-  userId?: string;
-  hostname?: string;
-  fileHash?: string;
-  url?: string;
-  domain?: string;
-  mitreTactic?: string;
-  mitreTechnique?: string;
-  detectedAt?: Date;
-}
+export type { NormalizedAlert } from "./normalizer-types";
 
 const SEVERITY_MAP: Record<string, string> = {
   "5": "critical",

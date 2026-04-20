@@ -1,4 +1,4 @@
-import type { NormalizedAlert } from "./normalizer";
+import type { NormalizedAlert } from "./normalizer-types";
 
 export interface OCSFSeverity {
   id: number;
