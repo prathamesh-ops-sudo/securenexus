@@ -3,10 +3,11 @@ import { getPodId } from "./scaling-state";
 import { storage } from "./storage";
 import type { Request, Response, NextFunction } from "express";
 import { replyRateLimit, ERROR_CODES } from "./api-response";
+import type { PlanTier } from "@shared/types/plan-tier";
+
+export type { PlanTier };
 
 const log = logger.child("tenant-throttle");
-
-export type PlanTier = "free" | "pro" | "enterprise";
 
 export interface TenantQuotas {
   ingestionEventsPerMinute: number;
