@@ -5,6 +5,7 @@ import { logger } from "../logger";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { getOrgId } from "./shared";
 import { insertForecastQualitySnapshotSchema } from "@shared/schema";
+import { errorMessage, errorStack } from "../utils/errors";
 
 const log = logger.child("predictive-routes");
 
@@ -152,8 +153,8 @@ export function registerPredictiveRoutes(app: Express): void {
         log.info("Generated statistical forecasts", { orgId, count: forecasts.length });
 
         return res.json(forecasts);
-      } catch (error: any) {
-        log.error("Failed to generate forecasts", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to generate forecasts", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to generate forecasts" });
       }
     },
@@ -318,8 +319,8 @@ export function registerPredictiveRoutes(app: Express): void {
         log.info("Generated anomaly detections", { orgId, count: anomalies.length });
 
         return res.json(anomalies);
-      } catch (error: any) {
-        log.error("Failed to detect anomalies", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to detect anomalies", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to detect anomalies" });
       }
     },
@@ -438,8 +439,8 @@ export function registerPredictiveRoutes(app: Express): void {
         log.info("Analyzed attack surface", { orgId, assetsAnalyzed: surfaceItems.length });
 
         return res.json(surfaceItems.slice(0, 50)); // Top 50 highest risk
-      } catch (error: any) {
-        log.error("Failed to analyze attack surface", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to analyze attack surface", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to analyze attack surface" });
       }
     },
@@ -620,8 +621,8 @@ export function registerPredictiveRoutes(app: Express): void {
         log.info("Generated recommendations", { orgId, count: recommendations.length });
 
         return res.json(recommendations);
-      } catch (error: any) {
-        log.error("Failed to generate recommendations", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to generate recommendations", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to generate recommendations" });
       }
     },
@@ -676,8 +677,8 @@ export function registerPredictiveRoutes(app: Express): void {
           .sort((a, b) => a.date.localeCompare(b.date));
 
         return res.json(trends);
-      } catch (error: any) {
-        log.error("Failed to get forecast quality", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to get forecast quality", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to get forecast quality" });
       }
     },
@@ -755,8 +756,8 @@ export function registerPredictiveRoutes(app: Express): void {
             "recommendation_engine",
           ],
         });
-      } catch (error: any) {
-        log.error("Failed to recompute models", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to recompute models", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to recompute models" });
       }
     },
@@ -790,8 +791,8 @@ export function registerPredictiveRoutes(app: Express): void {
           status,
           updatedAt: new Date().toISOString(),
         });
-      } catch (error: any) {
-        log.error("Failed to update recommendation", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to update recommendation", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to update recommendation" });
       }
     },
@@ -813,8 +814,8 @@ export function registerPredictiveRoutes(app: Express): void {
 
         // Return empty array for now - user can create subscriptions
         return res.json([]);
-      } catch (error: any) {
-        log.error("Failed to get subscriptions", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to get subscriptions", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to get subscriptions" });
       }
     },
@@ -851,8 +852,8 @@ export function registerPredictiveRoutes(app: Express): void {
         log.info("Created anomaly subscription", { orgId, subscriptionId: subscription.id });
 
         return res.status(201).json(subscription);
-      } catch (error: any) {
-        log.error("Failed to create subscription", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to create subscription", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to create subscription" });
       }
     },
@@ -877,8 +878,8 @@ export function registerPredictiveRoutes(app: Express): void {
         log.info("Deleted anomaly subscription", { orgId, subscriptionId: id });
 
         return res.json({ message: "Subscription deleted" });
-      } catch (error: any) {
-        log.error("Failed to delete subscription", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to delete subscription", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to delete subscription" });
       }
     },
@@ -903,8 +904,8 @@ export function registerPredictiveRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const snapshots = await storage.getForecastQualitySnapshots(orgId);
         return res.json(snapshots);
-      } catch (error: any) {
-        log.error("Failed to get forecast quality snapshots", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to get forecast quality snapshots", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to get forecast quality snapshots" });
       }
     },
@@ -932,8 +933,8 @@ export function registerPredictiveRoutes(app: Express): void {
         }
         const snapshot = await storage.createForecastQualitySnapshot(parsed.data);
         return res.status(201).json(snapshot);
-      } catch (error: any) {
-        log.error("Failed to create forecast quality snapshot", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to create forecast quality snapshot", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to create forecast quality snapshot" });
       }
     },

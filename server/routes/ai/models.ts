@@ -78,7 +78,7 @@ export function registerAiModelsRoutes(app: Express): void {
           triage: "anthropic.claude-3-haiku-20240307-v1:0",
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("ai").error("Models list error", { error: String(error) });
       res.status(500).json({ message: "Failed to list available models" });
     }
@@ -111,7 +111,7 @@ export function registerAiModelsRoutes(app: Express): void {
         });
 
         res.json({ tier, modelId, updated: true });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Model tier assignment error", { error: String(error) });
         res.status(500).json({ message: "Failed to update model tier assignment" });
       }
@@ -215,7 +215,7 @@ export function registerAiModelsRoutes(app: Express): void {
         dataSources,
         totalRecords: dataSources.reduce((sum, s) => sum + s.recordCount, 0),
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("ai").error("Data sources error", { error: String(error) });
       res.status(500).json({ message: "Failed to list data sources" });
     }
@@ -295,7 +295,7 @@ export function registerAiModelsRoutes(app: Express): void {
         });
 
         res.json(proposal);
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Response action proposal error", { error: String(error) });
         res.status(500).json({ message: "Failed to propose response action" });
       }
@@ -330,7 +330,7 @@ export function registerAiModelsRoutes(app: Express): void {
           approvedAt: new Date().toISOString(),
           executedAt: new Date().toISOString(),
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Response action approve error", { error: String(error) });
         res.status(500).json({ message: "Failed to approve response action" });
       }
@@ -365,7 +365,7 @@ export function registerAiModelsRoutes(app: Express): void {
           rejectedAt: new Date().toISOString(),
           reason: reason || "No reason provided",
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Response action reject error", { error: String(error) });
         res.status(500).json({ message: "Failed to reject response action" });
       }

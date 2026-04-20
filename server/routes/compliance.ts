@@ -12,6 +12,7 @@ import {
   insertPolicyCheckSchema,
 } from "@shared/schema";
 import { runRetentionCleanup } from "../retention-scheduler";
+import { errorMessage, errorStack } from "../utils/errors";
 
 export function registerComplianceRoutes(app: Express): void {
   // Audit logs
@@ -1610,7 +1611,7 @@ export function registerComplianceRoutes(app: Express): void {
         available: AVAILABLE_FRAMEWORKS,
         enabled: enabledFrameworks,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("routes").error("Failed to fetch compliance frameworks", { error: String(error) });
       return sendEnvelope(res, null, {
         status: 500,
@@ -1674,7 +1675,7 @@ export function registerComplianceRoutes(app: Express): void {
           enabled: uniqueEnabled,
           message: `${uniqueEnabled.length} framework(s) enabled`,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("routes").error("Failed to update compliance frameworks", { error: String(error) });
         return sendEnvelope(res, null, {
           status: 500,
@@ -1715,10 +1716,10 @@ export function registerComplianceRoutes(app: Express): void {
           sortOrder,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       return sendEnvelope(res, null, {
         status: 500,
-        errors: [{ code: "AUDIT_LOGS_FAILED", message: "Failed to fetch audit logs", details: error?.message }],
+        errors: [{ code: "AUDIT_LOGS_FAILED", message: "Failed to fetch audit logs", details: errorMessage(error) }],
       });
     }
   });

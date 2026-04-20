@@ -38,10 +38,26 @@ export function registerAiContextRoutes(app: Express): void {
 
       // Query real document counts per source from database
       const [alertCount, incidentCount, entityCount, iocCount, telemetryCount] = await Promise.all([
-        db.select({ value: count() }).from(alerts).where(eq(alerts.orgId, orgId)).then((r) => r[0]?.value ?? 0),
-        db.select({ value: count() }).from(incidents).where(eq(incidents.orgId, orgId)).then((r) => r[0]?.value ?? 0),
-        db.select({ value: count() }).from(entities).where(eq(entities.orgId, orgId)).then((r) => r[0]?.value ?? 0),
-        db.select({ value: count() }).from(iocEntries).where(eq(iocEntries.orgId, orgId)).then((r) => r[0]?.value ?? 0),
+        db
+          .select({ value: count() })
+          .from(alerts)
+          .where(eq(alerts.orgId, orgId))
+          .then((r) => r[0]?.value ?? 0),
+        db
+          .select({ value: count() })
+          .from(incidents)
+          .where(eq(incidents.orgId, orgId))
+          .then((r) => r[0]?.value ?? 0),
+        db
+          .select({ value: count() })
+          .from(entities)
+          .where(eq(entities.orgId, orgId))
+          .then((r) => r[0]?.value ?? 0),
+        db
+          .select({ value: count() })
+          .from(iocEntries)
+          .where(eq(iocEntries.orgId, orgId))
+          .then((r) => r[0]?.value ?? 0),
         db
           .select({ value: count() })
           .from(endpointTelemetry)
@@ -112,7 +128,7 @@ export function registerAiContextRoutes(app: Express): void {
           `Token budget: ${tokenBudget} tokens across ${contextPlan.length} sources`,
         ],
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("ai").error("Context optimization error", { error: String(error) });
       res.status(500).json({ message: "Failed to optimize context window" });
     }
@@ -202,7 +218,7 @@ export function registerAiContextRoutes(app: Express): void {
               ? "Some claims unverified — analyst review recommended"
               : "AI output well-grounded in source data",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("ai").error("Hallucination check error", { error: String(error) });
       res.status(500).json({ message: "Failed to perform hallucination check" });
     }

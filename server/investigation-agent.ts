@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import type { InvestigationRun, Incident, Alert } from "@shared/schema";
+import { errorMessage, errorStack } from "./utils/errors";
 
 const INVESTIGATION_STEPS = [
   { type: "gather_alerts", title: "Gathering Related Alerts", order: 1 },
@@ -216,10 +217,10 @@ export async function runInvestigation(runId: string): Promise<void> {
       duration: Date.now() - startTime,
       completedAt: new Date(),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     await storage.updateInvestigationRun(runId, {
       status: "failed",
-      error: error.message || "Unknown error",
+      error: errorMessage(error) || "Unknown error",
       completedAt: new Date(),
     });
   }

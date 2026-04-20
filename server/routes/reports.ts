@@ -4,6 +4,7 @@ import { isAuthenticated } from "../auth";
 import { insertReportScheduleSchema, insertReportTemplateSchema } from "@shared/schema";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { errorMessage, errorStack } from "../utils/errors";
 
 export function registerReportsRoutes(app: Express): void {
   // Export Routes (Phase 10)
@@ -180,8 +181,8 @@ export function registerReportsRoutes(app: Express): void {
         const data = insertReportTemplateSchema.parse({ ...req.body, orgId, createdBy: user?.id || null });
         const template = await storage.createReportTemplate(data);
         res.status(201).json(template);
-      } catch (error: any) {
-        if (error.message === "ORG_CONTEXT_MISSING")
+      } catch (error: unknown) {
+        if (errorMessage(error) === "ORG_CONTEXT_MISSING")
           return res.status(403).json({ message: "Organization context required" });
         res.status(500).json({ message: "Failed to create report template" });
       }
@@ -265,8 +266,8 @@ export function registerReportsRoutes(app: Express): void {
         await storage.updateReportSchedule(schedule.id, { nextRunAt });
         const updated = await storage.getReportSchedule(schedule.id);
         res.status(201).json(updated);
-      } catch (error: any) {
-        if (error.message === "ORG_CONTEXT_MISSING")
+      } catch (error: unknown) {
+        if (errorMessage(error) === "ORG_CONTEXT_MISSING")
           return res.status(403).json({ message: "Organization context required" });
         res.status(500).json({ message: "Failed to create report schedule" });
       }
@@ -349,8 +350,8 @@ export function registerReportsRoutes(app: Express): void {
         const { runReportOnDemand } = await import("../report-scheduler");
         const result = await runReportOnDemand(templateId, user?.orgId, user?.id);
         res.json(result);
-      } catch (err: any) {
-        res.status(500).json({ message: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ message: errorMessage(err) });
       }
     },
   );
@@ -389,8 +390,8 @@ export function registerReportsRoutes(app: Express): void {
           return res.send(csv);
         }
         res.json(data);
-      } catch (err: any) {
-        res.status(500).json({ message: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ message: errorMessage(err) });
       }
     },
   );
@@ -407,8 +408,8 @@ export function registerReportsRoutes(app: Express): void {
         const { generateReportData } = await import("../report-engine");
         const data = await generateReportData(p(req.params.reportType), user?.orgId);
         res.json(data);
-      } catch (err: any) {
-        res.status(500).json({ message: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ message: errorMessage(err) });
       }
     },
   );
@@ -500,8 +501,8 @@ export function registerReportsRoutes(app: Express): void {
           created.push(template);
         }
         res.status(201).json({ message: "Built-in templates created", count: created.length, templates: created });
-      } catch (error: any) {
-        if (error.message === "ORG_CONTEXT_MISSING")
+      } catch (error: unknown) {
+        if (errorMessage(error) === "ORG_CONTEXT_MISSING")
           return res.status(403).json({ message: "Organization context required" });
         res.status(500).json({ message: "Failed to seed report templates" });
       }

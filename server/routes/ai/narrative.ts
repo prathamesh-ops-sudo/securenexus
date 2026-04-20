@@ -81,7 +81,7 @@ export function registerAiNarrativeRoutes(app: Express): void {
           });
         }
         res.json(result);
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("AI narrative error", { error: String(error) });
         res.status(500).json({ message: "AI narrative generation failed. Please try again." });
       }
@@ -174,7 +174,9 @@ export function registerAiNarrativeRoutes(app: Express): void {
               details: { streamed: true, latencyMs: metrics.latencyMs, riskScore: parsed?.riskScore },
             });
 
-            storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+            storage
+              .incrementUsage(orgId, "ai_analyses")
+              .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
           } catch (e) {
             logger.child("ai").warn("Post-stream processing error", { error: String(e) });
           }
@@ -274,7 +276,9 @@ export function registerAiNarrativeRoutes(app: Express): void {
               resourceId: incident.id,
               details: { alertCount: incidentAlerts.length, streamed: true, latencyMs: metrics.latencyMs },
             });
-            storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+            storage
+              .incrementUsage(orgId, "ai_analyses")
+              .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
           } catch (e) {
             logger.child("ai").warn("Post-stream processing error", { error: String(e) });
           }

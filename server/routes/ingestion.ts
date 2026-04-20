@@ -29,6 +29,7 @@ import { evaluateSuppression } from "../suppression-engine";
 import { CACHE_TTL, buildCacheKey, cacheGetOrLoad, cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { parseSyslog, syslogToEvent, normalizeWebhookPayload } from "../integrations/syslog-ingest";
+import { errorMessage, errorStack } from "../utils/errors";
 
 export function registerIngestionRoutes(app: Express): void {
   // API Key Management (authenticated user routes)
@@ -429,7 +430,7 @@ export function registerIngestionRoutes(app: Express): void {
             ? { clusterId: correlationResult.clusterId, confidence: correlationResult.confidence }
             : null,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ingestion").error(`Ingestion error [${source}]`, { error: String(error) });
         await storage
           .createIngestionLog({
@@ -440,7 +441,7 @@ export function registerIngestionRoutes(app: Express): void {
             alertsCreated: 0,
             alertsDeduped: 0,
             alertsFailed: 1,
-            errorMessage: error.message?.slice(0, 500),
+            errorMessage: errorMessage(error)?.slice(0, 500),
             requestId,
             ipAddress: req.ip || null,
             processingTimeMs: Date.now() - startTime,
@@ -537,7 +538,7 @@ export function registerIngestionRoutes(app: Express): void {
               isDuplicate,
               occurrenceCount: alert.occurrenceCount ?? 1,
             });
-          } catch (err: any) {
+          } catch (err: unknown) {
             failed++;
             results.push({ error: "Processing failed", status: "failed" });
           }
@@ -579,7 +580,7 @@ export function registerIngestionRoutes(app: Express): void {
           summary: { received: events.length, created, deduplicated: deduped, failed },
           results,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ingestion").error(`Bulk ingestion error [${source}]`, { error: String(error) });
         await storage
           .createIngestionLog({
@@ -590,7 +591,7 @@ export function registerIngestionRoutes(app: Express): void {
             alertsCreated: 0,
             alertsDeduped: 0,
             alertsFailed: 0,
-            errorMessage: error.message?.slice(0, 500),
+            errorMessage: errorMessage(error)?.slice(0, 500),
             requestId,
             ipAddress: req.ip || null,
             processingTimeMs: Date.now() - startTime,
@@ -629,14 +630,14 @@ export function registerIngestionRoutes(app: Express): void {
       return sendEnvelope(res, items, {
         meta: { offset, limit, total },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       return sendEnvelope(res, null, {
         status: 500,
         errors: [
           {
             code: "INGESTION_LOGS_LIST_FAILED",
             message: "Failed to fetch ingestion logs",
-            details: error?.message,
+            details: errorMessage(error),
           },
         ],
       });
@@ -1031,7 +1032,7 @@ export function registerIngestionRoutes(app: Express): void {
             failed: totalFailed,
           },
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ingestion").error("Syslog ingestion error", { error: String(error) });
         res.status(500).json({ error: "Syslog ingestion failed", requestId });
       }
@@ -1109,7 +1110,7 @@ export function registerIngestionRoutes(app: Express): void {
             failed,
           },
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ingestion").error(`Webhook ingestion error [${source}]`, { error: String(error) });
         res.status(500).json({ error: "Webhook ingestion failed", requestId });
       }

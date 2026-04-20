@@ -23,6 +23,7 @@ import { getRecentTraces, getTraceById, getTraceStats } from "../tracing";
 import { getDispatcherStatus } from "../notification-dispatcher";
 import { getBreachHistory } from "../slo-alerting";
 import { getRecentErrors, getErrorGroups, getErrorStats } from "../error-tracker";
+import { errorMessage, errorStack } from "../utils/errors";
 
 export function registerAdminRoutes(app: Express): void {
   app.get("/api/secret-rotations/expiring", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -330,10 +331,12 @@ export function registerAdminRoutes(app: Express): void {
         const offset = Number(req.query.offset ?? 0) || 0;
         const { items, total } = await storage.getOutboxEvents(orgId, status, limit, offset);
         return sendEnvelope(res, items, { meta: { offset, limit, total, status: status ?? null } });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "OUTBOX_LIST_FAILED", message: "Failed to fetch outbox events", details: error?.message }],
+          errors: [
+            { code: "OUTBOX_LIST_FAILED", message: "Failed to fetch outbox events", details: errorMessage(error) },
+          ],
         });
       }
     },
@@ -375,10 +378,10 @@ export function registerAdminRoutes(app: Express): void {
           resourceId: eventId,
         });
         return sendEnvelope(res, replayed);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "REPLAY_FAILED", message: "Failed to replay event", details: error?.message }],
+          errors: [{ code: "REPLAY_FAILED", message: "Failed to replay event", details: errorMessage(error) }],
         });
       }
     },
@@ -416,10 +419,10 @@ export function registerAdminRoutes(app: Express): void {
         return sendEnvelope(res, results, {
           meta: { requested: ids.length, replayed: results.filter((r) => r.replayed).length },
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "BATCH_REPLAY_FAILED", message: "Failed to replay events", details: error?.message }],
+          errors: [{ code: "BATCH_REPLAY_FAILED", message: "Failed to replay events", details: errorMessage(error) }],
         });
       }
     },
@@ -435,10 +438,10 @@ export function registerAdminRoutes(app: Express): void {
       try {
         const processorStatus = getOutboxProcessorStatus();
         return sendEnvelope(res, processorStatus);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "STATUS_FAILED", message: "Failed to fetch outbox status", details: error?.message }],
+          errors: [{ code: "STATUS_FAILED", message: "Failed to fetch outbox status", details: errorMessage(error) }],
         });
       }
     },
@@ -453,10 +456,12 @@ export function registerAdminRoutes(app: Express): void {
     async (_req, res) => {
       try {
         return sendEnvelope(res, cacheStats());
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "CACHE_STATS_FAILED", message: "Failed to fetch cache stats", details: error?.message }],
+          errors: [
+            { code: "CACHE_STATS_FAILED", message: "Failed to fetch cache stats", details: errorMessage(error) },
+          ],
         });
       }
     },
@@ -479,10 +484,12 @@ export function registerAdminRoutes(app: Express): void {
         }
         const removed = cacheInvalidate(pattern);
         return sendEnvelope(res, { removed, pattern });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "CACHE_INVALIDATE_FAILED", message: "Failed to invalidate cache", details: error?.message }],
+          errors: [
+            { code: "CACHE_INVALIDATE_FAILED", message: "Failed to invalidate cache", details: errorMessage(error) },
+          ],
         });
       }
     },
@@ -498,11 +505,11 @@ export function registerAdminRoutes(app: Express): void {
       try {
         const deadLetterJobs = await getDeadLetterJobs();
         return sendEnvelope(res, deadLetterJobs, { meta: { total: deadLetterJobs.length } });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
-            { code: "DEAD_LETTER_FAILED", message: "Failed to fetch dead letter jobs", details: error?.message },
+            { code: "DEAD_LETTER_FAILED", message: "Failed to fetch dead letter jobs", details: errorMessage(error) },
           ],
         });
       }
@@ -526,10 +533,10 @@ export function registerAdminRoutes(app: Express): void {
           });
         }
         return sendEnvelope(res, retried);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "RETRY_FAILED", message: "Failed to retry dead letter job", details: error?.message }],
+          errors: [{ code: "RETRY_FAILED", message: "Failed to retry dead letter job", details: errorMessage(error) }],
         });
       }
     },
@@ -553,10 +560,10 @@ export function registerAdminRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const scheduledJob = await scheduleJob(type, orgId, payload || {}, new Date(runAt), priority);
         return sendEnvelope(res, scheduledJob, { status: 201 });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "SCHEDULE_FAILED", message: "Failed to schedule job", details: error?.message }],
+          errors: [{ code: "SCHEDULE_FAILED", message: "Failed to schedule job", details: errorMessage(error) }],
         });
       }
     },
@@ -587,11 +594,11 @@ export function registerAdminRoutes(app: Express): void {
           recentSlowQueries: slowQueries,
           queryCacheStats: cacheStats(),
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
-            { code: "DB_PERF_FAILED", message: "Failed to fetch DB performance metrics", details: error?.message },
+            { code: "DB_PERF_FAILED", message: "Failed to fetch DB performance metrics", details: errorMessage(error) },
           ],
         });
       }
@@ -608,10 +615,12 @@ export function registerAdminRoutes(app: Express): void {
       try {
         const [indexHitRates, unusedIndexes] = await Promise.all([getIndexHitRates(), getUnusedIndexes()]);
         return sendEnvelope(res, { indexHitRates, unusedIndexes });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "INDEX_STATS_FAILED", message: "Failed to fetch index stats", details: error?.message }],
+          errors: [
+            { code: "INDEX_STATS_FAILED", message: "Failed to fetch index stats", details: errorMessage(error) },
+          ],
         });
       }
     },
@@ -626,10 +635,12 @@ export function registerAdminRoutes(app: Express): void {
     async (_req, res) => {
       try {
         return sendEnvelope(res, { recentSlowQueries: getRecentSlowQueries() });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "SLOW_QUERIES_FAILED", message: "Failed to fetch slow queries", details: error?.message }],
+          errors: [
+            { code: "SLOW_QUERIES_FAILED", message: "Failed to fetch slow queries", details: errorMessage(error) },
+          ],
         });
       }
     },
@@ -645,10 +656,12 @@ export function registerAdminRoutes(app: Express): void {
       try {
         const [health, connectivity] = await Promise.all([Promise.resolve(getPoolHealth()), checkPoolConnectivity()]);
         return sendEnvelope(res, { pool: health, connectivity });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "POOL_HEALTH_FAILED", message: "Failed to fetch pool health", details: error?.message }],
+          errors: [
+            { code: "POOL_HEALTH_FAILED", message: "Failed to fetch pool health", details: errorMessage(error) },
+          ],
         });
       }
     },
@@ -665,10 +678,12 @@ export function registerAdminRoutes(app: Express): void {
         const sizes = await getTableSizes();
         const configs = getPartitionConfigs();
         return sendEnvelope(res, { tables: sizes, partitionConfigs: configs });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "TABLE_SIZES_FAILED", message: "Failed to fetch table sizes", details: error?.message }],
+          errors: [
+            { code: "TABLE_SIZES_FAILED", message: "Failed to fetch table sizes", details: errorMessage(error) },
+          ],
         });
       }
     },
@@ -698,10 +713,10 @@ export function registerAdminRoutes(app: Express): void {
           },
         });
         return sendEnvelope(res, result);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "ARCHIVAL_FAILED", message: "Failed to run archival job", details: error?.message }],
+          errors: [{ code: "ARCHIVAL_FAILED", message: "Failed to run archival job", details: errorMessage(error) }],
         });
       }
     },
@@ -733,10 +748,10 @@ export function registerAdminRoutes(app: Express): void {
           },
         });
         return sendEnvelope(res, result);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "ROLLUP_FAILED", message: "Failed to run metrics rollup", details: error?.message }],
+          errors: [{ code: "ROLLUP_FAILED", message: "Failed to run metrics rollup", details: errorMessage(error) }],
         });
       }
     },
@@ -754,10 +769,10 @@ export function registerAdminRoutes(app: Express): void {
           rollupConfig: getRollupConfig(),
           partitionConfigs: getPartitionConfigs(),
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "CONFIG_FAILED", message: "Failed to fetch rollup config", details: error?.message }],
+          errors: [{ code: "CONFIG_FAILED", message: "Failed to fetch rollup config", details: errorMessage(error) }],
         });
       }
     },
@@ -772,10 +787,12 @@ export function registerAdminRoutes(app: Express): void {
     async (_req, res) => {
       try {
         return sendEnvelope(res, getTraceStats());
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "TRACING_STATS_FAILED", message: "Failed to fetch tracing stats", details: error?.message }],
+          errors: [
+            { code: "TRACING_STATS_FAILED", message: "Failed to fetch tracing stats", details: errorMessage(error) },
+          ],
         });
       }
     },
@@ -791,11 +808,11 @@ export function registerAdminRoutes(app: Express): void {
       try {
         const limit = Math.min(Number(req.query.limit ?? 50) || 50, 200);
         return sendEnvelope(res, getRecentTraces(limit));
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
-            { code: "TRACING_RECENT_FAILED", message: "Failed to fetch recent traces", details: error?.message },
+            { code: "TRACING_RECENT_FAILED", message: "Failed to fetch recent traces", details: errorMessage(error) },
           ],
         });
       }
@@ -825,10 +842,10 @@ export function registerAdminRoutes(app: Express): void {
           });
         }
         return sendEnvelope(res, spans);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "TRACE_LOOKUP_FAILED", message: "Failed to fetch trace", details: error?.message }],
+          errors: [{ code: "TRACE_LOOKUP_FAILED", message: "Failed to fetch trace", details: errorMessage(error) }],
         });
       }
     },
@@ -844,11 +861,15 @@ export function registerAdminRoutes(app: Express): void {
       try {
         const dispatcherStatus = getDispatcherStatus();
         return sendEnvelope(res, dispatcherStatus);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
-            { code: "ALERTING_STATUS_FAILED", message: "Failed to fetch alerting status", details: error?.message },
+            {
+              code: "ALERTING_STATUS_FAILED",
+              message: "Failed to fetch alerting status",
+              details: errorMessage(error),
+            },
           ],
         });
       }
@@ -867,11 +888,11 @@ export function registerAdminRoutes(app: Express): void {
         const hoursBack = Math.min(Number(req.query.hours ?? 24) || 24, 168);
         const history = await getBreachHistory(service, hoursBack);
         return sendEnvelope(res, history, { meta: { service: service ?? "all", hoursBack } });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
-            { code: "BREACH_HISTORY_FAILED", message: "Failed to fetch breach history", details: error?.message },
+            { code: "BREACH_HISTORY_FAILED", message: "Failed to fetch breach history", details: errorMessage(error) },
           ],
         });
       }
@@ -889,10 +910,12 @@ export function registerAdminRoutes(app: Express): void {
     async (_req, res) => {
       try {
         return sendEnvelope(res, getErrorStats());
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "ERROR_STATS_FAILED", message: "Failed to fetch error stats", details: error?.message }],
+          errors: [
+            { code: "ERROR_STATS_FAILED", message: "Failed to fetch error stats", details: errorMessage(error) },
+          ],
         });
       }
     },
@@ -908,10 +931,12 @@ export function registerAdminRoutes(app: Express): void {
       try {
         const limit = Math.min(Number(req.query.limit ?? 50) || 50, 200);
         return sendEnvelope(res, getErrorGroups(limit));
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "ERROR_GROUPS_FAILED", message: "Failed to fetch error groups", details: error?.message }],
+          errors: [
+            { code: "ERROR_GROUPS_FAILED", message: "Failed to fetch error groups", details: errorMessage(error) },
+          ],
         });
       }
     },
@@ -930,10 +955,12 @@ export function registerAdminRoutes(app: Express): void {
         const userId = typeof req.query.userId === "string" ? req.query.userId : undefined;
         const orgId = typeof req.query.orgId === "string" ? req.query.orgId : undefined;
         return sendEnvelope(res, getRecentErrors({ route, userId, orgId, limit }));
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "RECENT_ERRORS_FAILED", message: "Failed to fetch recent errors", details: error?.message }],
+          errors: [
+            { code: "RECENT_ERRORS_FAILED", message: "Failed to fetch recent errors", details: errorMessage(error) },
+          ],
         });
       }
     },
@@ -1000,10 +1027,12 @@ export function registerAdminRoutes(app: Express): void {
           },
         ];
         return sendEnvelope(res, configs);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "TIME_LIMITS_FAILED", message: "Failed to fetch time limits", details: error?.message }],
+          errors: [
+            { code: "TIME_LIMITS_FAILED", message: "Failed to fetch time limits", details: errorMessage(error) },
+          ],
         });
       }
     },
@@ -1032,11 +1061,11 @@ export function registerAdminRoutes(app: Express): void {
           updatedAt: new Date().toISOString(),
         };
         return sendEnvelope(res, updated);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
-            { code: "TIME_LIMIT_UPDATE_FAILED", message: "Failed to update time limit", details: error?.message },
+            { code: "TIME_LIMIT_UPDATE_FAILED", message: "Failed to update time limit", details: errorMessage(error) },
           ],
         });
       }
@@ -1113,10 +1142,12 @@ export function registerAdminRoutes(app: Express): void {
           peakThroughput: Math.max(0, ...buckets.map((b) => b.throughput)),
         };
         return sendEnvelope(res, { buckets, totals });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "QUEUE_METRICS_FAILED", message: "Failed to fetch queue metrics", details: error?.message }],
+          errors: [
+            { code: "QUEUE_METRICS_FAILED", message: "Failed to fetch queue metrics", details: errorMessage(error) },
+          ],
         });
       }
     },

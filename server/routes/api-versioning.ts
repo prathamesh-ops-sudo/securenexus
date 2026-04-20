@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { isAuthenticated } from "../auth";
 import { sendEnvelope, storage, getOrgId, logger } from "./shared";
 import { resolveOrgContext, requireOrgId } from "../rbac";
+import { errorMessage, errorStack } from "../utils/errors";
 
 const API_V1_STABILITY_DATE = "2026-02-17";
 const API_V1_SUNSET_DATE = "2028-02-17";
@@ -210,8 +211,8 @@ export function registerApiVersioningRoutes(app: Express): void {
           });
         const versions = await storage.getReportTemplateVersions(template.id, orgId);
         return sendEnvelope(res, versions, { meta: { templateId: template.id, total: versions.length } });
-      } catch (error: any) {
-        if (error.message === "ORG_CONTEXT_MISSING")
+      } catch (error: unknown) {
+        if (errorMessage(error) === "ORG_CONTEXT_MISSING")
           return res.status(403).json({ message: "Organization context required" });
         return sendEnvelope(res, null, {
           status: 500,
@@ -238,8 +239,8 @@ export function registerApiVersioningRoutes(app: Express): void {
           typeof req.query.controlMappingId === "string" ? req.query.controlMappingId : undefined;
         const attachments = await storage.getEvidenceAttachments(orgId, controlMappingId);
         return sendEnvelope(res, attachments, { meta: { total: attachments.length } });
-      } catch (error: any) {
-        if (error.message === "ORG_CONTEXT_MISSING")
+      } catch (error: unknown) {
+        if (errorMessage(error) === "ORG_CONTEXT_MISSING")
           return res.status(403).json({ message: "Organization context required" });
         return sendEnvelope(res, null, {
           status: 500,
@@ -265,8 +266,8 @@ export function registerApiVersioningRoutes(app: Express): void {
         const helperType = typeof req.query.helperType === "string" ? req.query.helperType : undefined;
         const helpers = await storage.getComplianceControlHelpers(orgId, helperType);
         return sendEnvelope(res, helpers, { meta: { total: helpers.length } });
-      } catch (error: any) {
-        if (error.message === "ORG_CONTEXT_MISSING")
+      } catch (error: unknown) {
+        if (errorMessage(error) === "ORG_CONTEXT_MISSING")
           return res.status(403).json({ message: "Organization context required" });
         return sendEnvelope(res, null, {
           status: 500,
@@ -295,8 +296,8 @@ export function registerApiVersioningRoutes(app: Express): void {
         const { items, total } = await storage.getIngestionLogsPaginated({ orgId, offset, limit });
 
         return sendEnvelope(res, items, { meta: { offset, limit, total } });
-      } catch (error: any) {
-        if (error.message === "ORG_CONTEXT_MISSING")
+      } catch (error: unknown) {
+        if (errorMessage(error) === "ORG_CONTEXT_MISSING")
           return res.status(403).json({ message: "Organization context required" });
         return sendEnvelope(res, null, {
           status: 500,

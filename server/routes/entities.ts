@@ -276,7 +276,7 @@ export function registerEntitiesRoutes(app: Express): void {
           campaigns: results.campaignsCreated,
           results,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("routes").error("Graph correlation error", { error: String(error) });
         res.status(500).json({ message: "Failed to run graph correlation scan" });
       }

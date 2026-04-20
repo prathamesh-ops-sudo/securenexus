@@ -4,6 +4,7 @@ import { logger } from "./logger";
 import { createHash, randomBytes } from "crypto";
 import { sql } from "drizzle-orm";
 import { startSpan } from "./tracing";
+import { errorMessage, errorStack } from "./utils/errors";
 
 const DEAD_LETTER_MAX_ATTEMPTS = 3;
 const VISIBILITY_TIMEOUT_MS = 120_000;
@@ -25,8 +26,8 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
       const { getAiTriageHandler } = await import("./routes/ai/triage");
       const handler = getAiTriageHandler();
       return await handler(job);
-    } catch (err: any) {
-      return { error: err.message || String(err), alertId: job.payload?.alertId };
+    } catch (err: unknown) {
+      return { error: errorMessage(err), alertId: job.payload?.alertId };
     }
   },
   connector_sync: async (job) => {
@@ -112,8 +113,8 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
         alertsFailed: failed,
         errors: syncResult.errors,
       };
-    } catch (err: any) {
-      return { synced: false, type: "connector_sync", error: err.message || String(err) };
+    } catch (err: unknown) {
+      return { synced: false, type: "connector_sync", error: errorMessage(err) };
     }
   },
   threat_enrichment: async (job) => {
@@ -121,8 +122,8 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
       const { enrichEntity } = await import("./threat-enrichment");
       const result = await enrichEntity(job.payload?.alertId, true, job.payload?.orgId);
       return { enriched: true, results: result };
-    } catch (err: any) {
-      return { enriched: false, type: "threat_enrichment", error: err.message || String(err) };
+    } catch (err: unknown) {
+      return { enriched: false, type: "threat_enrichment", error: errorMessage(err) };
     }
   },
   report_generation: async (job) => {
@@ -130,8 +131,8 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
       const { generateReportData } = await import("./report-engine");
       const result = await generateReportData(job.payload?.templateId, job.payload?.orgId);
       return { generated: true, ...result };
-    } catch (err: any) {
-      return { generated: false, type: "report_generation", error: err.message || String(err) };
+    } catch (err: unknown) {
+      return { generated: false, type: "report_generation", error: errorMessage(err) };
     }
   },
   cache_refresh: async (job) => {
@@ -147,8 +148,8 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
       await storage.upsertCachedMetrics({ orgId, metricType: "stats", payload: stats, expiresAt });
       await storage.upsertCachedMetrics({ orgId, metricType: "analytics", payload: analytics, expiresAt });
       return { refreshed: true, orgId, expiresAt: expiresAt.toISOString() };
-    } catch (err: any) {
-      return { refreshed: false, type: "cache_refresh", error: err.message || String(err) };
+    } catch (err: unknown) {
+      return { refreshed: false, type: "cache_refresh", error: errorMessage(err) };
     }
   },
   archive_alerts: async (job) => {
@@ -171,8 +172,8 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
         return { archived, orgId, beforeDate: beforeDate.toISOString() };
       }
       return { archived: 0, orgId, message: "No alerts to archive" };
-    } catch (err: any) {
-      return { archived: false, type: "archive_alerts", error: err.message || String(err) };
+    } catch (err: unknown) {
+      return { archived: false, type: "archive_alerts", error: errorMessage(err) };
     }
   },
   daily_stats_rollup: async (job) => {
@@ -209,8 +210,8 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
         categoryCounts: {},
       });
       return { rolledUp: true, orgId, date };
-    } catch (err: any) {
-      return { rolledUp: false, type: "daily_stats_rollup", error: err.message || String(err) };
+    } catch (err: unknown) {
+      return { rolledUp: false, type: "daily_stats_rollup", error: errorMessage(err) };
     }
   },
   sli_collection: async (_job) => {
@@ -219,8 +220,8 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
       const evaluations = await evaluateSlos();
       const breaches = evaluations.filter((e) => e.breached);
       return { collected: true, totalSlos: evaluations.length, breaches: breaches.length };
-    } catch (err: any) {
-      return { collected: false, type: "sli_collection", error: err.message || String(err) };
+    } catch (err: unknown) {
+      return { collected: false, type: "sli_collection", error: errorMessage(err) };
     }
   },
 };
@@ -441,10 +442,10 @@ async function processJob(job: any): Promise<void> {
     } else {
       logger.child("job-queue").info(`Completed job ${job.id}`);
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     const attempts = job.attempts || 0;
     const maxAttempts = job.maxAttempts || DEAD_LETTER_MAX_ATTEMPTS;
-    const errorMsg = err.message || String(err);
+    const errorMsg = errorMessage(err);
 
     if (attempts >= maxAttempts) {
       const res = await db.execute(sql`

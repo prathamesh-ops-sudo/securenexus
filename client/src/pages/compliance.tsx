@@ -321,8 +321,12 @@ function ComplianceCenterTab() {
       link.click();
       URL.revokeObjectURL(link.href);
       toast({ title: "Export complete", description: "Audit log CSV downloaded." });
-    } catch (err: any) {
-      toast({ title: "Export failed", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({
+        title: "Export failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
     } finally {
       setExporting(false);
     }

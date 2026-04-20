@@ -685,10 +685,10 @@ export default function ReportsPage() {
                                       a.download = `report-${r.id}.${ext}`;
                                       a.click();
                                       URL.revokeObjectURL(url);
-                                    } catch (e: any) {
+                                    } catch (e: unknown) {
                                       toast({
                                         title: "Download Failed",
-                                        description: e.message,
+                                        description: e instanceof Error ? e.message : String(e),
                                         variant: "destructive",
                                       });
                                     }

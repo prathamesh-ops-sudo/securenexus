@@ -10,6 +10,7 @@ import { z } from "zod";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { getOrgId } from "./shared";
+import { errorMessage, errorStack } from "../utils/errors";
 
 const log = logger.child("autonomous-routes");
 
@@ -69,8 +70,8 @@ export function registerAutonomousRoutes(app: Express): void {
             disabled: policies?.filter((p: any) => !p.enabled).length || 0,
           },
         });
-      } catch (error: any) {
-        log.error("Failed to fetch autonomous policies", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to fetch autonomous policies", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to fetch autonomous policies" });
       }
     },
@@ -192,8 +193,8 @@ export function registerAutonomousRoutes(app: Express): void {
           message: `Created ${created.length} default autonomous response policies`,
           policies: created,
         });
-      } catch (error: any) {
-        log.error("Failed to seed default policies", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to seed default policies", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to seed default policies" });
       }
     },
@@ -224,11 +225,11 @@ export function registerAutonomousRoutes(app: Express): void {
         log.info("Created autonomous policy", { orgId, policyId: policy.id, name: validated.name });
 
         return res.status(201).json({ policy });
-      } catch (error: any) {
-        if (error.name === "ZodError") {
+      } catch (error: unknown) {
+        if (error instanceof z.ZodError) {
           return res.status(400).json({ error: "Invalid policy data", details: error.errors });
         }
-        log.error("Failed to create autonomous policy", { error: error.message });
+        log.error("Failed to create autonomous policy", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to create autonomous policy" });
       }
     },
@@ -262,11 +263,11 @@ export function registerAutonomousRoutes(app: Express): void {
         log.info("Updated autonomous policy", { orgId, policyId });
 
         return res.json({ policy: updated });
-      } catch (error: any) {
-        if (error.name === "ZodError") {
+      } catch (error: unknown) {
+        if (error instanceof z.ZodError) {
           return res.status(400).json({ error: "Invalid policy data", details: error.errors });
         }
-        log.error("Failed to update autonomous policy", { error: error.message });
+        log.error("Failed to update autonomous policy", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to update autonomous policy" });
       }
     },
@@ -298,8 +299,8 @@ export function registerAutonomousRoutes(app: Express): void {
         log.info("Deleted autonomous policy", { orgId, policyId });
 
         return res.json({ message: "Policy deleted successfully" });
-      } catch (error: any) {
-        log.error("Failed to delete autonomous policy", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to delete autonomous policy", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to delete autonomous policy" });
       }
     },
@@ -331,8 +332,8 @@ export function registerAutonomousRoutes(app: Express): void {
           actions: actions || [],
           count: actions?.length || 0,
         });
-      } catch (error: any) {
-        log.error("Failed to fetch response actions", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to fetch response actions", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to fetch response actions" });
       }
     },
@@ -370,8 +371,8 @@ export function registerAutonomousRoutes(app: Express): void {
         log.info("Manually executed response action", { orgId, actionType, status: result.status });
 
         return res.json({ result });
-      } catch (error: any) {
-        log.error("Failed to execute response action", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to execute response action", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to execute response action" });
       }
     },
@@ -406,8 +407,8 @@ export function registerAutonomousRoutes(app: Express): void {
             failed: runs?.filter((r: any) => r.status === "failed").length || 0,
           },
         });
-      } catch (error: any) {
-        log.error("Failed to fetch investigation runs", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to fetch investigation runs", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to fetch investigation runs" });
       }
     },
@@ -458,8 +459,8 @@ export function registerAutonomousRoutes(app: Express): void {
           message: "Investigation started",
           incidentId,
         });
-      } catch (error: any) {
-        log.error("Failed to start investigation", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to start investigation", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to start investigation" });
       }
     },
@@ -492,8 +493,8 @@ export function registerAutonomousRoutes(app: Express): void {
           investigation: run,
           steps: steps || [],
         });
-      } catch (error: any) {
-        log.error("Failed to fetch investigation run", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to fetch investigation run", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to fetch investigation run" });
       }
     },
@@ -523,8 +524,8 @@ export function registerAutonomousRoutes(app: Express): void {
           rollbacks: rollbacks || [],
           count: rollbacks?.length || 0,
         });
-      } catch (error: any) {
-        log.error("Failed to fetch rollbacks", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to fetch rollbacks", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to fetch rollbacks" });
       }
     },
@@ -568,11 +569,11 @@ export function registerAutonomousRoutes(app: Express): void {
           rollbackId: rollback.id,
           message: "Rollback request created",
         });
-      } catch (error: any) {
-        if (error.name === "ZodError") {
+      } catch (error: unknown) {
+        if (error instanceof z.ZodError) {
           return res.status(400).json({ error: "Invalid rollback data", details: error.errors });
         }
-        log.error("Failed to create rollback", { error: error.message });
+        log.error("Failed to create rollback", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to create rollback" });
       }
     },
@@ -630,8 +631,8 @@ export function registerAutonomousRoutes(app: Express): void {
           message: "Rollback executed successfully",
           rollback: await storage.getResponseActionRollback(rollbackId),
         });
-      } catch (error: any) {
-        log.error("Failed to execute rollback", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to execute rollback", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to execute rollback" });
       }
     },
@@ -754,8 +755,8 @@ export function registerAutonomousRoutes(app: Express): void {
           verificationStatus,
           verificationChecks,
         });
-      } catch (error: any) {
-        log.error("Failed to fetch rollback detail", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to fetch rollback detail", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to fetch rollback detail" });
       }
     },
@@ -872,8 +873,8 @@ export function registerAutonomousRoutes(app: Express): void {
               : []),
           ],
         });
-      } catch (error: any) {
-        log.error("Failed to compute rollback impact", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to compute rollback impact", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to compute rollback impact" });
       }
     },
@@ -914,8 +915,8 @@ export function registerAutonomousRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const triggers = Array.from(autoRollbackTriggers.values()).filter((t) => t.orgId === orgId);
         return res.json({ triggers, count: triggers.length });
-      } catch (error: any) {
-        log.error("Failed to fetch rollback triggers", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to fetch rollback triggers", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to fetch rollback triggers" });
       }
     },
@@ -964,8 +965,8 @@ export function registerAutonomousRoutes(app: Express): void {
         log.info("Created auto-rollback trigger", { orgId, triggerId: id, name });
 
         return res.status(201).json({ trigger });
-      } catch (error: any) {
-        log.error("Failed to create rollback trigger", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to create rollback trigger", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to create rollback trigger" });
       }
     },
@@ -997,8 +998,8 @@ export function registerAutonomousRoutes(app: Express): void {
 
         log.info("Updated auto-rollback trigger", { orgId, triggerId });
         return res.json({ trigger });
-      } catch (error: any) {
-        log.error("Failed to update rollback trigger", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to update rollback trigger", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to update rollback trigger" });
       }
     },
@@ -1023,8 +1024,8 @@ export function registerAutonomousRoutes(app: Express): void {
         autoRollbackTriggers.delete(triggerId);
         log.info("Deleted auto-rollback trigger", { orgId, triggerId });
         return res.json({ message: "Trigger deleted" });
-      } catch (error: any) {
-        log.error("Failed to delete rollback trigger", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to delete rollback trigger", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to delete rollback trigger" });
       }
     },
@@ -1145,8 +1146,8 @@ export function registerAutonomousRoutes(app: Express): void {
             complianceNote: "Full audit trail preserved for regulatory compliance. All entries are immutable.",
           },
         });
-      } catch (error: any) {
-        log.error("Failed to fetch rollback audit trail", { error: error.message });
+      } catch (error: unknown) {
+        log.error("Failed to fetch rollback audit trail", { error: errorMessage(error) });
         return res.status(500).json({ error: "Failed to fetch rollback audit trail" });
       }
     },

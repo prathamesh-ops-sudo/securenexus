@@ -26,6 +26,7 @@ import { broadcastEvent } from "../event-bus";
 import { cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { upsertIncidentEmbedding } from "../ai/vector-search";
+import { errorMessage, errorStack } from "../utils/errors";
 
 const log = logger.child("incidents");
 
@@ -92,14 +93,14 @@ export function registerIncidentsRoutes(app: Express): void {
           sortOrder,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       return sendEnvelope(res, null, {
         status: 500,
         errors: [
           {
             code: "INCIDENTS_LIST_FAILED",
             message: "Failed to fetch incidents",
-            details: error?.message,
+            details: errorMessage(error),
           },
         ],
       });
@@ -731,8 +732,8 @@ export function registerIncidentsRoutes(app: Express): void {
       }
       const hypothesis = await storage.createHypothesis(parsed.data);
       res.status(201).json(hypothesis);
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
+    } catch (error: unknown) {
+      if (errorMessage(error) === "ORG_CONTEXT_MISSING")
         return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create hypothesis" });
     }
@@ -818,8 +819,8 @@ export function registerIncidentsRoutes(app: Express): void {
       }
       const task = await storage.createInvestigationTask(parsed.data);
       res.status(201).json(task);
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
+    } catch (error: unknown) {
+      if (errorMessage(error) === "ORG_CONTEXT_MISSING")
         return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create task" });
     }
@@ -1399,12 +1400,16 @@ export function registerIncidentsRoutes(app: Express): void {
       const actions = await getResponseActions(orgId, incidentId);
 
       // Filter to rollback-eligible: completed status, has a reverse action, not itself a rollback
-      const ROLLBACK_TYPES = ["unisolate_host", "unblock_ip", "unblock_domain", "restore_file", "enable_user", "restart_process"];
+      const ROLLBACK_TYPES = [
+        "unisolate_host",
+        "unblock_ip",
+        "unblock_domain",
+        "restore_file",
+        "enable_user",
+        "restart_process",
+      ];
       let eligible = actions.filter(
-        (a) =>
-          a.status === "completed" &&
-          canRollback(a.actionType) &&
-          !ROLLBACK_TYPES.includes(a.actionType),
+        (a) => a.status === "completed" && canRollback(a.actionType) && !ROLLBACK_TYPES.includes(a.actionType),
       );
 
       // Optional filter by specific action IDs
@@ -1449,7 +1454,12 @@ export function registerIncidentsRoutes(app: Express): void {
           log.warn("Failed to create audit log for rollback preview", { incidentId });
         }
 
-        return sendEnvelope(res, { message: "Dry-run rollback preview", rollbacks: preview, count: preview.length, dryRun: true });
+        return sendEnvelope(res, {
+          message: "Dry-run rollback preview",
+          rollbacks: preview,
+          count: preview.length,
+          dryRun: true,
+        });
       }
 
       // Execute rollbacks sequentially (avoid conflicts on same target)

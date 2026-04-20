@@ -21,6 +21,7 @@ import {
   getRpoRtoDashboard,
   runScheduledDrillsForOrg,
 } from "../dr-drill-scheduler";
+import { errorMessage, errorStack } from "../utils/errors";
 
 export function registerOperationsRoutes(app: Express): void {
   // === Job Queue ===
@@ -642,10 +643,10 @@ export function registerOperationsRoutes(app: Express): void {
     try {
       const targets = await storage.getSloTargets();
       return sendEnvelope(res, targets, { meta: { total: targets.length } });
-    } catch (error: any) {
+    } catch (error: unknown) {
       return sendEnvelope(res, null, {
         status: 500,
-        errors: [{ code: "SLO_FETCH_FAILED", message: error?.message || "Failed to fetch SLO targets" }],
+        errors: [{ code: "SLO_FETCH_FAILED", message: errorMessage(error) || "Failed to fetch SLO targets" }],
       });
     }
   });
@@ -676,10 +677,10 @@ export function registerOperationsRoutes(app: Express): void {
           description,
         });
         return sendEnvelope(res, sloTarget, { status: 201 });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "SLO_CREATE_FAILED", message: error?.message || "Failed to create SLO target" }],
+          errors: [{ code: "SLO_CREATE_FAILED", message: errorMessage(error) || "Failed to create SLO target" }],
         });
       }
     },
@@ -700,10 +701,10 @@ export function registerOperationsRoutes(app: Express): void {
             errors: [{ code: "NOT_FOUND", message: "SLO target not found" }],
           });
         return sendEnvelope(res, updated);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "SLO_UPDATE_FAILED", message: error?.message || "Failed to update SLO target" }],
+          errors: [{ code: "SLO_UPDATE_FAILED", message: errorMessage(error) || "Failed to update SLO target" }],
         });
       }
     },
@@ -724,10 +725,10 @@ export function registerOperationsRoutes(app: Express): void {
             errors: [{ code: "NOT_FOUND", message: "SLO target not found" }],
           });
         return sendEnvelope(res, { deleted: true });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "SLO_DELETE_FAILED", message: error?.message || "Failed to delete SLO target" }],
+          errors: [{ code: "SLO_DELETE_FAILED", message: errorMessage(error) || "Failed to delete SLO target" }],
         });
       }
     },
@@ -737,10 +738,10 @@ export function registerOperationsRoutes(app: Express): void {
     try {
       const result = await evaluateAndAlert();
       return sendEnvelope(res, result);
-    } catch (error: any) {
+    } catch (error: unknown) {
       return sendEnvelope(res, null, {
         status: 500,
-        errors: [{ code: "SLO_EVAL_FAILED", message: error?.message || "Failed to evaluate SLOs" }],
+        errors: [{ code: "SLO_EVAL_FAILED", message: errorMessage(error) || "Failed to evaluate SLOs" }],
       });
     }
   });
@@ -751,10 +752,10 @@ export function registerOperationsRoutes(app: Express): void {
       const hoursBack = parseInt(req.query.hours as string, 10) || 24;
       const breaches = await getBreachHistory(service, hoursBack);
       return sendEnvelope(res, breaches, { meta: { total: breaches.length, hoursBack } });
-    } catch (error: any) {
+    } catch (error: unknown) {
       return sendEnvelope(res, null, {
         status: 500,
-        errors: [{ code: "BREACH_HISTORY_FAILED", message: error?.message || "Failed to fetch breach history" }],
+        errors: [{ code: "BREACH_HISTORY_FAILED", message: errorMessage(error) || "Failed to fetch breach history" }],
       });
     }
   });
@@ -769,10 +770,10 @@ export function registerOperationsRoutes(app: Express): void {
       try {
         const seeded = await seedDefaultSloTargets();
         return sendEnvelope(res, { seeded }, { status: 201 });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "SLO_SEED_FAILED", message: error?.message || "Failed to seed SLO targets" }],
+          errors: [{ code: "SLO_SEED_FAILED", message: errorMessage(error) || "Failed to seed SLO targets" }],
         });
       }
     },
@@ -785,10 +786,10 @@ export function registerOperationsRoutes(app: Express): void {
     try {
       const flags = await storage.listFeatureFlags();
       return sendEnvelope(res, flags, { meta: { total: flags.length } });
-    } catch (error: any) {
+    } catch (error: unknown) {
       return sendEnvelope(res, null, {
         status: 500,
-        errors: [{ code: "FLAG_LIST_FAILED", message: error?.message || "Failed to list feature flags" }],
+        errors: [{ code: "FLAG_LIST_FAILED", message: errorMessage(error) || "Failed to list feature flags" }],
       });
     }
   });
@@ -827,10 +828,10 @@ export function registerOperationsRoutes(app: Express): void {
           createdBy: (req as any).user?.id,
         });
         return sendEnvelope(res, flag, { status: 201 });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "FLAG_CREATE_FAILED", message: error?.message || "Failed to create feature flag" }],
+          errors: [{ code: "FLAG_CREATE_FAILED", message: errorMessage(error) || "Failed to create feature flag" }],
         });
       }
     },
@@ -845,10 +846,10 @@ export function registerOperationsRoutes(app: Express): void {
           errors: [{ code: "NOT_FOUND", message: "Feature flag not found" }],
         });
       return sendEnvelope(res, flag);
-    } catch (error: any) {
+    } catch (error: unknown) {
       return sendEnvelope(res, null, {
         status: 500,
-        errors: [{ code: "FLAG_FETCH_FAILED", message: error?.message || "Failed to fetch feature flag" }],
+        errors: [{ code: "FLAG_FETCH_FAILED", message: errorMessage(error) || "Failed to fetch feature flag" }],
       });
     }
   });
@@ -868,10 +869,10 @@ export function registerOperationsRoutes(app: Express): void {
             errors: [{ code: "NOT_FOUND", message: "Feature flag not found" }],
           });
         return sendEnvelope(res, updated);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "FLAG_UPDATE_FAILED", message: error?.message || "Failed to update feature flag" }],
+          errors: [{ code: "FLAG_UPDATE_FAILED", message: errorMessage(error) || "Failed to update feature flag" }],
         });
       }
     },
@@ -892,10 +893,10 @@ export function registerOperationsRoutes(app: Express): void {
             errors: [{ code: "NOT_FOUND", message: "Feature flag not found" }],
           });
         return sendEnvelope(res, { deleted: true });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "FLAG_DELETE_FAILED", message: error?.message || "Failed to delete feature flag" }],
+          errors: [{ code: "FLAG_DELETE_FAILED", message: errorMessage(error) || "Failed to delete feature flag" }],
         });
       }
     },
@@ -910,10 +911,10 @@ export function registerOperationsRoutes(app: Express): void {
         role: user?.role,
       });
       return sendEnvelope(res, result);
-    } catch (error: any) {
+    } catch (error: unknown) {
       return sendEnvelope(res, null, {
         status: 500,
-        errors: [{ code: "FLAG_EVAL_FAILED", message: error?.message || "Failed to evaluate feature flag" }],
+        errors: [{ code: "FLAG_EVAL_FAILED", message: errorMessage(error) || "Failed to evaluate feature flag" }],
       });
     }
   });
@@ -927,10 +928,10 @@ export function registerOperationsRoutes(app: Express): void {
         role: user?.role,
       });
       return sendEnvelope(res, results);
-    } catch (error: any) {
+    } catch (error: unknown) {
       return sendEnvelope(res, null, {
         status: 500,
-        errors: [{ code: "FLAG_EVAL_ALL_FAILED", message: error?.message || "Failed to evaluate feature flags" }],
+        errors: [{ code: "FLAG_EVAL_ALL_FAILED", message: errorMessage(error) || "Failed to evaluate feature flags" }],
       });
     }
   });
@@ -943,10 +944,10 @@ export function registerOperationsRoutes(app: Express): void {
       const orgId = getOrgId(req);
       const runbooks = await storage.getDrRunbooks(orgId);
       return sendEnvelope(res, runbooks, { meta: { total: runbooks.length } });
-    } catch (error: any) {
+    } catch (error: unknown) {
       return sendEnvelope(res, null, {
         status: 500,
-        errors: [{ code: "DR_FETCH_FAILED", message: error?.message || "Failed to fetch DR runbooks" }],
+        errors: [{ code: "DR_FETCH_FAILED", message: errorMessage(error) || "Failed to fetch DR runbooks" }],
       });
     }
   });
@@ -996,10 +997,10 @@ export function registerOperationsRoutes(app: Express): void {
         };
 
         return sendEnvelope(res, drillResult, { status: 201 });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "DR_DRILL_FAILED", message: error?.message || "Failed to run DR drill" }],
+          errors: [{ code: "DR_DRILL_FAILED", message: errorMessage(error) || "Failed to run DR drill" }],
         });
       }
     },
@@ -1185,7 +1186,7 @@ export function registerOperationsRoutes(app: Express): void {
         const result = await executeDrill(runbook, orgId, dryRun !== false);
         return sendEnvelope(res, result, { status: 201 });
       } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : "Failed to run persisted DR drill";
+        const message = error instanceof Error ? errorMessage(error) : "Failed to run persisted DR drill";
         return sendEnvelope(res, null, {
           status: 500,
           errors: [{ code: "DR_DRILL_FAILED", message }],
@@ -1208,10 +1209,10 @@ export function registerOperationsRoutes(app: Express): void {
         const connectorType = p(req.params.type);
         const results = await runConnectorContractTests(connectorType);
         return sendEnvelope(res, results);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "TEST_FAILED", message: error?.message || "Connector contract tests failed" }],
+          errors: [{ code: "TEST_FAILED", message: errorMessage(error) || "Connector contract tests failed" }],
         });
       }
     },
@@ -1228,10 +1229,10 @@ export function registerOperationsRoutes(app: Express): void {
         const playbookId = p(req.params.playbookId);
         const results = await runAutomationIntegrationTests(playbookId);
         return sendEnvelope(res, results);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "TEST_FAILED", message: error?.message || "Automation integration tests failed" }],
+          errors: [{ code: "TEST_FAILED", message: errorMessage(error) || "Automation integration tests failed" }],
         });
       }
     },
@@ -1251,10 +1252,10 @@ export function registerOperationsRoutes(app: Express): void {
         return sendEnvelope(res, results, {
           meta: { suites: results.length, totalTests, totalPassed, totalFailed: totalTests - totalPassed },
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "TEST_FAILED", message: error?.message || "Contract test suite failed" }],
+          errors: [{ code: "TEST_FAILED", message: errorMessage(error) || "Contract test suite failed" }],
         });
       }
     },
@@ -1289,11 +1290,11 @@ export function registerOperationsRoutes(app: Express): void {
           },
         };
         return sendEnvelope(res, policy);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
-            { code: "CLEANUP_POLICY_FAILED", message: "Failed to fetch cleanup policy", details: error?.message },
+            { code: "CLEANUP_POLICY_FAILED", message: "Failed to fetch cleanup policy", details: errorMessage(error) },
           ],
         });
       }
@@ -1325,11 +1326,11 @@ export function registerOperationsRoutes(app: Express): void {
           updatedAt: new Date().toISOString(),
         };
         return sendEnvelope(res, updated);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
-            { code: "CLEANUP_UPDATE_FAILED", message: "Failed to update cleanup policy", details: error?.message },
+            { code: "CLEANUP_UPDATE_FAILED", message: "Failed to update cleanup policy", details: errorMessage(error) },
           ],
         });
       }
@@ -1409,11 +1410,11 @@ export function registerOperationsRoutes(app: Express): void {
           },
         };
         return sendEnvelope(res, guarantees);
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
-            { code: "GUARANTEES_FAILED", message: "Failed to fetch delivery guarantees", details: error?.message },
+            { code: "GUARANTEES_FAILED", message: "Failed to fetch delivery guarantees", details: errorMessage(error) },
           ],
         });
       }
@@ -1452,10 +1453,12 @@ export function registerOperationsRoutes(app: Express): void {
           alerting: currentLagMs > thresholdMs,
           buckets,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "LAG_MONITORING_FAILED", message: "Failed to fetch lag data", details: error?.message }],
+          errors: [
+            { code: "LAG_MONITORING_FAILED", message: "Failed to fetch lag data", details: errorMessage(error) },
+          ],
         });
       }
     },

@@ -67,14 +67,16 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json({
           rules: savedRules,
           analysisNotes: result.analysisNotes,
           coverageGaps: result.coverageGaps,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Detection rule generation error", { error: String(error) });
         res.status(500).json({ message: "Detection rule generation failed. Please try again." });
       }
@@ -88,7 +90,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
       const limit = Math.min(Math.max(parseInt(String(req.query.limit || "50"), 10) || 50, 1), 200);
       const rules = await storage.getAiGeneratedRulesByOrg(orgId, limit);
       res.json(rules);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("ai").error("Get AI-generated rules error", { error: String(error) });
       res.status(500).json({ message: "Failed to retrieve AI-generated rules." });
     }
@@ -129,7 +131,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
 
         const updated = await storage.updateAiGeneratedRule(ruleId, update);
         res.json(updated);
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Update AI-generated rule error", { error: String(error) });
         res.status(500).json({ message: "Failed to update rule." });
       }

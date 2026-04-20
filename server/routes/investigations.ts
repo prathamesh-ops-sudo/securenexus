@@ -7,6 +7,7 @@ import { evaluatePolicies, generateDefaultPolicies } from "../policy-engine";
 import { canRollback, createRollbackRecord, executeRollback } from "../rollback-engine";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { errorMessage, errorStack } from "../utils/errors";
 
 export function registerInvestigationsRoutes(app: Express): void {
   // Phase 8: Predictive Defense routes
@@ -158,7 +159,7 @@ export function registerInvestigationsRoutes(app: Express): void {
           details: result,
         });
         res.json(result);
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("routes").error("Predictive analysis error", { error: String(error) });
         res.status(500).json({ message: "Failed to run predictive analysis" });
       }
@@ -567,8 +568,8 @@ export function registerInvestigationsRoutes(app: Express): void {
         }
         const template = await storage.createRunbookTemplate(parsed.data);
         res.status(201).json(template);
-      } catch (error: any) {
-        if (error.message === "ORG_CONTEXT_MISSING")
+      } catch (error: unknown) {
+        if (errorMessage(error) === "ORG_CONTEXT_MISSING")
           return res.status(403).json({ message: "Organization context required" });
         res.status(500).json({ message: "Failed to create runbook template" });
       }

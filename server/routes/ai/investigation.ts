@@ -64,10 +64,12 @@ export function registerAiInvestigationRoutes(app: Express): void {
           details: { alertCount: incidentAlerts.length, confidence: result.investigationConfidence },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json(result);
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Deep investigation error", { error: String(error) });
         res.status(500).json({ message: "Deep investigation failed. Please try again." });
       }
@@ -121,10 +123,12 @@ export function registerAiInvestigationRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json(result);
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Threat hunting error", { error: String(error) });
         res.status(500).json({ message: "Threat hunting failed. Please try again." });
       }
@@ -175,10 +179,12 @@ export function registerAiInvestigationRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json(result);
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Behavioral analysis error", { error: String(error) });
         res.status(500).json({ message: "Behavioral analysis failed. Please try again." });
       }
@@ -206,7 +212,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
       );
 
       res.json(result);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("ai").error("Failed to fetch investigation graphs", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch investigation graphs" });
     }
@@ -223,7 +229,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
 
       const graphs = await storage.getAttackGraphsByOrg(orgId, limit, days);
       res.json(graphs);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("ai").error("Failed to fetch org investigation graphs", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch investigation graphs" });
     }
@@ -246,7 +252,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
       ]);
 
       res.json({ ...graph, nodes, edges });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("ai").error("Failed to fetch attack graph detail", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch attack graph" });
     }
@@ -270,7 +276,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
 
         await storage.deleteAttackGraph(graph.id);
         res.json({ message: "Attack graph deleted" });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Failed to delete attack graph", { error: String(error) });
         res.status(500).json({ message: "Failed to delete attack graph" });
       }
@@ -319,10 +325,12 @@ export function registerAiInvestigationRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json(result);
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Attack path prediction error", { error: String(error) });
         res.status(500).json({ message: "Attack path prediction failed. Please try again." });
       }
@@ -395,7 +403,9 @@ export function registerAiInvestigationRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json({
           threadId: activeThreadId,
@@ -404,7 +414,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
           referencedTechniques: aiResponse.referencedTechniques,
           confidence: aiResponse.confidence,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Investigation chat error", { error: String(error) });
         res.status(500).json({ message: "Investigation chat failed. Please try again." });
       }
@@ -437,7 +447,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
         }
 
         res.json({ incidentId, threads });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Get investigation thread error", { error: String(error) });
         res.status(500).json({ message: "Failed to retrieve investigation thread." });
       }
@@ -534,7 +544,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
             alertDiversity,
           },
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("ai").error("Confidence indicators error", { error: String(error) });
         res.status(500).json({ message: "Failed to compute confidence indicators" });
       }
@@ -597,7 +607,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
       }
 
       res.json({ items: messages, total, limit, offset });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("ai").error("Investigation history search error", { error: String(error) });
       res.status(500).json({ message: "Failed to search investigation history" });
     }

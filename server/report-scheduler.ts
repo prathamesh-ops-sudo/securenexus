@@ -5,6 +5,7 @@ import { uploadFile } from "./s3";
 import { logger } from "./logger";
 import { calculateNextRunTimeInTimezone, safeTimezone, formatInTimezone } from "./timezone-utils";
 import { sendEmail, isEmailEnabled } from "./email-service";
+import { errorMessage, errorStack } from "./utils/errors";
 
 const SCHEDULER_INTERVAL_MS = 60 * 60 * 1000;
 let schedulerTimer: NodeJS.Timeout | null = null;
@@ -81,10 +82,10 @@ async function executeScheduledReport(schedule: any) {
         try {
           const result = await uploadFile(s3Key, content, contentType);
           outputLocation = `s3://${result.bucket}/${result.key}`;
-        } catch (err: any) {
+        } catch (err: unknown) {
           logger
             .child("report-scheduler")
-            .warn(`S3 delivery failed for schedule ${schedule.id}`, { error: err.message });
+            .warn(`S3 delivery failed for schedule ${schedule.id}`, { error: errorMessage(err) });
           outputLocation = `local://${s3Key}`;
         }
       } else if (target.type === "webhook" && target.url) {
@@ -95,10 +96,10 @@ async function executeScheduledReport(schedule: any) {
             body: JSON.stringify({ report: data, scheduleName: schedule.name, template: template.name }),
           });
           logger.child("report-scheduler").info(`Webhook delivered for schedule ${schedule.id} to ${target.url}`);
-        } catch (err: any) {
+        } catch (err: unknown) {
           logger
             .child("report-scheduler")
-            .warn(`Webhook delivery failed for schedule ${schedule.id}`, { url: target.url, error: err.message });
+            .warn(`Webhook delivery failed for schedule ${schedule.id}`, { url: target.url, error: errorMessage(err) });
         }
       } else if (target.type === "email" && target.address) {
         const tz = safeTimezone(schedule.timezone);
@@ -117,10 +118,10 @@ async function executeScheduledReport(schedule: any) {
               text: `Your scheduled report "${template.name}" is ready.\nReport type: ${template.reportType}\nGenerated: ${formatInTimezone(new Date(), tz)}${outputLocation ? `\nDownload: ${outputLocation}` : ""}`,
             });
             logger.child("report-scheduler").info(`Email delivered for schedule ${schedule.id} to ${target.address}`);
-          } catch (emailErr: any) {
+          } catch (emailErr: unknown) {
             logger.child("report-scheduler").error(`Email delivery failed for schedule ${schedule.id}`, {
               to: target.address,
-              error: emailErr.message,
+              error: errorMessage(emailErr),
             });
           }
         } else {
@@ -148,11 +149,11 @@ async function executeScheduledReport(schedule: any) {
     await storage.updateReportSchedule(schedule.id, { lastRunAt: new Date(), nextRunAt: nextRun });
 
     logger.child("report-scheduler").info(`Completed report run ${run.id} for schedule ${schedule.id}`);
-  } catch (err: any) {
+  } catch (err: unknown) {
     await storage.updateReportRun(run.id, {
       status: "failed",
       completedAt: new Date(),
-      error: err.message,
+      error: errorMessage(err),
     });
   }
 }
@@ -212,11 +213,11 @@ export async function runReportOnDemand(templateId: string, orgId?: string, crea
     });
 
     return { run: await storage.getReportRun(run.id), data, content };
-  } catch (err: any) {
+  } catch (err: unknown) {
     await storage.updateReportRun(run.id, {
       status: "failed",
       completedAt: new Date(),
-      error: err.message,
+      error: errorMessage(err),
     });
     throw err;
   }

@@ -7,6 +7,7 @@ import {
   insertEvidenceAttachmentSchema,
   insertComplianceControlHelperSchema,
 } from "@shared/schema";
+import { errorMessage, errorStack } from "../utils/errors";
 
 export function registerReportGovernanceRoutes(app: Express): void {
   // ==========================================
@@ -75,8 +76,8 @@ export function registerReportGovernanceRoutes(app: Express): void {
         details: { templateId: template.id, version: nextVersion, changeDescription: version.changeDescription },
       });
       res.status(201).json(version);
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
+    } catch (error: unknown) {
+      if (errorMessage(error) === "ORG_CONTEXT_MISSING")
         return res.status(403).json({ message: "Organization context required" });
       logger.child("report-governance").error("Failed to create template version", { error: String(error) });
       res.status(500).json({ message: "Failed to create template version" });
@@ -118,8 +119,8 @@ export function registerReportGovernanceRoutes(app: Express): void {
       const controlMappingId = req.query.controlMappingId as string | undefined;
       const attachments = await storage.getEvidenceAttachments(orgId, controlMappingId);
       res.json(attachments);
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
+    } catch (error: unknown) {
+      if (errorMessage(error) === "ORG_CONTEXT_MISSING")
         return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to fetch evidence attachments" });
     }
@@ -166,8 +167,8 @@ export function registerReportGovernanceRoutes(app: Express): void {
         details: { fileName: attachment.fileName, controlMappingId: attachment.controlMappingId },
       });
       res.status(201).json(attachment);
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
+    } catch (error: unknown) {
+      if (errorMessage(error) === "ORG_CONTEXT_MISSING")
         return res.status(403).json({ message: "Organization context required" });
       logger.child("report-governance").error("Failed to create evidence attachment", { error: String(error) });
       res.status(500).json({ message: "Failed to create evidence attachment" });
@@ -220,8 +221,8 @@ export function registerReportGovernanceRoutes(app: Express): void {
           action,
         });
       }
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
+    } catch (error: unknown) {
+      if (errorMessage(error) === "ORG_CONTEXT_MISSING")
         return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to generate presigned URL" });
     }
@@ -285,8 +286,8 @@ export function registerReportGovernanceRoutes(app: Express): void {
       const helperType = req.query.helperType as string | undefined;
       const helpers = await storage.getComplianceControlHelpers(orgId, helperType);
       res.json(helpers);
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
+    } catch (error: unknown) {
+      if (errorMessage(error) === "ORG_CONTEXT_MISSING")
         return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to fetch compliance helpers" });
     }
@@ -315,8 +316,8 @@ export function registerReportGovernanceRoutes(app: Express): void {
       }
 
       res.json({ frameworks: summary, generatedAt: new Date().toISOString() });
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
+    } catch (error: unknown) {
+      if (errorMessage(error) === "ORG_CONTEXT_MISSING")
         return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to generate coverage summary" });
     }
@@ -350,8 +351,8 @@ export function registerReportGovernanceRoutes(app: Express): void {
       }
       const helper = await storage.createComplianceControlHelper(parsed.data);
       res.status(201).json(helper);
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
+    } catch (error: unknown) {
+      if (errorMessage(error) === "ORG_CONTEXT_MISSING")
         return res.status(403).json({ message: "Organization context required" });
       res.status(500).json({ message: "Failed to create compliance helper" });
     }
@@ -413,8 +414,8 @@ export function registerReportGovernanceRoutes(app: Express): void {
       await storage.updateComplianceControlHelper(helper.id, { completedAt: new Date() });
 
       res.json({ helper, result });
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
+    } catch (error: unknown) {
+      if (errorMessage(error) === "ORG_CONTEXT_MISSING")
         return res.status(403).json({ message: "Organization context required" });
       logger.child("report-governance").error("Gap analysis failed", { error: String(error) });
       res.status(500).json({ message: "Failed to run gap analysis" });
@@ -475,8 +476,8 @@ export function registerReportGovernanceRoutes(app: Express): void {
       await storage.updateComplianceControlHelper(helper.id, { completedAt: new Date() });
 
       res.json({ helper, result });
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
+    } catch (error: unknown) {
+      if (errorMessage(error) === "ORG_CONTEXT_MISSING")
         return res.status(403).json({ message: "Organization context required" });
       logger.child("report-governance").error("Cross-map failed", { error: String(error) });
       res.status(500).json({ message: "Failed to run cross-map" });

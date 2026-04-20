@@ -116,7 +116,7 @@ export function registerDomainAutoJoinRoutes(app: Express): void {
         let txtRecords: string[][] = [];
         try {
           txtRecords = await resolveTxt(verification.domain);
-        } catch (dnsError: any) {
+        } catch (dnsError: unknown) {
           await storage.updateOrgDomainVerification(domainId, { lastCheckedAt: new Date() });
           return res.status(422).json({
             error: "DNS lookup failed",

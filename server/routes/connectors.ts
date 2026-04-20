@@ -26,6 +26,7 @@ import {
 } from "../connector-circuit-breaker";
 import { resolveAndLinkEntities } from "../entity-resolver";
 import { correlateAlert } from "../correlation-engine";
+import { errorMessage, errorStack } from "../utils/errors";
 
 export function registerConnectorsRoutes(app: Express): void {
   // Connector Engine Routes
@@ -109,7 +110,7 @@ export function registerConnectorsRoutes(app: Express): void {
           alertsReceived: syncResult.alertsReceived,
           errors: syncResult.errors,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("routes").error("Dead letter retry failed", { error: String(error) });
         res.status(500).json({ message: "Failed to retry dead letter entry" });
       }
@@ -161,7 +162,7 @@ export function registerConnectorsRoutes(app: Express): void {
         } else {
           res.json({ alerted: false, count: recentDeadLetters.length });
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("routes").error("Dead letter alert check failed", { error: String(error) });
         res.status(500).json({ message: "Failed to check dead letter alerts" });
       }
@@ -214,7 +215,7 @@ export function registerConnectorsRoutes(app: Express): void {
       });
 
       res.json(results);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("routes").error("Failed to fetch connector health status", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch connector health status" });
     }
@@ -259,7 +260,7 @@ export function registerConnectorsRoutes(app: Express): void {
             openUntil: newState.openUntil || null,
           },
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("routes").error("Failed to reset circuit breaker", { error: String(error) });
         res.status(500).json({ message: "Failed to reset circuit breaker" });
       }
@@ -319,7 +320,7 @@ export function registerConnectorsRoutes(app: Express): void {
         });
         // connectors is a resource-count metric — enforcement queries active count directly
         res.status(201).json({ ...connector, config: sanitizeConfig(connector.config) });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("routes").error("Route error", { error: String(error) });
         res.status(500).json({ message: "Failed to create connector. Please try again." });
       }
@@ -360,7 +361,7 @@ export function registerConnectorsRoutes(app: Express): void {
           return res.status(404).json({ message: "Connector not found" });
         }
         res.json({ ...updated, config: sanitizeConfig(updated.config) });
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.child("routes").error("Route error", { error: String(error) });
         res.status(500).json({ message: "Failed to update connector. Please try again." });
       }
@@ -408,7 +409,7 @@ export function registerConnectorsRoutes(app: Express): void {
       const config = connector.config as ConnectorConfig;
       const result = await testConnector(connector.type, config);
       res.json(result);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("routes").error("Route error", { error: String(error) });
       res.status(500).json({ success: false, message: "Connector test failed." });
     }
@@ -425,7 +426,7 @@ export function registerConnectorsRoutes(app: Express): void {
       }
       const result = await testConnector(type, config);
       res.json(result);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.child("routes").error("Route error", { error: String(error) });
       res.status(500).json({ success: false, message: "Connector test failed." });
     }
@@ -551,14 +552,14 @@ export function registerConnectorsRoutes(app: Express): void {
         alertsFailed: failed,
         errors: syncResult.errors,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       const connector = await storage.getConnector(p(req.params.id));
       if (connector) {
         await storage.updateConnectorSyncStatus(connector.id, {
           lastSyncAt: new Date(),
           lastSyncStatus: "error",
           lastSyncAlerts: 0,
-          lastSyncError: error.message,
+          lastSyncError: errorMessage(error),
         });
         await storage.updateConnector(connector.id, { status: "error" } as any);
       }
@@ -593,16 +594,16 @@ export function registerConnectorsRoutes(app: Express): void {
       const config = connector.config as ConnectorConfig;
       const startTime = Date.now();
       let status = "healthy";
-      let errorMessage: string | undefined;
+      let errMsg: string | undefined;
       try {
         const result = await testConnector(connector.type, config);
         if (!result.success) {
           status = "unhealthy";
-          errorMessage = result.message || "Connection test failed";
+          errMsg = result.message || "Connection test failed";
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         status = "unhealthy";
-        errorMessage = err.message || "Connection test error";
+        errMsg = errorMessage(err) || "Connection test error";
       }
       const latencyMs = Date.now() - startTime;
       const healthCheck = await storage.createConnectorHealthCheck({
@@ -610,7 +611,7 @@ export function registerConnectorsRoutes(app: Express): void {
         orgId: connector.orgId,
         status,
         latencyMs,
-        errorMessage,
+        errorMessage: errMsg,
         credentialStatus: status === "healthy" ? "valid" : "unknown",
       });
       res.status(201).json(healthCheck);
@@ -767,14 +768,14 @@ export function registerConnectorsRoutes(app: Express): void {
             lastSyncAlerts: syncResult.alertsReceived || 0,
           });
           res.json({ success: true, jobRunId: jobRun.id, alertsReceived: syncResult.alertsReceived || 0 });
-        } catch (syncError: any) {
+        } catch (syncError: unknown) {
           await storage.updateConnectorJobRun(jobRun.id, {
             status: "failed",
             completedAt: new Date(),
             latencyMs: Date.now() - startTime,
-            errorMessage: syncError.message,
+            errorMessage: errorMessage(syncError),
           });
-          res.json({ success: false, jobRunId: jobRun.id, error: syncError.message });
+          res.json({ success: false, jobRunId: jobRun.id, error: errorMessage(syncError) });
         }
       } catch (error) {
         res.status(500).json({ message: "Failed to replay job" });
@@ -1200,10 +1201,12 @@ export function registerConnectorsRoutes(app: Express): void {
           sortOrder,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       return sendEnvelope(res, null, {
         status: 500,
-        errors: [{ code: "CONNECTORS_LIST_FAILED", message: "Failed to fetch connectors", details: error?.message }],
+        errors: [
+          { code: "CONNECTORS_LIST_FAILED", message: "Failed to fetch connectors", details: errorMessage(error) },
+        ],
       });
     }
   });
@@ -1217,11 +1220,11 @@ export function registerConnectorsRoutes(app: Express): void {
     async (_req, res) => {
       try {
         return sendEnvelope(res, await getProviderSyncStats());
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
-            { code: "SYNC_STATS_FAILED", message: "Failed to fetch provider sync stats", details: error?.message },
+            { code: "SYNC_STATS_FAILED", message: "Failed to fetch provider sync stats", details: errorMessage(error) },
           ],
         });
       }
@@ -1252,14 +1255,14 @@ export function registerConnectorsRoutes(app: Express): void {
         }
         await setProviderConcurrency(provider, limit);
         return sendEnvelope(res, { provider, maxConcurrency: limit });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return sendEnvelope(res, null, {
           status: 500,
           errors: [
             {
               code: "CONCURRENCY_UPDATE_FAILED",
               message: "Failed to update provider concurrency",
-              details: error?.message,
+              details: errorMessage(error),
             },
           ],
         });
