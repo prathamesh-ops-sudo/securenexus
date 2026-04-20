@@ -47,7 +47,8 @@ async function getSlackConfig(orgId: string): Promise<SlackConfig | null> {
       defaultChannelPrefix: (cfg?.channelPrefix as string) || "incident",
       workspaceId: (cfg?.workspaceId as string) || undefined,
     };
-  } catch {
+  } catch (err) {
+    log.warn("Slack config lookup failed", { orgId, error: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }
@@ -176,7 +177,12 @@ export async function tryPostSlackMessage(orgId: string, channelId: string, text
 
   try {
     return await postSlackMessage(cfg.botToken, channelId, text);
-  } catch {
+  } catch (err) {
+    log.warn("Slack postMessage failed", {
+      orgId,
+      channelId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return false;
   }
 }
@@ -215,7 +221,11 @@ async function findSlackChannel(botToken: string, channelName: string): Promise<
 
     const match = data.channels.find((c) => c.name === channelName);
     return match ? { channelId: match.id, channelName: match.name } : null;
-  } catch {
+  } catch (err) {
+    log.warn("Slack findChannel failed", {
+      channelName,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }

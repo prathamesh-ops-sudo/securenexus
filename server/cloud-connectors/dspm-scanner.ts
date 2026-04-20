@@ -298,8 +298,12 @@ export class DspmScanner {
                   }
                 }
               }
-            } catch {
-              // Skip individual object read errors
+            } catch (err) {
+              log.debug("DSPM object read failed", {
+                bucket: bucketName,
+                key: obj.Key,
+                error: err instanceof Error ? err.message : String(err),
+              });
             }
           }
         } catch (err: unknown) {

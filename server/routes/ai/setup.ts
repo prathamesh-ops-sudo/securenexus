@@ -511,8 +511,8 @@ export function registerAiSetupRoutes(app: Express): void {
               a.actualPct = parseFloat(a.actualPct.toFixed(1));
             }
           }
-        } catch {
-          /* inference logs table may not exist */
+        } catch (err) {
+          log.debug("ai budget inference_logs read failed", { orgId, error: String(err) });
         }
 
         res.json({ monthlyLimit, allocations });

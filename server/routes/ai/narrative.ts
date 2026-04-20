@@ -262,8 +262,11 @@ export function registerAiNarrativeRoutes(app: Express): void {
               if (parsed && parsed.attackGraph) {
                 await persistAttackGraph(parsed, incident.id, orgId);
               }
-            } catch {
-              // Stream text may not be valid JSON
+            } catch (err) {
+              log.debug("narrative stream text was not valid JSON — skipping attack-graph persist", {
+                incidentId: incident.id,
+                error: String(err),
+              });
             }
 
             await storage.createAuditLog({

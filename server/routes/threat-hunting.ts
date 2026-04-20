@@ -99,8 +99,11 @@ export function registerThreatHuntingRoutes(app: Express): void {
       try {
         const compiled = compileQuery(queryType, queryText);
         compiledQuery = JSON.stringify(compiled);
-      } catch {
-        // Compilation failure is non-fatal — store as draft
+      } catch (err) {
+        log.debug("threat hunt query compile failed — storing as draft", {
+          queryType,
+          error: String(err),
+        });
       }
 
       const [hunt] = await db

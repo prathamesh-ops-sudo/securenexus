@@ -65,8 +65,8 @@ export function registerAiFeedbackRoutes(app: Express): void {
               alertSource = alert.source || "unknown";
               alertCategory = alert.category || "unknown";
             }
-          } catch {
-            // non-fatal
+          } catch (err) {
+            log.debug("feedback alert lookup failed", { resourceId, error: String(err) });
           }
         }
 
@@ -85,8 +85,8 @@ export function registerAiFeedbackRoutes(app: Express): void {
                 destIp: alertData.destIp,
               });
             }
-          } catch {
-            // non-fatal
+          } catch (err) {
+            log.debug("feedback alert context fetch failed", { resourceId, error: String(err) });
           }
         }
         const aiOutputStr =

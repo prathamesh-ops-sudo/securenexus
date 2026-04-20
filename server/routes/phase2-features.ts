@@ -502,8 +502,8 @@ export function registerPhase2FeatureRoutes(app: Express): void {
           try {
             const incident = await storage.getIncident(r.incidentId);
             incidentTitle = incident?.title || "";
-          } catch {
-            // ignore
+          } catch (err) {
+            log.debug("PIR incident title lookup failed", { incidentId: r.incidentId, error: String(err) });
           }
 
           // Get action items
@@ -517,8 +517,8 @@ export function registerPhase2FeatureRoutes(app: Express): void {
               status: a.status as "open" | "in_progress" | "done",
               dueDate: a.dueDate?.toISOString() || "",
             }));
-          } catch {
-            // ignore
+          } catch (err) {
+            log.debug("PIR action items lookup failed", { pirId: r.id, error: String(err) });
           }
 
           return {
@@ -677,8 +677,8 @@ export function registerPhase2FeatureRoutes(app: Express): void {
           const plan = await storage.getPlan(sub.planId);
           planName = plan?.name || "free_trial";
         }
-      } catch {
-        // default to free_trial
+      } catch (err) {
+        log.debug("subscription lookup failed — defaulting to free_trial", { orgId, error: String(err) });
       }
 
       // Calculate billing period
@@ -822,8 +822,8 @@ export function registerPhase2FeatureRoutes(app: Express): void {
           const plan = await storage.getPlan(sub.planId);
           statusOrgPlanName = plan?.name || "free_trial";
         }
-      } catch {
-        // default to free_trial
+      } catch (err) {
+        log.debug("lifecycle status subscription lookup failed", { orgId, error: String(err) });
       }
       const planTier = mapPlanToTier(statusOrgPlanName);
 
@@ -905,8 +905,8 @@ export function registerPhase2FeatureRoutes(app: Express): void {
             const plan = await storage.getPlan(sub.planId);
             purgeOrgPlanName = plan?.name || "free_trial";
           }
-        } catch {
-          // default to free_trial
+        } catch (err) {
+          log.debug("purge subscription lookup failed", { orgId, error: String(err) });
         }
         const planTier = mapPlanToTier(purgeOrgPlanName);
         const retentionPolicies = getRetentionPolicies(planTier);

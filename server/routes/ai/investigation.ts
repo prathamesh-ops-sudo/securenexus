@@ -602,8 +602,8 @@ export function registerAiInvestigationRoutes(app: Express): void {
         total = parseInt(String(countResult.rows[0]?.total || "0"), 10);
         const dataResult = await pool.query(dataQuery, params);
         messages = dataResult.rows;
-      } catch {
-        // Table may not exist yet
+      } catch (err) {
+        log.debug("investigation_chat_messages query failed (table may not exist)", { error: String(err) });
       }
 
       res.json({ items: messages, total, limit, offset });

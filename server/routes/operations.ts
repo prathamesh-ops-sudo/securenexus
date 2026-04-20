@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
 import { randomBytes } from "crypto";
-import { getOrgId, p, sendEnvelope, storage } from "./shared";
+import { getOrgId, logger, p, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
 import { evaluateAllFlags, evaluateFlag } from "../feature-flags";
@@ -296,7 +296,9 @@ export function registerOperationsRoutes(app: Express): void {
         try {
           results.push(await storage.createSloTarget(d as any));
         } catch (e) {
-          // skip duplicates
+          logger
+            .child("routes-operations")
+            .debug("SLO target seed skipped", { name: (d as any).name, error: String(e) });
         }
       }
       res.status(201).json(results);

@@ -211,8 +211,12 @@ export async function scanS3Buckets(config: AwsConnectorConfig): Promise<CloudFi
             complianceFrameworks: ["cis", "nist"],
           });
         }
-      } catch {
-        // Ignore versioning check errors
+      } catch (err) {
+        log.warn("S3 versioning check failed", {
+          bucket: bucketName,
+          region,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
 
       // Check access logging
@@ -232,8 +236,12 @@ export async function scanS3Buckets(config: AwsConnectorConfig): Promise<CloudFi
             complianceFrameworks: ["cis", "nist", "soc2"],
           });
         }
-      } catch {
-        // Ignore logging check errors
+      } catch (err) {
+        log.warn("S3 access-logging check failed", {
+          bucket: bucketName,
+          region,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
   } catch (err: unknown) {
@@ -389,8 +397,11 @@ export async function scanIAMUsers(config: AwsConnectorConfig): Promise<CloudFin
             complianceFrameworks: ["cis", "nist", "pci_dss", "soc2"],
           });
         }
-      } catch {
-        // Skip MFA check errors
+      } catch (err) {
+        log.warn("IAM MFA check failed", {
+          user: userName,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
 
       // Check for stale access keys
@@ -439,13 +450,20 @@ export async function scanIAMUsers(config: AwsConnectorConfig): Promise<CloudFin
                   });
                 }
               }
-            } catch {
-              // Skip last used check errors
+            } catch (err) {
+              log.debug("IAM access-key last-used check failed", {
+                user: userName,
+                accessKeyId: key.AccessKeyId,
+                error: err instanceof Error ? err.message : String(err),
+              });
             }
           }
         }
-      } catch {
-        // Skip access key check errors
+      } catch (err) {
+        log.warn("IAM access-key enumeration failed", {
+          user: userName,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
 
       // Check for overly permissive policies
@@ -470,8 +488,11 @@ export async function scanIAMUsers(config: AwsConnectorConfig): Promise<CloudFin
             });
           }
         }
-      } catch {
-        // Skip policy check errors
+      } catch (err) {
+        log.warn("IAM policy enumeration failed", {
+          user: userName,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
   } catch (err: unknown) {
@@ -674,8 +695,12 @@ export async function fetchGuardDutyFindings(config: AwsConnectorConfig, region:
             });
           }
         }
-      } catch {
-        // Skip individual detector errors
+      } catch (err) {
+        log.warn("GuardDuty detector scan failed", {
+          detectorId,
+          region,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
   } catch (err: unknown) {

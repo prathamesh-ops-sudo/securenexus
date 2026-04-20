@@ -820,8 +820,12 @@ export function registerOrgsRoutes(app: Express): void {
         if (org.logoUrl && org.logoUrl !== s3Key) {
           try {
             await deleteFile(org.logoUrl);
-          } catch {
-            /* best-effort cleanup of previous logo */
+          } catch (err) {
+            logger.child("routes-orgs").warn("previous logo S3 delete failed", {
+              orgId,
+              key: org.logoUrl,
+              error: String(err),
+            });
           }
         }
 
@@ -869,8 +873,12 @@ export function registerOrgsRoutes(app: Express): void {
         if (org.logoUrl) {
           try {
             await deleteFile(org.logoUrl);
-          } catch {
-            /* ignore S3 delete failures */
+          } catch (err) {
+            logger.child("routes-orgs").warn("logo S3 delete failed", {
+              orgId,
+              key: org.logoUrl,
+              error: String(err),
+            });
           }
         }
         await storage.updateOrganization(orgId, { logoUrl: null });

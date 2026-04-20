@@ -100,7 +100,10 @@ async function hasActiveInvitation(email: string): Promise<boolean> {
     const invitations = await storage.getPendingInvitationsByEmail(email.toLowerCase());
     const now = new Date();
     return invitations.some((inv) => new Date(inv.expiresAt) > now);
-  } catch {
+  } catch (err) {
+    // Storage failure here denies access — surface it so a broken DB does not
+    // silently convert invited users into "unauthorized".
+    log.warn("invitation lookup failed", { email, error: err instanceof Error ? err.message : String(err) });
     return false;
   }
 }

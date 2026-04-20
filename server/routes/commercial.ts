@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { p, storage } from "./shared";
+import { logger, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
 import { syncOrgAiBudgetWithPlan } from "../ai/budget";
@@ -481,8 +481,12 @@ export function registerCommercialRoutes(app: Express): void {
               status: "inactive",
             });
             applied.push(`Connector: ${conn.name}`);
-          } catch {
-            /* skip duplicates */
+          } catch (err) {
+            logger.child("routes-commercial").debug("workspace template connector seed skipped", {
+              orgId,
+              name: conn.name,
+              error: String(err),
+            });
           }
         }
 
@@ -498,8 +502,12 @@ export function registerCommercialRoutes(app: Express): void {
               status: "inactive",
             });
             applied.push(`Playbook: ${pb.name}`);
-          } catch {
-            /* skip duplicates */
+          } catch (err) {
+            logger.child("routes-commercial").debug("workspace template playbook seed skipped", {
+              orgId,
+              name: pb.name,
+              error: String(err),
+            });
           }
         }
 
@@ -511,8 +519,11 @@ export function registerCommercialRoutes(app: Express): void {
               incidentRetentionDays: complianceConfig.incidentRetentionDays || 730,
             });
             applied.push("Compliance policy configured");
-          } catch {
-            /* skip */
+          } catch (err) {
+            logger.child("routes-commercial").debug("workspace template compliance policy upsert skipped", {
+              orgId,
+              error: String(err),
+            });
           }
         }
 

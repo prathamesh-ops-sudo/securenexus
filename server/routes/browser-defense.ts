@@ -159,12 +159,22 @@ export function registerBrowserDefenseRoutes(app: Express): void {
             matchedSeverity = (pat.severity as ActionSeverity) || "high";
             matchedVerdict = "block";
             matchedPatternId = pat.id;
-            // Increment match count for the pattern
-            incrementInjectionPatternMatchCount(pat.id, orgId).catch(() => {});
+            // Increment match count for the pattern (best-effort; logged if it fails)
+            incrementInjectionPatternMatchCount(pat.id, orgId).catch((err) =>
+              logger.child("browser-defense").warn("incrementInjectionPatternMatchCount failed", {
+                patternId: pat.id,
+                orgId,
+                error: String(err),
+              }),
+            );
             break;
           }
-        } catch (_regexErr) {
-          // Skip invalid regex patterns
+        } catch (regexErr) {
+          logger.child("browser-defense").debug("skipping invalid injection pattern regex", {
+            patternId: pat.id,
+            pattern: pat.pattern,
+            error: String(regexErr),
+          });
         }
       }
       const event = await createBrowserDomEvent({
