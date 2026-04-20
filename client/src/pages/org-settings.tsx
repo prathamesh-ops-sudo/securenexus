@@ -107,7 +107,7 @@ interface OrgSettings {
   updatedAt: string | null;
 }
 
-/* 88.1 — settings organization: logical groups */
+/* settings organization: logical groups */
 const SETTINGS_SECTIONS = [
   { key: "general", label: "General", icon: Building2, description: "Organization name, industry, size" },
   { key: "contact", label: "Contact", icon: Mail, description: "Email, phone, address" },
@@ -119,7 +119,7 @@ const SETTINGS_SECTIONS = [
   { key: "danger", label: "Danger Zone", icon: AlertTriangle, description: "Delete, transfer" },
 ];
 
-/* 88.2 — cross-settings search keywords */
+/* cross-settings search keywords */
 const SETTINGS_SEARCH_KEYWORDS: Record<string, string[]> = {
   general: ["name", "industry", "size", "timezone", "slug"],
   contact: ["email", "phone", "address", "billing email"],
@@ -141,7 +141,7 @@ export default function OrgSettingsPage() {
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [transferTargetId, setTransferTargetId] = useState("");
   const logoInputRef = useRef<HTMLInputElement>(null);
-  /* 88.2 — settings search state */
+  /* settings search state */
   const [settingsSearch, setSettingsSearch] = useState("");
 
   const isOwner = currentRole === "owner";
@@ -385,7 +385,7 @@ export default function OrgSettingsPage() {
         <div className="gradient-accent-line w-24 mt-2" />
       </div>
 
-      {/* 88.2 — cross-settings search */}
+      {/* cross-settings search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
@@ -397,7 +397,7 @@ export default function OrgSettingsPage() {
         />
       </div>
 
-      {/* 88.1 — settings section quick-nav */}
+      {/* settings section quick-nav */}
       {!settingsSearch && (
         <div className="flex gap-1.5 flex-wrap">
           {SETTINGS_SECTIONS.map((sec) => {
@@ -418,7 +418,7 @@ export default function OrgSettingsPage() {
         </div>
       )}
 
-      {/* 88.2 — search results indicator */}
+      {/* search results indicator */}
       {settingsSearch && (
         <div className="text-xs text-muted-foreground flex items-center gap-1">
           <Search className="h-3 w-3" />
@@ -902,7 +902,7 @@ export default function OrgSettingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 88.3 — settings change audit trail indicator */}
+      {/* settings change audit trail indicator */}
       {org.updatedAt && (
         <Card id="section-audit">
           <CardHeader className="pb-3">

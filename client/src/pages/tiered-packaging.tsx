@@ -260,7 +260,7 @@ function PlanBrowserTab() {
           <p className="text-sm text-muted-foreground">
             Transparent limits. No hidden fees. Upgrade or downgrade anytime.
           </p>
-          {/* 92.1 — plan comparison hint */}
+          {/* plan comparison hint */}
           <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
             <Table2 className="h-2.5 w-2.5" />
             Scroll down for detailed feature comparison across all tiers
@@ -960,7 +960,7 @@ export default function TieredPackagingPage() {
         <TabsContent value="plans">
           <PlanBrowserTab />
 
-          {/* 92.4 — feature gating explanation */}
+          {/* feature gating explanation */}
           <Card className="mt-4 glass">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
@@ -995,7 +995,7 @@ export default function TieredPackagingPage() {
             </CardContent>
           </Card>
 
-          {/* 92.3 — enterprise contact card */}
+          {/* enterprise contact card */}
           <Card className="mt-4 glass border-amber-500/20">
             <CardContent className="py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1014,7 +1014,7 @@ export default function TieredPackagingPage() {
             </CardContent>
           </Card>
 
-          {/* 92.5 — trial management info */}
+          {/* trial management info */}
           <Card className="mt-4 glass">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">

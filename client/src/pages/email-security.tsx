@@ -1175,7 +1175,7 @@ export default function EmailSecurityPage() {
         </p>
       </div>
 
-      {/* 72.1 — Email Threat Dashboard with stats and overview */}
+      {/* Email Threat Dashboard with stats and overview */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <StatCard label="Total Emails" value={isLoading ? "—" : (stats?.totalEmails ?? 0)} icon={Mail} />
         <StatCard label="Suspicious" value={isLoading ? "—" : (stats?.suspiciousEmails ?? 0)} icon={AlertTriangle} />
@@ -1185,7 +1185,7 @@ export default function EmailSecurityPage() {
         <StatCard label="Active Policies" value={isLoading ? "—" : (stats?.activePolicies ?? 0)} icon={Lock} />
       </div>
 
-      {/* 72.4 — BEC Detection Pattern Summary */}
+      {/* BEC Detection Pattern Summary */}
       {stats?.becPatterns && (
         <Card>
           <CardHeader className="pb-2">
@@ -1217,7 +1217,7 @@ export default function EmailSecurityPage() {
         </Card>
       )}
 
-      {/* 72.7 — Email Authentication Compliance Dashboard */}
+      {/* Email Authentication Compliance Dashboard */}
       {stats?.authCompliance && (
         <Card>
           <CardHeader className="pb-2">
@@ -1272,7 +1272,7 @@ export default function EmailSecurityPage() {
         </Card>
       )}
 
-      {/* 72.5 — Email Gateway Integration Status */}
+      {/* Email Gateway Integration Status */}
       {stats?.integrationStatus && (
         <Card>
           <CardHeader className="pb-2">

@@ -1030,7 +1030,7 @@ EOF`;
     }
   });
 
-  // 47.3: Sensor policy management — retrieve policies
+  // Sensor policy management — retrieve policies
   app.get("/api/native-sensors/policies", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1047,7 +1047,7 @@ EOF`;
     }
   });
 
-  // 47.3: Create sensor policy
+  // Create sensor policy
   app.post("/api/native-sensors/policies", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1080,7 +1080,7 @@ EOF`;
     }
   });
 
-  // 47.5: Sensor health monitoring — heartbeat-based health checks
+  // Sensor health monitoring — heartbeat-based health checks
   app.get("/api/native-sensors/health-check", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1137,7 +1137,7 @@ EOF`;
     }
   });
 
-  // 47.6: Sensor auto-update with maintenance windows
+  // Sensor auto-update with maintenance windows
   app.post("/api/native-sensors/auto-update", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1189,7 +1189,7 @@ EOF`;
     }
   });
 
-  // 47.6: Sensor rollback
+  // Sensor rollback
   app.post("/api/native-sensors/:id/rollback", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1230,7 +1230,7 @@ EOF`;
   // 48.x: DETECTION RULES — ADVANCED FEATURES
   // ==========================================================================
 
-  // 48.2: Rule testing sandbox — dry-run against historical data
+  // Rule testing sandbox — dry-run against historical data
   app.post("/api/detection-rules/:id/test", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1330,7 +1330,7 @@ EOF`;
     }
   });
 
-  // 48.3: Rule effectiveness scoring
+  // Rule effectiveness scoring
   app.get("/api/detection-rules/effectiveness", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1376,7 +1376,7 @@ EOF`;
     }
   });
 
-  // 48.4: Rule dependency management
+  // Rule dependency management
   app.get("/api/detection-rules/dependencies", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1428,7 +1428,7 @@ EOF`;
     }
   });
 
-  // 48.5: Rule version history
+  // Rule version history
   app.get("/api/detection-rules/:id/versions", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1455,7 +1455,7 @@ EOF`;
     }
   });
 
-  // 48.5: Rule rollback to specific version
+  // Rule rollback to specific version
   app.post("/api/detection-rules/:id/rollback", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1489,7 +1489,7 @@ EOF`;
     }
   });
 
-  // 48.6: Rule performance monitoring
+  // Rule performance monitoring
   app.get(
     "/api/detection-rules/:id/performance",
     isAuthenticated,
@@ -1542,7 +1542,7 @@ EOF`;
     },
   );
 
-  // 48.7: Sigma → backend query compilation verification
+  // Sigma → backend query compilation verification
   app.post("/api/detection-rules/compile-sigma", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const { sigmaYaml, targetBackend } = req.body;
@@ -1625,7 +1625,7 @@ EOF`;
     }
   });
 
-  // 48.8: Rule → MITRE ATT&CK coverage mapping
+  // Rule → MITRE ATT&CK coverage mapping
   app.get("/api/detection-rules/mitre-coverage", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1690,7 +1690,7 @@ EOF`;
     }
   });
 
-  // 48.9: Rule → Threat Intel enrichment (auto-update rules with new IOCs)
+  // Rule → Threat Intel enrichment (auto-update rules with new IOCs)
   app.post(
     "/api/detection-rules/enrich-from-intel",
     isAuthenticated,

@@ -660,22 +660,22 @@ export default function AssetInventoryPage() {
           )}
         </TabsContent>
 
-        {/* 45.3 — Topology */}
+        {/* Topology */}
         <TabsContent value="topology">
           <AssetTopologyPanel />
         </TabsContent>
 
-        {/* 45.5 — Auto-Discovery */}
+        {/* Auto-Discovery */}
         <TabsContent value="discovery">
           <AssetAutoDiscoveryPanel />
         </TabsContent>
 
-        {/* 45.6 — Lifecycle */}
+        {/* Lifecycle */}
         <TabsContent value="lifecycle">
           <AssetLifecyclePanel />
         </TabsContent>
 
-        {/* 45.4 — Import Sources */}
+        {/* Import Sources */}
         <TabsContent value="import">
           <AssetImportSourcesPanel />
         </TabsContent>
@@ -684,7 +684,7 @@ export default function AssetInventoryPage() {
   );
 }
 
-// 45.1 — Asset Detail Panel (shown when clicking an asset)
+// Asset Detail Panel (shown when clicking an asset)
 function AssetDetailPanel({ assetId, onClose }: { assetId: string; onClose: () => void }) {
   const { data, isLoading } = useQuery({
     queryKey: ["/api/assets", assetId, "full-context"],
@@ -842,7 +842,7 @@ function AssetDetailPanel({ assetId, onClose }: { assetId: string; onClose: () =
   );
 }
 
-// 45.3 — Asset Topology Panel
+// Asset Topology Panel
 function AssetTopologyPanel() {
   const { data, isLoading } = useQuery({
     queryKey: ["/api/assets/topology"],
@@ -926,7 +926,7 @@ function AssetTopologyPanel() {
   );
 }
 
-// 45.5 — Auto-Discovery Panel
+// Auto-Discovery Panel
 function AssetAutoDiscoveryPanel() {
   const { data, isLoading } = useQuery({
     queryKey: ["/api/assets/auto-discovery"],
@@ -1007,7 +1007,7 @@ function AssetAutoDiscoveryPanel() {
   );
 }
 
-// 45.6 — Lifecycle Panel
+// Lifecycle Panel
 function AssetLifecyclePanel() {
   const { data, isLoading } = useQuery({
     queryKey: ["/api/assets/lifecycle-summary"],
@@ -1088,7 +1088,7 @@ function AssetLifecyclePanel() {
   );
 }
 
-// 45.4 — Import Sources Panel
+// Import Sources Panel
 function AssetImportSourcesPanel() {
   const { data, isLoading } = useQuery({
     queryKey: ["/api/assets/import-sources"],

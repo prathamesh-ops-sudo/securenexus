@@ -713,7 +713,7 @@ function PurpleTeamTab() {
 
   return (
     <div className="space-y-6">
-      {/* 61.3 — Purple Team Exercise Management */}
+      {/* Purple Team Exercise Management */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -743,7 +743,7 @@ function PurpleTeamTab() {
                     <p className="text-xs text-muted-foreground">
                       <strong>Kill chain:</strong> {s.attackScenario}
                     </p>
-                    {/* 61.3 — Team assignments */}
+                    {/* Team assignments */}
                     <div className="flex flex-wrap gap-2 mt-2">
                       <div className="flex items-center gap-1 text-[10px] bg-red-500/10 text-red-400 px-2 py-0.5 rounded">
                         <Target className="h-3 w-3" />
@@ -855,7 +855,7 @@ function PurpleTeamTab() {
                     ))}
                   </div>
 
-                  {/* 61.2 — Detection Gap Analysis */}
+                  {/* Detection Gap Analysis */}
                   {r.gapsIdentified.length > 0 && (
                     <div className="mt-2">
                       <p className="text-xs font-medium text-red-400 mb-1">Detection Gaps Identified:</p>
@@ -870,7 +870,7 @@ function PurpleTeamTab() {
                     </div>
                   )}
 
-                  {/* 61.2 — Improvements suggested */}
+                  {/* Improvements suggested */}
                   {r.improvements && r.improvements.length > 0 && (
                     <div className="mt-2">
                       <p className="text-xs font-medium text-green-400 mb-1">Recommended Improvements:</p>
@@ -1544,7 +1544,7 @@ function SimulationsTab() {
   );
 }
 
-// ── 61.1 — Scenario Builder Tab ──────────────────────────────────────────────
+// Scenario Builder Tab
 
 function ScenarioBuilderTab() {
   const { toast } = useToast();
@@ -1644,7 +1644,7 @@ function ScenarioBuilderTab() {
         </CardContent>
       </Card>
 
-      {/* 61.1 — Attack chain builder */}
+      {/* Attack chain builder */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">Attack Chain — Select Techniques</CardTitle>
@@ -1722,7 +1722,7 @@ function ScenarioBuilderTab() {
   );
 }
 
-// ── 61.5 — Coverage Tracking Tab ─────────────────────────────────────────────
+// Coverage Tracking Tab
 
 function CoverageTrackingTab() {
   const { data: stats } = useQuery<ChaosStats>({
@@ -1830,7 +1830,7 @@ function CoverageTrackingTab() {
         </CardContent>
       </Card>
 
-      {/* 61.4 — Safety indicators */}
+      {/* Safety indicators */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm flex items-center gap-2">

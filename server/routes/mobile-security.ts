@@ -1270,7 +1270,7 @@ export function registerMobileSecurityRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 56.4 — MDM INTEGRATION VALIDATION
+  // MDM INTEGRATION VALIDATION
   // =========================================================================
 
   /** Validate MDM integration actually syncs real device data */
@@ -1389,7 +1389,7 @@ export function registerMobileSecurityRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 56.5 — APP RISK ANALYSIS
+  // APP RISK ANALYSIS
   // =========================================================================
 
   /** Analyze installed apps on managed devices for risk */

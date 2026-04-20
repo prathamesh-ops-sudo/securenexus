@@ -550,7 +550,7 @@ function ProtocolDistributionCard({ stats }: { stats?: OtStats }) {
 // PURDUE MODEL VIEW
 // =========================================================================
 
-// 55.1 — Interactive Purdue Model with click-to-drill-down per level
+// Interactive Purdue Model with click-to-drill-down per level
 function PurdueModelView({ topology }: { topology?: TopologyData }) {
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
 
@@ -579,7 +579,7 @@ function PurdueModelView({ topology }: { topology?: TopologyData }) {
     return (order[b.level] ?? 0) - (order[a.level] ?? 0);
   });
 
-  // 55.1 — Identify cross-level policy violations
+  // Identify cross-level policy violations
   const policyViolations = topology.boundaryCrossings.filter((c) => !c.isAllowed);
   const violatingLevels = new Set<string>();
   policyViolations.forEach((v) => {
@@ -683,7 +683,7 @@ function PurdueModelView({ topology }: { topology?: TopologyData }) {
                 <p className="text-xs text-muted-foreground italic">No assets at this level</p>
               )}
 
-              {/* 55.1 — Expanded level detail: traffic flows & alerts */}
+              {/* Expanded level detail: traffic flows & alerts */}
               {isSelected && (
                 <div className="mt-4 pt-3 border-t space-y-3" onClick={(e) => e.stopPropagation()}>
                   {/* Traffic flows for this level */}
@@ -860,7 +860,7 @@ function AssetInventory({ assets }: { assets?: OtAsset[] }) {
                       ) : null}
                       <StatusBadge status={asset.status} />
                     </div>
-                    {/* 55.2 — Enhanced OT asset detail with protocol info */}
+                    {/* Enhanced OT asset detail with protocol info */}
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                       <span>{typeInfo?.label || asset.assetType}</span>
                       {asset.ipAddress ? <span className="font-mono">{asset.ipAddress}</span> : null}
@@ -876,7 +876,7 @@ function AssetInventory({ assets }: { assets?: OtAsset[] }) {
                       {asset.discoveredBy ? <span>via {asset.discoveredBy}</span> : null}
                     </div>
 
-                    {/* 55.2 — Supported protocols */}
+                    {/* Supported protocols */}
                     {asset.protocols && asset.protocols.length > 0 ? (
                       <div className="flex items-center gap-1 mt-1 flex-wrap">
                         <Wifi className="h-3 w-3 text-muted-foreground" />
@@ -888,7 +888,7 @@ function AssetInventory({ assets }: { assets?: OtAsset[] }) {
                       </div>
                     ) : null}
 
-                    {/* 55.2 — Compliance status */}
+                    {/* Compliance status */}
                     <div className="flex items-center gap-2 mt-1">
                       {asset.cveCount === 0 ? (
                         <span className="flex items-center gap-1 text-[10px] text-emerald-500">
@@ -984,7 +984,7 @@ function AnomalyDashboard({ anomalies }: { anomalies?: OtAnomaly[] }) {
                   {a.description ? (
                     <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{a.description}</p>
                   ) : null}
-                  {/* 55.3 — Enhanced protocol anomaly visualization */}
+                  {/* Enhanced protocol anomaly visualization */}
                   <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
                     <span>{ANOMALY_TYPE_LABELS[a.anomalyType] || a.anomalyType}</span>
                     {a.protocol ? (
@@ -1017,7 +1017,7 @@ function AnomalyDashboard({ anomalies }: { anomalies?: OtAnomaly[] }) {
                     ) : null}
                   </div>
 
-                  {/* 55.3 — Protocol-level anomaly details */}
+                  {/* Protocol-level anomaly details */}
                   {(a.functionCode !== null ||
                     a.anomalyType === "unauthorized_command" ||
                     a.anomalyType === "register_read_write") && (

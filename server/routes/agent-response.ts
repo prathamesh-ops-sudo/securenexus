@@ -576,7 +576,7 @@ export function registerAgentResponseRoutes(app: Express): void {
   });
 
   // ==========================================================================
-  // 21.1 — APPROVAL QUEUE — pending actions with details + risk assessment
+  // APPROVAL QUEUE — pending actions with details + risk assessment
   // ==========================================================================
 
   app.get("/api/native/response/approval-queue", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -759,7 +759,7 @@ export function registerAgentResponseRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 21.2 — IMPACT PREVIEW — show predicted impact before executing
+  // IMPACT PREVIEW — show predicted impact before executing
   // ==========================================================================
 
   app.get(
@@ -924,7 +924,7 @@ export function registerAgentResponseRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 21.3 — TIMELINE — all response actions with filters
+  // TIMELINE — all response actions with filters
   // ==========================================================================
 
   app.get("/api/native/response/timeline", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -1019,7 +1019,7 @@ export function registerAgentResponseRoutes(app: Express): void {
   });
 
   // ==========================================================================
-  // 21.4 — IDEMPOTENCY — prevent duplicate action execution
+  // IDEMPOTENCY — prevent duplicate action execution
   // ==========================================================================
 
   app.post(
@@ -1185,7 +1185,7 @@ export function registerAgentResponseRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 21.5 — HEALTH CHECKS — verify action actually succeeded
+  // HEALTH CHECKS — verify action actually succeeded
   // ==========================================================================
 
   app.post(
@@ -1329,7 +1329,7 @@ export function registerAgentResponseRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 21.6 — GRADUATED AUTONOMOUS RESPONSE — confidence-based automation
+  // GRADUATED AUTONOMOUS RESPONSE — confidence-based automation
   // ==========================================================================
 
   // In-memory threshold config (per-org)
@@ -1482,7 +1482,7 @@ export function registerAgentResponseRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 21.7 — CONNECTOR EXECUTION — verify actions execute through connectors
+  // CONNECTOR EXECUTION — verify actions execute through connectors
   // ==========================================================================
 
   const CONNECTOR_REGISTRY: Record<
@@ -1687,7 +1687,7 @@ export function registerAgentResponseRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 21.8 — ROLLBACK VERIFICATION — verify rollback succeeded
+  // ROLLBACK VERIFICATION — verify rollback succeeded
   // ==========================================================================
 
   const ROLLBACK_ACTION_MAP: Record<string, string> = {
@@ -1914,7 +1914,7 @@ export function registerAgentResponseRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 50.5: COMMAND TIMEOUT — configurable timeouts, alerts, cancellation
+  // COMMAND TIMEOUT — configurable timeouts, alerts, cancellation
   // ==========================================================================
 
   app.post(
@@ -2030,7 +2030,7 @@ export function registerAgentResponseRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 50.6: COMMAND AUDIT TRAIL — comprehensive forensic logging
+  // COMMAND AUDIT TRAIL — comprehensive forensic logging
   // ==========================================================================
 
   app.get("/api/native/response/audit-trail", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {

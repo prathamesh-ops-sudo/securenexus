@@ -435,7 +435,7 @@ export default function MsspDashboardPage() {
             </Card>
           )}
 
-          {/* 73.3 — SLA Monitoring Summary */}
+          {/* SLA Monitoring Summary */}
           {stats?.perOrg && stats.perOrg.length > 0 && (
             <Card className="glass-subtle">
               <CardHeader className="pb-3">
@@ -488,7 +488,7 @@ export default function MsspDashboardPage() {
             </Card>
           )}
 
-          {/* 73.1, 73.2 — Multi-Tenant Overview with health scores and drill-down */}
+          {/* Multi-Tenant Overview with health scores and drill-down */}
           <Card className="glass-subtle">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">

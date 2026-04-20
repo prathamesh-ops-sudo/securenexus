@@ -1002,7 +1002,7 @@ export function registerIncidentsRoutes(app: Express): void {
   });
 
   // ==========================================
-  // 8.2 — Evidence Chain (Immutable Audit Trail)
+  // Evidence Chain (Immutable Audit Trail)
   // ==========================================
 
   app.get(
@@ -1155,7 +1155,7 @@ export function registerIncidentsRoutes(app: Express): void {
   );
 
   // ==========================================
-  // 8.2 — Incident Response Approvals
+  // Incident Response Approvals
   // ==========================================
 
   app.get("/api/incidents/:incidentId/approvals", isAuthenticated, validatePathId("incidentId"), async (req, res) => {
@@ -1318,7 +1318,7 @@ export function registerIncidentsRoutes(app: Express): void {
   );
 
   // ==========================================
-  // 8.2 — PIR Action Items
+  // PIR Action Items
   // ==========================================
 
   app.get("/api/pir/:reviewId/action-items", isAuthenticated, validatePathId("reviewId"), async (req, res) => {
@@ -1399,12 +1399,16 @@ export function registerIncidentsRoutes(app: Express): void {
       const actions = await getResponseActions(orgId, incidentId);
 
       // Filter to rollback-eligible: completed status, has a reverse action, not itself a rollback
-      const ROLLBACK_TYPES = ["unisolate_host", "unblock_ip", "unblock_domain", "restore_file", "enable_user", "restart_process"];
+      const ROLLBACK_TYPES = [
+        "unisolate_host",
+        "unblock_ip",
+        "unblock_domain",
+        "restore_file",
+        "enable_user",
+        "restart_process",
+      ];
       let eligible = actions.filter(
-        (a) =>
-          a.status === "completed" &&
-          canRollback(a.actionType) &&
-          !ROLLBACK_TYPES.includes(a.actionType),
+        (a) => a.status === "completed" && canRollback(a.actionType) && !ROLLBACK_TYPES.includes(a.actionType),
       );
 
       // Optional filter by specific action IDs
@@ -1449,7 +1453,12 @@ export function registerIncidentsRoutes(app: Express): void {
           log.warn("Failed to create audit log for rollback preview", { incidentId });
         }
 
-        return sendEnvelope(res, { message: "Dry-run rollback preview", rollbacks: preview, count: preview.length, dryRun: true });
+        return sendEnvelope(res, {
+          message: "Dry-run rollback preview",
+          rollbacks: preview,
+          count: preview.length,
+          dryRun: true,
+        });
       }
 
       // Execute rollbacks sequentially (avoid conflicts on same target)

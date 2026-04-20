@@ -260,7 +260,7 @@ export default function SupplyChainPage() {
     enabled: tab === "dependencies",
   });
 
-  // 52.2: SBOM Dashboard data
+  // SBOM Dashboard data
   const { data: sbomDashboardData } = useQuery<{
     sboms: Array<SbomArtifact & { freshnessDays: number; vulnExposure: number }>;
     totals: { uniqueDeps: number; totalVulns: number; avgFreshness: number; coveragePercent: number };
@@ -270,7 +270,7 @@ export default function SupplyChainPage() {
     enabled: tab === "sbom-dashboard",
   });
 
-  // 52.3: Typosquatting candidates from dependency graph
+  // Typosquatting candidates from dependency graph
   const { data: typosquatData } = useQuery<{
     candidates: Array<DependencyEntry & { downloadCount?: number; authorReputation?: number }>;
     whitelisted: string[];
@@ -343,7 +343,7 @@ export default function SupplyChainPage() {
     },
   });
 
-  // 52.3: Whitelist typosquat candidate
+  // Whitelist typosquat candidate
   const whitelistPackage = useMutation({
     mutationFn: (depId: string) => apiFetch(`/api/supply-chain/dependencies/${depId}/whitelist`, { method: "POST" }),
     onSuccess: () => {

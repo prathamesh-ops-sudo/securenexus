@@ -65,7 +65,7 @@ const ROLES = [
   { name: "Viewer", description: "Read-only access to dashboards, alerts, and incidents", color: "text-blue-400" },
 ];
 
-/* 93.1 — settings categories for side navigation */
+/* settings categories for side navigation */
 const SETTINGS_CATEGORIES = [
   { key: "profile", label: "Profile", icon: User, description: "Name, email, avatar" },
   { key: "security", label: "Security", icon: Shield, description: "MFA, sessions, passwords" },
@@ -74,14 +74,14 @@ const SETTINGS_CATEGORIES = [
   { key: "integrations", label: "Integrations", icon: Key, description: "API keys, webhooks" },
 ];
 
-/* 93.2 — supported MFA methods */
+/* supported MFA methods */
 const MFA_METHODS = [
   { key: "totp", label: "Authenticator App", icon: Smartphone, description: "Google Authenticator, Authy, 1Password" },
   { key: "sms", label: "SMS", icon: MessageSquare, description: "Receive codes via text message" },
   { key: "webauthn", label: "Hardware Security Key", icon: Fingerprint, description: "YubiKey, FIDO2/WebAuthn" },
 ];
 
-/* 93.4 — notification preference categories */
+/* notification preference categories */
 const NOTIFICATION_CATEGORIES = [
   {
     type: "critical_alerts",
@@ -314,7 +314,7 @@ export default function SettingsPage() {
         <div className="gradient-accent-line w-24 mt-2" />
       </div>
 
-      {/* 93.1 — settings categories navigation */}
+      {/* settings categories navigation */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold">Quick Navigation</CardTitle>
@@ -349,7 +349,7 @@ export default function SettingsPage() {
                 <AvatarImage src={user?.profileImageUrl || ""} />
                 <AvatarFallback>{initials}</AvatarFallback>
               </Avatar>
-              {/* 93.6 — profile picture upload hint */}
+              {/* profile picture upload hint */}
               <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
                 <Upload className="h-4 w-4 text-white" />
               </div>
@@ -379,7 +379,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* 93.2 — MFA methods overview */}
+      {/* MFA methods overview */}
       <Card id="settings-security">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -404,7 +404,7 @@ export default function SettingsPage() {
               </div>
             ))}
           </div>
-          {/* 93.5 — WebAuthn/FIDO2 note */}
+          {/* WebAuthn/FIDO2 note */}
           <div className="p-2 rounded-md bg-muted/30">
             <p className="text-[10px] text-muted-foreground flex items-center gap-1">
               <Fingerprint className="h-2.5 w-2.5" />
@@ -422,7 +422,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* 93.3 — active session management */}
+      {/* active session management */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-1 pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -491,7 +491,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* 93.4 — notification preferences */}
+      {/* notification preferences */}
       <Card id="settings-notifications">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">

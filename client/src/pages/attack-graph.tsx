@@ -279,7 +279,7 @@ function AttackPathNodeChain({ nodes }: { nodes: AttackPathData["nodes"] }) {
 }
 
 // -----------------------------------------------------------------------
-// 12.1: Risk Scoring Tab
+// Risk Scoring Tab
 // -----------------------------------------------------------------------
 function RiskScoringTab() {
   const { data, isLoading } = useQuery<RiskScoresResponse>({
@@ -469,7 +469,7 @@ function RiskScoringTab() {
 }
 
 // -----------------------------------------------------------------------
-// 12.2: What-If Simulation Tab
+// What-If Simulation Tab
 // -----------------------------------------------------------------------
 function WhatIfSimulationTab() {
   const [simType, setSimType] = useState<string>("remove_vulnerability");
@@ -719,7 +719,7 @@ function WhatIfSimulationTab() {
 }
 
 // -----------------------------------------------------------------------
-// 12.3: Remediation Recommendations Tab
+// Remediation Recommendations Tab
 // -----------------------------------------------------------------------
 function RemediationTab() {
   const { data, isLoading } = useQuery<GlobalRemediationResponse>({
@@ -863,7 +863,7 @@ function RemediationTab() {
 }
 
 // -----------------------------------------------------------------------
-// 12.6: CSPM Correlation Tab
+// CSPM Correlation Tab
 // -----------------------------------------------------------------------
 function CSPMCorrelationTab() {
   const { data, isLoading } = useQuery<{ totalCorrelations: number; correlations: CSPMCorrelation[] }>({
@@ -952,7 +952,7 @@ function CSPMCorrelationTab() {
 }
 
 // -----------------------------------------------------------------------
-// 12.7: Vulnerability Prioritization Tab
+// Vulnerability Prioritization Tab
 // -----------------------------------------------------------------------
 function VulnPrioritizationTab() {
   const { data, isLoading } = useQuery<{ totalVulnerabilities: number; prioritization: VulnPrioritizationEntry[] }>({

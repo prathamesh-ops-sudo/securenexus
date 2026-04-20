@@ -1047,7 +1047,7 @@ export function registerApiSecurityRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 57.4 — API TRAFFIC MONITORING (real-time metrics)
+  // API TRAFFIC MONITORING (real-time metrics)
   // ==========================================================================
 
   app.get(
@@ -1154,7 +1154,7 @@ export function registerApiSecurityRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 57.5 — ENHANCED DAST SCANNING ENGINE
+  // ENHANCED DAST SCANNING ENGINE
   // ==========================================================================
 
   app.post(

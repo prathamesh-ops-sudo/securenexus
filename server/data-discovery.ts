@@ -479,17 +479,17 @@ export interface PrivacyDashboard {
     startedAt: string;
     completedAt: string | null;
   }>;
-  // 70.1 — Data map visualization: asset type breakdown
+  // Data map visualization: asset type breakdown
   assetTypeBreakdown: Record<string, number>;
-  // 70.3 — Consent management: purpose breakdown
+  // Consent management: purpose breakdown
   consentPurposeBreakdown: Record<string, number>;
-  // 70.5 — Automated data discovery stats
+  // Automated data discovery stats
   discoveryStats: {
     lastScanAt: string | null;
     totalFindings: number;
     autoClassified: number;
   };
-  // 70.6 — Data retention enforcement summary
+  // Data retention enforcement summary
   retentionSummary: {
     withRetention: number;
     withoutRetention: number;
@@ -565,13 +565,13 @@ export async function getPrivacyDashboard(orgId: string): Promise<PrivacyDashboa
   // Aggregate classification breakdown
   const classificationBreakdown: Record<string, number> = {};
   const jurisdictionBreakdown: Record<string, number> = {};
-  // 70.1 — Data map: asset type breakdown
+  // Data map: asset type breakdown
   const assetTypeBreakdown: Record<string, number> = {};
   let totalPii = 0;
   let totalPhi = 0;
   let totalPci = 0;
   let riskSum = 0;
-  // 70.6 — Retention tracking
+  // Retention tracking
   let withRetention = 0;
   let withoutRetention = 0;
   let expiredRetention = 0;
@@ -582,7 +582,7 @@ export async function getPrivacyDashboard(orgId: string): Promise<PrivacyDashboa
     assetTypeBreakdown[asset.assetType] = (assetTypeBreakdown[asset.assetType] || 0) + 1;
     riskSum += asset.riskScore;
 
-    // 70.6 — Retention policy tracking
+    // Retention policy tracking
     const retentionPeriod = (asset as Record<string, unknown>).retentionPeriod as string | null | undefined;
     if (retentionPeriod) {
       withRetention++;
@@ -604,7 +604,7 @@ export async function getPrivacyDashboard(orgId: string): Promise<PrivacyDashboa
     }
   }
 
-  // 70.3 — Consent purpose breakdown
+  // Consent purpose breakdown
   const consentRows = await db
     .select()
     .from(consentRecords)
@@ -614,7 +614,7 @@ export async function getPrivacyDashboard(orgId: string): Promise<PrivacyDashboa
     consentPurposeBreakdown[row.purpose] = (consentPurposeBreakdown[row.purpose] || 0) + 1;
   }
 
-  // 70.5 — Discovery stats
+  // Discovery stats
   const totalFindings = recentScanRows.reduce((sum, s) => sum + s.findingsCount, 0);
   const lastScan = recentScanRows.length > 0 ? recentScanRows[0] : null;
   const autoClassified = assets.filter((a) => (a as Record<string, unknown>).discoveredBy === "auto_scan").length;

@@ -296,7 +296,7 @@ export function registerWarRoomRoutes(app: Express): void {
           return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "content is required." }]);
         }
 
-        // 15.7: Role-based access check
+        // Role-based access check
         const participant = await storage.getWarRoomParticipantByUser(room.id, user?.id || "unknown");
         if (participant && participant.role === "observer") {
           return replyError(res, 403, [{ code: "FORBIDDEN", message: "Observers cannot post messages." }]);
@@ -305,7 +305,7 @@ export function registerWarRoomRoutes(app: Express): void {
         const entryType = VALID_TIMELINE_TYPES.includes(type) ? type : "message";
         const format = VALID_CONTENT_FORMATS.includes(contentFormat) ? contentFormat : "plain";
 
-        // 15.2: Validate parent message if threading
+        // Validate parent message if threading
         if (parentMessageId) {
           const parentMessages = await db
             .select()
@@ -465,7 +465,7 @@ export function registerWarRoomRoutes(app: Express): void {
           metadata: {},
         });
 
-        // 15.5: Activity log
+        // Activity log
         await db.insert(warRoomActivityLog).values({
           warRoomId: room.id,
           orgId,
@@ -1081,7 +1081,7 @@ export function registerWarRoomRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 15.2: Message Threading — get thread replies for a message
+  // Message Threading — get thread replies for a message
   // ═══════════════════════════════════════════════════════════════════════════
   app.get(
     "/api/war-rooms/:id/messages/:messageId/thread",
@@ -1112,7 +1112,7 @@ export function registerWarRoomRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 15.3: War Room Templates — CRUD + create-from-template
+  // War Room Templates — CRUD + create-from-template
   // ═══════════════════════════════════════════════════════════════════════════
   app.get(
     "/api/war-room-templates",
@@ -1302,7 +1302,7 @@ export function registerWarRoomRoutes(app: Express): void {
           metadata: { templateId, templateName: template.name, incidentType: template.incidentType },
         });
 
-        // 15.5: Activity log
+        // Activity log
         await db.insert(warRoomActivityLog).values({
           warRoomId: room.id,
           orgId,
@@ -1328,7 +1328,7 @@ export function registerWarRoomRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 15.4: Audio/Video Call Integration — start call with meeting link
+  // Audio/Video Call Integration — start call with meeting link
   // ═══════════════════════════════════════════════════════════════════════════
   app.post(
     "/api/war-rooms/:id/start-call",
@@ -1383,7 +1383,7 @@ export function registerWarRoomRoutes(app: Express): void {
           metadata: { provider: providerName, meetingUrl, action: "started" },
         });
 
-        // 15.5: Activity log
+        // Activity log
         await db.insert(warRoomActivityLog).values({
           warRoomId: room.id,
           orgId,
@@ -1402,7 +1402,7 @@ export function registerWarRoomRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 15.5: War Room Activity Log — automatic activity tracking
+  // War Room Activity Log — automatic activity tracking
   // ═══════════════════════════════════════════════════════════════════════════
   app.get(
     "/api/war-rooms/:id/activity-log",
@@ -1433,7 +1433,7 @@ export function registerWarRoomRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 15.6: War Room Archival, Search, and Export
+  // War Room Archival, Search, and Export
   // ═══════════════════════════════════════════════════════════════════════════
   app.post(
     "/api/war-rooms/:id/archive",
@@ -1460,7 +1460,7 @@ export function registerWarRoomRoutes(app: Express): void {
           archivedBy: user?.id || "unknown",
         });
 
-        // 15.5: Activity log
+        // Activity log
         await db.insert(warRoomActivityLog).values({
           warRoomId: room.id,
           orgId,
@@ -1607,7 +1607,7 @@ export function registerWarRoomRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 15.7: Role-Based Access — update participant role
+  // Role-Based Access — update participant role
   // ═══════════════════════════════════════════════════════════════════════════
   app.patch(
     "/api/war-rooms/:id/participants/:userId/role",
@@ -1653,7 +1653,7 @@ export function registerWarRoomRoutes(app: Express): void {
 
         const currentUser = (req as any).user;
 
-        // 15.5: Activity log
+        // Activity log
         await db.insert(warRoomActivityLog).values({
           warRoomId: room.id,
           orgId,
@@ -1672,7 +1672,7 @@ export function registerWarRoomRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 15.8: War Room → Playbook Execution
+  // War Room → Playbook Execution
   // ═══════════════════════════════════════════════════════════════════════════
   app.post(
     "/api/war-rooms/:id/run-playbook",
@@ -1700,7 +1700,7 @@ export function registerWarRoomRoutes(app: Express): void {
           ]);
         }
 
-        // 15.7: Observer check
+        // Observer check
         const participant = await storage.getWarRoomParticipantByUser(room.id, user?.id || "unknown");
         if (participant && participant.role === "observer") {
           return replyError(res, 403, [{ code: "FORBIDDEN", message: "Observers cannot execute playbooks." }]);
@@ -1723,7 +1723,7 @@ export function registerWarRoomRoutes(app: Express): void {
           },
         });
 
-        // 15.5: Activity log
+        // Activity log
         await db.insert(warRoomActivityLog).values({
           warRoomId: room.id,
           orgId,
@@ -1747,7 +1747,7 @@ export function registerWarRoomRoutes(app: Express): void {
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 15.9: Post-Incident Review Auto-Generation (enhanced)
+  // Post-Incident Review Auto-Generation (enhanced)
   // ═══════════════════════════════════════════════════════════════════════════
   app.post(
     "/api/war-rooms/:id/generate-review",

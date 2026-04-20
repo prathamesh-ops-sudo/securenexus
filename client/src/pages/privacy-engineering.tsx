@@ -94,13 +94,13 @@ interface Dashboard {
     dsarTypes: string[];
     jurisdictions: string[];
   };
-  // 70.1 — Data map: asset type breakdown
+  // Data map: asset type breakdown
   assetTypeBreakdown?: Record<string, number>;
-  // 70.3 — Consent purpose breakdown
+  // Consent purpose breakdown
   consentPurposeBreakdown?: Record<string, number>;
-  // 70.5 — Automated discovery stats
+  // Automated discovery stats
   discoveryStats?: { lastScanAt: string | null; totalFindings: number; autoClassified: number };
-  // 70.6 — Retention enforcement summary
+  // Retention enforcement summary
   retentionSummary?: { withRetention: number; withoutRetention: number; expiredRetention: number };
 }
 
@@ -472,7 +472,7 @@ function OverviewTab() {
         </Card>
       </div>
 
-      {/* 70.1 — Data Map Visualization: Asset Type Breakdown */}
+      {/* Data Map Visualization: Asset Type Breakdown */}
       {d?.assetTypeBreakdown && Object.keys(d.assetTypeBreakdown).length > 0 && (
         <Card>
           <CardHeader>
@@ -492,7 +492,7 @@ function OverviewTab() {
         </Card>
       )}
 
-      {/* 70.3 — Consent Management: Purpose Breakdown */}
+      {/* Consent Management: Purpose Breakdown */}
       {d?.consentPurposeBreakdown && Object.keys(d.consentPurposeBreakdown).length > 0 && (
         <Card>
           <CardHeader>
@@ -520,7 +520,7 @@ function OverviewTab() {
         </Card>
       )}
 
-      {/* 70.5 — Automated Data Discovery Stats */}
+      {/* Automated Data Discovery Stats */}
       {d?.discoveryStats && (
         <Card>
           <CardHeader>
@@ -549,7 +549,7 @@ function OverviewTab() {
         </Card>
       )}
 
-      {/* 70.6 — Data Retention Enforcement Summary */}
+      {/* Data Retention Enforcement Summary */}
       {d?.retentionSummary && (
         <Card>
           <CardHeader>

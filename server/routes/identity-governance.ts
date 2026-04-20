@@ -897,7 +897,7 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 53.3: Privilege Creep Detection
+  // Privilege Creep Detection
   // =========================================================================
 
   app.get("/api/identity/privilege-creep", isAuthenticated, async (req, res) => {
@@ -991,7 +991,7 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 53.4: Orphaned Account Detection (HR cross-reference)
+  // Orphaned Account Detection (HR cross-reference)
   // =========================================================================
 
   app.get("/api/identity/orphaned-accounts", isAuthenticated, async (req, res) => {
@@ -1117,7 +1117,7 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 53.5: SCIM Provisioning/Deprovisioning Lifecycle
+  // SCIM Provisioning/Deprovisioning Lifecycle
   // =========================================================================
 
   app.post("/api/identity/scim/lifecycle", isAuthenticated, async (req, res) => {
@@ -1174,7 +1174,7 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 53.6: Role Mining and Optimization
+  // Role Mining and Optimization
   // =========================================================================
 
   app.get("/api/identity/role-mining", isAuthenticated, async (req, res) => {
@@ -1268,7 +1268,7 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 53.7: Identity → JIT Access Integration
+  // Identity → JIT Access Integration
   // =========================================================================
 
   app.get("/api/identity/jit-check/:userId", isAuthenticated, async (req, res) => {
@@ -1332,7 +1332,7 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 53.8: Identity → UEBA Correlation
+  // Identity → UEBA Correlation
   // =========================================================================
 
   app.get("/api/identity/ueba-correlation/:userId", isAuthenticated, async (req, res) => {

@@ -899,7 +899,7 @@ export function registerCommunityIntelRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 59.4 — ANONYMIZATION VERIFICATION
+  // ANONYMIZATION VERIFICATION
   // ==========================================================================
 
   app.post(
@@ -1061,7 +1061,7 @@ export function registerCommunityIntelRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 59.5 — IOC QUALITY SCORING
+  // IOC QUALITY SCORING
   // ==========================================================================
 
   app.get(

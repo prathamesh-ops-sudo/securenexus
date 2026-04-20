@@ -89,21 +89,21 @@ export default function RollbackHistoryPage() {
     onError: () => toast({ title: "Rollback execution failed", variant: "destructive" }),
   });
 
-  // 22.1: Rollback detail query
+  // Rollback detail query
   const { data: detailData } = useQuery({
     queryKey: ["/api/autonomous/rollbacks", detailId, "detail"],
     queryFn: () => apiRequest("GET", `/api/autonomous/rollbacks/${detailId}/detail`).then((r) => r.json()),
     enabled: !!detailId,
   });
 
-  // 22.2: Rollback impact query
+  // Rollback impact query
   const { data: impactData } = useQuery({
     queryKey: ["/api/autonomous/rollbacks", impactId, "impact"],
     queryFn: () => apiRequest("GET", `/api/autonomous/rollbacks/${impactId}/impact`).then((r) => r.json()),
     enabled: !!impactId,
   });
 
-  // 22.3: Auto-rollback triggers
+  // Auto-rollback triggers
   const { data: triggersData, refetch: refetchTriggers } = useQuery({
     queryKey: ["/api/autonomous/rollback-triggers"],
     queryFn: () => apiRequest("GET", "/api/autonomous/rollback-triggers").then((r) => r.json()),
@@ -147,7 +147,7 @@ export default function RollbackHistoryPage() {
     },
   });
 
-  // 22.4: Audit trail query
+  // Audit trail query
   const { data: auditData } = useQuery({
     queryKey: ["/api/autonomous/rollbacks", auditId, "audit-trail"],
     queryFn: () => apiRequest("GET", `/api/autonomous/rollbacks/${auditId}/audit-trail`).then((r) => r.json()),
@@ -368,7 +368,7 @@ export default function RollbackHistoryPage() {
                             </pre>
                           </div>
                         )}
-                        {/* 22.1, 22.2, 22.4 action buttons */}
+                        {/* , 22.2, 22.4 action buttons */}
                         <div className="flex gap-2 pt-2 border-t">
                           <Button
                             variant="outline"
@@ -413,7 +413,7 @@ export default function RollbackHistoryPage() {
           )}
         </TabsContent>
 
-        {/* 22.3: AUTO-ROLLBACK TRIGGERS TAB */}
+        {/* AUTO-ROLLBACK TRIGGERS TAB */}
         <TabsContent value="triggers" className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
@@ -602,7 +602,7 @@ export default function RollbackHistoryPage() {
         </TabsContent>
       </Tabs>
 
-      {/* 22.1: ROLLBACK DETAIL DIALOG */}
+      {/* ROLLBACK DETAIL DIALOG */}
       <Dialog open={!!detailId} onOpenChange={() => setDetailId(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -733,7 +733,7 @@ export default function RollbackHistoryPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 22.2: IMPACT ANALYSIS DIALOG */}
+      {/* IMPACT ANALYSIS DIALOG */}
       <Dialog open={!!impactId} onOpenChange={() => setImpactId(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -829,7 +829,7 @@ export default function RollbackHistoryPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 22.4: AUDIT TRAIL DIALOG */}
+      {/* AUDIT TRAIL DIALOG */}
       <Dialog open={!!auditId} onOpenChange={() => setAuditId(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>

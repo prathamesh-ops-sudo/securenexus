@@ -98,7 +98,10 @@ export async function createInvestigationTask(task: InsertInvestigationTask): Pr
   return created;
 }
 
-export async function updateInvestigationTask(id: string, data: Partial<InvestigationTask>): Promise<InvestigationTask | undefined> {
+export async function updateInvestigationTask(
+  id: string,
+  data: Partial<InvestigationTask>,
+): Promise<InvestigationTask | undefined> {
   const [updated] = await db
     .update(investigationTasks)
     .set({ ...data, updatedAt: new Date() })
@@ -173,5 +176,5 @@ export async function getLatestChainHash(incidentId: string): Promise<string | n
 }
 
 // ==========================================
-// 8.2 — Incident Response Approvals
+// Incident Response Approvals
 // ==========================================

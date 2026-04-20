@@ -638,7 +638,7 @@ export function registerAutonomousRoutes(app: Express): void {
   );
 
   // =============================
-  // 22.1 — ROLLBACK DETAIL VIEW
+  // ROLLBACK DETAIL VIEW
   // =============================
 
   app.get(
@@ -762,7 +762,7 @@ export function registerAutonomousRoutes(app: Express): void {
   );
 
   // =============================
-  // 22.2 — ROLLBACK IMPACT ANALYSIS
+  // ROLLBACK IMPACT ANALYSIS
   // =============================
 
   app.get(
@@ -880,7 +880,7 @@ export function registerAutonomousRoutes(app: Express): void {
   );
 
   // =============================
-  // 22.3 — AUTOMATIC ROLLBACK TRIGGERS
+  // AUTOMATIC ROLLBACK TRIGGERS
   // =============================
 
   const autoRollbackTriggers = new Map<
@@ -1031,7 +1031,7 @@ export function registerAutonomousRoutes(app: Express): void {
   );
 
   // =============================
-  // 22.4 — ROLLBACK AUDIT TRAIL
+  // ROLLBACK AUDIT TRAIL
   // =============================
 
   app.get(

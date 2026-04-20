@@ -14,7 +14,7 @@ import {
 
 const log = logger.child("deception");
 
-// 54.4 — Expanded canary token types
+// Expanded canary token types
 const ALLOWED_TOKEN_TYPES = [
   "aws_key",
   "database_credential",
@@ -26,14 +26,14 @@ const ALLOWED_TOKEN_TYPES = [
   "kubeconfig",
   "ssh_key",
   "slack_webhook",
-  // 54.4 — New canary token types
+  // New canary token types
   "usb_canary",
   "web_bug",
   "document_canary",
   "email_canary",
 ];
 
-// 54.4 — Token type generation & monitoring metadata
+// Token type generation & monitoring metadata
 const TOKEN_TYPE_META: Record<string, { generation: string; monitoring: string }> = {
   aws_key: {
     generation: "Fake AWS access key ID + secret access key pair",
@@ -72,7 +72,7 @@ const TOKEN_TYPE_META: Record<string, { generation: string; monitoring: string }
   },
 };
 
-// 54.5 — Honeypot emulation depth levels
+// Honeypot emulation depth levels
 const EMULATION_DEPTH_LEVELS = ["low", "medium", "high"] as const;
 type EmulationDepth = (typeof EMULATION_DEPTH_LEVELS)[number];
 
@@ -669,7 +669,7 @@ export function registerDeceptionRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 54.4 — CANARY TOKEN TYPES METADATA
+  // CANARY TOKEN TYPES METADATA
   // =========================================================================
 
   /** List all supported canary token types with generation & monitoring info */
@@ -687,7 +687,7 @@ export function registerDeceptionRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 54.5 — HONEYPOT EMULATION DEPTH
+  // HONEYPOT EMULATION DEPTH
   // =========================================================================
 
   /** Get emulation depth options */
@@ -910,7 +910,7 @@ function maskTokenValue(tokenType: string, value: string): string {
   if (tokenType === "api_key") {
     return value.substring(0, 6) + "****";
   }
-  // 54.4 — Mask new canary token types
+  // Mask new canary token types
   if (tokenType === "usb_canary" || tokenType === "document_canary") {
     return "[canary-payload-" + value.substring(0, 8) + "...]";
   }

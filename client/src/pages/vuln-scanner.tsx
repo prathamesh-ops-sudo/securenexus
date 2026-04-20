@@ -510,17 +510,17 @@ export default function VulnScannerPage() {
             </CardContent>
           </Card>
         </TabsContent>
-        {/* 49.1: SCAN TARGETS TAB */}
+        {/* SCAN TARGETS TAB */}
         <TabsContent value="scan-targets" className="mt-4 space-y-4">
           <ScanTargetsPanel />
         </TabsContent>
 
-        {/* 49.4: SCAN SCHEDULING TAB */}
+        {/* SCAN SCHEDULING TAB */}
         <TabsContent value="scheduling" className="mt-4 space-y-4">
           <ScanSchedulingPanel />
         </TabsContent>
 
-        {/* 49.3: SCAN COMPARISON TAB */}
+        {/* SCAN COMPARISON TAB */}
         <TabsContent value="comparison" className="mt-4 space-y-4">
           <ScanComparisonPanel />
         </TabsContent>
@@ -549,7 +549,7 @@ export default function VulnScannerPage() {
                     CVSS {selectedFinding.cvssScore.toFixed(1)}
                   </Badge>
                 )}
-                {/* 49.2: Exploit availability indicator */}
+                {/* Exploit availability indicator */}
                 <Badge
                   variant="outline"
                   className={
@@ -596,7 +596,7 @@ export default function VulnScannerPage() {
                 </div>
               )}
 
-              {/* 49.2: Remediation steps */}
+              {/* Remediation steps */}
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Remediation Steps</p>
                 <div className="bg-zinc-900 rounded p-3 border border-zinc-800 space-y-2">
@@ -633,7 +633,7 @@ export default function VulnScannerPage() {
                 </div>
               </div>
 
-              {/* 49.2: Link to CVE DB */}
+              {/* Link to CVE DB */}
               <a
                 href={`https://nvd.nist.gov/vuln/detail/${selectedFinding.cveId}`}
                 target="_blank"
@@ -679,7 +679,7 @@ export default function VulnScannerPage() {
   );
 }
 
-// 49.1: Scan Target Configuration
+// Scan Target Configuration
 function ScanTargetsPanel() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -878,7 +878,7 @@ function ScanTargetsPanel() {
   );
 }
 
-// 49.3: Scan Comparison (before/after)
+// Scan Comparison (before/after)
 function ScanComparisonPanel() {
   const [scanA, setScanA] = useState("");
   const [scanB, setScanB] = useState("");
@@ -1040,7 +1040,7 @@ function ScanComparisonPanel() {
   );
 }
 
-// 49.4: Scan Scheduling
+// Scan Scheduling
 function ScanSchedulingPanel() {
   const { toast } = useToast();
   const queryClient = useQueryClient();

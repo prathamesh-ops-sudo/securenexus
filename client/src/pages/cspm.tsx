@@ -1955,7 +1955,7 @@ function RemediationTab() {
   );
 }
 
-// ─── 25.1 Resource Tree View ───
+// Resource Tree View
 function ResourceTreeTab() {
   const { data: treeData, isPending } = useQuery<any>({
     queryKey: ["/api/cspm/resources/tree"],
@@ -2049,7 +2049,7 @@ function ResourceTreeTab() {
   );
 }
 
-// ─── 25.2 Compliance Posture Tab ───
+// Compliance Posture Tab
 function CompliancePostureTab() {
   const { data: accounts } = useQuery<any[]>({ queryKey: ["/api/cspm/accounts"] });
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -2206,7 +2206,7 @@ function CompliancePostureTab() {
   );
 }
 
-// ─── 25.3 Drift Detail Tab ───
+// Drift Detail Tab
 function DriftDetailTab() {
   const { data: accounts } = useQuery<any[]>({ queryKey: ["/api/cspm/accounts"] });
   const [resourceId, setResourceId] = useState("");
@@ -2294,7 +2294,7 @@ function DriftDetailTab() {
   );
 }
 
-// ─── 25.4 Multi-Cloud Dashboard Tab ───
+// Multi-Cloud Dashboard Tab
 function MultiCloudDashboardTab() {
   const { data: dashboard, isPending } = useQuery<any>({
     queryKey: ["/api/cspm/multi-cloud/dashboard"],
@@ -2398,7 +2398,7 @@ function MultiCloudDashboardTab() {
   );
 }
 
-// ─── 25.5 Scanning Schedules Tab ───
+// Scanning Schedules Tab
 function ScanningSchedulesTab() {
   const { toast } = useToast();
   const {
@@ -2550,7 +2550,7 @@ function ScanningSchedulesTab() {
   );
 }
 
-// ─── 25.6 Remediation Safety Controls Tab ───
+// Remediation Safety Controls Tab
 function RemediationSafetyTab() {
   const { toast } = useToast();
   const {
@@ -2704,7 +2704,7 @@ function RemediationSafetyTab() {
   );
 }
 
-// ─── 25.7 Resource Change Tracking Tab ───
+// Resource Change Tracking Tab
 function ChangeTrackingTab() {
   const [changeResourceId, setChangeResourceId] = useState("");
   const {
@@ -2810,7 +2810,7 @@ function ChangeTrackingTab() {
   );
 }
 
-// ─── 25.8-25.10 Integration Tabs ───
+// 25.10 Integration Tabs
 function IntegrationsTab() {
   const { data: attackPathData, isPending: apLoading } = useQuery<any>({
     queryKey: ["/api/cspm/integrations/attack-paths"],
@@ -2830,7 +2830,7 @@ function IntegrationsTab() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* 25.8 Attack Path */}
+        {/* Attack Path */}
         <Card>
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center gap-2">
@@ -2870,7 +2870,7 @@ function IntegrationsTab() {
           </CardContent>
         </Card>
 
-        {/* 25.9 Compliance Mapping */}
+        {/* Compliance Mapping */}
         <Card>
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center gap-2">
@@ -2900,7 +2900,7 @@ function IntegrationsTab() {
           </CardContent>
         </Card>
 
-        {/* 25.10 Incident Correlation */}
+        {/* Incident Correlation */}
         <Card>
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center gap-2">

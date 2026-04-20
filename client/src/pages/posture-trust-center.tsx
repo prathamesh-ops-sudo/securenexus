@@ -636,7 +636,7 @@ export default function PostureTrustCenterPage() {
             </Card>
           </div>
 
-          {/* 60.1 — POSTURE SCORE BREAKDOWN */}
+          {/* POSTURE SCORE BREAKDOWN */}
           {(summary?.subScores || []).length > 0 && (
             <Card>
               <CardHeader>
@@ -712,7 +712,7 @@ export default function PostureTrustCenterPage() {
         <TabsContent value="sub-scores" className="space-y-6">
           {(latestData?.subScores || []).map((sub) => {
             const meta = domainMeta[sub.domain] || latestData?.domainMeta?.[sub.domain];
-            // 60.2 — Generate actionable recommendations with estimated impact points
+            // Generate actionable recommendations with estimated impact points
             const impactRecommendations: { action: string; points: number }[] = [];
             if (sub.controlsFailed > 0) {
               const pointsPerControl = Math.round((100 - sub.score) / Math.max(sub.controlsFailed, 1));
@@ -795,7 +795,7 @@ export default function PostureTrustCenterPage() {
                     </div>
                   )}
 
-                  {/* 60.2 — Actionable Improvement Recommendations ranked by impact */}
+                  {/* Actionable Improvement Recommendations ranked by impact */}
                   {impactRecommendations.length > 0 && (
                     <div>
                       <h4 className="text-xs font-medium mb-2 flex items-center gap-1">
@@ -934,7 +934,7 @@ export default function PostureTrustCenterPage() {
                 </Card>
               </div>
 
-              {/* 60.4 — Anonymous comparison by industry and size */}
+              {/* Anonymous comparison by industry and size */}
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm">
@@ -1508,7 +1508,7 @@ export default function PostureTrustCenterPage() {
                 <Switch checked={tpShowPercentile} onCheckedChange={setTpShowPercentile} />
               </div>
             </div>
-            {/* 60.3 — Trust Center Customization */}
+            {/* Trust Center Customization */}
             <div className="space-y-2">
               <Label>Custom Attestations</Label>
               <Textarea

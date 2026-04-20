@@ -675,7 +675,7 @@ export function registerQuantumReadinessRoutes(app: Express): void {
             .limit(5),
         ]);
 
-        // 69.1 — Cryptographic inventory dashboard: algorithm breakdown
+        // Cryptographic inventory dashboard: algorithm breakdown
         const algorithmBreakdown = await db
           .select({
             algorithm: cryptoInventory.algorithm,
@@ -686,7 +686,7 @@ export function registerQuantumReadinessRoutes(app: Express): void {
           .where(eq(cryptoInventory.orgId, orgId))
           .groupBy(cryptoInventory.algorithm);
 
-        // 69.4 — Automated discovery: source breakdown
+        // Automated discovery: source breakdown
         const sourceBreakdown = await db
           .select({
             source: cryptoInventory.source,
@@ -696,7 +696,7 @@ export function registerQuantumReadinessRoutes(app: Express): void {
           .where(eq(cryptoInventory.orgId, orgId))
           .groupBy(cryptoInventory.source);
 
-        // 69.5 — PQC algorithm recommendations
+        // PQC algorithm recommendations
         const pqcRecommendations = algorithmBreakdown
           .filter((a) => a.vulnerable > 0)
           .map((a) => ({
@@ -715,11 +715,11 @@ export function registerQuantumReadinessRoutes(app: Express): void {
                       : "SPHINCS+ (SLH-DSA)",
           }));
 
-        // 69.2 — Migration roadmap progress
+        // Migration roadmap progress
         const migrationProgress =
           migrationTaskCount > 0 ? Math.round((completedTaskCount / migrationTaskCount) * 100) : 0;
 
-        // 69.3 — Risk assessment scoring details
+        // Risk assessment scoring details
         const riskBreakdown = {
           criticalAssets: riskScore.criticalRiskCount,
           highAssets: riskScore.highRiskCount,

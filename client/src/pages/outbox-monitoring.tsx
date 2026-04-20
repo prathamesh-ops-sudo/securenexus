@@ -986,22 +986,22 @@ export default function OutboxMonitoringPage() {
           </Card>
         </TabsContent>
 
-        {/* 43.2 — Lag Monitor */}
+        {/* Lag Monitor */}
         <TabsContent value="lag-monitor" className="mt-4 space-y-3">
           <OutboxLagMonitorPanel />
         </TabsContent>
 
-        {/* 43.3 — Event Flow Diagram */}
+        {/* Event Flow Diagram */}
         <TabsContent value="event-flow" className="mt-4 space-y-3">
           <EventFlowDiagramPanel />
         </TabsContent>
 
-        {/* 43.4 — Cleanup Policy */}
+        {/* Cleanup Policy */}
         <TabsContent value="cleanup" className="mt-4 space-y-3">
           <OutboxCleanupPolicyPanel />
         </TabsContent>
 
-        {/* 43.5 — Delivery Guarantees */}
+        {/* Delivery Guarantees */}
         <TabsContent value="guarantees" className="mt-4 space-y-3">
           <OutboxDeliveryGuaranteesPanel />
         </TabsContent>

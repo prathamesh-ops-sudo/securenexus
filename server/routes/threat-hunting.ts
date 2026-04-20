@@ -886,7 +886,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 16.3 — HUNT NOTEBOOKS (multi-step chained investigations)
+  // HUNT NOTEBOOKS (multi-step chained investigations)
   // =========================================================================
 
   app.get("/api/threat-hunting/notebooks", isAuthenticated, async (req, res) => {
@@ -1018,7 +1018,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 16.4 — COLLABORATIVE HUNTING SESSIONS
+  // COLLABORATIVE HUNTING SESSIONS
   // =========================================================================
 
   app.get("/api/threat-hunting/collaborations", isAuthenticated, async (req, res) => {
@@ -1167,7 +1167,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 16.5 — QUERY EXECUTION PLAN / OPTIMIZATION
+  // QUERY EXECUTION PLAN / OPTIMIZATION
   // =========================================================================
 
   app.post("/api/threat-hunting/hunts/:id/execution-plan", isAuthenticated, async (req, res) => {
@@ -1242,7 +1242,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 16.6 — HUNT RESULT CACHING
+  // HUNT RESULT CACHING
   // =========================================================================
 
   app.get("/api/threat-hunting/cache", isAuthenticated, async (req, res) => {
@@ -1333,7 +1333,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 16.7 — DRIFT DETECTION FOR SCHEDULED HUNTS
+  // DRIFT DETECTION FOR SCHEDULED HUNTS
   // =========================================================================
 
   app.get("/api/threat-hunting/drifts", isAuthenticated, async (req, res) => {
@@ -1379,7 +1379,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 16.8 — HUNT → INCIDENT ESCALATION (enhanced — already exists, add more data)
+  // HUNT → INCIDENT ESCALATION (enhanced — already exists, add more data)
   // =========================================================================
 
   app.post("/api/threat-hunting/hunts/:id/escalate-incident", isAuthenticated, async (req, res) => {
@@ -1440,7 +1440,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 16.9 — HUNT → DETECTION RULE CONVERSION (Sigma rule generation)
+  // HUNT → DETECTION RULE CONVERSION (Sigma rule generation)
   // =========================================================================
 
   app.post("/api/threat-hunting/hunts/:id/to-detection-rule", isAuthenticated, async (req, res) => {
@@ -1470,7 +1470,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
   });
 
   // =========================================================================
-  // 16.10 — COMMUNITY HUNT SHARING
+  // COMMUNITY HUNT SHARING
   // =========================================================================
 
   app.get("/api/threat-hunting/community", isAuthenticated, async (req, res) => {

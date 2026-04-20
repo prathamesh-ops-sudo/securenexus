@@ -173,13 +173,13 @@ interface DashboardData {
     migrationStatuses: readonly string[];
     nistStandards: readonly string[];
   };
-  // 69.1 — Algorithm breakdown
+  // Algorithm breakdown
   algorithmBreakdown?: Array<{ algorithm: string; cnt: number; vulnerable: number }>;
-  // 69.4 — Source breakdown
+  // Source breakdown
   sourceBreakdown?: Array<{ source: string; cnt: number }>;
-  // 69.5 — PQC recommendations
+  // PQC recommendations
   pqcRecommendations?: Array<{ currentAlgorithm: string; vulnerableCount: number; recommendation: string }>;
-  // 69.3 — Risk assessment details
+  // Risk assessment details
   riskBreakdown?: {
     criticalAssets: number;
     highAssets: number;
@@ -670,7 +670,7 @@ export default function QuantumReadinessPage() {
             </CardContent>
           </Card>
 
-          {/* 69.1 — Cryptographic Inventory Dashboard: Algorithm Breakdown */}
+          {/* Cryptographic Inventory Dashboard: Algorithm Breakdown */}
           {dashboard?.algorithmBreakdown && dashboard.algorithmBreakdown.length > 0 && (
             <Card>
               <CardHeader>
@@ -699,7 +699,7 @@ export default function QuantumReadinessPage() {
             </Card>
           )}
 
-          {/* 69.5 — PQC Algorithm Recommendations */}
+          {/* PQC Algorithm Recommendations */}
           {dashboard?.pqcRecommendations && dashboard.pqcRecommendations.length > 0 && (
             <Card>
               <CardHeader>
@@ -730,7 +730,7 @@ export default function QuantumReadinessPage() {
             </Card>
           )}
 
-          {/* 69.4 — Automated Discovery: Source Breakdown */}
+          {/* Automated Discovery: Source Breakdown */}
           {dashboard?.sourceBreakdown && dashboard.sourceBreakdown.length > 0 && (
             <Card>
               <CardHeader>
@@ -750,7 +750,7 @@ export default function QuantumReadinessPage() {
             </Card>
           )}
 
-          {/* 69.3 — Risk Assessment Score Details */}
+          {/* Risk Assessment Score Details */}
           {dashboard?.riskBreakdown && (
             <Card>
               <CardHeader>

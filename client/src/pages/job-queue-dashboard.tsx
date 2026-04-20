@@ -492,7 +492,7 @@ export default function JobQueueDashboardPage() {
         ))}
       </Tabs>
 
-      {/* 42.1 — Job Priority Management */}
+      {/* Job Priority Management */}
       <Card>
         <CardContent className="pt-4">
           <div className="flex items-center justify-between mb-4">
@@ -559,20 +559,20 @@ export default function JobQueueDashboardPage() {
         </CardContent>
       </Card>
 
-      {/* 42.2 — Job Dependency Visualization (DAG) */}
+      {/* Job Dependency Visualization (DAG) */}
       <JobDependencyPanel jobs={jobs} />
 
-      {/* 42.3 — Failed Job Details */}
+      {/* Failed Job Details */}
       <FailedJobDetailsPanel
         jobs={jobs}
         onRetry={(id) => retryMutation.mutate(id)}
         retrying={retryMutation.isPending}
       />
 
-      {/* 42.4 — Job Time Limits */}
+      {/* Job Time Limits */}
       <JobTimeLimitsPanel />
 
-      {/* 42.5 — Job Queue Metrics */}
+      {/* Job Queue Metrics */}
       <JobQueueMetricsPanel />
     </div>
   );

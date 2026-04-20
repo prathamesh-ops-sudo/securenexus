@@ -1260,7 +1260,7 @@ export function registerOperationsRoutes(app: Express): void {
     },
   );
 
-  // 43.4 — Outbox cleanup policy
+  // Outbox cleanup policy
   app.get(
     "/api/ops/outbox/cleanup-policy",
     isAuthenticated,
@@ -1300,7 +1300,7 @@ export function registerOperationsRoutes(app: Express): void {
     },
   );
 
-  // 43.4 — Update cleanup policy
+  // Update cleanup policy
   app.patch(
     "/api/ops/outbox/cleanup-policy",
     isAuthenticated,
@@ -1336,7 +1336,7 @@ export function registerOperationsRoutes(app: Express): void {
     },
   );
 
-  // 43.5 — Outbox delivery guarantees
+  // Outbox delivery guarantees
   app.get(
     "/api/ops/outbox/delivery-guarantees",
     isAuthenticated,
@@ -1420,7 +1420,7 @@ export function registerOperationsRoutes(app: Express): void {
     },
   );
 
-  // 43.2 — Outbox lag monitoring
+  // Outbox lag monitoring
   app.get(
     "/api/ops/outbox/lag",
     isAuthenticated,

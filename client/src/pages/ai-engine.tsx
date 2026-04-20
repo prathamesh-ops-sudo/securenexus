@@ -136,7 +136,7 @@ interface AIHealth {
   error?: string;
 }
 
-// ── 30.1-30.4 AI Investigation Improvement Interfaces ──
+// 30.4 AI Investigation Improvement Interfaces
 interface InvestigationHistoryItem {
   id: string;
   incident_id: string;
@@ -201,7 +201,7 @@ interface HallucinationResult {
   recommendation: string;
 }
 
-// ── 30.1 SSE Streaming Progressive Markdown Renderer ──
+// SSE Streaming Progressive Markdown Renderer
 function StreamingMarkdownRenderer({ content }: { content: string }) {
   // Progressive markdown: render headers, bullets, code blocks, tables
   const lines = content.split("\n");
@@ -564,7 +564,7 @@ function StreamingMarkdownRenderer({ content }: { content: string }) {
   );
 }
 
-// ── 30.3 Confidence Level Badge ──
+// Confidence Level Badge
 function ConfidenceLevelBadge({ level, score }: { level: string; score: number }) {
   const colors: Record<string, string> = {
     high: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",

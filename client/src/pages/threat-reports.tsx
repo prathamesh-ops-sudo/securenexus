@@ -459,7 +459,7 @@ export default function ThreatReportsPage() {
         </Card>
       </div>
 
-      {/* 76.1 — Threat Category Breakdown */}
+      {/* Threat Category Breakdown */}
       {list.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
@@ -499,7 +499,7 @@ export default function ThreatReportsPage() {
         </Card>
       )}
 
-      {/* 76.3 — Response Time Metrics */}
+      {/* Response Time Metrics */}
       {list.length > 0 && (
         <Card>
           <CardHeader className="pb-2">

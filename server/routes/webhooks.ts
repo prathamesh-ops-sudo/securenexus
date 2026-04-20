@@ -356,7 +356,7 @@ export function registerWebhooksRoutes(app: Express): void {
     },
   );
 
-  // 40.1 — Delivery history with filtering
+  // Delivery history with filtering
   app.get(
     "/api/v1/webhooks/:id/delivery-history",
     isAuthenticated,
@@ -401,7 +401,7 @@ export function registerWebhooksRoutes(app: Express): void {
     },
   );
 
-  // 40.2 — Test with full request/response details
+  // Test with full request/response details
   app.post(
     "/api/v1/webhooks/:id/test-detailed",
     isAuthenticated,
@@ -480,7 +480,7 @@ export function registerWebhooksRoutes(app: Express): void {
     },
   );
 
-  // 40.3 — Payload template presets
+  // Payload template presets
   app.get(
     "/api/v1/webhooks/payload-templates",
     isAuthenticated,
@@ -572,7 +572,7 @@ export function registerWebhooksRoutes(app: Express): void {
     },
   );
 
-  // 40.4 — Retry configuration
+  // Retry configuration
   app.get(
     "/api/v1/webhooks/:id/retry-config",
     isAuthenticated,
@@ -607,7 +607,7 @@ export function registerWebhooksRoutes(app: Express): void {
     },
   );
 
-  // 40.5 — Signature verification documentation
+  // Signature verification documentation
   app.get(
     "/api/v1/webhooks/signature-docs",
     isAuthenticated,
@@ -641,7 +641,7 @@ export function registerWebhooksRoutes(app: Express): void {
     },
   );
 
-  // 40.6 — Event type filtering for webhooks
+  // Event type filtering for webhooks
   app.get(
     "/api/v1/webhooks/event-types",
     isAuthenticated,
@@ -675,7 +675,7 @@ export function registerWebhooksRoutes(app: Express): void {
     },
   );
 
-  // 40.6 — Update event filter for a webhook
+  // Update event filter for a webhook
   app.patch(
     "/api/v1/webhooks/:id/events",
     isAuthenticated,

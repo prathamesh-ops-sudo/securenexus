@@ -857,7 +857,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // 45.1 — Asset detail with full context
+  // Asset detail with full context
   app.get("/api/assets/:id/full-context", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -929,7 +929,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // 45.2 — Asset classification and criticality update
+  // Asset classification and criticality update
   app.patch("/api/assets/:id/classification", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -954,7 +954,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // 45.3 — Asset topology data
+  // Asset topology data
   app.get("/api/assets/topology", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -984,7 +984,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // 45.4 — Asset import sources
+  // Asset import sources
   app.get("/api/assets/import-sources", isAuthenticated, resolveOrgContext, requireOrgId, async (_req, res) => {
     try {
       const sources = [
@@ -1038,7 +1038,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // 45.5 — Asset auto-discovery status
+  // Asset auto-discovery status
   app.get("/api/assets/auto-discovery", isAuthenticated, resolveOrgContext, requireOrgId, async (_req, res) => {
     try {
       const discovery = {
@@ -1084,7 +1084,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // 45.6 — Asset lifecycle management
+  // Asset lifecycle management
   app.get("/api/assets/lifecycle-summary", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1120,7 +1120,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // 45.7 — Software inventory per asset
+  // Software inventory per asset
   app.get("/api/assets/:id/software", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1175,7 +1175,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // 45.8 — Asset CVE matching
+  // Asset CVE matching
   app.get("/api/assets/:id/cve-exposure", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1228,7 +1228,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // 45.9 — Asset CSPM correlation
+  // Asset CSPM correlation
   app.get("/api/assets/:id/cspm-findings", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -1278,7 +1278,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // 45.10 — Asset alert/incident association
+  // Asset alert/incident association
   app.get("/api/assets/:id/security-history", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -2009,7 +2009,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to escalate threat report" });
     }
   });
-  // ─── 27.1 Vulnerability Prioritization Matrix ─────────────────────────────
+  // Vulnerability Prioritization Matrix
 
   app.get("/api/vulnerabilities/prioritized", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
@@ -2111,7 +2111,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // ─── 27.2 Vulnerability Aging Report ───────────────────────────────────────
+  // Vulnerability Aging Report
 
   app.get("/api/vulnerabilities/aging", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
@@ -2191,7 +2191,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // ─── 27.3 Remediation Tracking Workflow ────────────────────────────────────
+  // Remediation Tracking Workflow
 
   app.get(
     "/api/vulnerabilities/remediation-tracking",
@@ -2255,7 +2255,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     },
   );
 
-  // ─── 27.4 Vulnerability Trend Charts ───────────────────────────────────────
+  // Vulnerability Trend Charts
 
   app.get("/api/vulnerabilities/trends", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
@@ -2351,7 +2351,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // ─── 27.5 Scanner Integration for Automated Scanning ──────────────────────
+  // Scanner Integration for Automated Scanning
 
   app.get("/api/vulnerabilities/scanners", isAuthenticated, resolveOrgContext, requireOrgId, async (_req, res) => {
     try {
@@ -2433,7 +2433,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // ─── 27.6 Patch Verification ───────────────────────────────────────────────
+  // Patch Verification
 
   app.post(
     "/api/vulnerabilities/:id/verify-patch",
@@ -2486,7 +2486,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     },
   );
 
-  // ─── 27.7 Vuln Management → Attack Path Impact ────────────────────────────
+  // Vuln Management → Attack Path Impact
 
   app.get(
     "/api/vulnerabilities/:id/attack-paths",
@@ -2578,7 +2578,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     },
   );
 
-  // ─── 27.8 Vuln Management → CSPM Correlation ──────────────────────────────
+  // Vuln Management → CSPM Correlation
 
   app.get(
     "/api/vulnerabilities/cspm-correlation",
@@ -2675,7 +2675,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     },
   );
 
-  // 46.5: Risk auto-population from security data
+  // Risk auto-population from security data
   app.post("/api/risks/auto-populate", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
@@ -2754,7 +2754,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  // 46.6: Risk quantification (FAIR model)
+  // Risk quantification (FAIR model)
   app.get("/api/risks/:id/quantify", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);

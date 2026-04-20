@@ -1521,7 +1521,7 @@ export function registerRansomwareDefenseRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 58.5 — BACKUP VERIFICATION AUTOMATION
+  // BACKUP VERIFICATION AUTOMATION
   // ==========================================================================
 
   app.post(
@@ -1673,7 +1673,7 @@ export function registerRansomwareDefenseRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 58.6 — RANSOMWARE INTELLIGENCE INTEGRATION
+  // RANSOMWARE INTELLIGENCE INTEGRATION
   // ==========================================================================
 
   app.get(

@@ -1067,7 +1067,7 @@ const TABS: { id: PortalTab; label: string; icon: React.ElementType }[] = [
   { id: "sdk", label: "SDK & Quickstart", icon: Package },
 ];
 
-/* 89.5 — API rate limiting display */
+/* API rate limiting display */
 const RATE_LIMIT_TIERS: Record<string, { rpm: number; daily: number }> = {
   free: { rpm: 60, daily: 1000 },
   pro: { rpm: 300, daily: 10000 },
@@ -1075,7 +1075,7 @@ const RATE_LIMIT_TIERS: Record<string, { rpm: number; daily: number }> = {
   enterprise: { rpm: 5000, daily: 250000 },
 };
 
-/* 89.6 — API versioning */
+/* API versioning */
 const API_VERSIONS = [
   { version: "v1", status: "stable", deprecation: null },
   { version: "v2", status: "beta", deprecation: null },
@@ -1089,13 +1089,13 @@ export default function DeveloperPortalPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Developer Portal</h1>
         <p className="text-sm text-muted-foreground mt-1">API keys, webhooks, documentation, and integration guides</p>
-        {/* 89.1 — consolidated portal note */}
+        {/* consolidated portal note */}
         <p className="text-[10px] text-muted-foreground mt-0.5">
           Unified developer portal — all API management, documentation, and SDKs in one place
         </p>
       </div>
 
-      {/* 89.6 — API versioning banner */}
+      {/* API versioning banner */}
       <div className="flex items-center gap-3 text-xs">
         <span className="text-muted-foreground flex items-center gap-1">
           <GitBranch className="h-3 w-3" /> API Versions:
@@ -1142,7 +1142,7 @@ export default function DeveloperPortalPage() {
       {activeTab === "api-docs" && <ApiDocsTab />}
       {activeTab === "sdk" && <SdkTab />}
 
-      {/* 89.5 — API rate limiting info */}
+      {/* API rate limiting info */}
       <Card className="glass-card border-border/40">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">

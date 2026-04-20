@@ -38,14 +38,14 @@ interface ComplianceControl {
   status: "met" | "partial" | "not_met" | "not_applicable";
   evidence: string[];
   remediation: string;
-  /* 80.2 — gap remediation tracking */
+  /* gap remediation tracking */
   assignedTo?: string | null;
   remediationDueDate?: string | null;
   remediationProgress?: number;
-  /* 80.4 — automated gap detection */
+  /* automated gap detection */
   detectedAt?: string | null;
   detectionSource?: string;
-  /* 80.5 — gap prioritization */
+  /* gap prioritization */
   priority?: "critical" | "high" | "medium" | "low";
   riskScore?: number;
 }
@@ -58,7 +58,7 @@ interface Framework {
   metCount: number;
   partialCount: number;
   notMetCount: number;
-  /* 80.3 — gap trend over time */
+  /* gap trend over time */
   previousScore?: number;
   trendDirection?: "improving" | "declining" | "stable";
 }
@@ -222,9 +222,9 @@ export default function GapAnalysisPage() {
         <TabsList>
           <TabsTrigger value="controls">Controls</TabsTrigger>
           <TabsTrigger value="frameworks">By Framework</TabsTrigger>
-          {/* 80.1 — gap visualization matrix tab */}
+          {/* gap visualization matrix tab */}
           <TabsTrigger value="matrix">Gap Matrix</TabsTrigger>
-          {/* 80.2 — remediation tracking tab */}
+          {/* remediation tracking tab */}
           <TabsTrigger value="remediation">Remediation</TabsTrigger>
         </TabsList>
 
@@ -325,7 +325,7 @@ export default function GapAnalysisPage() {
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base flex items-center gap-2">
                         {f.name}
-                        {/* 80.3 — trend indicator */}
+                        {/* trend indicator */}
                         {f.trendDirection === "improving" && <TrendingUp className="h-4 w-4 text-green-500" />}
                         {f.trendDirection === "declining" && <TrendingDown className="h-4 w-4 text-red-500" />}
                       </CardTitle>
@@ -358,7 +358,7 @@ export default function GapAnalysisPage() {
           )}
         </TabsContent>
 
-        {/* 80.1 — Gap Visualization Matrix */}
+        {/* Gap Visualization Matrix */}
         <TabsContent value="matrix" className="space-y-4">
           <Card>
             <CardHeader>
@@ -422,7 +422,7 @@ export default function GapAnalysisPage() {
           </Card>
         </TabsContent>
 
-        {/* 80.2 — Remediation Tracking */}
+        {/* Remediation Tracking */}
         <TabsContent value="remediation" className="space-y-4">
           {(() => {
             const gaps = list.filter((c) => c.status === "not_met" || c.status === "partial");
@@ -489,7 +489,7 @@ export default function GapAnalysisPage() {
                   <div className="space-y-2">
                     {gaps
                       .sort((a, b) => {
-                        /* 80.5 — sort by priority */
+                        /* sort by priority */
                         const prio: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
                         return (prio[a.priority || "low"] ?? 3) - (prio[b.priority || "low"] ?? 3);
                       })
@@ -502,7 +502,7 @@ export default function GapAnalysisPage() {
                                 <div className="flex items-center gap-2">
                                   <span className="font-mono text-xs text-muted-foreground">{gap.controlId}</span>
                                   <span className="font-medium text-sm truncate">{gap.title}</span>
-                                  {/* 80.5 — priority badge */}
+                                  {/* priority badge */}
                                   {gap.priority && (
                                     <Badge
                                       variant={
@@ -517,7 +517,7 @@ export default function GapAnalysisPage() {
                                       {gap.priority}
                                     </Badge>
                                   )}
-                                  {/* 80.4 — detection source badge */}
+                                  {/* detection source badge */}
                                   {gap.detectionSource && (
                                     <Badge variant="outline" className="text-[10px]">
                                       {gap.detectionSource}
@@ -539,7 +539,7 @@ export default function GapAnalysisPage() {
                                   )}
                                   {gap.riskScore !== undefined && <span>Risk: {gap.riskScore}/10</span>}
                                 </div>
-                                {/* 80.2 — remediation progress bar */}
+                                {/* remediation progress bar */}
                                 {gap.remediationProgress !== undefined && gap.remediationProgress > 0 && (
                                   <div className="mt-2">
                                     <Progress value={gap.remediationProgress} className="h-1.5" />

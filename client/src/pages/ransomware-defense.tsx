@@ -598,7 +598,7 @@ export default function RansomwareDefensePage() {
 
         {/* ── DASHBOARD TAB ────────────────────────────────────────────── */}
         <TabsContent value="dashboard" className="space-y-6">
-          {/* 58.1 — Prominent Kill Switch Panel */}
+          {/* Prominent Kill Switch Panel */}
           <Card
             className={`border-2 ${
               killSwitchEvents && killSwitchEvents.length > 0 && killSwitchEvents[0].status === "completed"
@@ -724,7 +724,7 @@ export default function RansomwareDefensePage() {
                     )}
                   </div>
                 </div>
-                {/* 58.4 — Recovery readiness breakdown */}
+                {/* Recovery readiness breakdown */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-3 border-t border-zinc-800">
                   <div className="text-center p-2 border border-zinc-800 rounded">
                     <HardDrive className="h-4 w-4 mx-auto text-blue-400 mb-1" />
@@ -969,7 +969,7 @@ export default function RansomwareDefensePage() {
 
         {/* ── CANARY FILES TAB ─────────────────────────────────────────── */}
         <TabsContent value="canary" className="space-y-6">
-          {/* 58.2 — Canary File Monitoring Map */}
+          {/* Canary File Monitoring Map */}
           {canaryFiles &&
             canaryFiles.length > 0 &&
             (() => {
@@ -1292,7 +1292,7 @@ export default function RansomwareDefensePage() {
 
         {/* ── TABLETOP EXERCISES TAB ───────────────────────────────────── */}
         <TabsContent value="exercises" className="space-y-6">
-          {/* 58.3 — Tabletop Exercise Scheduling Summary */}
+          {/* Tabletop Exercise Scheduling Summary */}
           {exercises &&
             (() => {
               const completed = exercises.filter((e) => e.status === "completed");

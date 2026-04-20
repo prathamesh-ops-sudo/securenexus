@@ -312,7 +312,7 @@ export function registerPhysicalSecurityRoutes(app: Express): void {
           return res.status(400).json({ error: "eventType and location are required" });
         }
 
-        // 67.2 — Enhanced access anomaly detection
+        // Enhanced access anomaly detection
         const anomalyTypes = [
           "door_forced",
           "tailgate_detected",
@@ -323,14 +323,14 @@ export function registerPhysicalSecurityRoutes(app: Express): void {
         let isAnomaly = anomalyTypes.includes(eventType);
         let anomalyReason = isAnomaly ? `Anomalous event type: ${eventType}` : null;
 
-        // 67.2 — Detect after-hours access
+        // Detect after-hours access
         const eventHour = new Date().getUTCHours();
         if (!isAnomaly && (eventHour < 6 || eventHour >= 22)) {
           isAnomaly = true;
           anomalyReason = `After-hours access detected at ${eventHour}:00 UTC`;
         }
 
-        // 67.2 — Detect simultaneous badge use (cloned badge detection)
+        // Detect simultaneous badge use (cloned badge detection)
         if (badgeNumber && !isAnomaly) {
           const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
           const recentBadgeUses = await db
@@ -785,7 +785,7 @@ export function registerPhysicalSecurityRoutes(app: Express): void {
             .limit(10),
         ]);
 
-        // 67.1 — Facility floor plan status summary (assets by zone/status)
+        // Facility floor plan status summary (assets by zone/status)
         const assetsByZone = await db
           .select({
             zone: physicalAssets.zone,
@@ -798,7 +798,7 @@ export function registerPhysicalSecurityRoutes(app: Express): void {
           .where(eq(physicalAssets.orgId, orgId))
           .groupBy(physicalAssets.zone, physicalAssets.assetType);
 
-        // 67.4 — Physical-cyber convergence: recent correlated events
+        // Physical-cyber convergence: recent correlated events
         const recentAnomalies = await db
           .select()
           .from(badgeEvents)
@@ -808,7 +808,7 @@ export function registerPhysicalSecurityRoutes(app: Express): void {
           .orderBy(desc(badgeEvents.occurredAt))
           .limit(5);
 
-        // 67.3 — Visitor check-in/check-out flow stats
+        // Visitor check-in/check-out flow stats
         const [{ value: totalVisitors }] = await db
           .select({ value: count() })
           .from(visitors)

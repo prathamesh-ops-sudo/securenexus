@@ -574,17 +574,17 @@ export default function AiFeedbackFormPage() {
           </div>
         </TabsContent>
 
-        {/* 35.2: Feedback Analytics Dashboard */}
+        {/* Feedback Analytics Dashboard */}
         <TabsContent value="analytics" className="mt-4">
           <FeedbackAnalyticsDashboard />
         </TabsContent>
 
-        {/* 35.3: Prompt Improvement Suggestions */}
+        {/* Prompt Improvement Suggestions */}
         <TabsContent value="suggestions" className="mt-4">
           <PromptImprovementSuggestions />
         </TabsContent>
 
-        {/* 35.1: Inline Feedback Guide */}
+        {/* Inline Feedback Guide */}
         <TabsContent value="inline-guide" className="mt-4">
           <InlineFeedbackGuide />
         </TabsContent>

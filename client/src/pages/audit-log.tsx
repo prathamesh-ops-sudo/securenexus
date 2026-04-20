@@ -94,7 +94,7 @@ const ACTION_CATEGORIES = {
   tags: "Tags",
   escalations: "Escalations",
   "org-events": "Org Events",
-  /* 81.5 — comprehensive audit coverage: additional categories */
+  /* comprehensive audit coverage: additional categories */
   "data-access": "Data Access",
   "config-changes": "Config Changes",
   authentication: "Authentication",
@@ -121,7 +121,7 @@ const ACTION_TO_CATEGORY: Record<string, string> = {
   org_access_denied: "org-events",
   org_context_missing: "org-events",
   org_context_switch: "org-events",
-  /* 81.5 — comprehensive coverage: map additional action types */
+  /* comprehensive coverage: map additional action types */
   data_export: "data-access",
   data_download: "data-access",
   data_view: "data-access",
@@ -282,7 +282,7 @@ export default function AuditLogPage() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">All platform activities and changes</p>
           <div className="gradient-accent-line w-24 mt-2" />
-          {/* 81.6 — tamper-proof indicator */}
+          {/* tamper-proof indicator */}
           <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
             <Lock className="h-3 w-3 text-green-500" />
             <span>Append-only immutable log &middot; SHA-256 integrity verified</span>
@@ -311,7 +311,7 @@ export default function AuditLogPage() {
             <FileJson className="h-3.5 w-3.5" />
             JSON
           </Button>
-          {/* 81.3 — PDF export button */}
+          {/* PDF export button */}
           <Button
             variant="outline"
             size="sm"
@@ -397,7 +397,7 @@ export default function AuditLogPage() {
         )}
       </div>
 
-      {/* 81.4 — user activity report summary */}
+      {/* user activity report summary */}
       {logs && logs.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="rounded-lg border border-border/50 bg-card/50 p-3 text-center">
@@ -427,7 +427,7 @@ export default function AuditLogPage() {
         </div>
       )}
 
-      {/* 81.7 — retention policy indicator */}
+      {/* retention policy indicator */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <Clock className="h-3 w-3" />
         <span>Retention: 365 days &middot; Logs older than retention period are archived to cold storage</span>

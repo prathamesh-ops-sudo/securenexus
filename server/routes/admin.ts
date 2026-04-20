@@ -35,7 +35,7 @@ export function registerAdminRoutes(app: Express): void {
     }
   });
 
-  // ─── 29.1 Secret Inventory Dashboard ───────────────────────────────────────
+  // Secret Inventory Dashboard
 
   app.get("/api/secret-rotations/inventory", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
@@ -113,10 +113,10 @@ export function registerAdminRoutes(app: Express): void {
     }
   });
 
-  // ─── 29.2 Rotation Health Indicators (included in inventory above) ─────────
+  // Rotation Health Indicators (included in inventory above)
   // Health indicators are returned as part of the inventory endpoint above
 
-  // ─── 29.3 Certificate Expiration Timeline ──────────────────────────────────
+  // Certificate Expiration Timeline
 
   app.get("/api/secret-rotations/cert-timeline", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
@@ -173,7 +173,7 @@ export function registerAdminRoutes(app: Express): void {
     }
   });
 
-  // ─── 29.4 Automated Rotation Execution ─────────────────────────────────────
+  // Automated Rotation Execution
 
   app.post(
     "/api/secret-rotations/:id/auto-rotate",
@@ -256,7 +256,7 @@ export function registerAdminRoutes(app: Express): void {
     },
   );
 
-  // ─── 29.5 Rotation Impact Analysis ─────────────────────────────────────────
+  // Rotation Impact Analysis
 
   app.get("/api/secret-rotations/:id/impact", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
@@ -939,7 +939,7 @@ export function registerAdminRoutes(app: Express): void {
     },
   );
 
-  // 42.4 — Job execution time limits
+  // Job execution time limits
   app.get(
     "/api/admin/job-time-limits",
     isAuthenticated,
@@ -1009,7 +1009,7 @@ export function registerAdminRoutes(app: Express): void {
     },
   );
 
-  // 42.4 — Update time limit for a job type
+  // Update time limit for a job type
   app.patch(
     "/api/admin/job-time-limits/:jobType",
     isAuthenticated,
@@ -1043,7 +1043,7 @@ export function registerAdminRoutes(app: Express): void {
     },
   );
 
-  // 42.5 — Job queue metrics
+  // Job queue metrics
   app.get(
     "/api/admin/job-queue-metrics",
     isAuthenticated,

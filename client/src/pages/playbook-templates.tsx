@@ -74,7 +74,7 @@ export default function PlaybookTemplatesPage() {
     enabled: !!selectedTemplate,
   });
 
-  // 23.2: Preview query
+  // Preview query
   const { data: previewData } = useQuery({
     queryKey: ["/api/playbook-templates", previewId, "preview"],
     queryFn: async () => {
@@ -84,7 +84,7 @@ export default function PlaybookTemplatesPage() {
     enabled: !!previewId,
   });
 
-  // 23.3: Stats query
+  // Stats query
   const { data: statsData } = useQuery({
     queryKey: ["/api/playbook-templates", statsId, "stats"],
     queryFn: async () => {
@@ -94,7 +94,7 @@ export default function PlaybookTemplatesPage() {
     enabled: !!statsId,
   });
 
-  // 23.5: Versions query
+  // Versions query
   const { data: versionsData } = useQuery({
     queryKey: ["/api/playbook-templates", versionsId, "versions"],
     queryFn: async () => {
@@ -104,7 +104,7 @@ export default function PlaybookTemplatesPage() {
     enabled: !!versionsId,
   });
 
-  // 23.5: Check for updates
+  // Check for updates
   const { data: updatesData } = useQuery({
     queryKey: ["/api/playbook-templates/check-updates"],
     queryFn: async () => {
@@ -113,7 +113,7 @@ export default function PlaybookTemplatesPage() {
     },
   });
 
-  // 23.3: Rate mutation
+  // Rate mutation
   const rateMutation = useMutation({
     mutationFn: async ({ id, rating }: { id: string; rating: number }) => {
       const r = await apiRequest("POST", `/api/playbook-templates/${id}/rate`, { rating });
@@ -179,7 +179,7 @@ export default function PlaybookTemplatesPage() {
         )}
       </div>
 
-      {/* 23.5: Update notification banner */}
+      {/* Update notification banner */}
       {updates.length > 0 && (
         <Card className="border-blue-500/20 bg-blue-500/5">
           <CardContent className="py-3">
@@ -204,7 +204,7 @@ export default function PlaybookTemplatesPage() {
         </Card>
       )}
 
-      {/* 23.1: Enhanced search and category filter */}
+      {/* Enhanced search and category filter */}
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -314,7 +314,7 @@ export default function PlaybookTemplatesPage() {
                   <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{tpl.description}</p>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      {/* 23.3: Interactive rating stars */}
+                      {/* Interactive rating stars */}
                       <div className="flex items-center gap-0.5">
                         {[1, 2, 3, 4, 5].map((s) => (
                           <Star
@@ -422,7 +422,7 @@ export default function PlaybookTemplatesPage() {
                     Deploy as Playbook
                   </Button>
 
-                  {/* 23.2, 23.3, 23.5 action buttons */}
+                  {/* , 23.3, 23.5 action buttons */}
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
@@ -459,7 +459,7 @@ export default function PlaybookTemplatesPage() {
         </div>
       </div>
 
-      {/* 23.2: PREVIEW DIALOG */}
+      {/* PREVIEW DIALOG */}
       <Dialog open={!!previewId} onOpenChange={() => setPreviewId(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -590,7 +590,7 @@ export default function PlaybookTemplatesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 23.3: STATS DIALOG */}
+      {/* STATS DIALOG */}
       <Dialog open={!!statsId} onOpenChange={() => setStatsId(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -677,7 +677,7 @@ export default function PlaybookTemplatesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 23.5: VERSIONS DIALOG */}
+      {/* VERSIONS DIALOG */}
       <Dialog open={!!versionsId} onOpenChange={() => setVersionsId(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>

@@ -634,7 +634,7 @@ export function registerUebaRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 51.5: BASELINE LEARNING PERIOD — track learning progress per entity
+  // BASELINE LEARNING PERIOD — track learning progress per entity
   // ==========================================================================
 
   const LEARNING_PERIOD_DAYS = 14; // 2 weeks to establish behavioral baseline
@@ -681,7 +681,7 @@ export function registerUebaRoutes(app: Express): void {
   });
 
   // ==========================================================================
-  // 51.6: CONTEXTUAL ANOMALY ADJUSTMENT — adjust scores for context
+  // CONTEXTUAL ANOMALY ADJUSTMENT — adjust scores for context
   // ==========================================================================
 
   app.post("/api/ueba/contextual-adjustment", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -777,7 +777,7 @@ export function registerUebaRoutes(app: Express): void {
   });
 
   // ==========================================================================
-  // 51.7: ML MODEL TRANSPARENCY — feature importance and explainability
+  // ML MODEL TRANSPARENCY — feature importance and explainability
   // ==========================================================================
 
   app.get("/api/ueba/ml-transparency", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -862,7 +862,7 @@ export function registerUebaRoutes(app: Express): void {
   });
 
   // ==========================================================================
-  // 51.8: UEBA → AUTONOMOUS SOC TRIAGE — auto-trigger for high-risk entities
+  // UEBA → AUTONOMOUS SOC TRIAGE — auto-trigger for high-risk entities
   // ==========================================================================
 
   app.post("/api/ueba/soc-triage", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -941,7 +941,7 @@ export function registerUebaRoutes(app: Express): void {
   });
 
   // ==========================================================================
-  // 51.9: UEBA → IDENTITY GOVERNANCE CORRELATION
+  // UEBA → IDENTITY GOVERNANCE CORRELATION
   // ==========================================================================
 
   app.get("/api/ueba/identity-correlation", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {

@@ -673,7 +673,7 @@ function AnalysisToolsTab() {
               <Search className="h-4 w-4 mr-1" /> Analyze
             </Button>
           </div>
-          {/* 71.2 — DGA Detection Visualization with confidence, entropy, lexical breakdown */}
+          {/* DGA Detection Visualization with confidence, entropy, lexical breakdown */}
           {dgaResult && (
             <div className="p-3 border rounded-md text-sm space-y-2">
               <div className="flex items-center gap-2">
@@ -756,7 +756,7 @@ function AnalysisToolsTab() {
               <Cpu className="h-4 w-4 mr-1" /> Check
             </Button>
           </div>
-          {/* 71.3 — DNS Tunneling Detection Visualization */}
+          {/* DNS Tunneling Detection Visualization */}
           {tunnelingResult && (
             <div className="p-3 border rounded-md text-sm space-y-2">
               <Badge variant={tunnelingResult.isTunneling ? "destructive" : "default"}>
@@ -885,7 +885,7 @@ export default function DnsSecurityPage() {
         </div>
       )}
 
-      {/* 71.1 — DNS Query Dashboard: top queried domains, NXDomain, query volume */}
+      {/* DNS Query Dashboard: top queried domains, NXDomain, query volume */}
       {stats?.topQueriedDomains && stats.topQueriedDomains.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card>
@@ -945,7 +945,7 @@ export default function DnsSecurityPage() {
         </div>
       )}
 
-      {/* 71.5 — DNS Log Ingestion Status */}
+      {/* DNS Log Ingestion Status */}
       {stats?.ingestionStatus && (
         <Card>
           <CardHeader className="pb-2">
@@ -981,7 +981,7 @@ export default function DnsSecurityPage() {
         </Card>
       )}
 
-      {/* 71.6 — DNS Policy Enforcement Summary */}
+      {/* DNS Policy Enforcement Summary */}
       {stats?.policyStats && (
         <Card>
           <CardHeader className="pb-2">

@@ -1101,7 +1101,7 @@ function DangerZoneSection() {
   );
 }
 
-/* 90.5 — webhook event types for billing */
+/* webhook event types for billing */
 const BILLING_WEBHOOK_EVENTS = [
   "invoice.paid",
   "invoice.payment_failed",
@@ -1151,7 +1151,7 @@ export default function BillingPage() {
         <TabsContent value="overview" className="space-y-6">
           <CurrentPlanSection />
 
-          {/* 90.3 — usage forecasting indicator */}
+          {/* usage forecasting indicator */}
           <Card className="glass-card border-border/50">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
@@ -1190,7 +1190,7 @@ export default function BillingPage() {
         <TabsContent value="payment" className="space-y-4">
           <PaymentMethodSection />
 
-          {/* 90.5 — webhook event handling info */}
+          {/* webhook event handling info */}
           <Card className="glass-card border-border/50">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
@@ -1216,7 +1216,7 @@ export default function BillingPage() {
             </CardContent>
           </Card>
 
-          {/* 90.6 — proration explanation */}
+          {/* proration explanation */}
           <Card className="glass-card border-border/50">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">

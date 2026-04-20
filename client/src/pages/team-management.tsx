@@ -89,7 +89,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 const ASSIGNABLE_ROLES = ["admin", "analyst", "read_only"];
 
-/* 87.1 — role permission matrix */
+/* role permission matrix */
 const ROLE_PERMISSIONS: Record<string, Record<string, boolean>> = {
   owner: {
     manageMembers: true,
@@ -326,7 +326,7 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
             <Badge variant="secondary" className="text-[10px]" data-testid="badge-member-count">
               {members?.length || 0} members
             </Badge>
-            {/* 87.2 — team member activity: inactive indicator */}
+            {/* team member activity: inactive indicator */}
             {members && members.filter((m: any) => m.status === "active").length < members.length && (
               <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-400">
                 <Activity className="h-2.5 w-2.5 mr-0.5" />
@@ -344,7 +344,7 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
                   <TableHead className="text-xs">Role</TableHead>
                   <TableHead className="text-xs">Status</TableHead>
                   <TableHead className="text-xs">Joined</TableHead>
-                  {/* 87.2 — last active column */}
+                  {/* last active column */}
                   <TableHead className="text-xs">Last Active</TableHead>
                   {isAdmin && <TableHead className="text-xs">Actions</TableHead>}
                 </TableRow>
@@ -409,7 +409,7 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
                             {formatDate(member.createdAt || member.joinedAt)}
                           </span>
                         </TableCell>
-                        {/* 87.2 — last active timestamp */}
+                        {/* last active timestamp */}
                         <TableCell>
                           <span className="text-xs text-muted-foreground" data-testid={`text-last-active-${member.id}`}>
                             {member.lastActiveAt ? formatDate(member.lastActiveAt) : "Never"}
@@ -524,7 +524,7 @@ function MembersTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
               </Select>
             </div>
 
-            {/* 87.1 — role permission matrix preview */}
+            {/* role permission matrix preview */}
             {newRole && ROLE_PERMISSIONS[newRole] && (
               <div className="border rounded-md p-3 space-y-1.5">
                 <p className="text-xs font-medium flex items-center gap-1">
@@ -635,7 +635,7 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
         <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
           <Mail className="h-4 w-4 text-muted-foreground" />
           Pending Invitations
-          {/* 87.3 — invitation count badge */}
+          {/* invitation count badge */}
           {invitations && invitations.length > 0 && (
             <Badge variant="secondary" className="text-[10px]">
               {invitations.length} pending
@@ -658,7 +658,7 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
                 <TableHead className="text-xs">Role</TableHead>
                 <TableHead className="text-xs">Invited By</TableHead>
                 <TableHead className="text-xs">Expires</TableHead>
-                {/* 87.3 — invitation status column */}
+                {/* invitation status column */}
                 <TableHead className="text-xs">Status</TableHead>
                 {isAdmin && <TableHead className="text-xs">Actions</TableHead>}
               </TableRow>
@@ -694,7 +694,7 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
                         {formatDate(inv.expiresAt)}
                       </span>
                     </TableCell>
-                    {/* 87.3 — invitation status (pending/expired/accepted) */}
+                    {/* invitation status (pending/expired/accepted) */}
                     <TableCell>
                       <Badge
                         variant="outline"
@@ -717,7 +717,7 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
                     {isAdmin && (
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          {/* 87.3 — resend expired invitation */}
+                          {/* resend expired invitation */}
                           {inv.expiresAt && new Date(inv.expiresAt) < new Date() && (
                             <Button
                               size="sm"
@@ -774,7 +774,7 @@ function InvitationsTab({ orgId, orgRole }: { orgId: string; orgRole: string }) 
                 onChange={(e) => setInviteEmail(e.target.value)}
                 data-testid="input-invite-email"
               />
-              {/* 87.3 — bulk CSV upload hint */}
+              {/* bulk CSV upload hint */}
               <p className="text-[10px] text-muted-foreground">
                 <Upload className="h-2.5 w-2.5 inline mr-0.5" />
                 Tip: For bulk invitations, upload a CSV from Team &gt; Import Members
@@ -1077,7 +1077,7 @@ function SecurityTab({ orgId, orgRole }: { orgId: string; orgRole: string }) {
     { key: "scim", label: "SCIM", icon: Network },
     { key: "ip", label: "IP Allowlist", icon: Shield },
     { key: "locale", label: "Locale & Timezone", icon: Globe },
-    /* 87.6 — session management section */
+    /* session management section */
     { key: "sessions", label: "Sessions", icon: Monitor },
   ];
 
@@ -1937,7 +1937,7 @@ export default function TeamManagementPage() {
             <Mail className="h-4 w-4 mr-1.5" />
             Invitations
           </TabsTrigger>
-          {/* 87.1 — role permission matrix tab */}
+          {/* role permission matrix tab */}
           <TabsTrigger value="roles" data-testid="tab-roles">
             <Grid3X3 className="h-4 w-4 mr-1.5" />
             Roles
@@ -1960,7 +1960,7 @@ export default function TeamManagementPage() {
           <InvitationsTab orgId={orgId} orgRole={orgRole} />
         </TabsContent>
 
-        {/* 87.1 — role permission matrix tab content */}
+        {/* role permission matrix tab content */}
         <TabsContent value="roles">
           <Card>
             <CardHeader className="pb-3">
@@ -2008,7 +2008,7 @@ export default function TeamManagementPage() {
                   </TableBody>
                 </Table>
               </div>
-              {/* 87.7 — custom role creation hint */}
+              {/* custom role creation hint */}
               {orgRole === "owner" && (
                 <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
                   <UserCog className="h-3.5 w-3.5" />

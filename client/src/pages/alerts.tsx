@@ -183,7 +183,7 @@ const SCOPE_OPTIONS = [
   "domain",
 ] as const;
 
-// ── 2.3 Saved filter presets ──────────────────────────────────────────────────
+// Saved filter presets
 interface FilterPreset {
   id: string;
   name: string;
@@ -219,7 +219,7 @@ function saveFilterPresets(presets: FilterPreset[]) {
   }
 }
 
-// ── 2.2 Column preferences ───────────────────────────────────────────────────
+// Column preferences
 type ColumnKey = "checkbox" | "alert" | "source" | "severity" | "category" | "mitre" | "status" | "queue" | "actions";
 
 interface ColumnDef {
@@ -269,7 +269,7 @@ function saveColumnPrefs(prefs: ColumnPrefs) {
   }
 }
 
-// ── 2.7 Sound notification ───────────────────────────────────────────────────
+// Sound notification
 const SOUND_PREFS_KEY = "securenexus.alerts.soundEnabled";
 
 function loadSoundPref(): boolean {
@@ -358,31 +358,31 @@ export default function AlertsPage() {
   const { toast } = useToast();
   const { currentOrgId } = useOrgContext();
 
-  // ── 2.4 Bulk action confirmation dialog ──
+  // Bulk action confirmation dialog
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [pendingBulkAction, setPendingBulkAction] = useState<{
     label: string;
     action: () => void;
   } | null>(null);
 
-  // ── 2.2 Column resizing/reordering ──
+  // Column resizing/reordering
   const [columnPrefs, setColumnPrefs] = useState<ColumnPrefs>(loadColumnPrefs);
   const [draggedColumn, setDraggedColumn] = useState<ColumnKey | null>(null);
   const [resizingColumn, setResizingColumn] = useState<ColumnKey | null>(null);
   const resizeStartX = useRef(0);
   const resizeStartW = useRef(0);
 
-  // ── 2.3 Local filter presets ──
+  // Local filter presets
   const [localFilterPresets, setLocalFilterPresets] = useState<FilterPreset[]>(loadFilterPresets);
   const [presetNameInput, setPresetNameInput] = useState("");
   const [showPresetSave, setShowPresetSave] = useState(false);
 
-  // ── 2.7 Sound notification ──
+  // Sound notification
   const [soundEnabled, setSoundEnabled] = useState(loadSoundPref);
   const prevAlertCountRef = useRef<number>(0);
   const prevCriticalIdsRef = useRef<Set<string>>(new Set());
 
-  // ── 2.6 Sheet-based detail panel ──
+  // Sheet-based detail panel
   const [_useSheetPanel, _setUseSheetPanel] = useState(false);
 
   // Debounced search for server-side filtering (2.1)
@@ -445,7 +445,7 @@ export default function AlertsPage() {
     },
   });
 
-  // ── 2.1 Server-side pagination — pass all filters as query params ──
+  // Server-side pagination — pass all filters as query params
   const {
     data: alertsResponse,
     isLoading,
@@ -722,7 +722,7 @@ export default function AlertsPage() {
     return `${hours}h ${minutes}m remaining`;
   };
 
-  // 2.1: With server-side pagination, the server already filters. Only apply
+  // With server-side pagination, the server already filters. Only apply
   // lightweight client-side filters for fields the server doesn't support
   // (category, queue, dateFrom, dateTo).
   const filtered = useMemo(() => {
@@ -737,7 +737,7 @@ export default function AlertsPage() {
     });
   }, [alerts, categoryFilter, queueFilter, dateFrom, dateTo, getQueueState]);
 
-  // 2.1: pageAlerts is now the filtered server page (no client-side slicing needed)
+  // pageAlerts is now the filtered server page (no client-side slicing needed)
   const pageAlerts = filtered;
 
   const severities = ["all", "critical", "high", "medium", "low"];
@@ -749,7 +749,7 @@ export default function AlertsPage() {
     }
   }, [filtered, focusedAlertId]);
 
-  // 2.7: Sound notification for new critical/high alerts
+  // Sound notification for new critical/high alerts
   useEffect(() => {
     if (!alerts || alerts.length === 0) return;
     const criticalIds = new Set(
@@ -771,7 +771,7 @@ export default function AlertsPage() {
     prevAlertCountRef.current = alerts.length;
   }, [alerts, soundEnabled]);
 
-  // 2.2: Column order and width helpers
+  // Column order and width helpers
   const orderedColumns = useMemo(() => {
     const colMap = new Map(DEFAULT_COLUMNS.map((c) => [c.key, c]));
     const result: ColumnDef[] = [];
@@ -868,7 +868,7 @@ export default function AlertsPage() {
     [draggedColumn],
   );
 
-  // 2.3: Local filter preset handlers
+  // Local filter preset handlers
   const handleSaveLocalPreset = useCallback(() => {
     if (!presetNameInput.trim()) return;
     const preset: FilterPreset = {
@@ -934,7 +934,7 @@ export default function AlertsPage() {
     [localFilterPresets, toast],
   );
 
-  // 2.4: Bulk action confirmation helper
+  // Bulk action confirmation helper
   const confirmBulkAction = useCallback(
     (label: string, action: () => void) => {
       if (selectedIds.length === 0) return;
@@ -1062,7 +1062,7 @@ export default function AlertsPage() {
     setDateTo(f.dateTo ?? "");
   }, []);
 
-  // 2.5: Keyboard navigation — works with server-side pagination
+  // Keyboard navigation — works with server-side pagination
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!pageAlerts || pageAlerts.length === 0) return;
@@ -1320,7 +1320,7 @@ export default function AlertsPage() {
           <PanelRight className="h-3.5 w-3.5 mr-1.5" />
           {isDetailOpen ? "Hide Detail" : "Show Detail"}
         </Button>
-        {/* 2.7: Sound notification toggle */}
+        {/* Sound notification toggle */}
         <Button
           variant={soundEnabled ? "default" : "outline"}
           size="icon"
@@ -1347,18 +1347,18 @@ export default function AlertsPage() {
         >
           {soundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
         </Button>
-        {/* 2.3: Quick preset save toggle */}
+        {/* Quick preset save toggle */}
         <Button variant="outline" size="sm" onClick={() => setShowPresetSave(!showPresetSave)}>
           <Save className="h-3.5 w-3.5 mr-1.5" />
           Presets
         </Button>
-        {/* 2.1: Total count indicator */}
+        {/* Total count indicator */}
         <span className="text-xs text-muted-foreground whitespace-nowrap">
           {totalAlerts} total alert{totalAlerts !== 1 ? "s" : ""}
         </span>
       </div>
 
-      {/* 2.3: Local filter presets save/apply section */}
+      {/* Local filter presets save/apply section */}
       {showPresetSave && (
         <Card className="border-primary/20 bg-muted/30">
           <CardContent className="pt-4 pb-3 space-y-3">
@@ -1604,7 +1604,7 @@ export default function AlertsPage() {
 
       <FilterChips filters={activeFilters} onRemove={handleRemoveFilter} onClearAll={handleClearAllFilters} />
 
-      {/* 2.4: Bulk actions with confirmation dialog */}
+      {/* Bulk actions with confirmation dialog */}
       {selectedIds.length > 0 && (
         <Card>
           <CardContent className="pt-4 flex items-center flex-wrap gap-2">
@@ -1684,7 +1684,7 @@ export default function AlertsPage() {
         </Card>
       )}
 
-      {/* 2.4: Bulk action confirmation dialog */}
+      {/* Bulk action confirmation dialog */}
       <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -2394,7 +2394,7 @@ export default function AlertsPage() {
                   </tbody>
                 </table>
               </div>
-              {/* 2.1: Server-side pagination controls */}
+              {/* Server-side pagination controls */}
               {totalAlerts > 0 && (
                 <div className="flex items-center justify-between px-4 py-3 border-t">
                   <span className="text-xs text-muted-foreground">

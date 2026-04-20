@@ -558,7 +558,7 @@ export function registerDarkWebRoutes(app: Express): void {
           .where(and(eq(darkWebExposures.id, exposureId), eq(darkWebExposures.orgId, orgId)))
           .returning();
 
-        // 66.1 — Log response action if provided
+        // Log response action if provided
         if (req.body.responseAction) {
           log.info("Credential response action taken", {
             exposureId: exposureId,
@@ -727,12 +727,12 @@ export function registerDarkWebRoutes(app: Express): void {
           .orderBy(desc(darkWebScanHistory.startedAt))
           .limit(1);
 
-        // 66.2 — Brand mention counts
+        // Brand mention counts
         const brandMentionCount = exposuresByType
           .filter((e) => ["brand_mention", "domain_mention", "threat_actor_mention"].includes(e.exposureType))
           .reduce((sum, e) => sum + Number(e.count), 0);
 
-        // 66.4 — Data source freshness summary
+        // Data source freshness summary
         const now = Date.now();
         const sourceFreshness = recentExposures.reduce(
           (acc, exp) => {
@@ -747,7 +747,7 @@ export function registerDarkWebRoutes(app: Express): void {
           { live: 0, recent: 0, stale: 0, recycled: 0 },
         );
 
-        // 66.5 — Credential validation summary
+        // Credential validation summary
         const credentialExposures = recentExposures.filter((e) => e.exposureType === "credential_leak");
         const likelyValid = credentialExposures.filter((e) => {
           if (!e.breachDate) return false;

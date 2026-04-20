@@ -48,7 +48,7 @@ interface MeteringData {
   topConsumers: { user: string; requests: number; cost: number }[];
 }
 
-/* 91.3 — usage alert thresholds */
+/* usage alert thresholds */
 const ALERT_THRESHOLDS = [
   { level: "Warning", pct: 80, color: "text-yellow-500", bg: "bg-yellow-500/10 border-yellow-500/30" },
   { level: "Critical", pct: 95, color: "text-red-500", bg: "bg-red-500/10 border-red-500/30" },
@@ -114,7 +114,7 @@ export default function UsageMeteringAnalyticsPage() {
           <p className="text-muted-foreground text-sm mt-1">
             Monitor resource consumption, plan usage, and cost analytics
           </p>
-          {/* 91.5 — consolidated usage note */}
+          {/* consolidated usage note */}
           <p className="text-[10px] text-muted-foreground mt-0.5">
             Unified view — all usage data from billing, plans, and metering in one dashboard
           </p>
@@ -184,7 +184,7 @@ export default function UsageMeteringAnalyticsPage() {
           <TabsTrigger value="usage">Usage Quotas</TabsTrigger>
           <TabsTrigger value="daily">Daily Trends</TabsTrigger>
           <TabsTrigger value="consumers">Top Consumers</TabsTrigger>
-          {/* 91.3 — alerts tab */}
+          {/* alerts tab */}
           <TabsTrigger value="alerts">
             <Bell className="h-3.5 w-3.5 mr-1" />
             Alerts
@@ -192,7 +192,7 @@ export default function UsageMeteringAnalyticsPage() {
         </TabsList>
 
         <TabsContent value="usage" className="space-y-3">
-          {/* 91.1 — usage dashboard summary */}
+          {/* usage dashboard summary */}
           {metrics.length > 0 && (
             <div className="grid grid-cols-3 gap-3 mb-2">
               <Card>
@@ -253,7 +253,7 @@ export default function UsageMeteringAnalyticsPage() {
                       <div className="flex items-center gap-2">
                         <Database className="h-4 w-4 text-primary" />
                         <span className="font-medium text-sm capitalize">{m.category.replace(/_/g, " ")}</span>
-                        {/* 91.2 — per-metric status badge */}
+                        {/* per-metric status badge */}
                         {pct >= 95 && (
                           <Badge variant="destructive" className="text-[10px]">
                             <ShieldAlert className="h-2.5 w-2.5 mr-0.5" /> Limit
@@ -349,7 +349,7 @@ export default function UsageMeteringAnalyticsPage() {
           )}
         </TabsContent>
 
-        {/* 91.3 — usage alerts tab content */}
+        {/* usage alerts tab content */}
         <TabsContent value="alerts" className="space-y-3">
           <Card>
             <CardHeader className="pb-3">
@@ -382,7 +382,7 @@ export default function UsageMeteringAnalyticsPage() {
             </CardContent>
           </Card>
 
-          {/* 91.4 — metering verification */}
+          {/* metering verification */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">

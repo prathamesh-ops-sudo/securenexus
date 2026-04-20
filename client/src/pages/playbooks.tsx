@@ -617,7 +617,7 @@ function configSummary(node: FlowNode): string {
   return parts.join(", ");
 }
 
-// ─── 20.1 Workflow Editor Enhancements ────────────────────────────────────
+// Workflow Editor Enhancements
 // Undo/redo history, copy/paste, zoom-to-fit, minimap, step grouping, routing
 function useUndoRedo<T>(initial: T) {
   const [history, setHistory] = useState<T[]>([initial]);
@@ -1081,7 +1081,7 @@ export default function PlaybooksPage() {
     enabled: !!selectedGovernancePlaybook,
   });
 
-  // ─── 20.2 Execution Monitoring Dashboard ────────────────────────────────
+  // Execution Monitoring Dashboard
   const {
     data: execDashboard,
     isLoading: execDashLoading,
@@ -1094,7 +1094,7 @@ export default function PlaybooksPage() {
     },
   });
 
-  // ─── 20.3 Version Diffing ────────────────────────────────────────────────
+  // Version Diffing
   const {
     data: versionDiff,
     isFetching: diffLoading,
@@ -1108,7 +1108,7 @@ export default function PlaybooksPage() {
     enabled: false,
   });
 
-  // ─── 20.4 Enhanced Simulation ────────────────────────────────────────────
+  // Enhanced Simulation
   const simulatePlaybookMutation = useMutation({
     mutationFn: async ({
       playbookId,
@@ -1239,7 +1239,7 @@ export default function PlaybooksPage() {
     onError: (err: any) => toast({ title: "Execution failed", description: err.message, variant: "destructive" }),
   });
 
-  // ─── 20.7 Execution Analytics ──────────────────────────────────────────────
+  // Execution Analytics
   const { data: analyticsData, isLoading: analyticsLoading } = useQuery<any>({
     queryKey: ["/api/playbook-analytics"],
     queryFn: async () => {
@@ -1248,7 +1248,7 @@ export default function PlaybooksPage() {
     },
   });
 
-  // ─── 20.8 All Response Action Types ──────────────────────────────────────────
+  // All Response Action Types
   const { data: actionTypesData } = useQuery<any>({
     queryKey: ["/api/playbook-action-types"],
     queryFn: async () => {
@@ -1257,7 +1257,7 @@ export default function PlaybooksPage() {
     },
   });
 
-  // ─── 20.9 Notification Config ───────────────────────────────────────────────
+  // Notification Config
   const [selectedNotifPlaybookId, setSelectedNotifPlaybookId] = useState<string | null>(null);
   const [notifChannel, setNotifChannel] = useState("email");
   const [notifSubject, setNotifSubject] = useState("");
@@ -1298,7 +1298,7 @@ export default function PlaybooksPage() {
     },
   });
 
-  // ─── 20.10 Change Management ───────────────────────────────────────────────
+  // Change Management
   const [changePlaybookId, setChangePlaybookId] = useState("");
   const [changeType, setChangeType] = useState("firewall_rule");
   const [changeSummary, setChangeSummary] = useState("");
@@ -1379,7 +1379,7 @@ export default function PlaybooksPage() {
     },
   });
 
-  // ─── 24.1-24.5 Runbook Tracking, Analytics, Automation ───
+  // 24.5 Runbook Tracking, Analytics, Automation
   const startTrackingMutation = useMutation({
     mutationFn: async (playbookId: string) => {
       const res = await apiRequest("POST", `/api/playbooks/${playbookId}/execution-tracking/start`);
@@ -3213,7 +3213,7 @@ export default function PlaybooksPage() {
                 </Card>
               </div>
 
-              {/* 20.8 Available Response Action Types */}
+              {/* Available Response Action Types */}
               {actionTypesData && (
                 <Card>
                   <CardHeader className="pb-2">

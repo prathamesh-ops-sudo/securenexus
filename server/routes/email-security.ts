@@ -1114,7 +1114,7 @@ export function registerEmailSecurityRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 72.5 — Email Gateway Integration Status
+  // Email Gateway Integration Status
   // ==========================================================================
 
   // GET /api/email-security/integration-status
@@ -1173,7 +1173,7 @@ export function registerEmailSecurityRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 72.6 — Retroactive IOC Scan Status
+  // Retroactive IOC Scan Status
   // ==========================================================================
 
   // GET /api/email-security/retroactive-scan-history
@@ -1206,7 +1206,7 @@ export function registerEmailSecurityRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // 72.7 — Email Authentication Verification
+  // Email Authentication Verification
   // ==========================================================================
 
   // GET /api/email-security/auth-compliance

@@ -186,7 +186,10 @@ export async function createOrgInvitation(invitation: InsertOrgInvitation): Prom
   return created;
 }
 
-export async function updateOrgInvitation(id: string, data: Partial<OrgInvitation>): Promise<OrgInvitation | undefined> {
+export async function updateOrgInvitation(
+  id: string,
+  data: Partial<OrgInvitation>,
+): Promise<OrgInvitation | undefined> {
   const [updated] = await db.update(orgInvitations).set(data).where(eq(orgInvitations.id, id)).returning();
   return updated;
 }
@@ -228,7 +231,9 @@ export async function getOrgDomainVerification(id: string): Promise<OrgDomainVer
   return verification;
 }
 
-export async function createOrgDomainVerification(verification: InsertOrgDomainVerification): Promise<OrgDomainVerification> {
+export async function createOrgDomainVerification(
+  verification: InsertOrgDomainVerification,
+): Promise<OrgDomainVerification> {
   const [created] = await db.insert(orgDomainVerifications).values(verification).returning();
   return created;
 }
@@ -301,7 +306,7 @@ export async function deleteOrgScimConfig(orgId: string): Promise<boolean> {
 }
 
 // ==========================================
-// 8.2 — Evidence Chain Entries
+// Evidence Chain Entries
 // ==========================================
 
 export async function getOrgPlanLimit(orgId: string): Promise<OrgPlanLimit | undefined> {
@@ -321,7 +326,10 @@ export async function upsertOrgPlanLimit(data: InsertOrgPlanLimit): Promise<OrgP
   return result;
 }
 
-export async function updateOrgPlanLimit(orgId: string, data: Partial<OrgPlanLimit>): Promise<OrgPlanLimit | undefined> {
+export async function updateOrgPlanLimit(
+  orgId: string,
+  data: Partial<OrgPlanLimit>,
+): Promise<OrgPlanLimit | undefined> {
   const [updated] = await db
     .update(orgPlanLimits)
     .set({ ...data, updatedAt: new Date() })
@@ -409,7 +417,10 @@ export async function upsertWizardProgress(data: InsertWizardProgress): Promise<
   return result;
 }
 
-export async function updateWizardProgress(userId: string, data: Partial<WizardProgress>): Promise<WizardProgress | undefined> {
+export async function updateWizardProgress(
+  userId: string,
+  data: Partial<WizardProgress>,
+): Promise<WizardProgress | undefined> {
   const [updated] = await db
     .update(wizardProgress)
     .set({ ...data, updatedAt: new Date() })

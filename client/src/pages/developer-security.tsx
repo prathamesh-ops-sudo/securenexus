@@ -518,7 +518,7 @@ function SastFindingsTab() {
                 </p>
               </div>
 
-              {/* 64.2 — Finding detail with code context */}
+              {/* Finding detail with code context */}
               {selectedFinding.codeSnippet && (
                 <div>
                   <Label className="text-xs text-muted-foreground">
@@ -535,7 +535,7 @@ function SastFindingsTab() {
                 <p className="text-sm mt-1">{selectedFinding.remediation}</p>
               </div>
 
-              {/* 64.2 — CWE/OWASP references */}
+              {/* CWE/OWASP references */}
               <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                 <span>Confidence: {Math.round((selectedFinding.confidence ?? 0) * 100)}%</span>
                 <span>|</span>
@@ -622,7 +622,7 @@ function SecretsTab() {
               Active Secrets Detected
             </CardTitle>
             <CardDescription>
-              {/* 64.6 — Secret scanning depth */}
+              {/* Secret scanning depth */}
               These secrets must be rotated immediately. Scans cover code, config, CI variables, container images, and
               documentation.
             </CardDescription>
@@ -914,7 +914,7 @@ function SecurityDebtTab() {
 
   return (
     <div className="space-y-4">
-      {/* 64.1 — Security debt dashboard with age/severity/trend */}
+      {/* Security debt dashboard with age/severity/trend */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Security Debt Dashboard</CardTitle>
@@ -1026,7 +1026,7 @@ function SecurityDebtTab() {
   );
 }
 
-// ── 64.4 — Developer Leaderboard Tab ──────────────────────────────
+// Developer Leaderboard Tab
 
 function LeaderboardTab() {
   const leaderboard = [
@@ -1281,7 +1281,7 @@ function IntegrationsTab() {
         </CardContent>
       </Card>
 
-      {/* 64.3 — CI/CD Pipeline Integration Status */}
+      {/* CI/CD Pipeline Integration Status */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -1312,7 +1312,7 @@ function IntegrationsTab() {
         </CardContent>
       </Card>
 
-      {/* 64.5 — SAST Engine Accuracy */}
+      {/* SAST Engine Accuracy */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">

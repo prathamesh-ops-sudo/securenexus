@@ -107,7 +107,7 @@ function parseTelemetryMetric(telemetry: EndpointTelemetry[], metricType: string
   }
 }
 
-// ─── 26.2 Endpoint Dashboard Tab ─────────────────────────────────────────────
+// Endpoint Dashboard Tab
 
 function EndpointDashboardTab() {
   const { data: dashboard, isLoading } = useQuery<any>({
@@ -286,7 +286,7 @@ function EndpointDashboardTab() {
   );
 }
 
-// ─── 26.3 Endpoint Group Management Tab ──────────────────────────────────────
+// Endpoint Group Management Tab
 
 function EndpointGroupsTab() {
   const { data: groups, isLoading } = useQuery<any>({
@@ -399,7 +399,7 @@ function EndpointGroupsTab() {
   );
 }
 
-// ─── 26.7 Sensor Coverage Tab ────────────────────────────────────────────────
+// Sensor Coverage Tab
 
 function SensorCoverageTab() {
   const { data: coverage, isLoading } = useQuery<any>({
@@ -547,7 +547,7 @@ function SensorCoverageTab() {
   );
 }
 
-// ─── 26.1 Enhanced Asset Detail View ─────────────────────────────────────────
+// Enhanced Asset Detail View
 
 function AssetDetailView({ assetId, assets }: { assetId: string; assets: EndpointAsset[] }) {
   const asset = assets.find((a) => a.id === assetId);
@@ -815,7 +815,7 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
           )}
         </TabsContent>
 
-        {/* 26.5 Software Inventory */}
+        {/* Software Inventory */}
         <TabsContent value="software" className="mt-4">
           {!softwareInv ? (
             <Card>
@@ -1171,7 +1171,7 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
           )}
         </TabsContent>
 
-        {/* 26.6 Vulnerabilities */}
+        {/* Vulnerabilities */}
         <TabsContent value="vulns" className="mt-4">
           {!vulns ? (
             <Card>
@@ -1450,7 +1450,7 @@ export default function EndpointTelemetryPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* 26.2 Dashboard */}
+        {/* Dashboard */}
         <TabsContent value="dashboard" className="mt-4">
           <EndpointDashboardTab />
         </TabsContent>
@@ -1614,7 +1614,7 @@ export default function EndpointTelemetryPage() {
           )}
         </TabsContent>
 
-        {/* 26.1 Enhanced Detail */}
+        {/* Enhanced Detail */}
         <TabsContent value="detail" className="mt-4 space-y-4">
           <Card>
             <CardHeader className="pb-2">
@@ -1651,12 +1651,12 @@ export default function EndpointTelemetryPage() {
           )}
         </TabsContent>
 
-        {/* 26.3 Groups */}
+        {/* Groups */}
         <TabsContent value="groups" className="mt-4">
           <EndpointGroupsTab />
         </TabsContent>
 
-        {/* 26.7 Sensor Coverage */}
+        {/* Sensor Coverage */}
         <TabsContent value="sensors" className="mt-4">
           <SensorCoverageTab />
         </TabsContent>
