@@ -181,13 +181,15 @@ Phased to keep typecheck green after each batch (baseline: 3 pre-existing errors
 
 ## 7. Metrics delta
 
-| Metric              |       Before |                   After |    Delta |
-| ------------------- | -----------: | ----------------------: | -------: |
-| `: any` annotations |        1,071 | (see final commit diff) |        — |
-| `as any` assertions |        1,456 | (see final commit diff) |        — |
-| `catch (… : any)`   |          200 |                       0 | **−200** |
-| `any[]`             |          212 | (see final commit diff) |        — |
-| Typecheck errors    | 3 (baseline) |           3 (unchanged) |        0 |
-| Lint errors         |   (baseline) |             (unchanged) |        0 |
+| Metric              |                                        Before |             After |                                                              Delta |
+| ------------------- | --------------------------------------------: | ----------------: | -----------------------------------------------------------------: |
+| `: any` annotations |                                         1,071 |               868 |                                                           **−203** |
+| `as any` assertions |                                         1,456 |             1,457 | +1 _(one intermediate cast kept in a rewrite — noted for Batch 2)_ |
+| `catch (… : any)`   |                                           200 |             **0** |                                                           **−200** |
+| `any[]`             |                                           212 |               212 |            0 _(deferred — requires per-array element-type review)_ |
+| `: unknown`         |                                           541 |               749 |                  +208 _(expected — catch-var boundary correction)_ |
+| `as unknown`        |                                           110 |               110 |                                                                  0 |
+| Typecheck errors    |                                  3 (baseline) | **3 (unchanged)** |                                                                  0 |
+| Lint errors         | 2 (pre-existing, `commitlint.config.js` only) |                 2 |                                                                  0 |
 
-Final counts populated at commit time — see `git log devin/cleanup-track5-typestrength` for the per-batch diff.
+See `git log devin/cleanup-track5-typestrength` for the per-batch commits.
