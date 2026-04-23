@@ -31,7 +31,7 @@ import { stopJobWorker } from "./job-queue";
 import { startDrillScheduler, stopDrillScheduler } from "./dr-drill-scheduler";
 import { startStaleSlotReaper, stopStaleSlotReaper } from "./distributed-concurrency";
 import { startBudgetResetScheduler, stopBudgetResetScheduler } from "./ai/budget";
-import { bootstrapSuperAdmin } from "./bootstrap-super-admin";
+import { bootstrapSuperAdmin, bootstrapAricatechOrg } from "./bootstrap-super-admin";
 import { errorTrackingMiddleware, trackError } from "./error-tracker";
 import { startConnectorHealthLoop, stopConnectorHealthLoop } from "./connector-health-loop";
 import { runAutoMigrations } from "./auto-migrate";
@@ -156,6 +156,7 @@ export function log(message: string, source = "express") {
   await seedDatabase();
 
   await bootstrapSuperAdmin();
+  await bootstrapAricatechOrg();
 
   // Centralized error tracking middleware — captures all unhandled errors
   app.use(errorTrackingMiddleware);
