@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { replyForbidden, replyError } from "../api-response";
 import { logger } from "../logger";
 import { storage } from "../storage";
+import { validatePasswordComplexityWithoutOrganization as validatePasswordBaseline } from "../auth/password-policy";
 
 const log = logger.child("security-policy");
 
@@ -287,12 +288,8 @@ export async function validatePasswordComplexity(
   password: string,
   orgId: string | null,
 ): Promise<PasswordValidationResult> {
-  const errors: string[] = [];
-
-  const minLength = 8;
-  if (password.length < minLength) {
-    errors.push(`Password must be at least ${minLength} characters`);
-  }
+  const baseline = validatePasswordBaseline(password);
+  const errors = baseline.errors;
 
   if (!orgId) {
     return { valid: errors.length === 0, errors };

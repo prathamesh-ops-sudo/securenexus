@@ -16,7 +16,7 @@ describe("password change enforcement", () => {
     passwordChangeRequiredMiddleware(
       {
         isAuthenticated: () => true,
-        user: { passwordChangeRequired: true },
+        user: { passwordChangeRequired: true, passwordHash: "local-hash" },
         path: "/api/dashboard",
         method: "GET",
       } as never,
@@ -33,14 +33,20 @@ describe("password change enforcement", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it("allows the change-password and logout escape hatches", () => {
-    for (const path of ["/api/auth/change-password", "/api/logout", "/api/auth/me", "/api/auth/user"]) {
+  it("allows the change-password flow and required auth context escape hatches", () => {
+    for (const path of [
+      "/api/auth/change-password",
+      "/api/csrf-token",
+      "/api/logout",
+      "/api/auth/me",
+      "/api/auth/user",
+    ]) {
       const next = vi.fn();
       const res = response();
       passwordChangeRequiredMiddleware(
         {
           isAuthenticated: () => true,
-          user: { passwordChangeRequired: true },
+          user: { passwordChangeRequired: true, passwordHash: "local-hash" },
           path,
           method: path === "/api/logout" ? "POST" : "POST",
         } as never,
@@ -58,6 +64,21 @@ describe("password change enforcement", () => {
       {
         isAuthenticated: () => true,
         user: { passwordChangeRequired: false },
+        path: "/api/dashboard",
+        method: "GET",
+      } as never,
+      response() as never,
+      next,
+    );
+    expect(next).toHaveBeenCalled();
+  });
+
+  it("does not block OAuth-only users whose password hash is cleared", () => {
+    const next = vi.fn();
+    passwordChangeRequiredMiddleware(
+      {
+        isAuthenticated: () => true,
+        user: { passwordChangeRequired: true, passwordHash: null },
         path: "/api/dashboard",
         method: "GET",
       } as never,

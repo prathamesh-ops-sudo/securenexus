@@ -59,6 +59,7 @@ const OnboardingWizardPage = lazy(() => import("@/pages/onboarding-wizard"));
 const BillingPage = lazy(() => import("@/pages/billing"));
 const ForgotPasswordPage = lazy(() => import("@/pages/forgot-password"));
 const ResetPasswordPage = lazy(() => import("@/pages/reset-password"));
+const ForcedPasswordChangePage = lazy(() => import("@/pages/forced-password-change"));
 const AcceptInvitationPage = lazy(() => import("@/pages/accept-invitation"));
 const PlatformAdminPage = lazy(() => import("@/pages/platform-admin"));
 const MsspDashboardPage = lazy(() => import("@/pages/mssp-dashboard"));
@@ -367,6 +368,7 @@ function AuthenticatedApp() {
                       <Route path="/billing" component={BillingPage} />
                       <Route path="/org-settings" component={OrgSettingsPage} />
                       <Route path="/accept-invitation" component={AcceptInvitationPage} />
+                      <Route path="/change-password" component={ForcedPasswordChangePage} />
                       <Route path="/platform-admin" component={PlatformAdminPage} />
                       <Route path="/dev-portal" component={DevPortalPage} />
                       <Route path="/developer-portal" component={DeveloperPortalPage} />
@@ -506,7 +508,7 @@ function AuthenticatedApp() {
 function AppContent() {
   usePageTracking();
   const { user, isLoading } = useAuth();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
 
   useEffect(() => {
     if (!user || isLoading) return;
@@ -516,6 +518,12 @@ function AppContent() {
       setLocation(`/accept-invitation?token=${pendingToken}`);
     }
   }, [user, isLoading, setLocation]);
+
+  useEffect(() => {
+    if (user?.passwordChangeRequired && location !== "/change-password") {
+      setLocation("/change-password");
+    }
+  }, [location, setLocation, user?.passwordChangeRequired]);
 
   if (isLoading) {
     return <LoadingScreen />;
@@ -541,6 +549,14 @@ function AppContent() {
             <LandingPage />
           </Route>
         </Switch>
+      </Suspense>
+    );
+  }
+
+  if (user.passwordChangeRequired) {
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <ForcedPasswordChangePage />
       </Suspense>
     );
   }

@@ -640,10 +640,11 @@ export function registerPlatformAdminRoutes(app: Express): void {
           });
         }
 
-        await db
-          .update(users)
-          .set({ passwordHash: null, passwordChangeRequired: true, updatedAt: new Date() })
-          .where(eq(users.id, userId));
+        const resetFields = target.passwordHash
+          ? { passwordChangeRequired: true, updatedAt: new Date() }
+          : { passwordChangeRequired: false, updatedAt: new Date() };
+
+        await db.update(users).set(resetFields).where(eq(users.id, userId));
 
         await storage.createAuditLog({
           userId: getReqUser(req).id,
@@ -654,7 +655,11 @@ export function registerPlatformAdminRoutes(app: Express): void {
           details: { targetEmail: target.email },
         });
 
-        return sendEnvelope(res, { message: "Password has been reset. User must set a new password on next login." });
+        return sendEnvelope(res, {
+          message: target.passwordHash
+            ? "The user must sign in with their current password and choose a new password before continuing."
+            : "The user has no local password and can continue using OAuth; no password-change lockout was applied.",
+        });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return sendEnvelope(res, null, {

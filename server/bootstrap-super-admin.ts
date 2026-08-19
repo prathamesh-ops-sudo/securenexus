@@ -5,6 +5,7 @@ import { logger } from "./logger";
 import { authStorage } from "./auth/storage";
 import { createAuditLog } from "./storage/audit";
 import { hashPassword } from "./auth/password";
+import { validatePasswordComplexityWithoutOrganization } from "./auth/password-policy";
 
 const log = logger.child("bootstrap-super-admin");
 export const DEFAULT_SUPER_ADMIN_EMAIL = "prathamesh@aricatech.com";
@@ -21,10 +22,10 @@ export interface BootstrapSuperAdminInput {
   passwordHash?: string;
 }
 
-export function validateBootstrapPassword(password: string): string[] {
+export async function validateBootstrapPassword(password: string): Promise<string[]> {
   if (!password) return ["SUPER_ADMIN_PASSWORD is required"];
-  if (password.length < 8) return ["Password must be at least 8 characters"];
-  return [];
+  const complexity = await validatePasswordComplexityWithoutOrganization(password);
+  return complexity.errors;
 }
 
 export async function provisionPlatformSuperAdmin(
@@ -40,7 +41,7 @@ export async function provisionPlatformSuperAdmin(
     throw new Error(`Bootstrap is restricted to ${DEFAULT_SUPER_ADMIN_EMAIL}`);
   }
 
-  const passwordErrors = validateBootstrapPassword(input.password);
+  const passwordErrors = await validateBootstrapPassword(input.password);
   if (passwordErrors.length > 0) {
     throw new Error(passwordErrors.join("; "));
   }

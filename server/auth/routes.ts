@@ -293,16 +293,19 @@ export function registerAuthRoutes(app: Express): void {
   app.post("/api/auth/change-password", isAuthenticated, async (req, res) => {
     try {
       const { currentPassword, newPassword } = req.body ?? {};
-      if (typeof currentPassword !== "string" || typeof newPassword !== "string") {
-        return replyValidation(res, [
-          { field: "currentPassword", message: "Current password is required" },
-          { field: "newPassword", message: "New password is required" },
-        ]);
+      if (typeof newPassword !== "string") {
+        return replyValidation(res, [{ field: "newPassword", message: "New password is required" }]);
       }
 
       const sessionUser = req.user as SessionUser;
       const user = await authStorage.getUser(sessionUser.id);
-      if (!user?.passwordHash || !(await comparePasswords(currentPassword, user.passwordHash))) {
+      if (!user) {
+        return replyNotFound(res, "User not found");
+      }
+      if (user.passwordHash && typeof currentPassword !== "string") {
+        return replyValidation(res, [{ field: "currentPassword", message: "Current password is required" }]);
+      }
+      if (user.passwordHash && !(await comparePasswords(currentPassword, user.passwordHash))) {
         return replyUnauthenticated(res, "Current password is incorrect");
       }
 

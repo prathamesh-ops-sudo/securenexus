@@ -131,8 +131,8 @@ describe("platform super-admin bootstrap", () => {
     );
   });
 
-  it("uses the existing password policy baseline", () => {
-    expect(validateBootstrapPassword("short")).toEqual(["Password must be at least 8 characters"]);
-    expect(validateBootstrapPassword("eight888")).toEqual([]);
+  it("uses the existing password policy baseline", async () => {
+    await expect(validateBootstrapPassword("short")).resolves.toEqual(["Password must be at least 8 characters"]);
+    await expect(validateBootstrapPassword("eight888")).resolves.toEqual([]);
   });
 });
