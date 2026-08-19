@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
-import { logger, storage } from "../shared";
+import { getOrgId, logger, storage } from "../shared";
 import { isAuthenticated } from "../../auth";
-import { resolveOrgContext } from "../../rbac";
+import { requireOrgId, resolveOrgContext } from "../../rbac";
 import { bodySchemas, querySchemas, validateBody, validateQuery } from "../../request-validator";
 import { recordFeedbackOutcome } from "../../ai/active-learning";
 import { config as appConfig } from "../../config";
@@ -11,116 +11,124 @@ const log = logger.child("routes-ai-feedback");
 
 export function registerAiFeedbackRoutes(app: Express): void {
   // AI Feedback
-  app.post("/api/ai/feedback", isAuthenticated, validateBody(bodySchemas.aiFeedback), async (req, res) => {
-    try {
-      const {
-        resourceType,
-        resourceId,
-        rating,
-        comment,
-        aiOutput,
-        correctionReason,
-        correctedSeverity,
-        correctedCategory,
-      } = (req as any).validatedBody;
-      const feedbackData: any = {
-        userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName
-          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
-          : "Analyst",
-        resourceType,
-        resourceId,
-        rating,
-        comment,
-        aiOutput,
-      };
-      if (correctionReason) feedbackData.correctionReason = correctionReason;
-      if (correctedSeverity) feedbackData.correctedSeverity = correctedSeverity;
-      if (correctedCategory) feedbackData.correctedCategory = correctedCategory;
-      const feedback = await storage.createAiFeedback(feedbackData);
-      await storage.createAuditLog({
-        userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName
-          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
-          : "Analyst",
-        action: "ai_feedback_submitted",
-        resourceType,
-        resourceId,
-        details: { rating, hasComment: !!comment, correctionReason, correctedSeverity, correctedCategory },
-      });
+  app.post(
+    "/api/ai/feedback",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validateBody(bodySchemas.aiFeedback),
+    async (req, res) => {
+      try {
+        const {
+          resourceType,
+          resourceId,
+          rating,
+          comment,
+          aiOutput,
+          correctionReason,
+          correctedSeverity,
+          correctedCategory,
+        } = (req as any).validatedBody;
+        const feedbackData: any = {
+          orgId: getOrgId(req),
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          resourceType,
+          resourceId,
+          rating,
+          comment,
+          aiOutput,
+        };
+        if (correctionReason) feedbackData.correctionReason = correctionReason;
+        if (correctedSeverity) feedbackData.correctedSeverity = correctedSeverity;
+        if (correctedCategory) feedbackData.correctedCategory = correctedCategory;
+        const feedback = await storage.createAiFeedback(feedbackData);
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "ai_feedback_submitted",
+          resourceType,
+          resourceId,
+          details: { rating, hasComment: !!comment, correctionReason, correctedSeverity, correctedCategory },
+        });
 
-      // Active Learning: process feedback for few-shot injection and FP tracking
-      const orgId = (req as any).user?.orgId;
-      if (orgId) {
-        const isOverridden = !!(correctedSeverity || correctedCategory || correctionReason);
-        const isDismissed = rating <= 2 && !isOverridden;
-        const outcome = isOverridden ? "overridden" : isDismissed ? "dismissed" : "confirmed";
+        // Active Learning: process feedback for few-shot injection and FP tracking
+        const orgId = (req as any).user?.orgId;
+        if (orgId) {
+          const isOverridden = !!(correctedSeverity || correctedCategory || correctionReason);
+          const isDismissed = rating <= 2 && !isOverridden;
+          const outcome = isOverridden ? "overridden" : isDismissed ? "dismissed" : "confirmed";
 
-        let alertSource = "unknown";
-        let alertCategory = "unknown";
-        if (resourceType === "alert" && resourceId) {
-          try {
-            const alert = await storage.getAlert(resourceId);
-            if (alert) {
-              alertSource = alert.source || "unknown";
-              alertCategory = alert.category || "unknown";
+          let alertSource = "unknown";
+          let alertCategory = "unknown";
+          if (resourceType === "alert" && resourceId) {
+            try {
+              const alert = await storage.getAlert(resourceId);
+              if (alert) {
+                alertSource = alert.source || "unknown";
+                alertCategory = alert.category || "unknown";
+              }
+            } catch {
+              // non-fatal
             }
-          } catch {
-            // non-fatal
           }
+
+          let originalAlertContext = "";
+          if (resourceType === "alert" && resourceId) {
+            try {
+              const alertData = await storage.getAlert(resourceId);
+              if (alertData) {
+                originalAlertContext = JSON.stringify({
+                  title: alertData.title,
+                  description: alertData.description,
+                  severity: alertData.severity,
+                  source: alertData.source,
+                  category: alertData.category,
+                  sourceIp: alertData.sourceIp,
+                  destIp: alertData.destIp,
+                });
+              }
+            } catch {
+              // non-fatal
+            }
+          }
+          const aiOutputStr =
+            typeof aiOutput === "object" && aiOutput !== null ? JSON.stringify(aiOutput) : String(aiOutput || "");
+          const analystCorrection = [
+            correctedSeverity ? `Severity: ${correctedSeverity}` : "",
+            correctedCategory ? `Category: ${correctedCategory}` : "",
+            comment || "",
+          ]
+            .filter(Boolean)
+            .join("; ");
+
+          recordFeedbackOutcome({
+            orgId,
+            feedbackId: feedback.id,
+            outcome,
+            source: alertSource,
+            category: alertCategory,
+            domain:
+              resourceType === "correlation" ? "correlation" : resourceType === "narrative" ? "narrative" : "triage",
+            originalContext: originalAlertContext || undefined,
+            aiOutput: aiOutputStr || undefined,
+            analystCorrection: analystCorrection || undefined,
+            reason: correctionReason || comment || undefined,
+          }).catch((err) =>
+            logger.child("active-learning").warn("Failed to record feedback outcome", { error: String(err) }),
+          );
         }
 
-        let originalAlertContext = "";
-        if (resourceType === "alert" && resourceId) {
-          try {
-            const alertData = await storage.getAlert(resourceId);
-            if (alertData) {
-              originalAlertContext = JSON.stringify({
-                title: alertData.title,
-                description: alertData.description,
-                severity: alertData.severity,
-                source: alertData.source,
-                category: alertData.category,
-                sourceIp: alertData.sourceIp,
-                destIp: alertData.destIp,
-              });
-            }
-          } catch {
-            // non-fatal
-          }
-        }
-        const aiOutputStr =
-          typeof aiOutput === "object" && aiOutput !== null ? JSON.stringify(aiOutput) : String(aiOutput || "");
-        const analystCorrection = [
-          correctedSeverity ? `Severity: ${correctedSeverity}` : "",
-          correctedCategory ? `Category: ${correctedCategory}` : "",
-          comment || "",
-        ]
-          .filter(Boolean)
-          .join("; ");
-
-        recordFeedbackOutcome({
-          orgId,
-          feedbackId: feedback.id,
-          outcome,
-          source: alertSource,
-          category: alertCategory,
-          domain:
-            resourceType === "correlation" ? "correlation" : resourceType === "narrative" ? "narrative" : "triage",
-          originalContext: originalAlertContext || undefined,
-          aiOutput: aiOutputStr || undefined,
-          analystCorrection: analystCorrection || undefined,
-          reason: correctionReason || comment || undefined,
-        }).catch((err) =>
-          logger.child("active-learning").warn("Failed to record feedback outcome", { error: String(err) }),
-        );
+        res.status(201).json(feedback);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to submit feedback" });
       }
-
-      res.status(201).json(feedback);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to submit feedback" });
-    }
-  });
+    },
+  );
 
   app.get(
     "/api/ai/feedback/metrics",
@@ -138,27 +146,43 @@ export function registerAiFeedbackRoutes(app: Express): void {
     },
   );
 
-  app.get("/api/ai/feedback/:resourceType/:resourceId", isAuthenticated, async (req, res) => {
-    try {
-      const feedback = await storage.getAiFeedbackByResource(
-        String(req.params.resourceType),
-        String(req.params.resourceId),
-      );
-      res.json(feedback);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch feedback for resource" });
-    }
-  });
+  app.get(
+    "/api/ai/feedback/:resourceType/:resourceId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const feedback = await storage.getAiFeedbackByResource(
+          orgId,
+          String(req.params.resourceType),
+          String(req.params.resourceId),
+        );
+        res.json(feedback);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch feedback for resource" });
+      }
+    },
+  );
 
-  app.get("/api/ai/feedback", isAuthenticated, validateQuery(querySchemas.aiFeedbackByQuery), async (req, res) => {
-    try {
-      const { resourceType, resourceId } = (req as any).validatedQuery;
-      const feedback = await storage.getAiFeedback(resourceType as string, resourceId as string);
-      res.json(feedback);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch feedback" });
-    }
-  });
+  app.get(
+    "/api/ai/feedback",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    validateQuery(querySchemas.aiFeedbackByQuery),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { resourceType, resourceId } = (req as any).validatedQuery;
+        const feedback = await storage.getAiFeedback(orgId, resourceType as string, resourceId as string);
+        res.json(feedback);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch feedback" });
+      }
+    },
+  );
 
   // Playbook Authoring Propose
   app.post("/api/ai/playbook-authoring/propose", isAuthenticated, resolveOrgContext, async (req, res) => {
@@ -273,9 +297,9 @@ export function registerAiFeedbackRoutes(app: Express): void {
   });
 
   // Feedback Analytics
-  app.get("/api/ai/feedback/analytics", isAuthenticated, resolveOrgContext, async (req, res) => {
+  app.get("/api/ai/feedback/analytics", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId;
+      const orgId = getOrgId(req);
       const days = Math.min(Math.max(parseInt(req.query.days as string, 10) || 30, 7), 365);
       const metrics = await storage.getAiFeedbackMetrics(orgId, days);
 
@@ -287,7 +311,7 @@ export function registerAiFeedbackRoutes(app: Express): void {
           ? metrics.reduce((s: number, m: any) => s + m.avgRating * m.totalFeedback, 0) / totalFeedback
           : 0;
 
-      const allFeedback = await storage.getAiFeedback(undefined, undefined);
+      const allFeedback = await storage.getAiFeedback(orgId);
       const categoryBreakdown: Record<string, { count: number; avgRating: number; topIssues: string[] }> = {};
       const correctionReasons: Record<string, number> = {};
 

@@ -38,8 +38,9 @@ export async function createAiFeedback(feedback: InsertAiFeedback): Promise<AiFe
   return created;
 }
 
-export async function getAiFeedback(resourceType?: string, resourceId?: string): Promise<AiFeedback[]> {
+export async function getAiFeedback(orgId: string, resourceType?: string, resourceId?: string): Promise<AiFeedback[]> {
   const conditions = [];
+  conditions.push(eq(aiFeedback.orgId, orgId));
   if (resourceType) conditions.push(eq(aiFeedback.resourceType, resourceType));
   if (resourceId) conditions.push(eq(aiFeedback.resourceId, resourceId));
   const condition = conditions.length > 0 ? and(...conditions) : undefined;
@@ -84,11 +85,21 @@ export async function getAiFeedbackMetrics(
   }));
 }
 
-export async function getAiFeedbackByResource(resourceType: string, resourceId: string): Promise<AiFeedback[]> {
+export async function getAiFeedbackByResource(
+  orgId: string,
+  resourceType: string,
+  resourceId: string,
+): Promise<AiFeedback[]> {
   return db
     .select()
     .from(aiFeedback)
-    .where(and(eq(aiFeedback.resourceType, resourceType), eq(aiFeedback.resourceId, resourceId)))
+    .where(
+      and(
+        eq(aiFeedback.orgId, orgId),
+        eq(aiFeedback.resourceType, resourceType),
+        eq(aiFeedback.resourceId, resourceId),
+      ),
+    )
     .orderBy(desc(aiFeedback.createdAt));
 }
 
@@ -161,7 +172,10 @@ export async function getAiGeneratedRule(id: string): Promise<AiGeneratedRule | 
   return rule;
 }
 
-export async function updateAiGeneratedRule(id: string, data: Partial<AiGeneratedRule>): Promise<AiGeneratedRule | undefined> {
+export async function updateAiGeneratedRule(
+  id: string,
+  data: Partial<AiGeneratedRule>,
+): Promise<AiGeneratedRule | undefined> {
   const [updated] = await db.update(aiGeneratedRules).set(data).where(eq(aiGeneratedRules.id, id)).returning();
   return updated;
 }
@@ -215,12 +229,18 @@ export async function updateEngineDryRun(id: string, data: Partial<EngineDryRun>
   return updated;
 }
 
-export async function createEngineExplainabilityLog(log: InsertEngineExplainabilityLog): Promise<EngineExplainabilityLog> {
+export async function createEngineExplainabilityLog(
+  log: InsertEngineExplainabilityLog,
+): Promise<EngineExplainabilityLog> {
   const [created] = await db.insert(engineExplainabilityLogs).values(log).returning();
   return created;
 }
 
-export async function getEngineExplainabilityLogs(orgId: string, engineName: string, limit = 50): Promise<EngineExplainabilityLog[]> {
+export async function getEngineExplainabilityLogs(
+  orgId: string,
+  engineName: string,
+  limit = 50,
+): Promise<EngineExplainabilityLog[]> {
   return db
     .select()
     .from(engineExplainabilityLogs)
