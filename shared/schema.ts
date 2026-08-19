@@ -3561,6 +3561,7 @@ export const ragKnowledgeBase = pgTable(
     index("idx_rag_kb_category").on(table.category),
     index("idx_rag_kb_org").on(table.orgId),
     index("idx_rag_kb_source").on(table.sourceType, table.sourceId),
+    index("idx_rag_kb_embedding").using("ivfflat", table.embedding.op("vector_cosine_ops")).with({ lists: 10 }),
     uniqueIndex("idx_rag_kb_source_unique")
       .on(table.sourceType, table.sourceId)
       .where(sql`source_id IS NOT NULL`),

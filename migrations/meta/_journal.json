@@ -29,6 +29,13 @@
       "when": 1787143608716,
       "tag": "0003_solid_luke_cage",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787143954897,
+      "tag": "0004_odd_scarlet_spider",
+      "breakpoints": true
     }
   ]
 }

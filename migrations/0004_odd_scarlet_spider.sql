@@ -1,0 +1,1 @@
+CREATE INDEX "idx_rag_kb_embedding" ON "rag_knowledge_base" USING ivfflat ("embedding" vector_cosine_ops) WITH (lists=10);
