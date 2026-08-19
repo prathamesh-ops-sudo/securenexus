@@ -1,5 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
+import { readFileSync } from "node:fs";
+import { URL } from "node:url";
 import * as schema from "@shared/schema";
 import { config } from "./config";
 import { logger } from "./logger";
@@ -10,8 +12,25 @@ const { Pool } = pg;
 const PRODUCTION_ENVS = new Set(["production", "staging", "uat"]);
 const isProd = PRODUCTION_ENVS.has(config.nodeEnv);
 
+function getPoolSslConfig(): { connectionString: string; ssl?: { ca: string; rejectUnauthorized: true } } {
+  if (!config.databaseSslCaPath) {
+    return { connectionString: config.databaseUrl };
+  }
+
+  const databaseUrl = new URL(config.databaseUrl);
+  databaseUrl.searchParams.delete("sslmode");
+
+  return {
+    connectionString: databaseUrl.toString(),
+    ssl: {
+      ca: readFileSync(config.databaseSslCaPath, "utf8"),
+      rejectUnauthorized: true,
+    },
+  };
+}
+
 export const pool = new Pool({
-  connectionString: config.databaseUrl,
+  ...getPoolSslConfig(),
   max: isProd ? 20 : 5,
   min: isProd ? 4 : 1,
   idleTimeoutMillis: isProd ? 30_000 : 10_000,

@@ -32,6 +32,7 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force && \
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/certs ./certs
 
 # Security: make node_modules and dist read-only for the app user
 RUN chown -R securenexus:securenexus /app && \
