@@ -11,6 +11,7 @@ const { Pool } = pg;
 const MIGRATIONS_FOLDER = "./migrations";
 const MIGRATIONS_SCHEMA = "drizzle";
 const MIGRATIONS_TABLE = "__drizzle_migrations";
+const MIGRATION_LOCK_KEY = "securenexus:migrations";
 const MINIMUM_BASELINE_TABLES = 10;
 
 interface MigrateOptions {
@@ -95,20 +96,25 @@ async function runMigrations(opts: MigrateOptions): Promise<void> {
       console.log("\n[DRY RUN] Checking pending migrations...");
       console.log(`Migrations folder: ${MIGRATIONS_FOLDER}`);
 
-      const journalCheck = await pool.query(`
+      const journalCheck = await pool.query(
+        `
         SELECT EXISTS (
           SELECT FROM information_schema.tables
-          WHERE table_schema = 'public'
-          AND table_name = '__drizzle_migrations'
+          WHERE table_schema = $1
+          AND table_name = $2
         ) AS exists
-      `);
+      `,
+        [MIGRATIONS_SCHEMA, MIGRATIONS_TABLE],
+      );
       const hasTable = (journalCheck.rows[0] as { exists: boolean }).exists;
 
       if (hasTable) {
-        const countResult = await pool.query("SELECT COUNT(*) AS total FROM __drizzle_migrations");
+        const countResult = await pool.query(
+          `SELECT COUNT(*) AS total FROM "${MIGRATIONS_SCHEMA}"."${MIGRATIONS_TABLE}"`,
+        );
         const totalApplied = (countResult.rows[0] as { total: string }).total;
         const applied = await pool.query(
-          "SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 10",
+          `SELECT hash, created_at FROM "${MIGRATIONS_SCHEMA}"."${MIGRATIONS_TABLE}" ORDER BY created_at DESC LIMIT 10`,
         );
         console.log(`\nApplied migrations: ${totalApplied}`);
         for (const row of applied.rows as { hash: string; created_at: string }[]) {
@@ -123,8 +129,14 @@ async function runMigrations(opts: MigrateOptions): Promise<void> {
     }
 
     console.log("\nApplying migrations...");
-    const db = drizzle(pool);
-    await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+    const client = await pool.connect();
+    try {
+      await client.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [MIGRATION_LOCK_KEY]);
+      await migrate(drizzle(client), { migrationsFolder: MIGRATIONS_FOLDER });
+      await client.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [MIGRATION_LOCK_KEY]);
+    } finally {
+      client.release();
+    }
     console.log("Migrations applied successfully.");
   } catch (err) {
     console.error("Migration failed:", err);
