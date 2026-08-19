@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- build CLI reports progress directly to stdout */
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
@@ -40,10 +41,7 @@ async function buildAll() {
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
-  const allDeps = [
-    ...Object.keys(pkg.dependencies || {}),
-    ...Object.keys(pkg.devDependencies || {}),
-  ];
+  const allDeps = [...Object.keys(pkg.dependencies || {}), ...Object.keys(pkg.devDependencies || {})];
   const externals = allDeps.filter((dep) => !allowlist.includes(dep));
 
   await esbuild({
@@ -56,6 +54,16 @@ async function buildAll() {
       "process.env.NODE_ENV": '"production"',
     },
     minify: true,
+    external: externals,
+    logLevel: "info",
+  });
+
+  await esbuild({
+    entryPoints: ["scripts/migrate.ts"],
+    platform: "node",
+    bundle: true,
+    format: "cjs",
+    outfile: "dist/migrate.cjs",
     external: externals,
     logLevel: "info",
   });

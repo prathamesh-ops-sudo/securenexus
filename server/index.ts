@@ -34,7 +34,6 @@ import { startBudgetResetScheduler, stopBudgetResetScheduler } from "./ai/budget
 import { bootstrapSuperAdmin } from "./bootstrap-super-admin";
 import { errorTrackingMiddleware, trackError } from "./error-tracker";
 import { startConnectorHealthLoop, stopConnectorHealthLoop } from "./connector-health-loop";
-import { runAutoMigrations } from "./auto-migrate";
 
 const startedAt = Date.now();
 
@@ -149,7 +148,6 @@ export function log(message: string, source = "express") {
 }
 
 (async () => {
-  await runAutoMigrations();
   await registerRoutes(httpServer, app);
 
   const { seedDatabase } = await import("./seed");

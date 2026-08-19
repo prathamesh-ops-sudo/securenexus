@@ -6,7 +6,7 @@ build:
       - npm ci
       - npm run build
 run:
-  command: node dist/index.cjs
+  command: node dist/migrate.cjs && exec node dist/index.cjs
   network:
     port: 5000
   env:

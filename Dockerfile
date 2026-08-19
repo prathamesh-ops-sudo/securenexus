@@ -31,6 +31,7 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force && \
     rm -rf /tmp/* /root/.npm
 
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/migrations ./migrations
 
 # Security: make node_modules and dist read-only for the app user
 RUN chown -R securenexus:securenexus /app && \
@@ -45,4 +46,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "const http=require('http');const r=http.get('http://localhost:5000/api/ops/health',s=>{process.exit(s.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.setTimeout(4000,()=>{r.destroy();process.exit(1)})"
 
 # Use dumb-init pattern via Node's built-in signal handling (see server/index.ts)
-CMD ["node", "--max-old-space-size=1024", "dist/index.cjs"]
+CMD ["sh", "-c", "node dist/migrate.cjs && exec node --max-old-space-size=1024 dist/index.cjs"]
