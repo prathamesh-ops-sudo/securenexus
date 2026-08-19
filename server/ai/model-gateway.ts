@@ -42,11 +42,13 @@ export interface ModelInvokeResult {
 }
 
 const COST_TABLE: Record<string, { input: number; output: number }> = {
+  "amazon.nova-pro-v1:0": { input: 0.0008, output: 0.0032 },
+  "amazon.nova-lite-v1:0": { input: 0.00006, output: 0.00024 },
   "mistral.mistral-large-2402-v1:0": { input: 0.004, output: 0.012 },
-  "anthropic.claude-3-sonnet": { input: 0.003, output: 0.015 },
-  "anthropic.claude-3-haiku": { input: 0.00025, output: 0.00125 },
+  "anthropic.claude-3-sonnet-20240229-v1:0": { input: 0.003, output: 0.015 },
+  "anthropic.claude-3-haiku-20240307-v1:0": { input: 0.00025, output: 0.00125 },
   "anthropic.claude-sonnet-4-20250514-v1:0": { input: 0.003, output: 0.015 },
-  "anthropic.claude-opus-4-20250514-v1:0": { input: 0.015, output: 0.075 },
+  "anthropic.claude-3-5-sonnet-20241022-v2:0": { input: 0.003, output: 0.015 },
   "default-triage": { input: 0.00015, output: 0.0002 },
   default: { input: 0.003, output: 0.015 },
 };

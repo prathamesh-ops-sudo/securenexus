@@ -201,21 +201,6 @@ export function registerAiFeedbackRoutes(app: Express): void {
         const orgId: string | undefined = (req as any).orgId || (req as any).user?.orgId;
 
         const blocked = new Set(["delete_data", "shutdown_network", "disable_logging"]);
-        const fallbackActions = [
-          { type: "auto_triage", reason: "Initial enrichment and classification" },
-          { type: "assign_analyst", reason: "Ensure analyst ownership" },
-          severity === "critical"
-            ? { type: "isolate_host", reason: "Containment for critical blast radius" }
-            : { type: "notify_slack", reason: "Notify response channel" },
-        ].filter((a) => !blocked.has(a.type));
-
-        const fallbackResponse = {
-          objective: normalized,
-          guardrailsApplied: ["blocked_destructive_actions", "require_human_approval", ...guardrails],
-          proposedActions: fallbackActions,
-          requiresAnalystApproval: true,
-          source: "fallback" as const,
-        };
 
         const systemPrompt = [
           "You are a SOC playbook architect. Given a security objective and severity, propose a JSON array of response actions.",
@@ -259,13 +244,19 @@ export function registerAiFeedbackRoutes(app: Express): void {
               !blocked.has((a as any).type),
           );
         } catch {
-          plog.warn("AI returned non-JSON, using fallback", { raw: result.text.slice(0, 200) });
-          return res.json(fallbackResponse);
+          plog.warn("AI returned non-JSON", { raw: result.text.slice(0, 200) });
+          return res.status(503).json({
+            message: "AI playbook proposal temporarily unavailable",
+            status: "ai_unavailable",
+          });
         }
 
         if (proposedActions.length === 0) {
-          plog.warn("AI returned empty actions, using fallback");
-          return res.json(fallbackResponse);
+          plog.warn("AI returned empty actions");
+          return res.status(503).json({
+            message: "AI playbook proposal temporarily unavailable",
+            status: "ai_unavailable",
+          });
         }
 
         res.json({
@@ -279,27 +270,14 @@ export function registerAiFeedbackRoutes(app: Express): void {
       } catch (error) {
         const errMsg = String(error);
         if (errMsg.includes("PROPOSAL_TIMEOUT")) {
-          plog.warn("Playbook proposal timed out after 30s, returning fallback");
-          const { objective, severity = "high", guardrails = [] } = req.body || {};
-          const normalized = String(objective || "Contain suspicious activity").trim();
-          const blocked = new Set(["delete_data", "shutdown_network", "disable_logging"]);
-          const fallbackActions = [
-            { type: "auto_triage", reason: "Initial enrichment and classification" },
-            { type: "assign_analyst", reason: "Ensure analyst ownership" },
-            severity === "critical"
-              ? { type: "isolate_host", reason: "Containment for critical blast radius" }
-              : { type: "notify_slack", reason: "Notify response channel" },
-          ].filter((a) => !blocked.has(a.type));
-          return res.json({
-            objective: normalized,
-            guardrailsApplied: ["blocked_destructive_actions", "require_human_approval", ...guardrails],
-            proposedActions: fallbackActions,
-            requiresAnalystApproval: true,
-            source: "fallback_timeout",
+          plog.warn("Playbook proposal timed out after 30s");
+          return res.status(503).json({
+            message: "AI playbook proposal temporarily unavailable",
+            status: "ai_unavailable",
           });
         }
         plog.error("Playbook proposal failed", { error: errMsg });
-        res.status(500).json({ message: "Failed to generate playbook proposal" });
+        res.status(503).json({ message: "AI playbook proposal temporarily unavailable", status: "ai_unavailable" });
       }
     },
   );

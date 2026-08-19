@@ -49,7 +49,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
             confidence: rule.confidence,
             mitreTactic: rule.mitreTactic,
             mitreTechnique: rule.mitreTechnique,
-            generatedBy: "claude-opus",
+            generatedBy: "amazon.nova-pro-v1:0",
           });
           savedRules.push(saved);
         }

@@ -19,6 +19,7 @@ import {
   getThreatIntelCategories,
   scoreArticlesForOrg,
 } from "../threat-intel-feeds";
+import { AiUnavailableError } from "../ai/fallback";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 
@@ -1074,6 +1075,12 @@ export function registerThreatIntelRoutes(app: Express): void {
         });
       } catch (error) {
         logger.child("routes").error("Failed to score article relevance", { error: String(error) });
+        if (error instanceof AiUnavailableError) {
+          return res.status(503).json({
+            message: "AI relevance scoring temporarily unavailable",
+            status: "ai_unavailable",
+          });
+        }
         res.status(500).json({ message: "Failed to score article relevance" });
       }
     },

@@ -2,7 +2,18 @@ import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, storage, strictLimiter } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { resolveOrgContext, requireMinRole, requireOrgId } from "../../rbac";
-import { checkModelHealth, getModelConfig, getInferenceMetrics, getInferenceHistory, getInferenceStats, clearModelCache, getAiOrgUsage, getAllAiOrgUsage, setAiOrgBudget, getPromptCatalogSummary } from "../../ai";
+import {
+  checkModelHealth,
+  getModelConfig,
+  getInferenceMetrics,
+  getInferenceHistory,
+  getInferenceStats,
+  clearModelCache,
+  getAiOrgUsage,
+  getAllAiOrgUsage,
+  setAiOrgBudget,
+  getPromptCatalogSummary,
+} from "../../ai";
 import { getCircuitBreakerStatus } from "../../ai/model-gateway";
 import { config as appConfig } from "../../config";
 import { pool } from "../../db";
@@ -606,7 +617,7 @@ export function registerAiSetupRoutes(app: Express): void {
           enforcementLevel = "hard_limit";
           actions = [
             "Non-critical AI features disabled",
-            "Switched to cheaper models (e.g., claude-3-haiku)",
+            "Switched to cheaper models (e.g., amazon.nova-lite-v1:0)",
             "Requests queued for next billing cycle",
             "Only critical alert triage allowed",
           ];

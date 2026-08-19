@@ -17,6 +17,15 @@ export interface AiFallbackResult<T> {
   cachedAt?: string;
 }
 
+export class AiUnavailableError extends Error {
+  readonly code = "AI_UNAVAILABLE";
+
+  constructor(operation: string, cause?: unknown) {
+    super(`AI unavailable for ${operation}${cause ? `: ${String(cause)}` : ""}`);
+    this.name = "AiUnavailableError";
+  }
+}
+
 export function isAiAvailable(): boolean {
   const status = getCircuitBreakerStatus();
   const entries = Object.values(status);
@@ -24,10 +33,7 @@ export function isAiAvailable(): boolean {
   return entries.some((s) => !s.isOpen); // at least one model circuit is closed
 }
 
-export async function withAiFallback<T>(
-  cacheKey: string,
-  fn: () => Promise<T>,
-): Promise<AiFallbackResult<T>> {
+export async function withAiFallback<T>(cacheKey: string, fn: () => Promise<T>): Promise<AiFallbackResult<T>> {
   // Check if all circuits are open -- serve from cache without attempting call
   if (!isAiAvailable()) {
     const cached = fallbackCache.get(cacheKey) as FallbackCacheEntry<T> | undefined;

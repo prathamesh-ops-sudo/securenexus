@@ -17,7 +17,7 @@ import { logger } from "../logger";
 
 const log = logger.child("vector-search");
 
-const EMBEDDING_MODEL = "amazon.titan-embed-text-v2:0";
+const EMBEDDING_MODEL = process.env.AI_EMBEDDING_MODEL_ID || "amazon.titan-embed-text-v2:0";
 const EMBEDDING_DIMENSION = 1024;
 
 const bedrockClient = new BedrockRuntimeClient(getAwsClientConfig());

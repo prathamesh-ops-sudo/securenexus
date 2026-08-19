@@ -26,19 +26,19 @@ const configSchema = z.object({
 
   ai: z.object({
     backend: aiBackendSchema,
-    modelId: z.string().default("anthropic.claude-sonnet-4-20250514-v1:0"),
+    modelId: z.string().default("amazon.nova-pro-v1:0"),
     sagemakerEndpoint: z.string().optional(),
     maxTokens: z.coerce.number().int().positive().default(4096),
     temperature: z.coerce.number().min(0).max(2).default(0.1),
     topP: z.coerce.number().min(0).max(1).default(0.9),
     triage: z.object({
-      modelId: z.string().default("anthropic.claude-sonnet-4-20250514-v1:0"),
+      modelId: z.string().default("amazon.nova-lite-v1:0"),
       sagemakerEndpoint: z.string().optional(),
       maxTokens: z.coerce.number().int().positive().default(2048),
       temperature: z.coerce.number().min(0).max(2).default(0.05),
     }),
     investigation: z.object({
-      modelId: z.string().default("anthropic.claude-opus-4-20250514-v1:0"),
+      modelId: z.string().default("amazon.nova-pro-v1:0"),
       maxTokens: z.coerce.number().int().positive().default(8192),
       temperature: z.coerce.number().min(0).max(2).default(0.15),
     }),

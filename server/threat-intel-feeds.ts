@@ -3,6 +3,7 @@ import Parser from "rss-parser";
 import { logger as rootLogger } from "./logger";
 import { invokeModel } from "./ai/model-gateway";
 import { config as appConfig } from "./config";
+import { AiUnavailableError } from "./ai/fallback";
 
 const logger = rootLogger.child("threat-intel-feeds");
 
@@ -1775,76 +1776,12 @@ Format: [{"idx": 0, "score": 7, "reason": "brief reason"}]`;
       }))
       .filter((p) => p.articleId);
   } catch (err) {
-    logger.warn("AI relevance scoring failed, using default scores", {
+    logger.warn("AI relevance scoring unavailable", {
       error: err instanceof Error ? err.message : String(err),
       articleCount: articles.length,
     });
-    // Fall back to keyword-based heuristic scoring
-    return articles.map((a) => ({
-      articleId: a.id,
-      score: heuristicRelevanceScore(a, orgCtx),
-      reason: "Heuristic score (AI unavailable)",
-    }));
+    throw new AiUnavailableError("threat intelligence relevance scoring", err);
   }
-}
-
-function heuristicRelevanceScore(article: ThreatIntelArticle, orgCtx: OrgContext): number {
-  const text = `${article.title} ${article.summaryText} ${article.categories.join(" ")}`.toLowerCase();
-  const industry = (orgCtx.industry || "technology").toLowerCase();
-  let score = 5; // base
-
-  // Industry keyword match
-  const industryKeywords = getIndustryKeywords(industry);
-  for (const kw of industryKeywords) {
-    if (text.includes(kw)) {
-      score += 1;
-      break;
-    }
-  }
-
-  // Critical/high severity indicators
-  const criticalTerms = [
-    "critical",
-    "zero-day",
-    "0-day",
-    "actively exploited",
-    "cve-",
-    "ransomware",
-    "apt",
-    "breach",
-    "rce",
-    "remote code execution",
-  ];
-  for (const term of criticalTerms) {
-    if (text.includes(term)) {
-      score += 1;
-      break;
-    }
-  }
-
-  // Recency boost
-  if (article.publishedAt) {
-    const ageHours = (Date.now() - new Date(article.publishedAt).getTime()) / (1000 * 60 * 60);
-    if (ageHours < 24) score += 1;
-    else if (ageHours < 72) score += 0.5;
-  }
-
-  return Math.max(1, Math.min(10, Math.round(score)));
-}
-
-function getIndustryKeywords(industry: string): string[] {
-  const map: Record<string, string[]> = {
-    technology: ["saas", "cloud", "api", "software", "devops", "container", "kubernetes", "aws", "azure", "gcp"],
-    finance: ["banking", "fintech", "swift", "payment", "pci", "financial", "credit card", "fraud", "trading"],
-    healthcare: ["hipaa", "healthcare", "medical", "hospital", "phi", "patient", "ehr", "pharmaceutical"],
-    government: ["government", "federal", "state", "military", "defense", "intelligence", "classified", "cisa"],
-    retail: ["ecommerce", "retail", "pos", "point of sale", "magecart", "payment", "shopify"],
-    energy: ["scada", "ics", "ot", "industrial", "power grid", "pipeline", "energy", "utility"],
-    education: ["university", "education", "school", "academic", "student", "ferpa"],
-    manufacturing: ["manufacturing", "ics", "scada", "plc", "ot", "industrial", "supply chain"],
-    telecom: ["telecom", "5g", "carrier", "mobile network", "ss7", "isps"],
-  };
-  return map[industry] || map["technology"] || [];
 }
 
 export async function scoreArticlesForOrg(
@@ -1877,17 +1814,8 @@ export async function scoreArticlesForOrg(
         scoredIds.add(articleId);
       }
     }
-    // Add any batch articles that the AI didn't score, using heuristic fallback
-    for (const article of batch) {
-      if (!scoredIds.has(article.id)) {
-        const fallbackScore = heuristicRelevanceScore(article, orgCtx);
-        setCachedRelevance(orgCtx.orgId, article.id, fallbackScore, "Heuristic score (AI partial response)");
-        results.push({
-          ...article,
-          relevanceScore: fallbackScore,
-          relevanceReason: "Heuristic score (AI partial response)",
-        });
-      }
+    if (scoredIds.size !== batch.length) {
+      throw new AiUnavailableError("threat intelligence relevance scoring", "AI returned an incomplete response");
     }
   }
 

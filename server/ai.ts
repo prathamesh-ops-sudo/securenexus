@@ -29,6 +29,7 @@ import { registerEnhancedPrompts } from "./ai/enhanced-prompts";
 import { buildRAGContext, formatRAGContextForPrompt, type RAGContext } from "./ai/vector-search";
 import { buildFewShotAugmentedPrompt, getSuppressedSourcesForContext } from "./ai/active-learning";
 import { buildBudgetedNarrativeMessage } from "./ai/narrative-budget";
+import { AiUnavailableError } from "./ai/fallback";
 
 initializeDefaultPrompts().catch((err) => log.error("Failed to initialize default prompts", { error: String(err) }));
 registerEnhancedPrompts();
@@ -1597,8 +1598,8 @@ ${threatIntelBlock}`;
     const { text } = await invokeWithPrompt("deep-investigation", userMessage, "investigation", orgId, 8192);
     return JSON.parse(extractJson(text));
   } catch (error) {
-    log.warn("AI deep investigation unavailable, returning heuristic fallback", { error: String(error) });
-    return buildHeuristicInvestigation(incident, alerts);
+    log.warn("AI deep investigation unavailable", { error: String(error) });
+    throw new AiUnavailableError("deep investigation", error);
   }
 }
 
@@ -1630,8 +1631,8 @@ ${threatIntelBlock}`;
     const { text } = await invokeWithPrompt("threat-hunting", userMessage, "correlation", orgId, 6144);
     return JSON.parse(extractJson(text));
   } catch (error) {
-    log.warn("AI threat hunt unavailable, returning heuristic fallback", { error: String(error) });
-    return buildHeuristicThreatHunt(huntContext, telemetryData);
+    log.warn("AI threat hunt unavailable", { error: String(error) });
+    throw new AiUnavailableError("threat hunting", error);
   }
 }
 
@@ -1659,8 +1660,8 @@ ${JSON.stringify(baselineData, null, 2)}`;
     const { text } = await invokeWithPrompt("behavioral-analysis", userMessage, "correlation", orgId, 4096);
     return JSON.parse(extractJson(text));
   } catch (error) {
-    log.warn("AI behavioral analysis unavailable, returning heuristic fallback", { error: String(error) });
-    return buildHeuristicBehavioralAnalysis(entityContext, activityData, baselineData);
+    log.warn("AI behavioral analysis unavailable", { error: String(error) });
+    throw new AiUnavailableError("behavioral analysis", error);
   }
 }
 
@@ -1692,8 +1693,8 @@ ${JSON.stringify(securityControls, null, 2)}`;
     const { text } = await invokeWithPrompt("attack-path-prediction", userMessage, "investigation", orgId, 6144);
     return JSON.parse(extractJson(text));
   } catch (error) {
-    log.warn("AI attack path prediction unavailable, returning heuristic fallback", { error: String(error) });
-    return buildHeuristicAttackPaths(compromiseState, crownJewels);
+    log.warn("AI attack path prediction unavailable", { error: String(error) });
+    throw new AiUnavailableError("attack path prediction", error);
   }
 }
 
@@ -1735,17 +1736,8 @@ Respond as a JSON object with these fields:
     const { text } = await invokeWithPrompt("multi-turn-investigation", prompt, "investigation", orgId, 8192);
     return JSON.parse(extractJson(text));
   } catch (error) {
-    log.warn("Multi-turn investigation unavailable, returning fallback", { error: String(error) });
-    return {
-      reply: `Based on the available evidence, here is a preliminary analysis of your question: "${userMessage}". Further manual investigation is recommended as AI analysis is currently unavailable.`,
-      suggestedFollowups: [
-        "What lateral movement indicators are present?",
-        "Are there any persistence mechanisms established?",
-        "What data exfiltration channels should we check?",
-      ],
-      referencedTechniques: [],
-      confidence: 0.1,
-    };
+    log.warn("Multi-turn investigation unavailable", { error: String(error) });
+    throw new AiUnavailableError("multi-turn investigation", error);
   }
 }
 
@@ -1808,190 +1800,7 @@ Generate detection rules as JSON:
     const { text } = await invokeWithPrompt("detection-rule-generation", userMessage, "investigation", orgId, 8192);
     return JSON.parse(extractJson(text));
   } catch (error) {
-    log.warn("Detection rule generation unavailable, returning fallback", { error: String(error) });
-    return {
-      rules: attackTechniques.map((tech) => ({
-        name: `Auto-detect ${tech}`,
-        description: `Detection rule for ${tech} technique observed in incident`,
-        sigmaRule: `title: Auto-detect ${tech}\nstatus: experimental\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    EventID: 1\n  condition: selection\nlevel: medium`,
-        conditionTree: { EventID: 1 },
-        mitreTactic: "unknown",
-        mitreTechnique: tech,
-        confidence: 0.3,
-        falsePositiveNotes: "AI-generated rule — requires manual tuning",
-        eventTypes: ["process_creation"],
-      })),
-      analysisNotes: "Fallback rules generated — AI analysis was unavailable",
-      coverageGaps: ["Full behavioral analysis not available", "Lateral movement detection may be incomplete"],
-    };
+    log.warn("Detection rule generation unavailable", { error: String(error) });
+    throw new AiUnavailableError("detection rule generation", error);
   }
-}
-
-// Heuristic Fallback Functions
-// ==========================================
-// These provide meaningful data-driven responses when AI/LLM is unavailable,
-// using deterministic analysis of the provided telemetry data.
-
-function buildHeuristicInvestigation(incident: Incident, alerts: Alert[]): DeepInvestigationResult {
-  const uniqueIPs = new Set(alerts.map((a) => a.sourceIp).filter(Boolean));
-  const uniqueHosts = new Set(alerts.map((a) => a.hostname).filter(Boolean));
-  const tactics = new Set(alerts.map((a) => a.mitreTactic).filter(Boolean));
-  const techniques = new Set(alerts.map((a) => a.mitreTechnique).filter(Boolean));
-  const categories = new Set(alerts.map((a) => a.category).filter(Boolean));
-
-  return {
-    summary: `Heuristic analysis of incident "${incident.title}" based on ${alerts.length} correlated alerts. AI-enhanced analysis unavailable — results derived from statistical pattern matching.`,
-    findings: [
-      {
-        title: "Alert Correlation Summary",
-        severity: incident.severity || "medium",
-        description: `${alerts.length} alerts across ${uniqueHosts.size} hosts and ${uniqueIPs.size} source IPs. Categories: ${Array.from(categories).join(", ") || "unknown"}.`,
-        evidence: alerts.slice(0, 5).map((a) => `[${a.severity}] ${a.title} (${a.sourceIp || "no IP"})`),
-        mitreTactics: Array.from(tactics),
-        mitreTechniques: Array.from(techniques),
-      },
-    ],
-    timeline: alerts
-      .filter((a) => a.detectedAt)
-      .sort((a, b) => new Date(a.detectedAt!).getTime() - new Date(b.detectedAt!).getTime())
-      .slice(0, 10)
-      .map((a) => ({
-        timestamp: a.detectedAt,
-        event: a.title,
-        significance: a.severity === "critical" ? "high" : a.severity === "high" ? "medium" : "low",
-      })),
-    attackNarrative: `This is a data-driven summary (AI unavailable). ${alerts.length} alerts were correlated into this incident spanning ${uniqueHosts.size} hosts. MITRE ATT&CK coverage: ${Array.from(tactics).join(", ") || "not mapped"}.`,
-    recommendations: [
-      "Review all correlated alerts for false positives",
-      "Isolate affected hosts if compromise is confirmed",
-      "Check for lateral movement indicators",
-      "Preserve forensic evidence before remediation",
-    ],
-    confidenceScore: 0.4,
-    dataSource: "heuristic_fallback",
-  } as unknown as DeepInvestigationResult; /* eslint-disable-line @typescript-eslint/no-unsafe-return -- heuristic fallback returns simplified shape consumed by JSON serialization */
-}
-
-function buildHeuristicThreatHunt(
-  huntContext: string,
-  telemetryData: Record<string, unknown> | Array<Record<string, unknown>>,
-): ThreatHuntingResult {
-  const dataPoints = Array.isArray(telemetryData) ? telemetryData.length : 0;
-  return {
-    huntMissionId: "heuristic_" + Date.now(),
-    hypotheses: [
-      {
-        id: "heuristic_h1",
-        hypothesis: `Statistical analysis of ${dataPoints} telemetry data points for context: ${huntContext}`,
-        rationale: "Heuristic analysis only — AI-enhanced hunting unavailable",
-        priority: "medium",
-        testingMethod: "manual_review",
-        expectedIndicators: [],
-        confidence: 0.3,
-      },
-    ],
-    findings: [],
-    anomalies: [],
-    huntSummary: {
-      hypothesesTested: 1,
-      threatsConfirmed: 0,
-      threatsLikelyButUnconfirmed: 0,
-      anomaliesRequiringInvestigation: 0,
-      cleanFindings: 0,
-    },
-    nextHuntRecommendations: [
-      "Manually review telemetry data for anomalies",
-      "Cross-reference with known threat intelligence feeds",
-      "Consider enabling AI services for deeper analysis",
-    ],
-    toolingGaps: ["AI-enhanced pattern recognition unavailable"],
-  };
-}
-
-function buildHeuristicBehavioralAnalysis(
-  entityContext: Record<string, unknown>,
-  activityData: Record<string, unknown> | Array<Record<string, unknown>>,
-  baselineData: Record<string, unknown>,
-): BehavioralAnalysisResult {
-  const activities = Array.isArray(activityData) ? activityData.length : 0;
-  return {
-    entityId: (entityContext?.id as string) || "unknown",
-    entityType: (entityContext?.type as string) || "unknown",
-    analysisTimeframe: "last_30_days",
-    behavioralScore: 50,
-    riskLevel: "medium",
-    anomalies: [],
-    behavioralBaseline: {
-      typical_login_hours: "unknown — AI analysis unavailable",
-      typical_geo_locations: [],
-      typical_resources: [],
-      typical_data_volume: "unknown",
-      typical_authentication: [],
-    },
-    deviationsFromBaseline: [],
-    riskFactors: [
-      {
-        factor: "AI analysis unavailable — heuristic assessment only",
-        riskWeight: 0.3,
-      },
-    ],
-    recommendation:
-      "Manual review recommended. AI behavioral analysis is unavailable. Review entity activity patterns and compare against known baselines.",
-    confidenceStatement: `Low confidence (heuristic only). Analyzed ${activities} activity records without AI enhancement.`,
-  };
-}
-
-function buildHeuristicAttackPaths(
-  compromiseState: Record<string, unknown>,
-  crownJewels: string[],
-): AttackPathPredictionResult {
-  return {
-    currentCompromiseState: {
-      accessLevel: (compromiseState?.accessLevel as string) || "unknown",
-      compromisedHosts: (compromiseState?.compromisedHosts as string[]) || [],
-      compromisedAccounts: (compromiseState?.compromisedAccounts as string[]) || [],
-      establishedPersistence: (compromiseState?.establishedPersistence as string[]) || [],
-      c2Channels: (compromiseState?.c2Channels as string[]) || [],
-    },
-    inferredObjectives: [
-      {
-        objective: "Unknown — AI analysis unavailable",
-        confidence: 0,
-        reasoning: "Heuristic fallback cannot infer attacker objectives",
-      },
-    ],
-    predictedAttackPaths: crownJewels.map((asset, i) => ({
-      pathId: `heuristic_path_${i}`,
-      objective: `Reach ${asset}`,
-      probability: 0,
-      steps: [],
-      total_probability: 0,
-      estimated_time: "unknown",
-      indicators: [],
-    })),
-    defenseRecommendations: [
-      {
-        path: "general",
-        priority: 1,
-        defenses: [
-          {
-            control: "Enable AI services for automated attack path prediction",
-            effectiveness: 0,
-            cost: "unknown",
-          },
-        ],
-      },
-    ],
-    blindSpots: [
-      "AI-enhanced attack path prediction unavailable",
-      "Manual assessment recommended for high-value asset exposure",
-    ],
-    worstCaseScenario: {
-      scenario: "Unable to predict — AI analysis unavailable",
-      probability: 0,
-      impact: "unknown",
-      time_to_scenario: "unknown",
-      prevention: "Manually assess attack paths to high-value assets and review network segmentation",
-    },
-  };
 }
