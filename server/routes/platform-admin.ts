@@ -645,6 +645,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
           : { passwordChangeRequired: false, updatedAt: new Date() };
 
         await db.update(users).set(resetFields).where(eq(users.id, userId));
+        invalidateDeserializeCache(userId);
 
         await storage.createAuditLog({
           userId: getReqUser(req).id,
