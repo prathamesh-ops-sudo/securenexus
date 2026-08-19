@@ -1,6 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { shouldShowOnboardingChecklist } from "@/lib/onboarding-visibility";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -30,7 +31,7 @@ interface OnboardingData {
 const DISMISSED_KEY = "securenexus.onboarding.dismissed.v1";
 
 export function OnboardingChecklist() {
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
 
@@ -71,7 +72,16 @@ export function OnboardingChecklist() {
     },
   });
 
-  if (isDismissed || isLoading || !data || !Array.isArray(data.steps) || data.allDone) return null;
+  if (
+    !shouldShowOnboardingChecklist(location) ||
+    isDismissed ||
+    isLoading ||
+    !data ||
+    !Array.isArray(data.steps) ||
+    data.allDone
+  ) {
+    return null;
+  }
 
   const nextStep = data.steps.find((s) => !s.isCompleted);
 

@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import atsLogo from "@/assets/logo.png";
 import { useLocation, Link } from "wouter";
+import { filterNavItems } from "./sidebar-nav";
 import { useAuth } from "@/hooks/use-auth";
 import { useOrgContext } from "@/hooks/use-org-context";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -290,9 +291,6 @@ const adminGroup: NavGroup = {
   ],
 };
 
-const ADMIN_ONLY_URLS = ["/team", "/onboarding", "/settings", "/compliance"];
-const ANALYST_HIDDEN_URLS = ["/team", "/onboarding"];
-
 const ALL_NAV_ITEMS: NavItem[] = [
   ...coreItems,
   ...navGroups.flatMap((g) => g.sections.flatMap((s) => s.items)),
@@ -447,9 +445,7 @@ export function AppSidebar() {
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.email || "Signed-in user";
 
   function filterItems(items: NavItem[]) {
-    if (userRole === "owner" || userRole === "admin") return items;
-    if (userRole === "read_only") return items.filter((i) => !ADMIN_ONLY_URLS.includes(i.url));
-    return items.filter((i) => !ANALYST_HIDDEN_URLS.includes(i.url));
+    return filterNavItems(items, userRole);
   }
 
   function renderItem(item: NavItem) {

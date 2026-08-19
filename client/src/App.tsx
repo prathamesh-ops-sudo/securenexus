@@ -26,6 +26,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { LoadingScreen } from "@/components/loading-screen";
 import { Button } from "@/components/ui/button";
 import { getOrglessDestination } from "@/lib/org-routing";
+import { getAuthenticatedRouteDestination } from "@/lib/auth-routing";
 
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const AlertsPage = lazy(() => import("@/pages/alerts"));
@@ -570,6 +571,12 @@ function AppContent() {
   }, [user, isLoading, setLocation]);
 
   useEffect(() => {
+    if (!user || isLoading) return;
+    const destination = getAuthenticatedRouteDestination(location);
+    if (destination && location !== destination) setLocation(destination);
+  }, [location, setLocation, user, isLoading]);
+
+  useEffect(() => {
     if (user?.passwordChangeRequired && location !== "/change-password") {
       setLocation("/change-password");
     }
@@ -609,6 +616,11 @@ function AppContent() {
         <ForcedPasswordChangePage />
       </Suspense>
     );
+  }
+
+  const authenticatedRouteDestination = getAuthenticatedRouteDestination(location);
+  if (authenticatedRouteDestination && location !== authenticatedRouteDestination) {
+    return <LoadingScreen />;
   }
 
   return <AuthenticatedApp />;

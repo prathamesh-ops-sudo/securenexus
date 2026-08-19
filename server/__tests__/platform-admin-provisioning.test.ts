@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   createAuditLog: vi.fn().mockResolvedValue({}),
-  sendEmail: vi.fn().mockResolvedValue(undefined),
+  sendEmail: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock("../db", () => ({
@@ -13,10 +13,15 @@ vi.mock("../db", () => ({
   checkPoolConnectivity: vi.fn(),
 }));
 vi.mock("../routes/shared", () => ({
-  sendEnvelope: vi.fn((res: any, data: unknown, options?: { status?: number }) => {
-    res.status(options?.status ?? 200).json({ data });
-    return res;
-  }),
+  sendEnvelope: vi.fn(
+    (
+      res: { status: (status: number) => { json: (body: unknown) => unknown } },
+      data: unknown,
+      options?: { status?: number; errors?: unknown[] },
+    ) => {
+      res.status(options?.status ?? 200).json({ data, errors: options?.errors ?? [] });
+    },
+  ),
   storage: { createAuditLog: mocks.createAuditLog },
   logger: { child: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }) },
 }));
@@ -41,14 +46,24 @@ vi.mock("../logger", () => ({ logger: { child: () => ({ error: vi.fn(), warn: vi
 
 import { getRequiredAppBaseUrl, registerPlatformAdminRoutes } from "../routes/platform-admin";
 
-type Handler = (req: any, res: any, next?: () => void) => Promise<unknown> | unknown;
+interface TestRequest {
+  user?: { id: string; email: string };
+  body: Record<string, unknown>;
+}
 
-function captureTenantRoute(): Handler[] {
+interface TestResponse {
+  status: (status: number) => TestResponse;
+  json: (body: unknown) => TestResponse;
+}
+
+type Handler = (req: TestRequest, res: TestResponse, next?: () => void) => Promise<unknown> | unknown;
+
+function captureRoute(targetPath: string): Handler[] {
   let handlers: Handler[] = [];
   const app = {
     get: () => undefined,
     post: (path: string, ...routeHandlers: Handler[]) => {
-      if (path === "/api/platform-admin/tenants") handlers = routeHandlers;
+      if (path === targetPath) handlers = routeHandlers;
     },
     patch: () => undefined,
     put: () => undefined,
@@ -59,13 +74,20 @@ function captureTenantRoute(): Handler[] {
 }
 
 function response() {
-  return { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() };
+  return {
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
+  } as unknown as TestResponse & {
+    status: ReturnType<typeof vi.fn>;
+    json: ReturnType<typeof vi.fn>;
+  };
 }
 
 describe("platform tenant provisioning", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.APP_BASE_URL = "https://local.example.test";
+    process.env.NODE_ENV = "development";
   });
 
   it("requires APP_BASE_URL before beginning provisioning", () => {
@@ -102,7 +124,7 @@ describe("platform tenant provisioning", () => {
     };
     mocks.transaction.mockImplementation(async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx));
 
-    const handlers = captureTenantRoute();
+    const handlers = captureRoute("/api/platform-admin/tenants");
     const res = response();
     await handlers[2](
       {
@@ -127,8 +149,25 @@ describe("platform tenant provisioning", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           adminUser: expect.objectContaining({ setPasswordUrl: expect.stringContaining("/reset-password?token=") }),
+          emailDelivery: { accepted: true, status: "accepted" },
         }),
       }),
     );
+  });
+
+  it("refuses destructive platform seeding outside development", async () => {
+    process.env.NODE_ENV = "production";
+    const handlers = captureRoute("/api/platform-admin/seed-platform");
+    const res = response();
+
+    await handlers[2]({ user: { id: "admin-1", email: "admin@example.com" }, body: {} }, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errors: [expect.objectContaining({ code: "DEVELOPMENT_ONLY" })],
+      }),
+    );
+    expect(mocks.transaction).not.toHaveBeenCalled();
   });
 });

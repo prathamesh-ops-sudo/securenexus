@@ -22,8 +22,16 @@ import { logger } from "./logger";
 
 const log = logger.child("seed");
 
+export function getSeedEnvironment(): string {
+  return (process.env.NODE_ENV || "development").toLowerCase();
+}
+
+export function isDevelopmentSeedEnvironment(): boolean {
+  return getSeedEnvironment() === "development";
+}
+
 export async function seedDatabase() {
-  const environment = (process.env.NODE_ENV || "development").toLowerCase();
+  const environment = getSeedEnvironment();
   const explicitOptIn = process.env.SEED_DEMO_DATA === "true";
   const explicitOptOut = process.env.SEED_DEMO_DATA === "false";
   const productionLikeEnvironment = new Set(["production", "staging", "uat", "test"]).has(environment);

@@ -26,6 +26,8 @@ import { randomBytes } from "crypto";
 import { authStorage } from "../auth/storage";
 import { sendEmail } from "../email-service";
 import { passwordResetEmail, welcomeEmail } from "../email-templates";
+import { isDevelopmentSeedEnvironment } from "../seed";
+import { ERROR_CODES } from "../api-response";
 import {
   getLockedAccounts,
   adminUnlockAccount,
@@ -57,7 +59,12 @@ export function getRequiredAppBaseUrl(): string {
     throw new Error("APP_BASE_URL is required to provision tenant credentials");
   }
 
-  const parsed = new URL(configured);
+  let parsed: URL;
+  try {
+    parsed = new URL(configured);
+  } catch {
+    throw new Error("APP_BASE_URL must use http or https");
+  }
   if (!["http:", "https:"].includes(parsed.protocol)) {
     throw new Error("APP_BASE_URL must use http or https");
   }
@@ -1530,7 +1537,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
       const slug = `${baseSlug}-${randomBytes(3).toString("hex")}`;
 
       // Keep organization, user, membership, and credential token writes atomic.
-      const { org, adminUser, isNewUser, setPasswordToken } = await db.transaction(async (tx) => {
+      const { org, adminUser, isNewUser, setPasswordToken, setPasswordExpiresAt } = await db.transaction(async (tx) => {
         // 1. Create the organization
         const [newOrg] = await tx
           .insert(organizations)
@@ -1571,16 +1578,17 @@ export function registerPlatformAdminRoutes(app: Express): void {
           invitedBy: getReqUser(req).id,
         });
 
-        const setPasswordToken = !foundUser.passwordHash ? randomBytes(32).toString("hex") : null;
+        const setPasswordExpiresAt = !foundUser.passwordHash ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null;
+        const setPasswordToken = setPasswordExpiresAt ? randomBytes(32).toString("hex") : null;
         if (setPasswordToken) {
           await tx.insert(passwordResetTokens).values({
             userId: foundUser.id,
             token: setPasswordToken,
-            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            expiresAt: setPasswordExpiresAt!,
           });
         }
 
-        return { org: newOrg, adminUser: foundUser, isNewUser: createdNew, setPasswordToken };
+        return { org: newOrg, adminUser: foundUser, isNewUser: createdNew, setPasswordToken, setPasswordExpiresAt };
       });
 
       // 4. Invalidate cache so the admin user picks up org context on next request
@@ -1613,14 +1621,20 @@ export function registerPlatformAdminRoutes(app: Express): void {
             loginUrl: `${appBaseUrl}/`,
           });
 
-      sendEmail({
-        to: normalizedEmail,
-        subject: credentialEmail.subject,
-        html: credentialEmail.html,
-        text: credentialEmail.text,
-      }).catch((err) =>
-        log.error("Failed to send tenant welcome email", { error: String(err), email: normalizedEmail }),
-      );
+      let emailDeliveryAccepted = false;
+      try {
+        emailDeliveryAccepted = await sendEmail({
+          to: normalizedEmail,
+          subject: credentialEmail.subject,
+          html: credentialEmail.html,
+          text: credentialEmail.text,
+        });
+      } catch (error: unknown) {
+        log.error("Failed to send tenant welcome email", {
+          error: error instanceof Error ? error.message : String(error),
+          email: normalizedEmail,
+        });
+      }
 
       log.info("Tenant created", {
         orgId: org.id,
@@ -1640,6 +1654,11 @@ export function registerPlatformAdminRoutes(app: Express): void {
             lastName: adminUser.lastName,
             isNewUser,
             setPasswordUrl: setPasswordToken ? `${appBaseUrl}/reset-password?token=${setPasswordToken}` : null,
+            setPasswordExpiresAt: setPasswordExpiresAt?.toISOString() ?? null,
+          },
+          emailDelivery: {
+            accepted: emailDeliveryAccepted,
+            status: emailDeliveryAccepted ? "accepted" : "failed",
           },
         },
         { status: 201 },
@@ -1650,12 +1669,12 @@ export function registerPlatformAdminRoutes(app: Express): void {
       if (message.includes("APP_BASE_URL")) {
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "CONFIGURATION_ERROR", message }],
+          errors: [{ code: ERROR_CODES.CONFIGURATION_ERROR, message }],
         });
       }
       return sendEnvelope(res, null, {
         status: 500,
-        errors: [{ code: "TENANT_CREATE_FAILED", message: "Failed to create tenant", details: message }],
+        errors: [{ code: ERROR_CODES.TENANT_CREATE_FAILED, message: "Failed to create tenant" }],
       });
     }
   });
@@ -1706,6 +1725,21 @@ export function registerPlatformAdminRoutes(app: Express): void {
     isAuthenticated,
     requireSuperAdmin,
     async (req: Request, res: Response) => {
+      if (!isDevelopmentSeedEnvironment()) {
+        log.warn("Rejected platform seed outside development", {
+          environment: process.env.NODE_ENV || "development",
+          callerId: getReqUser(req).id,
+        });
+        return sendEnvelope(res, null, {
+          status: 403,
+          errors: [
+            {
+              code: ERROR_CODES.DEVELOPMENT_ONLY,
+              message: "Platform seeding is available only in development.",
+            },
+          ],
+        });
+      }
       try {
         const caller = getReqUser(req);
         const testEmail = (req.body.testEmail || "devin-test@aricatech.com").trim().toLowerCase();
@@ -1835,7 +1869,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
         log.error("Failed to seed platform", { error: message });
         return sendEnvelope(res, null, {
           status: 500,
-          errors: [{ code: "SEED_FAILED", message: "Failed to seed platform", details: message }],
+          errors: [{ code: ERROR_CODES.SEED_FAILED, message: "Failed to seed platform" }],
         });
       }
     },

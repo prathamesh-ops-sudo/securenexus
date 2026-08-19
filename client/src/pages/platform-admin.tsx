@@ -81,6 +81,21 @@ interface OrgListItem {
   plan: { name: string } | null;
 }
 
+interface TenantProvisioningResult {
+  organization: { name: string };
+  adminUser: {
+    email: string;
+    isNewUser: boolean;
+    setPasswordUrl: string | null;
+    setPasswordExpiresAt: string | null;
+  };
+  emailDelivery: { accepted: boolean; status: "accepted" | "failed" };
+}
+
+interface SeedResponse {
+  data?: { organization?: { name?: string } };
+}
+
 interface UserListItem {
   id: string;
   email: string | null;
@@ -187,9 +202,9 @@ function OverviewTab() {
   const seedMutation = useMutation({
     mutationFn: async (payload: typeof seedForm) => {
       const res = await apiRequest("POST", "/api/platform-admin/seed-platform", payload);
-      return res.json();
+      return (await res.json()) as SeedResponse;
     },
-    onSuccess: (result: any) => {
+    onSuccess: (result: SeedResponse) => {
       toast({
         title: "Platform seeded",
         description: `Org "${result.data?.organization?.name}" created. Log out and back in to pick up org context.`,
@@ -239,81 +254,82 @@ function OverviewTab() {
         <StatCard title="New Users (30d)" value={data.newUsersThisMonth} icon={Users} />
       </div>
 
-      {/* Seed Platform — for development/testing environments */}
-      <Card className="border-destructive/30 bg-destructive/5">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-destructive flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" />
-            Development Tools
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {!showSeedConfirm ? (
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Seed Platform</p>
-                <p className="text-xs text-muted-foreground">
-                  Clear all data and create a fresh org with your account + a test user. Destructive action.
+      {import.meta.env.DEV && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-destructive flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              Development Tools
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {!showSeedConfirm ? (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Seed Platform</p>
+                  <p className="text-xs text-muted-foreground">
+                    Clear all data and create a fresh org with your account + a test user. Destructive action.
+                  </p>
+                </div>
+                <Button variant="destructive" size="sm" onClick={() => setShowSeedConfirm(true)}>
+                  Reset &amp; Seed
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3 p-3 rounded-md border border-destructive/30 bg-background">
+                <p className="text-sm font-medium text-destructive">
+                  This will DELETE all users, orgs, alerts, incidents, and related data.
                 </p>
-              </div>
-              <Button variant="destructive" size="sm" onClick={() => setShowSeedConfirm(true)}>
-                Reset &amp; Seed
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3 p-3 rounded-md border border-destructive/30 bg-background">
-              <p className="text-sm font-medium text-destructive">
-                This will DELETE all users, orgs, alerts, incidents, and related data.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <Label className="text-xs">Org Name</Label>
-                  <Input
-                    value={seedForm.orgName}
-                    onChange={(e) => setSeedForm({ ...seedForm, orgName: e.target.value })}
-                    placeholder="Arica Tech Security"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs">Org Name</Label>
+                    <Input
+                      value={seedForm.orgName}
+                      onChange={(e) => setSeedForm({ ...seedForm, orgName: e.target.value })}
+                      placeholder="Arica Tech Security"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Test User Email</Label>
+                    <Input
+                      value={seedForm.testEmail}
+                      onChange={(e) => setSeedForm({ ...seedForm, testEmail: e.target.value })}
+                      placeholder="test@example.com"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Test User Password</Label>
+                    <Input
+                      value={seedForm.testPassword}
+                      onChange={(e) => setSeedForm({ ...seedForm, testPassword: e.target.value })}
+                      placeholder="password"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-xs">Test User Email</Label>
-                  <Input
-                    value={seedForm.testEmail}
-                    onChange={(e) => setSeedForm({ ...seedForm, testEmail: e.target.value })}
-                    placeholder="test@example.com"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Test User Password</Label>
-                  <Input
-                    value={seedForm.testPassword}
-                    onChange={(e) => setSeedForm({ ...seedForm, testPassword: e.target.value })}
-                    placeholder="password"
-                  />
+                <div className="flex gap-2">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={seedMutation.isPending}
+                    onClick={() => seedMutation.mutate(seedForm)}
+                  >
+                    {seedMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Seeding...
+                      </>
+                    ) : (
+                      "Confirm — Delete Everything & Seed"
+                    )}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setShowSeedConfirm(false)}>
+                    Cancel
+                  </Button>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  disabled={seedMutation.isPending}
-                  onClick={() => seedMutation.mutate(seedForm)}
-                >
-                  {seedMutation.isPending ? (
-                    <>
-                      <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Seeding...
-                    </>
-                  ) : (
-                    "Confirm — Delete Everything & Seed"
-                  )}
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setShowSeedConfirm(false)}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -322,6 +338,8 @@ function OrganizationsTab() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [provisioningResult, setProvisioningResult] = useState<TenantProvisioningResult | null>(null);
+  const [copiedUrl, setCopiedUrl] = useState(false);
   const [tenantForm, setTenantForm] = useState({
     orgName: "",
     adminEmail: "",
@@ -349,7 +367,7 @@ function OrganizationsTab() {
       const res = await apiRequest("POST", "/api/platform-admin/tenants", payload);
       return res.json();
     },
-    onSuccess: (result: { organization: { name: string }; adminUser: { email: string; isNewUser: boolean } }) => {
+    onSuccess: (result: TenantProvisioningResult) => {
       queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/organizations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/platform-admin/stats"] });
@@ -357,6 +375,8 @@ function OrganizationsTab() {
         title: "Tenant created",
         description: `${result.organization.name} created with ${result.adminUser.email} as admin${result.adminUser.isNewUser ? " (new account)" : ""}`,
       });
+      setProvisioningResult(result);
+      setCopiedUrl(false);
       setShowCreateForm(false);
       setTenantForm({
         orgName: "",
@@ -396,6 +416,49 @@ function OrganizationsTab() {
 
   return (
     <div className="space-y-4">
+      {provisioningResult && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Tenant access details</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p>
+              {provisioningResult.emailDelivery.accepted
+                ? "The invitation email was accepted for delivery."
+                : "The invitation email was not accepted for delivery. Share the one-time link below through a secure channel."}
+            </p>
+            {provisioningResult.adminUser.setPasswordUrl ? (
+              <>
+                <div className="flex gap-2 items-center">
+                  <Input readOnly value={provisioningResult.adminUser.setPasswordUrl} aria-label="Set-password link" />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={async () => {
+                      const setPasswordUrl = provisioningResult.adminUser.setPasswordUrl;
+                      if (!setPasswordUrl) return;
+                      await navigator.clipboard.writeText(setPasswordUrl);
+                      setCopiedUrl(true);
+                    }}
+                  >
+                    {copiedUrl ? <CheckCircle2 className="h-4 w-4" /> : "Copy"}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  This one-time link expires{" "}
+                  {provisioningResult.adminUser.setPasswordExpiresAt
+                    ? `on ${new Date(provisioningResult.adminUser.setPasswordExpiresAt).toLocaleString()}.`
+                    : "after 7 days."}
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                This administrator already has a password. No new set-password link was generated.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
       {/* Create Tenant Form */}
       {showCreateForm && (
         <Card className="glass-card border-border/40">
@@ -407,7 +470,8 @@ function OrganizationsTab() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Create an organization and assign an admin. The admin will receive an email invitation.
+              Create an organization and assign an owner. Delivery status and a one-time set-password link will be shown
+              after creation.
             </p>
           </CardHeader>
           <CardContent>
