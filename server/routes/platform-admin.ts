@@ -24,7 +24,8 @@ import { pool, getPoolHealth, checkPoolConnectivity } from "../db";
 import { logger } from "../logger";
 import { randomBytes } from "crypto";
 import { authStorage } from "../auth/storage";
-import { sendEmail } from "../email-service";
+import { sendEmailWithStatus } from "../email-service";
+import type { EmailDeliveryResult } from "../email-service";
 import { passwordResetEmail, welcomeEmail } from "../email-templates";
 import { isDevelopmentSeedEnvironment } from "../seed";
 import { ERROR_CODES } from "../api-response";
@@ -1578,14 +1579,18 @@ export function registerPlatformAdminRoutes(app: Express): void {
           invitedBy: getReqUser(req).id,
         });
 
-        const setPasswordExpiresAt = !foundUser.passwordHash ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null;
-        const setPasswordToken = setPasswordExpiresAt ? randomBytes(32).toString("hex") : null;
-        if (setPasswordToken) {
+        let setPasswordToken: string | null = null;
+        let setPasswordExpiresAt: Date | null = null;
+        if (!foundUser.passwordHash) {
+          const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+          const token = randomBytes(32).toString("hex");
           await tx.insert(passwordResetTokens).values({
             userId: foundUser.id,
-            token: setPasswordToken,
-            expiresAt: setPasswordExpiresAt!,
+            token,
+            expiresAt,
           });
+          setPasswordToken = token;
+          setPasswordExpiresAt = expiresAt;
         }
 
         return { org: newOrg, adminUser: foundUser, isNewUser: createdNew, setPasswordToken, setPasswordExpiresAt };
@@ -1621,9 +1626,9 @@ export function registerPlatformAdminRoutes(app: Express): void {
             loginUrl: `${appBaseUrl}/`,
           });
 
-      let emailDeliveryAccepted = false;
+      let emailDelivery: EmailDeliveryResult = { accepted: false, status: "failed" };
       try {
-        emailDeliveryAccepted = await sendEmail({
+        emailDelivery = await sendEmailWithStatus({
           to: normalizedEmail,
           subject: credentialEmail.subject,
           html: credentialEmail.html,
@@ -1657,8 +1662,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
             setPasswordExpiresAt: setPasswordExpiresAt?.toISOString() ?? null,
           },
           emailDelivery: {
-            accepted: emailDeliveryAccepted,
-            status: emailDeliveryAccepted ? "accepted" : "failed",
+            accepted: emailDelivery.accepted,
+            status: emailDelivery.status,
           },
         },
         { status: 201 },

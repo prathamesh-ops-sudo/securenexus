@@ -20,12 +20,19 @@ export function isEmailEnabled(): boolean {
   return config.nodeEnv === "production" || config.nodeEnv === "staging";
 }
 
-export async function sendEmail(params: {
+export type EmailDeliveryStatus = "accepted" | "not_attempted" | "failed";
+
+export interface EmailDeliveryResult {
+  accepted: boolean;
+  status: EmailDeliveryStatus;
+}
+
+export async function sendEmailWithStatus(params: {
   to: string | string[];
   subject: string;
   html: string;
   text?: string;
-}): Promise<boolean> {
+}): Promise<EmailDeliveryResult> {
   const recipients = Array.isArray(params.to) ? params.to : [params.to];
 
   if (!isEmailEnabled()) {
@@ -33,7 +40,7 @@ export async function sendEmail(params: {
       to: recipients,
       subject: params.subject,
     });
-    return true;
+    return { accepted: false, status: "not_attempted" };
   }
 
   try {
@@ -56,13 +63,23 @@ export async function sendEmail(params: {
 
     await client.send(command);
     log.info("Email sent successfully", { to: recipients, subject: params.subject });
-    return true;
+    return { accepted: true, status: "accepted" };
   } catch (err) {
     log.error("Failed to send email", {
       to: recipients,
       subject: params.subject,
       error: String(err),
     });
-    return false;
+    return { accepted: false, status: "failed" };
   }
+}
+
+export async function sendEmail(params: {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text?: string;
+}): Promise<boolean> {
+  const result = await sendEmailWithStatus(params);
+  return result.status !== "failed";
 }

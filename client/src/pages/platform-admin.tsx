@@ -89,7 +89,7 @@ interface TenantProvisioningResult {
     setPasswordUrl: string | null;
     setPasswordExpiresAt: string | null;
   };
-  emailDelivery: { accepted: boolean; status: "accepted" | "failed" };
+  emailDelivery: { accepted: boolean; status: "accepted" | "not_attempted" | "failed" };
 }
 
 interface SeedResponse {
@@ -423,9 +423,11 @@ function OrganizationsTab() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <p>
-              {provisioningResult.emailDelivery.accepted
+              {provisioningResult.emailDelivery.status === "accepted"
                 ? "The invitation email was accepted for delivery."
-                : "The invitation email was not accepted for delivery. Share the one-time link below through a secure channel."}
+                : provisioningResult.emailDelivery.status === "not_attempted"
+                  ? "Email delivery is not enabled in this environment, so no invitation email was sent. Share the one-time link below yourself through a trusted channel."
+                  : "The invitation email could not be delivered. Share the one-time link below yourself through a trusted channel."}
             </p>
             {provisioningResult.adminUser.setPasswordUrl ? (
               <>
@@ -449,6 +451,9 @@ function OrganizationsTab() {
                   {provisioningResult.adminUser.setPasswordExpiresAt
                     ? `on ${new Date(provisioningResult.adminUser.setPasswordExpiresAt).toLocaleString()}.`
                     : "after 7 days."}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Share this one-time link with the owner through a trusted channel.
                 </p>
               </>
             ) : (
