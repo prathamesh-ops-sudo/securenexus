@@ -40,29 +40,6 @@ interface BudgetRow {
   updated_at: Date | null;
 }
 
-const TABLE_ENSURED = { done: false };
-
-async function ensureTable(): Promise<void> {
-  if (TABLE_ENSURED.done) return;
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS org_ai_budgets (
-      org_id VARCHAR PRIMARY KEY,
-      budget_usd DOUBLE PRECISION NOT NULL DEFAULT 50,
-      invocation_cap INTEGER NOT NULL DEFAULT 5000,
-      daily_spend_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
-      daily_invocations INTEGER NOT NULL DEFAULT 0,
-      daily_input_tokens INTEGER NOT NULL DEFAULT 0,
-      daily_output_tokens INTEGER NOT NULL DEFAULT 0,
-      last_reset_at TIMESTAMP DEFAULT NOW(),
-      updated_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_org_ai_budgets_org_id ON org_ai_budgets (org_id)
-  `);
-  TABLE_ENSURED.done = true;
-}
-
 async function resolveOrgAiBudget(orgId: string): Promise<PlanAiBudget> {
   try {
     const result = await pool.query(`SELECT plan_tier FROM org_plan_limits WHERE org_id = $1 LIMIT 1`, [orgId]);
@@ -78,7 +55,6 @@ async function resolveOrgAiBudget(orgId: string): Promise<PlanAiBudget> {
 }
 
 async function ensureOrgRow(orgId: string): Promise<void> {
-  await ensureTable();
   const budget = await resolveOrgAiBudget(orgId);
   await pool.query(
     `INSERT INTO org_ai_budgets (org_id, budget_usd, invocation_cap, daily_spend_usd, daily_invocations, daily_input_tokens, daily_output_tokens, last_reset_at, updated_at)
@@ -217,13 +193,11 @@ export async function getOrgUsageSummary(orgId: string): Promise<OrgUsageSummary
 }
 
 export async function getAllOrgUsageSummaries(): Promise<OrgUsageSummary[]> {
-  await ensureTable();
   const result = await pool.query(`SELECT * FROM org_ai_budgets ORDER BY org_id`);
   return (result.rows as BudgetRow[]).map(rowToSummary);
 }
 
 export async function resetDailyBudgets(): Promise<number> {
-  await ensureTable();
   const result = await pool.query(
     `UPDATE org_ai_budgets
      SET daily_spend_usd = 0,

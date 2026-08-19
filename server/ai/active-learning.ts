@@ -50,77 +50,6 @@ export interface ActiveLearningStats {
   fpRateBySource: FalsePositiveStats[];
 }
 
-// ─── Schema Initialization ───────────────────────────────────────────────────
-
-const TABLES_ENSURED = { done: false };
-
-async function ensureActiveLearningTables(): Promise<void> {
-  if (TABLES_ENSURED.done) return;
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ai_few_shot_examples (
-      id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id VARCHAR,
-      domain VARCHAR NOT NULL,
-      input TEXT NOT NULL,
-      incorrect_output TEXT NOT NULL,
-      correct_output TEXT NOT NULL,
-      lesson TEXT NOT NULL,
-      alert_source VARCHAR,
-      alert_category VARCHAR,
-      feedback_id VARCHAR,
-      active BOOLEAN NOT NULL DEFAULT true,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_few_shot_org_domain ON ai_few_shot_examples (org_id, domain)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_few_shot_active ON ai_few_shot_examples (active)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_few_shot_feedback ON ai_few_shot_examples (feedback_id)`);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ai_source_signal_scores (
-      id SERIAL PRIMARY KEY,
-      org_id VARCHAR NOT NULL,
-      source VARCHAR NOT NULL,
-      category VARCHAR NOT NULL DEFAULT '',
-      total_feedback INTEGER NOT NULL DEFAULT 0,
-      overridden_count INTEGER NOT NULL DEFAULT 0,
-      dismissed_count INTEGER NOT NULL DEFAULT 0,
-      fp_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-      suppressed BOOLEAN NOT NULL DEFAULT false,
-      manual_override BOOLEAN NOT NULL DEFAULT false,
-      last_updated TIMESTAMP DEFAULT NOW(),
-      UNIQUE (org_id, source, category)
-    )
-  `);
-  // Add manual_override column if it doesn't exist (migration-safe)
-  await pool.query(
-    `ALTER TABLE ai_source_signal_scores ADD COLUMN IF NOT EXISTS manual_override BOOLEAN NOT NULL DEFAULT false`,
-  );
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_source_signal_org ON ai_source_signal_scores (org_id)`);
-  await pool.query(
-    `CREATE INDEX IF NOT EXISTS idx_source_signal_suppressed ON ai_source_signal_scores (org_id, suppressed)`,
-  );
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ai_feedback_learning_log (
-      id SERIAL PRIMARY KEY,
-      org_id VARCHAR,
-      feedback_id VARCHAR NOT NULL,
-      action VARCHAR NOT NULL,
-      domain VARCHAR,
-      few_shot_example_id VARCHAR,
-      source VARCHAR,
-      category VARCHAR,
-      details JSONB,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_feedback_learning_org ON ai_feedback_learning_log (org_id)`);
-
-  TABLES_ENSURED.done = true;
-}
-
 // ─── Few-Shot Example Management ─────────────────────────────────────────────
 
 export async function addFewShotExample(params: {
@@ -134,8 +63,6 @@ export async function addFewShotExample(params: {
   alertCategory?: string;
   feedbackId?: string;
 }): Promise<FewShotExample> {
-  await ensureActiveLearningTables();
-
   const result = await pool.query(
     `INSERT INTO ai_few_shot_examples (org_id, domain, input, incorrect_output, correct_output, lesson, alert_source, alert_category, feedback_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -169,8 +96,6 @@ export async function getFewShotExamples(
   orgId?: string,
   limit: number = 10,
 ): Promise<FewShotExample[]> {
-  await ensureActiveLearningTables();
-
   const safeLimit = Math.min(Math.max(1, limit), 50);
 
   // Get org-specific + global (null org_id) examples
@@ -186,8 +111,6 @@ export async function getFewShotExamples(
 }
 
 export async function getAllFewShotExamples(orgId?: string, domain?: string): Promise<FewShotExample[]> {
-  await ensureActiveLearningTables();
-
   let query = `SELECT * FROM ai_few_shot_examples WHERE (org_id = $1 OR org_id IS NULL)`;
   const params: (string | null)[] = [orgId || null];
 
@@ -203,8 +126,6 @@ export async function getAllFewShotExamples(orgId?: string, domain?: string): Pr
 }
 
 export async function deactivateFewShotExample(id: string, orgId?: string): Promise<boolean> {
-  await ensureActiveLearningTables();
-
   const result = orgId
     ? await pool.query(`UPDATE ai_few_shot_examples SET active = false WHERE id = $1 AND org_id = $2 RETURNING id`, [
         id,
@@ -216,8 +137,6 @@ export async function deactivateFewShotExample(id: string, orgId?: string): Prom
 }
 
 export async function deleteFewShotExample(id: string, orgId?: string): Promise<boolean> {
-  await ensureActiveLearningTables();
-
   const result = orgId
     ? await pool.query(`DELETE FROM ai_few_shot_examples WHERE id = $1 AND org_id = $2`, [id, orgId])
     : await pool.query(`DELETE FROM ai_few_shot_examples WHERE id = $1`, [id]);
@@ -266,8 +185,6 @@ export async function recordFeedbackOutcome(params: {
   analystCorrection?: string;
   reason?: string;
 }): Promise<void> {
-  await ensureActiveLearningTables();
-
   const isNegative = params.outcome === "overridden" || params.outcome === "dismissed";
 
   // Upsert source signal score
@@ -367,8 +284,6 @@ export async function recordFeedbackOutcome(params: {
 // ─── Suppressed Sources ──────────────────────────────────────────────────────
 
 export async function getSuppressedSources(orgId: string): Promise<SourceSignalScore[]> {
-  await ensureActiveLearningTables();
-
   const result = await pool.query(
     `SELECT * FROM ai_source_signal_scores WHERE org_id = $1 AND suppressed = true ORDER BY fp_rate DESC`,
     [orgId],
@@ -378,8 +293,6 @@ export async function getSuppressedSources(orgId: string): Promise<SourceSignalS
 }
 
 export async function getSourceSignalScores(orgId: string, limit: number = 50): Promise<SourceSignalScore[]> {
-  await ensureActiveLearningTables();
-
   const safeLimit = Math.min(Math.max(1, limit), 200);
   const result = await pool.query(
     `SELECT * FROM ai_source_signal_scores WHERE org_id = $1 ORDER BY fp_rate DESC, total_feedback DESC LIMIT $2`,
@@ -395,8 +308,6 @@ export async function toggleSourceSuppression(
   category: string,
   suppressed: boolean,
 ): Promise<boolean> {
-  await ensureActiveLearningTables();
-
   const result = await pool.query(
     `UPDATE ai_source_signal_scores SET suppressed = $4, manual_override = true, last_updated = NOW()
      WHERE org_id = $1 AND source = $2 AND category = $3
@@ -408,8 +319,6 @@ export async function toggleSourceSuppression(
 }
 
 export async function isSourceSuppressed(orgId: string, source: string, category: string): Promise<boolean> {
-  await ensureActiveLearningTables();
-
   const result = await pool.query(
     `SELECT suppressed FROM ai_source_signal_scores
      WHERE org_id = $1 AND source = $2 AND category = $3`,
@@ -423,8 +332,6 @@ export async function isSourceSuppressed(orgId: string, source: string, category
 // ─── Active Learning Stats ───────────────────────────────────────────────────
 
 export async function getActiveLearningStats(orgId: string): Promise<ActiveLearningStats> {
-  await ensureActiveLearningTables();
-
   // Count examples
   const examplesResult = await pool.query(
     `SELECT domain, COUNT(*) as cnt, SUM(CASE WHEN active THEN 1 ELSE 0 END) as active_cnt
@@ -504,8 +411,6 @@ export interface LearningLogEntry {
 }
 
 export async function getLearningLog(orgId: string, limit: number = 50): Promise<LearningLogEntry[]> {
-  await ensureActiveLearningTables();
-
   const safeLimit = Math.min(Math.max(1, limit), 200);
   const result = await pool.query(
     `SELECT * FROM ai_feedback_learning_log WHERE org_id = $1 ORDER BY created_at DESC LIMIT $2`,

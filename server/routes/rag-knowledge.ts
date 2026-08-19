@@ -3,7 +3,6 @@ import { getOrgId, logger, strictLimiter, sendEnvelope } from "./shared";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import {
-  initializeVectorSchema,
   vectorSearch,
   searchSimilarIncidents,
   upsertKnowledgeEntry,
@@ -19,9 +18,6 @@ import { pool } from "../db";
 const log = logger.child("rag-knowledge");
 
 export function registerRagKnowledgeRoutes(app: Express): void {
-  // ── Initialize vector schema on startup ───────────────────────────
-  initializeVectorSchema().catch((err) => log.warn("Vector schema init deferred", { error: String(err) }));
-
   // ── Knowledge Base Stats ──────────────────────────────────────────
   app.get("/api/rag/stats", isAuthenticated, resolveOrgContext, async (_req, res) => {
     try {
@@ -326,15 +322,4 @@ export function registerRagKnowledgeRoutes(app: Express): void {
       }
     },
   );
-
-  // ── Re-initialize Vector Schema ───────────────────────────────────
-  app.post("/api/rag/init", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {
-    try {
-      await initializeVectorSchema();
-      sendEnvelope(res, { message: "Vector schema initialized successfully" });
-    } catch (err) {
-      log.error("Vector schema initialization failed", { error: String(err) });
-      res.status(500).json({ message: "Failed to initialize vector schema" });
-    }
-  });
 }

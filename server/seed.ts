@@ -23,10 +23,15 @@ import { logger } from "./logger";
 const log = logger.child("seed");
 
 export async function seedDatabase() {
-  if (process.env.SEED_DEMO_DATA !== "true") {
+  const environment = (process.env.NODE_ENV || "development").toLowerCase();
+  const explicitOptIn = process.env.SEED_DEMO_DATA === "true";
+  const explicitOptOut = process.env.SEED_DEMO_DATA === "false";
+  const productionLikeEnvironment = new Set(["production", "staging", "uat", "test"]).has(environment);
+
+  if (!explicitOptIn && (explicitOptOut || productionLikeEnvironment || environment !== "development")) {
     log.info("Demo data seeding skipped", {
-      environment: process.env.NODE_ENV || "development",
-      reason: "SEED_DEMO_DATA is not true",
+      environment,
+      reason: explicitOptOut ? "SEED_DEMO_DATA is false" : "SEED_DEMO_DATA=true is required outside development",
     });
     return;
   }

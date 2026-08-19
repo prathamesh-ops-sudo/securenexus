@@ -14,6 +14,7 @@ import {
   index,
   uniqueIndex,
   uuid,
+  vector,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -3474,6 +3475,119 @@ export const orgAiBudgets = pgTable(
 );
 
 export type OrgAiBudget = typeof orgAiBudgets.$inferSelect;
+
+export const aiFewShotExamples = pgTable(
+  "ai_few_shot_examples",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()::text`),
+    orgId: varchar("org_id").references(() => organizations.id, { onDelete: "set null" }),
+    domain: varchar("domain").notNull(),
+    input: text("input").notNull(),
+    incorrectOutput: text("incorrect_output").notNull(),
+    correctOutput: text("correct_output").notNull(),
+    lesson: text("lesson").notNull(),
+    alertSource: varchar("alert_source"),
+    alertCategory: varchar("alert_category"),
+    feedbackId: varchar("feedback_id"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_few_shot_org_domain").on(table.orgId, table.domain),
+    index("idx_few_shot_active").on(table.active),
+    index("idx_few_shot_feedback").on(table.feedbackId),
+  ],
+);
+
+export const aiSourceSignalScores = pgTable(
+  "ai_source_signal_scores",
+  {
+    id: serial("id").primaryKey(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    source: varchar("source").notNull(),
+    category: varchar("category").notNull().default(""),
+    totalFeedback: integer("total_feedback").notNull().default(0),
+    overriddenCount: integer("overridden_count").notNull().default(0),
+    dismissedCount: integer("dismissed_count").notNull().default(0),
+    fpRate: doublePrecision("fp_rate").notNull().default(0),
+    suppressed: boolean("suppressed").notNull().default(false),
+    manualOverride: boolean("manual_override").notNull().default(false),
+    lastUpdated: timestamp("last_updated").defaultNow(),
+  },
+  (table) => [
+    index("idx_source_signal_org").on(table.orgId),
+    index("idx_source_signal_suppressed").on(table.orgId, table.suppressed),
+    uniqueIndex("uq_ai_source_signal_org_source_category").on(table.orgId, table.source, table.category),
+  ],
+);
+
+export const aiFeedbackLearningLog = pgTable(
+  "ai_feedback_learning_log",
+  {
+    id: serial("id").primaryKey(),
+    orgId: varchar("org_id").references(() => organizations.id, { onDelete: "set null" }),
+    feedbackId: varchar("feedback_id").notNull(),
+    action: varchar("action").notNull(),
+    domain: varchar("domain"),
+    fewShotExampleId: varchar("few_shot_example_id"),
+    source: varchar("source"),
+    category: varchar("category"),
+    details: jsonb("details"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_feedback_learning_org").on(table.orgId)],
+);
+
+export const ragKnowledgeBase = pgTable(
+  "rag_knowledge_base",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: varchar("org_id").references(() => organizations.id, { onDelete: "set null" }),
+    category: text("category").notNull(),
+    sourceType: text("source_type").notNull(),
+    sourceId: text("source_id"),
+    title: text("title").notNull(),
+    content: text("content").notNull(),
+    metadata: jsonb("metadata").default({}),
+    embedding: vector("embedding", { dimensions: 1024 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("idx_rag_kb_category").on(table.category),
+    index("idx_rag_kb_org").on(table.orgId),
+    index("idx_rag_kb_source").on(table.sourceType, table.sourceId),
+    uniqueIndex("idx_rag_kb_source_unique")
+      .on(table.sourceType, table.sourceId)
+      .where(sql`source_id IS NOT NULL`),
+  ],
+);
+
+export const ragIncidentEmbeddings = pgTable(
+  "rag_incident_embeddings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    incidentId: text("incident_id").notNull().unique(),
+    title: text("title").notNull(),
+    summary: text("summary"),
+    severity: text("severity"),
+    mitreTactics: text("mitre_tactics").array(),
+    mitreTechniques: text("mitre_techniques").array(),
+    iocs: text("iocs").array(),
+    content: text("content").notNull(),
+    embedding: vector("embedding", { dimensions: 1024 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [index("idx_rag_incident_org").on(table.orgId)],
+);
 
 export const connectorHealthChecks = pgTable(
   "connector_health_checks",

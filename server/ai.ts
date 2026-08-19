@@ -31,10 +31,12 @@ import { buildFewShotAugmentedPrompt, getSuppressedSourcesForContext } from "./a
 import { AiUnavailableError } from "./ai/fallback";
 import { buildBudgetedNarrativeMessage } from "./ai/narrative-budget";
 
-initializeDefaultPrompts().catch((err) => log.error("Failed to initialize default prompts", { error: String(err) }));
-registerEnhancedPrompts();
-
 const log = logger.child("ai");
+
+export async function initializeAiPrompts(): Promise<void> {
+  await initializeDefaultPrompts();
+  await registerEnhancedPrompts();
+}
 
 type InferenceTier = "triage" | "narrative" | "correlation" | "investigation";
 

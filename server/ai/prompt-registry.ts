@@ -31,75 +31,6 @@ interface PromptAuditEntry {
   metadata?: Record<string, unknown>;
 }
 
-const TABLE_ENSURED = { done: false };
-
-async function ensureTables(): Promise<void> {
-  if (TABLE_ENSURED.done) return;
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ai_prompts (
-      id VARCHAR PRIMARY KEY,
-      org_id VARCHAR,
-      name VARCHAR NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      tier VARCHAR NOT NULL DEFAULT 'general',
-      system_prompt TEXT NOT NULL,
-      user_template TEXT NOT NULL,
-      output_schema JSONB,
-      max_tokens INTEGER NOT NULL DEFAULT 2048,
-      temperature DOUBLE PRECISION NOT NULL DEFAULT 0.1,
-      version INTEGER NOT NULL DEFAULT 1,
-      deprecated BOOLEAN NOT NULL DEFAULT false,
-      deprecated_at TIMESTAMP,
-      superseded_by VARCHAR,
-      tags JSONB NOT NULL DEFAULT '[]',
-      is_active BOOLEAN NOT NULL DEFAULT true,
-      created_at TIMESTAMP DEFAULT NOW(),
-      updated_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompts_org ON ai_prompts (org_id)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompts_tier ON ai_prompts (tier)`);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ai_prompt_versions (
-      id SERIAL PRIMARY KEY,
-      prompt_id VARCHAR NOT NULL,
-      org_id VARCHAR,
-      version INTEGER NOT NULL,
-      name VARCHAR NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      tier VARCHAR NOT NULL DEFAULT 'general',
-      system_prompt TEXT NOT NULL,
-      user_template TEXT NOT NULL,
-      output_schema JSONB,
-      max_tokens INTEGER NOT NULL DEFAULT 2048,
-      temperature DOUBLE PRECISION NOT NULL DEFAULT 0.1,
-      tags JSONB NOT NULL DEFAULT '[]',
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-  await pool.query(
-    `CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_prompt_versions_prompt_version ON ai_prompt_versions (prompt_id, version)`,
-  );
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompt_versions_prompt ON ai_prompt_versions (prompt_id)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompt_versions_org ON ai_prompt_versions (org_id)`);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ai_prompt_audit_log (
-      id SERIAL PRIMARY KEY,
-      prompt_id VARCHAR NOT NULL,
-      version INTEGER NOT NULL,
-      action VARCHAR NOT NULL,
-      metadata JSONB,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompt_audit_prompt ON ai_prompt_audit_log (prompt_id)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_prompt_audit_action ON ai_prompt_audit_log (action)`);
-
-  TABLE_ENSURED.done = true;
-}
-
 function rowToTemplate(row: Record<string, unknown>): PromptTemplate {
   return {
     id: row.id as string,
@@ -128,7 +59,6 @@ async function recordAudit(
   action: PromptAuditEntry["action"],
   metadata?: Record<string, unknown>,
 ): Promise<void> {
-  await ensureTables();
   await pool.query(`INSERT INTO ai_prompt_audit_log (prompt_id, version, action, metadata) VALUES ($1, $2, $3, $4)`, [
     promptId,
     version,
@@ -138,8 +68,6 @@ async function recordAudit(
 }
 
 export async function registerPrompt(template: PromptTemplate): Promise<void> {
-  await ensureTables();
-
   const existing = await pool.query(`SELECT id, version FROM ai_prompts WHERE id = $1`, [template.id]);
 
   if (existing.rows.length > 0 && existing.rows[0].version >= template.version) {
@@ -217,14 +145,12 @@ export async function registerPrompt(template: PromptTemplate): Promise<void> {
 }
 
 export async function getPrompt(id: string): Promise<PromptTemplate | undefined> {
-  await ensureTables();
   const result = await pool.query(`SELECT * FROM ai_prompts WHERE id = $1 AND is_active = true`, [id]);
   if (result.rows.length === 0) return undefined;
   return rowToTemplate(result.rows[0]);
 }
 
 export async function getPromptVersion(id: string, version: number): Promise<PromptTemplate | undefined> {
-  await ensureTables();
   const result = await pool.query(
     `SELECT pv.*, p.deprecated, p.deprecated_at, p.superseded_by, p.is_active, p.updated_at
      FROM ai_prompt_versions pv
@@ -255,13 +181,11 @@ export async function getPromptVersion(id: string, version: number): Promise<Pro
 }
 
 export async function getAllPrompts(): Promise<PromptTemplate[]> {
-  await ensureTables();
   const result = await pool.query(`SELECT * FROM ai_prompts WHERE is_active = true ORDER BY tier, name`);
   return result.rows.map(rowToTemplate);
 }
 
 export async function getPromptsByTier(tier: PromptTemplate["tier"]): Promise<PromptTemplate[]> {
-  await ensureTables();
   const result = await pool.query(`SELECT * FROM ai_prompts WHERE tier = $1 AND is_active = true ORDER BY name`, [
     tier,
   ]);
@@ -269,7 +193,6 @@ export async function getPromptsByTier(tier: PromptTemplate["tier"]): Promise<Pr
 }
 
 export async function deprecatePrompt(id: string, supersededBy?: string): Promise<boolean> {
-  await ensureTables();
   const result = await pool.query(
     `UPDATE ai_prompts SET deprecated = true, deprecated_at = NOW(), superseded_by = $2, updated_at = NOW()
      WHERE id = $1 AND is_active = true
@@ -283,7 +206,6 @@ export async function deprecatePrompt(id: string, supersededBy?: string): Promis
 }
 
 export async function deletePrompt(id: string): Promise<boolean> {
-  await ensureTables();
   const result = await pool.query(
     `UPDATE ai_prompts SET is_active = false, updated_at = NOW() WHERE id = $1 AND is_active = true RETURNING version`,
     [id],
@@ -302,7 +224,6 @@ export async function recordPromptInvocation(
 }
 
 export async function getPromptAuditLog(promptId?: string, limit: number = 50): Promise<PromptAuditEntry[]> {
-  await ensureTables();
   const safeLimit = Math.min(Math.max(limit, 1), 500);
 
   let result;
@@ -328,7 +249,6 @@ export async function getPromptAuditLog(promptId?: string, limit: number = 50): 
 }
 
 export async function getPromptVersionHistory(id: string): Promise<PromptTemplate[]> {
-  await ensureTables();
   const result = await pool.query(
     `SELECT pv.*, p.deprecated, p.deprecated_at, p.superseded_by, p.is_active, p.updated_at
      FROM ai_prompt_versions pv
@@ -365,8 +285,6 @@ export async function getPromptCatalogSummary(): Promise<{
   totalVersions: number;
   totalInvocations: number;
 }> {
-  await ensureTables();
-
   const promptsResult = await pool.query(`SELECT tier, deprecated FROM ai_prompts WHERE is_active = true`);
   const byTier: Record<string, number> = {};
   let deprecated = 0;

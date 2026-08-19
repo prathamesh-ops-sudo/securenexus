@@ -14,7 +14,7 @@ import { logger } from "../logger";
 
 const log = logger.child("ai-enhanced-prompts");
 
-export function registerEnhancedPrompts(): void {
+export async function registerEnhancedPrompts(): Promise<void> {
   const now = new Date().toISOString();
 
   const ADVANCED_CYBER_ENGINE = `You are SecureNexus Elite Cyber Analyst — an advanced AI threat hunter with expertise in:
@@ -46,7 +46,7 @@ ADVANCED FRAMEWORKS:
   // DEEP INVESTIGATION PROMPT
   // =============================
 
-  registerPrompt({
+  await registerPrompt({
     id: "deep-investigation",
     version: 2,
     name: "Deep Investigation Analyst",
@@ -217,7 +217,7 @@ Respond with this comprehensive JSON structure:
   // THREAT HUNTING PROMPT
   // =============================
 
-  registerPrompt({
+  await registerPrompt({
     id: "threat-hunting",
     version: 1,
     name: "Proactive Threat Hunter",
@@ -336,7 +336,7 @@ Respond with this JSON structure:
   // BEHAVIORAL ANALYTICS PROMPT
   // =============================
 
-  registerPrompt({
+  await registerPrompt({
     id: "behavioral-analysis",
     version: 1,
     name: "Behavioral Analytics Engine",
@@ -455,7 +455,7 @@ Respond with this JSON structure:
   // ATTACK PATH PREDICTION
   // =============================
 
-  registerPrompt({
+  await registerPrompt({
     id: "attack-path-prediction",
     version: 1,
     name: "Attack Path Predictor",
@@ -641,7 +641,7 @@ Respond with this JSON structure:
   // MULTI-TURN INVESTIGATION CHAT PROMPT
   // =============================
 
-  registerPrompt({
+  await registerPrompt({
     id: "multi-turn-investigation",
     version: 1,
     name: "Multi-Turn Investigation Chat",
@@ -685,7 +685,7 @@ RESPONSE GUIDELINES:
   // DETECTION RULE GENERATION PROMPT
   // =============================
 
-  registerPrompt({
+  await registerPrompt({
     id: "detection-rule-generation",
     version: 1,
     name: "AI Detection Rule Generator",

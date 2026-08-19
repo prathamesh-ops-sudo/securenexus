@@ -64,91 +64,6 @@ async function generateEmbeddingsBatch(texts: string[]): Promise<EmbeddingResult
   return results;
 }
 
-// ── Schema Initialization ───────────────────────────────────────────
-
-export async function initializeVectorSchema(): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query("CREATE EXTENSION IF NOT EXISTS vector");
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS rag_knowledge_base (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        org_id UUID,
-        category TEXT NOT NULL,
-        source_type TEXT NOT NULL,
-        source_id TEXT,
-        title TEXT NOT NULL,
-        content TEXT NOT NULL,
-        metadata JSONB DEFAULT '{}',
-        embedding vector(${EMBEDDING_DIMENSION}),
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_rag_kb_category ON rag_knowledge_base (category)
-    `);
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_rag_kb_org ON rag_knowledge_base (org_id)
-    `);
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_rag_kb_source ON rag_knowledge_base (source_type, source_id)
-    `);
-    // Unique constraint needed for ON CONFLICT upsert
-    await client.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_rag_kb_source_unique
-      ON rag_knowledge_base (source_type, source_id)
-      WHERE source_id IS NOT NULL
-    `);
-
-    // IVFFlat index for fast approximate nearest neighbor search
-    // Only create if enough rows exist (IVFFlat needs at least nlist rows)
-    const countResult = await client.query("SELECT COUNT(*) as cnt FROM rag_knowledge_base");
-    const rowCount = parseInt(countResult.rows[0].cnt, 10);
-    if (rowCount >= 100) {
-      await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_rag_kb_embedding
-        ON rag_knowledge_base
-        USING ivfflat (embedding vector_cosine_ops)
-        WITH (lists = ${Math.min(Math.max(Math.floor(Math.sqrt(rowCount)), 10), 100)})
-      `);
-    }
-
-    // Incident embeddings table (org-scoped, auto-populated)
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS rag_incident_embeddings (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        org_id UUID NOT NULL,
-        incident_id TEXT NOT NULL UNIQUE,
-        title TEXT NOT NULL,
-        summary TEXT,
-        severity TEXT,
-        mitre_tactics TEXT[],
-        mitre_techniques TEXT[],
-        iocs TEXT[],
-        content TEXT NOT NULL,
-        embedding vector(${EMBEDDING_DIMENSION}),
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_rag_incident_org ON rag_incident_embeddings (org_id)
-    `);
-
-    log.info("Vector search schema initialized successfully");
-  } catch (err) {
-    log.warn("Vector search schema initialization failed (pgvector may not be available)", {
-      error: String(err),
-    });
-  } finally {
-    client.release();
-  }
-}
-
 // ── Vector Search Functions ─────────────────────────────────────────
 
 export interface VectorSearchResult {
@@ -182,7 +97,7 @@ export async function vectorSearch(
                1 - (embedding <=> $1::vector) AS similarity
         FROM rag_knowledge_base
         WHERE category = $2
-          AND (org_id IS NULL OR org_id = $3::uuid)
+          AND (org_id IS NULL OR org_id = $3)
           AND embedding IS NOT NULL
         ORDER BY embedding <=> $1::vector
         LIMIT $4
@@ -247,7 +162,7 @@ export async function searchSimilarIncidents(
              mitre_tactics, mitre_techniques, iocs,
              1 - (embedding <=> $1::vector) AS similarity
       FROM rag_incident_embeddings
-      WHERE org_id = $2::uuid
+      WHERE org_id = $2
         AND embedding IS NOT NULL
       ORDER BY embedding <=> $1::vector
       LIMIT $3
@@ -374,7 +289,7 @@ export async function deleteKnowledgeEntry(id: string, orgId?: string): Promise<
   // Org-scoped delete: only delete entries belonging to this org (or global entries with no org)
   if (orgId) {
     const result = await pool.query(
-      "DELETE FROM rag_knowledge_base WHERE id = $1 AND (org_id = $2::uuid OR org_id IS NULL)",
+      "DELETE FROM rag_knowledge_base WHERE id = $1 AND (org_id = $2 OR org_id IS NULL)",
       [id, orgId],
     );
     return (result.rowCount ?? 0) > 0;

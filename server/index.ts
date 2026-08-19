@@ -38,6 +38,7 @@ import { errorTrackingMiddleware, trackError } from "./error-tracker";
 import { startConnectorHealthLoop, stopConnectorHealthLoop } from "./connector-health-loop";
 import { AiUnavailableError } from "./ai/fallback";
 import { replyError } from "./api-response";
+import { initializeAiPrompts } from "./ai";
 
 const startedAt = Date.now();
 
@@ -148,6 +149,7 @@ export function log(message: string, source = "express") {
 
 (async () => {
   await runStartupMigrations();
+  await initializeAiPrompts();
   await registerRoutes(httpServer, app);
   // Passport must be initialized by registerRoutes before this protected endpoint runs.
   app.get("/api/ops/metrics", isAuthenticated, (_req, res) => {

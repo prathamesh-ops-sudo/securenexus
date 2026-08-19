@@ -622,6 +622,10 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
       }
 
       const user = (req as any).user;
+      const existingMetadata =
+        evidence.metadata && typeof evidence.metadata === "object" && !Array.isArray(evidence.metadata)
+          ? (evidence.metadata as Record<string, unknown>)
+          : {};
       const [updated] = await db
         .update(evidenceItems)
         .set({
@@ -633,6 +637,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
           uploadStatus: "uploaded",
           uploadedAt: new Date(),
           metadata: {
+            ...existingMetadata,
             uploadStatus: "uploaded",
             etag: verified.etag,
             checksumSha256: verified.checksumSha256,
