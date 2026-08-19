@@ -566,16 +566,16 @@ function AppContent() {
 
 function App() {
   return (
-    <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}>
+      <ErrorBoundary>
         <ThemeProvider>
           <TooltipProvider>
             <AppContent />
             <Toaster />
           </TooltipProvider>
         </ThemeProvider>
-      </QueryClientProvider>
-    </ErrorBoundary>
+      </ErrorBoundary>
+    </QueryClientProvider>
   );
 }
 

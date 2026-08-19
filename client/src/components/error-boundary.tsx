@@ -1,7 +1,9 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import React, { Component, type ErrorInfo, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { RefreshCw, ArrowLeft, Shield, Wifi, Server, Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import ForcedPasswordChangePage from "@/pages/forced-password-change";
+import { ApiRequestError } from "@/lib/queryClient";
 
 interface Props {
   children: ReactNode;
@@ -56,6 +58,20 @@ function classifyError(error: Error | null): {
     gradient: "from-violet-500/20 to-purple-500/20",
     hint: "Try refreshing the page",
   };
+}
+
+export function isPasswordChangeRequiredError(error: Error | null): boolean {
+  if (!error) return false;
+  if (error instanceof ApiRequestError && error.code === "PASSWORD_CHANGE_REQUIRED") {
+    return true;
+  }
+
+  const errorCode = (error as Error & { code?: string }).code;
+  return (
+    errorCode === "PASSWORD_CHANGE_REQUIRED" ||
+    error.message.includes("PASSWORD_CHANGE_REQUIRED") ||
+    error.message.toLowerCase().includes("password change required")
+  );
 }
 
 function ErrorFallbackUI({
@@ -186,6 +202,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
     if (this.props.fallback) {
       return this.props.fallback;
+    }
+
+    if (isPasswordChangeRequiredError(this.state.error)) {
+      return <ForcedPasswordChangePage />;
     }
 
     return <ErrorFallbackUI error={this.state.error} onReset={this.handleReset} onReload={this.handleReload} />;

@@ -36,16 +36,40 @@ interface ApiEnvelope<T = unknown> {
   errors: { code: string; message: string; field?: string; details?: unknown }[] | null;
 }
 
+export class ApiRequestError extends Error {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(status: number, message: string, code?: string) {
+    super(`${status}: ${message}`);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 function isEnvelope(body: unknown): body is ApiEnvelope {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return false;
   const obj = body as Record<string, unknown>;
   return "data" in obj && "meta" in obj && "errors" in obj;
 }
 
+function firstApiError(body: unknown): { code: string; message: string } | null {
+  if (!isEnvelope(body) || !Array.isArray(body.errors) || body.errors.length === 0) {
+    return null;
+  }
+
+  const [error] = body.errors;
+  return error && typeof error.code === "string" && typeof error.message === "string"
+    ? { code: error.code, message: error.message }
+    : null;
+}
+
 /** Extract a human-readable error string from an envelope (or fall back to raw text). */
 export function extractApiError(body: unknown, fallback: string): string {
-  if (isEnvelope(body) && Array.isArray(body.errors) && body.errors.length > 0) {
-    return body.errors[0].message;
+  const apiError = firstApiError(body);
+  if (apiError) {
+    return apiError.message;
   }
   if (typeof body === "object" && body !== null && "message" in body) {
     return String((body as any).message);
@@ -83,13 +107,16 @@ export function ensureArray<T = unknown>(val: unknown): T[] {
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     let errorMessage: string = res.statusText;
+    let errorCode: string | undefined;
     try {
       const body = await res.json();
-      errorMessage = extractApiError(body, res.statusText);
+      const apiError = firstApiError(body);
+      errorMessage = apiError?.message ?? extractApiError(body, res.statusText);
+      errorCode = apiError?.code;
     } catch {
       // Body wasn't JSON – use statusText.
     }
-    throw new Error(`${res.status}: ${errorMessage}`);
+    throw new ApiRequestError(res.status, errorMessage, errorCode);
   }
 }
 

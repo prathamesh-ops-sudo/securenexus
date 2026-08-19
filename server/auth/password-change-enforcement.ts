@@ -10,6 +10,11 @@ const PASSWORD_CHANGE_ALLOWED_PATHS = new Set([
 ]);
 
 export function passwordChangeRequiredMiddleware(req: Request, res: Response, next: NextFunction): void {
+  if (!req.path.startsWith("/api/") && req.path !== "/api") {
+    next();
+    return;
+  }
+
   if (
     !req.isAuthenticated?.() ||
     !(req.user as { passwordChangeRequired?: boolean; passwordHash?: string | null } | undefined)

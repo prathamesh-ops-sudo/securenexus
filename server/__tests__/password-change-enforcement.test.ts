@@ -9,6 +9,27 @@ function response() {
 }
 
 describe("password change enforcement", () => {
+  it("does not gate SPA documents or static assets", () => {
+    for (const path of ["/", "/change-password", "/assets/index.js"]) {
+      const next = vi.fn();
+      const res = response();
+
+      passwordChangeRequiredMiddleware(
+        {
+          isAuthenticated: () => true,
+          user: { passwordChangeRequired: true, passwordHash: "local-hash" },
+          path,
+          method: "GET",
+        } as never,
+        res as never,
+        next,
+      );
+
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+    }
+  });
+
   it("blocks normal authenticated use until the password is changed", () => {
     const next = vi.fn();
     const res = response();
