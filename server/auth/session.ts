@@ -131,7 +131,7 @@ export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
-    conString: config.databaseUrl,
+    pool,
     createTableIfMissing: true,
     ttl: sessionTtl,
     tableName: "sessions",
