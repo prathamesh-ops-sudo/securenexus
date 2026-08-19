@@ -12,6 +12,7 @@ dist
 attached_assets
 k8s
 scripts
+!scripts/migrate.ts
 docs
 .github
 *.log
