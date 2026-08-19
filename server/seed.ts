@@ -20,7 +20,17 @@ import {
 import { count } from "drizzle-orm";
 import { logger } from "./logger";
 
+const log = logger.child("seed");
+
 export async function seedDatabase() {
+  if (process.env.SEED_DEMO_DATA !== "true") {
+    log.info("Demo data seeding skipped", {
+      environment: process.env.NODE_ENV || "development",
+      reason: "SEED_DEMO_DATA is not true",
+    });
+    return;
+  }
+
   const [existing] = await db.select({ count: count() }).from(organizations);
   if (existing.count > 0) return;
 

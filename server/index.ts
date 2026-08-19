@@ -32,6 +32,8 @@ import { startDrillScheduler, stopDrillScheduler } from "./dr-drill-scheduler";
 import { startStaleSlotReaper, stopStaleSlotReaper } from "./distributed-concurrency";
 import { startBudgetResetScheduler, stopBudgetResetScheduler } from "./ai/budget";
 import { bootstrapSuperAdmin } from "./bootstrap-super-admin";
+import { isAuthenticated } from "./auth";
+import { runStartupMigrations } from "./startup-migrations";
 import { errorTrackingMiddleware, trackError } from "./error-tracker";
 import { startConnectorHealthLoop, stopConnectorHealthLoop } from "./connector-health-loop";
 import { AiUnavailableError } from "./ai/fallback";
@@ -123,11 +125,6 @@ applyInputSanitization(app);
 // Well-known endpoints (security.txt, robots.txt) — before auth
 registerWellKnownRoutes(app);
 
-// Prometheus metrics endpoint — no auth required for K8s scraping
-app.get("/api/ops/metrics", (_req, res) => {
-  res.type("text/plain; version=0.0.4; charset=utf-8").send(renderMetrics());
-});
-
 app.use(inFlightMiddleware);
 app.use(poolCircuitBreakerMiddleware);
 app.use(requestTimeoutMiddleware(30_000)); // 30s timeout for API requests (excludes SSE/streaming)
@@ -150,7 +147,12 @@ export function log(message: string, source = "express") {
 }
 
 (async () => {
+  await runStartupMigrations();
   await registerRoutes(httpServer, app);
+  // Passport must be initialized by registerRoutes before this protected endpoint runs.
+  app.get("/api/ops/metrics", isAuthenticated, (_req, res) => {
+    res.type("text/plain; version=0.0.4; charset=utf-8").send(renderMetrics());
+  });
 
   const { seedDatabase } = await import("./seed");
   await seedDatabase();
@@ -293,4 +295,10 @@ export function log(message: string, source = "express") {
         });
     });
   }
-})();
+})().catch((error: unknown) => {
+  logger.child("startup").error("Application startup failed", {
+    error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+  });
+  process.exit(1);
+});
