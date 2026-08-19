@@ -122,16 +122,11 @@ export function registerInvestigationsRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        let orgId = (req as any).user?.orgId;
-        if (!orgId) {
-          const orgs = await storage.getOrganizations();
-          if (orgs.length > 0) orgId = orgs[0].id;
-        }
-        if (!orgId) return res.status(400).json({ message: "Organization required" });
+        const orgId = getOrgId(req);
         const { runPredictiveAnalysis } = await import("../predictive-engine");
         const result = await runPredictiveAnalysis(orgId, storage);
 
-        const feedback = await storage.getAiFeedback(undefined, undefined);
+        const feedback = await storage.getAiFeedback(orgId);
         const moduleFeedback = ["triage", "correlation", "forecast"].map((module) => {
           const filtered = feedback.filter((f) => (f.resourceType || "").includes(module));
           const positives = filtered.filter((f) => f.rating >= 4).length;
@@ -325,12 +320,7 @@ export function registerInvestigationsRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        let orgId = (req as any).user?.orgId;
-        if (!orgId) {
-          const orgs = await storage.getOrganizations();
-          if (orgs.length > 0) orgId = orgs[0].id;
-        }
-        if (!orgId) return res.status(400).json({ message: "No organization found" });
+        const orgId = getOrgId(req);
         const existing = await storage.getAutoResponsePolicies(orgId);
         if (existing.length > 0) return res.json({ message: "Policies already exist", count: existing.length });
         const defaults = generateDefaultPolicies(orgId);
@@ -517,9 +507,8 @@ export function registerInvestigationsRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req, res) => {
       try {
-        const user = (req as any).user;
         const { incidentType } = req.query;
-        const templates = await storage.getRunbookTemplates(user?.orgId, incidentType as string | undefined);
+        const templates = await storage.getRunbookTemplates(getOrgId(req), incidentType as string | undefined);
         res.json(templates);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch runbook templates" });
@@ -1137,7 +1126,7 @@ export function registerInvestigationsRoutes(app: Express): void {
 
         const created: any[] = [];
         for (const tmpl of builtInTemplates) {
-          const existing = await storage.getRunbookTemplates(undefined, tmpl.incidentType);
+          const existing = await storage.getRunbookTemplates(getOrgId(req), tmpl.incidentType);
           const alreadyExists = existing.some((e) => e.isBuiltIn && e.incidentType === tmpl.incidentType);
           if (alreadyExists) continue;
 

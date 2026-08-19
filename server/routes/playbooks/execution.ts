@@ -198,11 +198,14 @@ export function registerPlaybooksExecutionRoutes(app: Express): void {
   app.get(
     "/api/playbook-executions",
     isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
     validateQuery(querySchemas.playbookExecutions),
     async (req, res) => {
       try {
+        const orgId = getOrgId(req);
         const { playbookId, limit } = (req as any).validatedQuery;
-        res.json(await storage.getPlaybookExecutions(playbookId, limit));
+        res.json(await storage.getPlaybookExecutions(orgId, playbookId, limit));
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch executions" });
       }
@@ -375,11 +378,9 @@ export function registerPlaybooksExecutionRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const allExecs = await storage.getPlaybookExecutions(undefined, 200);
-        // Filter to org's playbooks
+        const allExecs = await storage.getPlaybookExecutions(orgId, undefined, 200);
         const orgPlaybooks = await storage.getPlaybooks(orgId);
-        const orgPbIds = new Set(orgPlaybooks.map((p: any) => p.id));
-        const orgExecs = allExecs.filter((e: any) => orgPbIds.has(e.playbookId));
+        const orgExecs = allExecs;
 
         const running = orgExecs.filter((e: any) => e.status === "running");
         const awaitingApproval = orgExecs.filter((e: any) => e.status === "awaiting_approval");
@@ -658,9 +659,8 @@ export function registerPlaybooksExecutionRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const allPlaybooks = await storage.getPlaybooks(orgId);
-        const allExecs = await storage.getPlaybookExecutions(undefined, 500);
-        const orgPbIds = new Set(allPlaybooks.map((p: any) => p.id));
-        const orgExecs = allExecs.filter((e: any) => orgPbIds.has(e.playbookId));
+        const allExecs = await storage.getPlaybookExecutions(orgId, undefined, 500);
+        const orgExecs = allExecs;
 
         // Overall metrics
         const completed = orgExecs.filter((e: any) => e.status === "completed");

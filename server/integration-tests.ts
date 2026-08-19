@@ -63,13 +63,11 @@ export async function runConnectorContractTests(connectorType: string): Promise<
   results.push(
     await runTest(`${connectorType}: connector schema has required fields`, async () => {
       const orgs = await storage.getOrganizations();
-      const testOrgId = orgs.length > 0 ? orgs[0].id : undefined;
-      const connectors = testOrgId ? await storage.getConnectors(testOrgId) : [];
-      const sample = connectors.find((c) => c.type === connectorType);
+      const connectorsByOrg = await Promise.all(orgs.map((org) => storage.getConnectors(org.id)));
+      const sample = connectorsByOrg.flat().find((c) => c.type === connectorType);
       if (!sample) {
-        const allConnectors = testOrgId ? await storage.getConnectors(testOrgId) : [];
-        if (allConnectors.length > 0) {
-          const anyConnector = allConnectors[0];
+        const anyConnector = connectorsByOrg.flat()[0];
+        if (anyConnector) {
           assertHasFields(
             anyConnector as unknown as Record<string, unknown>,
             ["id", "name", "type", "status"],

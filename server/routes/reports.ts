@@ -146,8 +146,7 @@ export function registerReportsRoutes(app: Express): void {
     requireOrgId,
     requireMinRole("analyst"),
     async (req, res) => {
-      const user = req.user as any;
-      const templates = await storage.getReportTemplates(user?.orgId);
+      const templates = await storage.getReportTemplates(getOrgId(req));
       res.json(templates);
     },
   );
@@ -423,7 +422,7 @@ export function registerReportsRoutes(app: Express): void {
       try {
         const user = req.user as any;
         const orgId = getOrgId(req);
-        const allTemplates = await storage.getReportTemplates(undefined);
+        const allTemplates = await storage.getReportTemplates(orgId);
         if (allTemplates.some((t) => t.isBuiltIn && t.orgId === orgId)) {
           return res.json({
             message: "Built-in templates already exist for this org",

@@ -606,22 +606,25 @@ export function registerIngestionRoutes(app: Express): void {
   );
 
   // Ingestion health/stats (authenticated user routes)
-  app.get("/api/ingestion/logs", isAuthenticated, async (req, res) => {
+  app.get("/api/ingestion/logs", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const limit = parseInt(req.query.limit as string, 10) || 50;
-      const logs = await storage.getIngestionLogs(undefined, Math.min(limit, 200));
+      const logs = await storage.getIngestionLogs(orgId, Math.min(limit, 200));
       res.json(logs);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch ingestion logs" });
     }
   });
 
-  app.get("/api/v1/ingestion/logs", isAuthenticated, async (req, res) => {
+  app.get("/api/v1/ingestion/logs", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const offset = Number(req.query.offset ?? 0) || 0;
       const limit = Math.min(Number(req.query.limit ?? 50) || 50, 500);
 
       const { items, total } = await storage.getIngestionLogsPaginated({
+        orgId,
         offset,
         limit,
       });
