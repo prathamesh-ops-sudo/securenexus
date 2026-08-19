@@ -2,7 +2,11 @@
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, reply, replyError, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
-import { requireMinRole, resolveOrgContext } from "../rbac";
+import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
+import { db } from "../db";
+import { playbookTemplateRatings } from "@shared/schema";
+import { and, eq, sql } from "drizzle-orm";
+import { z } from "zod";
 
 interface TemplateStep {
   id: string;
@@ -562,6 +566,78 @@ export function registerPlaybookTemplateRoutes(app: Express): void {
       } catch (error: unknown) {
         return replyError(res, 500, [{ code: "TEMPLATE_ERROR", message: "Failed to list categories." }]);
       }
+    },
+  );
+
+  app.get(
+    "/api/playbook-templates/:id/versions",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const id = String(req.params.id);
+      const template = catalogMap.get(id);
+      if (template) {
+        return reply(res, {
+          currentVersion: template.version,
+          versions: [{ version: template.version, releasedAt: null, isCurrent: true }],
+        });
+      }
+      const playbook = await storage.getPlaybook(id);
+      if (!playbook || playbook.orgId !== orgId) {
+        return replyError(res, 404, [{ code: "NOT_FOUND", message: "Template not found." }]);
+      }
+      const versions = await storage.getPlaybookVersions(id, orgId);
+      return reply(res, {
+        currentVersion: versions[0]?.version ?? 1,
+        versions: versions.map((version) => ({ ...version, isCurrent: version.status === "active" })),
+      });
+    },
+  );
+
+  app.post(
+    "/api/playbook-templates/:id/rate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const parsed = z.object({ rating: z.number().int().min(1).max(5) }).safeParse(req.body);
+      if (!parsed.success)
+        return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "Rating must be 1 through 5." }]);
+      const id = String(req.params.id);
+      if (!catalogMap.has(id)) {
+        const playbook = await storage.getPlaybook(id);
+        if (!playbook || playbook.orgId !== orgId) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Template not found." }]);
+        }
+      }
+      const user = (req as any).user;
+      const [rating] = await db
+        .insert(playbookTemplateRatings)
+        .values({ orgId, templateId: id, rating: parsed.data.rating, ratedBy: user?.id })
+        .onConflictDoUpdate({
+          target: [playbookTemplateRatings.orgId, playbookTemplateRatings.templateId],
+          set: { rating: parsed.data.rating, ratedBy: user?.id, updatedAt: new Date() },
+        })
+        .returning();
+      const [average] = await db
+        .select({ average: sql<number>`avg(${playbookTemplateRatings.rating})` })
+        .from(playbookTemplateRatings)
+        .where(and(eq(playbookTemplateRatings.orgId, orgId), eq(playbookTemplateRatings.templateId, id)));
+      await storage.createAuditLog({
+        orgId,
+        userId: user?.id,
+        userName: user?.username || "unknown",
+        action: "playbook_template_rated",
+        resourceType: "playbook_template",
+        resourceId: id,
+        details: { rating: parsed.data.rating },
+      });
+      return reply(res, { ...rating, averageRating: Number(average?.average ?? parsed.data.rating) });
     },
   );
 

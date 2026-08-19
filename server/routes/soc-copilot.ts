@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { randomBytes } from "crypto";
 import type { Express } from "express";
-import { logger, getOrgId } from "./shared";
+import { logger, getOrgId, storage as coreStorage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 
@@ -17,6 +17,35 @@ const VALID_FEEDBACK_OUTCOMES = ["accepted", "overridden", "dismissed"];
 const VALID_COPILOT_DOMAINS = ["triage", "timeline", "hypothesis", "enrichment", "policy"];
 
 export function registerSocCopilotRoutes(app: Express): void {
+  app.get(
+    "/api/soc-copilot/timelines",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const runs = await coreStorage.getInvestigationRuns(orgId);
+        return res.json(
+          runs.map((run: any) => ({
+            id: run.id,
+            investigationId: run.id,
+            incidentId: run.incidentId,
+            title: run.summary || `Investigation ${run.id}`,
+            status: run.status,
+            startTime: run.createdAt,
+            endTime: run.completedAt,
+            leadAnalyst: run.triggeredBy,
+          })),
+        );
+      } catch (error) {
+        logger.child("routes").error("SOC copilot timelines error", { error: String(error) });
+        return res.status(500).json({ message: "Failed to fetch copilot timelines" });
+      }
+    },
+  );
+
   app.get("/api/soc-copilot/stats", isAuthenticated, async (req, res) => {
     try {
       const orgId = getOrgId(req);

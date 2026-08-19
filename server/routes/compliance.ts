@@ -84,6 +84,33 @@ export function registerComplianceRoutes(app: Express): void {
     }
   });
 
+  app.get(
+    "/api/dsar-requests",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const requests = await storage.getDsarRequests(orgId);
+        return res.json({
+          items: requests.map((request) => ({
+            id: request.id,
+            requestorEmail: request.requestorEmail,
+            requestType: request.requestType,
+            status: request.status,
+            dueDate: request.dueDate,
+            createdAt: request.createdAt,
+          })),
+          total: requests.length,
+        });
+      } catch (error) {
+        return res.status(500).json({ message: "Failed to fetch DSAR requests" });
+      }
+    },
+  );
+
   app.post(
     "/api/compliance/dsar",
     isAuthenticated,

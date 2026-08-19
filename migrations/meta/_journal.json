@@ -8,6 +8,13 @@
       "when": 1787137614430,
       "tag": "0000_awesome_madrox",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787139217274,
+      "tag": "0001_closed_punisher",
+      "breakpoints": true
     }
   ]
 }

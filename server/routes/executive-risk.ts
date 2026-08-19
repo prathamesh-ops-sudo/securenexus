@@ -1,8 +1,9 @@
 import type { Express, Request, Response } from "express";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
-import { logger, getOrgId, sendEnvelope } from "./shared";
+import { logger, getOrgId, sendEnvelope, storage as coreStorage } from "./shared";
 import * as storage from "../storage/executive-risk";
+import { z } from "zod";
 
 const log = logger.child("executive-risk");
 
@@ -197,6 +198,55 @@ export function registerExecutiveRiskRoutes(app: Express): void {
           errors: [{ code: "INTERNAL_ERROR", message: "Failed to create board summary" }],
         });
       }
+    },
+  );
+
+  app.post(
+    "/api/executive-risk/summaries/generate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req: Request, res: Response) => {
+      const parsed = z.object({ period: z.enum(VALID_PERIODS) }).safeParse(req.body);
+      if (!parsed.success) {
+        return sendEnvelope(res, null, {
+          status: 400,
+          errors: [{ code: "VALIDATION_ERROR", message: "period must be weekly, monthly, or quarterly" }],
+        });
+      }
+      const orgId = getOrgId(req);
+      const user = req.user as { id?: string; username?: string } | undefined;
+      const metrics = await storage.getExecutiveMetrics(orgId);
+      const findings = metrics.map((metric) => ({
+        metric: metric.name,
+        value: metric.value,
+        unit: metric.unit,
+        trend: metric.trend,
+      }));
+      const summary = await storage.createBoardSummary({
+        orgId,
+        period: parsed.data.period,
+        title: `${parsed.data.period[0].toUpperCase()}${parsed.data.period.slice(1)} Executive Risk Summary`,
+        executiveSynopsis:
+          metrics.length > 0
+            ? `This summary contains ${metrics.length} persisted executive metrics for the organization.`
+            : "No persisted executive metrics were available for this period.",
+        keyFindings: findings,
+        riskPosture: { source: "executive_metrics", metricCount: metrics.length },
+        recommendations: [],
+        generatedBy: user?.id || "unknown",
+      });
+      await coreStorage.createAuditLog({
+        orgId,
+        userId: user?.id,
+        userName: user?.username || "unknown",
+        action: "executive_risk_summary_generated",
+        resourceType: "board_summary",
+        resourceId: summary.id,
+        details: { period: parsed.data.period, metricCount: metrics.length },
+      });
+      return sendEnvelope(res, summary, { status: 201 });
     },
   );
 

@@ -1021,6 +1021,14 @@ function PromptHistoryPanel({ onSelect }: { onSelect: (prompt: string) => void }
 
   const { data: history } = useQuery<PromptHistoryEntry[]>({
     queryKey: ["/api/prompt-artifact/history", historySearch, showFavoritesOnly],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (historySearch) params.set("keyword", historySearch);
+      if (showFavoritesOnly) params.set("favorites", "true");
+      const query = params.toString();
+      const res = await apiRequest("GET", `/api/prompt-artifact/history${query ? `?${query}` : ""}`);
+      return res.json();
+    },
   });
 
   const toggleFavoriteMutation = useMutation({

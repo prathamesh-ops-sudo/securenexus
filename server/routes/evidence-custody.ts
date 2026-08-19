@@ -2,11 +2,27 @@
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, reply, replyError, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
-import { requireMinRole, resolveOrgContext } from "../rbac";
+import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
 import { createHash } from "crypto";
+import { db } from "../db";
+import { and, desc, eq, lt } from "drizzle-orm";
+import { evidenceAccessRequests, evidenceItems, evidenceTags } from "@shared/schema";
+import { z } from "zod";
 
 export function registerEvidenceCustodyRoutes(app: Express): void {
   const log = logger.child("evidence-custody");
+  const tagSchema = z.object({
+    tag: z.string().trim().min(1).max(100),
+    category: z.string().trim().min(1).max(50).default("other"),
+  });
+  const accessRequestSchema = z.object({
+    reason: z.string().trim().min(1).max(2000),
+    accessType: z.enum(["view", "download", "export"]).default("view"),
+  });
+  const decisionSchema = z.object({
+    decision: z.enum(["approved", "rejected"]),
+    note: z.string().trim().max(2000).optional(),
+  });
 
   // List all evidence items for the org
   app.get(
@@ -305,6 +321,277 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
         log.error("Failed to retrieve access log", { error });
         return replyError(res, 500, [{ code: "EVIDENCE_ERROR", message: "Failed to retrieve access log." }]);
       }
+    },
+  );
+
+  app.get(
+    "/api/evidence-custody/:id/tags",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const evidence = await storage.getEvidenceItem(String(req.params.id));
+      if (!evidence || evidence.orgId !== orgId) {
+        return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+      }
+      const tags = await db
+        .select()
+        .from(evidenceTags)
+        .where(and(eq(evidenceTags.orgId, orgId), eq(evidenceTags.evidenceId, evidence.id)))
+        .orderBy(desc(evidenceTags.createdAt));
+      return sendEnvelope(res, tags, { meta: { total: tags.length } });
+    },
+  );
+
+  app.post(
+    "/api/evidence-custody/:id/tags",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const parsed = tagSchema.safeParse(req.body);
+      if (!parsed.success) return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "Invalid tag data." }]);
+      const evidence = await storage.getEvidenceItem(String(req.params.id));
+      if (!evidence || evidence.orgId !== orgId) {
+        return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+      }
+      const user = (req as any).user;
+      const [tag] = await db
+        .insert(evidenceTags)
+        .values({ ...parsed.data, orgId, evidenceId: evidence.id, createdBy: user?.id })
+        .onConflictDoUpdate({
+          target: [evidenceTags.evidenceId, evidenceTags.tag],
+          set: { category: parsed.data.category },
+        })
+        .returning();
+      await storage.createAuditLog({
+        orgId,
+        userId: user?.id,
+        userName: user?.username || "unknown",
+        action: "evidence_tag_added",
+        resourceType: "evidence_item",
+        resourceId: evidence.id,
+        details: { tag: parsed.data.tag, category: parsed.data.category },
+      });
+      return reply(res, tag, undefined, 201);
+    },
+  );
+
+  app.delete(
+    "/api/evidence-custody/:id/tags/:tagId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const [tag] = await db
+        .delete(evidenceTags)
+        .where(and(eq(evidenceTags.id, String(req.params.tagId)), eq(evidenceTags.orgId, orgId)))
+        .returning();
+      if (!tag || tag.evidenceId !== String(req.params.id)) {
+        return replyError(res, 404, [{ code: "NOT_FOUND", message: "Tag not found." }]);
+      }
+      const user = (req as any).user;
+      await storage.createAuditLog({
+        orgId,
+        userId: user?.id,
+        userName: user?.username || "unknown",
+        action: "evidence_tag_removed",
+        resourceType: "evidence_item",
+        resourceId: tag.evidenceId,
+        details: { tagId: tag.id, tag: tag.tag },
+      });
+      return reply(res, { deleted: true });
+    },
+  );
+
+  app.get(
+    "/api/evidence-custody/:id/access-requests",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const evidence = await storage.getEvidenceItem(String(req.params.id));
+      if (!evidence || evidence.orgId !== orgId) {
+        return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+      }
+      const requests = await db
+        .select()
+        .from(evidenceAccessRequests)
+        .where(and(eq(evidenceAccessRequests.orgId, orgId), eq(evidenceAccessRequests.evidenceId, evidence.id)))
+        .orderBy(desc(evidenceAccessRequests.createdAt));
+      return sendEnvelope(res, requests, { meta: { total: requests.length } });
+    },
+  );
+
+  app.post(
+    "/api/evidence-custody/:id/access-requests",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const parsed = accessRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "Invalid access request data." }]);
+      }
+      const evidence = await storage.getEvidenceItem(String(req.params.id));
+      if (!evidence || evidence.orgId !== orgId) {
+        return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+      }
+      const user = (req as any).user;
+      const [request] = await db
+        .insert(evidenceAccessRequests)
+        .values({
+          ...parsed.data,
+          orgId,
+          evidenceId: evidence.id,
+          requestedBy: user?.id,
+          requestedByName: user?.username || "unknown",
+        })
+        .returning();
+      await storage.createAuditLog({
+        orgId,
+        userId: user?.id,
+        userName: user?.username || "unknown",
+        action: "evidence_access_requested",
+        resourceType: "evidence_item",
+        resourceId: evidence.id,
+        details: { requestId: request.id, accessType: request.accessType },
+      });
+      return reply(res, request, undefined, 201);
+    },
+  );
+
+  app.post(
+    "/api/evidence-custody/:id/access-requests/:requestId/decide",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const parsed = decisionSchema.safeParse(req.body);
+      if (!parsed.success) return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "Invalid decision." }]);
+      const user = (req as any).user;
+      const [request] = await db
+        .update(evidenceAccessRequests)
+        .set({
+          status: parsed.data.decision,
+          decisionNote: parsed.data.note,
+          decidedBy: user?.id,
+          decidedByName: user?.username || "unknown",
+          decidedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(evidenceAccessRequests.id, String(req.params.requestId)),
+            eq(evidenceAccessRequests.orgId, orgId),
+            eq(evidenceAccessRequests.evidenceId, String(req.params.id)),
+          ),
+        )
+        .returning();
+      if (!request) return replyError(res, 404, [{ code: "NOT_FOUND", message: "Access request not found." }]);
+      await storage.createAuditLog({
+        orgId,
+        userId: user?.id,
+        userName: user?.username || "unknown",
+        action: "evidence_access_decided",
+        resourceType: "evidence_item",
+        resourceId: request.evidenceId,
+        details: { requestId: request.id, decision: request.status },
+      });
+      return reply(res, request);
+    },
+  );
+
+  app.post(
+    "/api/evidence-custody/:id/upload",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const uploadSchema = z.object({
+        fileName: z.string().trim().min(1).max(255),
+        fileSize: z
+          .number()
+          .int()
+          .nonnegative()
+          .max(1024 * 1024 * 1024),
+        mimeType: z.string().trim().min(1).max(255),
+      });
+      const parsed = uploadSchema.safeParse(req.body);
+      if (!parsed.success)
+        return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "Invalid upload metadata." }]);
+      const evidence = await storage.getEvidenceItem(String(req.params.id));
+      if (!evidence || evidence.orgId !== orgId) {
+        return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+      }
+      const [updated] = await db
+        .update(evidenceItems)
+        .set({
+          title: parsed.data.fileName,
+          fileSize: parsed.data.fileSize,
+          mimeType: parsed.data.mimeType,
+          storageKey: `evidence/${orgId}/${evidence.id}/${parsed.data.fileName}`,
+          metadata: { ...(evidence.metadata as object), uploadStatus: "metadata-recorded" },
+        })
+        .where(and(eq(evidenceItems.id, evidence.id), eq(evidenceItems.orgId, orgId)))
+        .returning();
+      const user = (req as any).user;
+      await storage.createAuditLog({
+        orgId,
+        userId: user?.id,
+        userName: user?.username || "unknown",
+        action: "evidence_upload_registered",
+        resourceType: "evidence_item",
+        resourceId: evidence.id,
+        details: parsed.data,
+      });
+      return reply(res, updated);
+    },
+  );
+
+  app.post(
+    "/api/evidence-custody/retention-policies/apply",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const user = (req as any).user;
+      const cutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+      const expired = await db
+        .select({ id: evidenceItems.id })
+        .from(evidenceItems)
+        .where(and(eq(evidenceItems.orgId, orgId), lt(evidenceItems.createdAt, cutoff)));
+      await storage.createAuditLog({
+        orgId,
+        userId: user?.id,
+        userName: user?.username || "unknown",
+        action: "evidence_retention_applied",
+        resourceType: "evidence",
+        resourceId: orgId,
+        details: {
+          cutoff: cutoff.toISOString(),
+          eligible: expired.length,
+          archived: 0,
+          deleted: 0,
+          skipped: expired.length,
+        },
+      });
+      return reply(res, { archived: 0, deleted: 0, skipped: expired.length, evaluated: expired.length });
     },
   );
 

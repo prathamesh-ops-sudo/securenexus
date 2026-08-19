@@ -15016,3 +15016,114 @@ export const browserInjectionPatterns = pgTable(
 
 export type BrowserInjectionPattern = typeof browserInjectionPatterns.$inferSelect;
 export type InsertBrowserInjectionPattern = typeof browserInjectionPatterns.$inferInsert;
+
+export const evidenceTags = pgTable(
+  "evidence_tags",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    evidenceId: varchar("evidence_id")
+      .notNull()
+      .references(() => evidenceItems.id, { onDelete: "cascade" }),
+    tag: text("tag").notNull(),
+    category: text("category").notNull().default("other"),
+    createdBy: varchar("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_evidence_tags_org").on(table.orgId),
+    index("idx_evidence_tags_evidence").on(table.evidenceId),
+    uniqueIndex("uq_evidence_tags_evidence_tag").on(table.evidenceId, table.tag),
+  ],
+);
+
+export const evidenceAccessRequests = pgTable(
+  "evidence_access_requests",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    evidenceId: varchar("evidence_id")
+      .notNull()
+      .references(() => evidenceItems.id, { onDelete: "cascade" }),
+    requestedBy: varchar("requested_by"),
+    requestedByName: text("requested_by_name"),
+    reason: text("reason").notNull(),
+    accessType: text("access_type").notNull().default("view"),
+    status: text("status").notNull().default("pending"),
+    decisionNote: text("decision_note"),
+    decidedBy: varchar("decided_by"),
+    decidedByName: text("decided_by_name"),
+    decidedAt: timestamp("decided_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_evidence_access_org").on(table.orgId),
+    index("idx_evidence_access_evidence").on(table.evidenceId),
+    index("idx_evidence_access_status").on(table.orgId, table.status),
+  ],
+);
+
+export const investigationAnnotations = pgTable(
+  "investigation_annotations",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    investigationId: varchar("investigation_id")
+      .notNull()
+      .references(() => investigationRuns.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    markerType: text("marker_type").notNull().default("note"),
+    color: text("color").notNull().default("#3b82f6"),
+    createdBy: varchar("created_by"),
+    createdByName: text("created_by_name"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_investigation_annotations_org").on(table.orgId),
+    index("idx_investigation_annotations_investigation").on(table.investigationId),
+  ],
+);
+
+export type EvidenceTag = typeof evidenceTags.$inferSelect;
+export type InsertEvidenceTag = typeof evidenceTags.$inferInsert;
+export type EvidenceAccessRequest = typeof evidenceAccessRequests.$inferSelect;
+export type InsertEvidenceAccessRequest = typeof evidenceAccessRequests.$inferInsert;
+export type InvestigationAnnotation = typeof investigationAnnotations.$inferSelect;
+export type InsertInvestigationAnnotation = typeof investigationAnnotations.$inferInsert;
+
+export const playbookTemplateRatings = pgTable(
+  "playbook_template_ratings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    templateId: varchar("template_id").notNull(),
+    rating: integer("rating").notNull(),
+    ratedBy: varchar("rated_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_template_ratings_org").on(table.orgId),
+    index("idx_template_ratings_template").on(table.templateId),
+    uniqueIndex("uq_template_ratings_org_template").on(table.orgId, table.templateId),
+  ],
+);
+
+export type PlaybookTemplateRating = typeof playbookTemplateRatings.$inferSelect;
+export type InsertPlaybookTemplateRating = typeof playbookTemplateRatings.$inferInsert;

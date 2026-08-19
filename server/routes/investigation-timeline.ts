@@ -2,7 +2,11 @@
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, reply, replyError, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
-import { requireMinRole, resolveOrgContext } from "../rbac";
+import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
+import { db } from "../db";
+import { investigationAnnotations } from "@shared/schema";
+import { and, desc, eq } from "drizzle-orm";
+import { z } from "zod";
 
 export function registerInvestigationTimelineRoutes(app: Express): void {
   const log = logger.child("investigation-timeline");
@@ -99,6 +103,11 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
         }
 
         const steps = await storage.getInvestigationSteps(run.id);
+        const annotations = await db
+          .select()
+          .from(investigationAnnotations)
+          .where(and(eq(investigationAnnotations.orgId, orgId), eq(investigationAnnotations.investigationId, run.id)))
+          .orderBy(desc(investigationAnnotations.createdAt));
 
         return reply(res, {
           investigationId: run.id,
@@ -120,11 +129,92 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
             duration: s.duration,
             createdAt: s.createdAt,
           })),
+          annotations,
         });
       } catch (error: unknown) {
         log.error("Failed to get timeline", { error });
         return replyError(res, 500, [{ code: "TIMELINE_ERROR", message: "Failed to get timeline." }]);
       }
+    },
+  );
+
+  app.post(
+    "/api/investigation-timelines/:investigationId/annotations",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const parsed = z
+        .object({
+          text: z.string().trim().min(1).max(5000),
+          markerType: z.string().trim().min(1).max(50).default("note"),
+          color: z
+            .string()
+            .regex(/^#[0-9a-f]{6}$/i)
+            .default("#3b82f6"),
+        })
+        .safeParse(req.body);
+      if (!parsed.success) return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "Invalid annotation." }]);
+      const run = await storage.getInvestigationRun(String(req.params.investigationId));
+      if (!run || run.orgId !== orgId) {
+        return replyError(res, 404, [{ code: "NOT_FOUND", message: "Timeline not found." }]);
+      }
+      const user = (req as any).user;
+      const [annotation] = await db
+        .insert(investigationAnnotations)
+        .values({
+          ...parsed.data,
+          orgId,
+          investigationId: run.id,
+          createdBy: user?.id,
+          createdByName: user?.username || "unknown",
+        })
+        .returning();
+      await storage.createAuditLog({
+        orgId,
+        userId: user?.id,
+        userName: user?.username || "unknown",
+        action: "investigation_annotation_created",
+        resourceType: "investigation",
+        resourceId: run.id,
+        details: { annotationId: annotation.id },
+      });
+      return reply(res, annotation, undefined, 201);
+    },
+  );
+
+  app.delete(
+    "/api/investigation-timelines/:investigationId/annotations/:annotationId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const [annotation] = await db
+        .delete(investigationAnnotations)
+        .where(
+          and(
+            eq(investigationAnnotations.id, String(req.params.annotationId)),
+            eq(investigationAnnotations.orgId, orgId),
+            eq(investigationAnnotations.investigationId, String(req.params.investigationId)),
+          ),
+        )
+        .returning();
+      if (!annotation) return replyError(res, 404, [{ code: "NOT_FOUND", message: "Annotation not found." }]);
+      const user = (req as any).user;
+      await storage.createAuditLog({
+        orgId,
+        userId: user?.id,
+        userName: user?.username || "unknown",
+        action: "investigation_annotation_deleted",
+        resourceType: "investigation",
+        resourceId: annotation.investigationId,
+        details: { annotationId: annotation.id },
+      });
+      return reply(res, { deleted: true });
     },
   );
 
@@ -324,6 +414,50 @@ export function registerInvestigationTimelineRoutes(app: Express): void {
         log.error("Failed to export timeline", { error });
         return replyError(res, 500, [{ code: "TIMELINE_ERROR", message: "Failed to export timeline." }]);
       }
+    },
+  );
+
+  app.post(
+    "/api/investigation-timelines/:investigationId/auto-populate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const run = await storage.getInvestigationRun(String(req.params.investigationId));
+      if (!run || run.orgId !== orgId) {
+        return replyError(res, 404, [{ code: "NOT_FOUND", message: "Timeline not found." }]);
+      }
+      const steps = await storage.getInvestigationSteps(run.id);
+      const existing = await db
+        .select({ text: investigationAnnotations.text })
+        .from(investigationAnnotations)
+        .where(and(eq(investigationAnnotations.orgId, orgId), eq(investigationAnnotations.investigationId, run.id)));
+      const existingTexts = new Set(existing.map((annotation) => annotation.text));
+      const user = (req as any).user;
+      const values = steps
+        .filter((step) => !existingTexts.has(`Timeline event: ${step.title}`))
+        .map((step) => ({
+          orgId,
+          investigationId: run.id,
+          text: `Timeline event: ${step.title}`,
+          markerType: "event",
+          color: "#64748b",
+          createdBy: user?.id,
+          createdByName: user?.username || "unknown",
+        }));
+      const annotations = values.length > 0 ? await db.insert(investigationAnnotations).values(values).returning() : [];
+      await storage.createAuditLog({
+        orgId,
+        userId: user?.id,
+        userName: user?.username || "unknown",
+        action: "investigation_annotations_auto_populated",
+        resourceType: "investigation",
+        resourceId: run.id,
+        details: { created: annotations.length },
+      });
+      return reply(res, { annotations, created: annotations.length });
     },
   );
 }
