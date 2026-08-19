@@ -66,26 +66,23 @@ export async function createIngestionLog(log: InsertIngestionLog): Promise<Inges
   return created;
 }
 
-export async function getIngestionLogs(orgId?: string, limit = 50): Promise<IngestionLog[]> {
-  if (orgId) {
-    return db
-      .select()
-      .from(ingestionLogs)
-      .where(eq(ingestionLogs.orgId, orgId))
-      .orderBy(desc(ingestionLogs.receivedAt))
-      .limit(limit);
-  }
-  return db.select().from(ingestionLogs).orderBy(desc(ingestionLogs.receivedAt)).limit(limit);
+export async function getIngestionLogs(orgId: string, limit = 50): Promise<IngestionLog[]> {
+  return db
+    .select()
+    .from(ingestionLogs)
+    .where(eq(ingestionLogs.orgId, orgId))
+    .orderBy(desc(ingestionLogs.receivedAt))
+    .limit(limit);
 }
 
 export async function getIngestionLogsPaginated(params: {
-  orgId?: string;
+  orgId: string;
   offset: number;
   limit: number;
 }): Promise<{ items: IngestionLog[]; total: number }> {
   const { orgId, offset, limit } = params;
 
-  const whereCondition = orgId ? eq(ingestionLogs.orgId, orgId) : undefined;
+  const whereCondition = eq(ingestionLogs.orgId, orgId);
 
   const totalQuery = db.select({ total: count() }).from(ingestionLogs);
   const itemsQuery = db
@@ -95,21 +92,20 @@ export async function getIngestionLogsPaginated(params: {
     .limit(limit)
     .offset(offset);
 
-  const [totalRow] = await (whereCondition ? totalQuery.where(whereCondition) : totalQuery);
-  const items = await (whereCondition ? itemsQuery.where(whereCondition) : itemsQuery);
+  const [totalRow] = await totalQuery.where(whereCondition);
+  const items = await itemsQuery.where(whereCondition);
 
   return { items, total: Number(totalRow?.total ?? 0) };
 }
 
-export async function getIngestionStats(orgId?: string): Promise<{
+export async function getIngestionStats(orgId: string): Promise<{
   totalIngested: number;
   totalCreated: number;
   totalDeduped: number;
   totalFailed: number;
   sourceBreakdown: { source: string; count: number; lastReceived: Date | null }[];
 }> {
-  const conditions = orgId ? [eq(ingestionLogs.orgId, orgId)] : [];
-  const condition = conditions.length ? conditions[0] : undefined;
+  const condition = eq(ingestionLogs.orgId, orgId);
 
   const [totals] = await db
     .select({
@@ -409,11 +405,8 @@ export async function deleteSavedView(id: string): Promise<boolean> {
 
 // Org Security Policies
 
-export async function getRunbookTemplates(orgId?: string, incidentType?: string): Promise<RunbookTemplate[]> {
-  const conditions: any[] = [];
-  if (orgId) {
-    conditions.push(or(eq(runbookTemplates.orgId, orgId), isNull(runbookTemplates.orgId)));
-  }
+export async function getRunbookTemplates(orgId: string, incidentType?: string): Promise<RunbookTemplate[]> {
+  const conditions: any[] = [or(eq(runbookTemplates.orgId, orgId), isNull(runbookTemplates.orgId))];
   if (incidentType) {
     conditions.push(eq(runbookTemplates.incidentType, incidentType));
   }

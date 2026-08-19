@@ -22,7 +22,7 @@ import {
   playbooks,
 } from "@shared/schema";
 import { db } from "../db";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 
 export async function getPlaybooks(orgId?: string): Promise<Playbook[]> {
   if (orgId) {
@@ -55,16 +55,25 @@ export async function deletePlaybook(id: string): Promise<boolean> {
   return result.length > 0;
 }
 
-export async function getPlaybookExecutions(playbookId?: string, limit = 50): Promise<PlaybookExecution[]> {
-  if (playbookId) {
-    return db
-      .select()
-      .from(playbookExecutions)
-      .where(eq(playbookExecutions.playbookId, playbookId))
-      .orderBy(desc(playbookExecutions.createdAt))
-      .limit(limit);
-  }
-  return db.select().from(playbookExecutions).orderBy(desc(playbookExecutions.createdAt)).limit(limit);
+export async function getPlaybookExecutions(
+  orgId: string,
+  playbookId?: string,
+  limit = 50,
+): Promise<PlaybookExecution[]> {
+  const conditions = [
+    inArray(
+      playbookExecutions.playbookId,
+      db.select({ id: playbooks.id }).from(playbooks).where(eq(playbooks.orgId, orgId)),
+    ),
+  ];
+  if (playbookId) conditions.push(eq(playbookExecutions.playbookId, playbookId));
+
+  return db
+    .select()
+    .from(playbookExecutions)
+    .where(and(...conditions))
+    .orderBy(desc(playbookExecutions.createdAt))
+    .limit(limit);
 }
 
 export async function countPlaybookExecutionsByOrg(orgId: string): Promise<number> {
@@ -86,7 +95,10 @@ export async function createPlaybookExecution(execution: InsertPlaybookExecution
   return created;
 }
 
-export async function updatePlaybookExecution(id: string, data: Partial<PlaybookExecution>): Promise<PlaybookExecution | undefined> {
+export async function updatePlaybookExecution(
+  id: string,
+  data: Partial<PlaybookExecution>,
+): Promise<PlaybookExecution | undefined> {
   const [updated] = await db.update(playbookExecutions).set(data).where(eq(playbookExecutions.id, id)).returning();
   return updated;
 }
@@ -120,7 +132,10 @@ export async function createPlaybookApproval(approval: InsertPlaybookApproval): 
   return created;
 }
 
-export async function updatePlaybookApproval(id: string, data: Partial<PlaybookApproval>): Promise<PlaybookApproval | undefined> {
+export async function updatePlaybookApproval(
+  id: string,
+  data: Partial<PlaybookApproval>,
+): Promise<PlaybookApproval | undefined> {
   const [updated] = await db.update(playbookApprovals).set(data).where(eq(playbookApprovals.id, id)).returning();
   return updated;
 }
@@ -155,7 +170,10 @@ export async function createPlaybookVersion(version: InsertPlaybookVersion): Pro
   return created;
 }
 
-export async function updatePlaybookVersion(id: string, data: Partial<PlaybookVersion>): Promise<PlaybookVersion | undefined> {
+export async function updatePlaybookVersion(
+  id: string,
+  data: Partial<PlaybookVersion>,
+): Promise<PlaybookVersion | undefined> {
   const [updated] = await db.update(playbookVersions).set(data).where(eq(playbookVersions.id, id)).returning();
   return updated;
 }

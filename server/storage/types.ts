@@ -400,13 +400,13 @@ export interface IStorage {
   updateApiKeyLastUsed(id: string): Promise<void>;
 
   createIngestionLog(log: InsertIngestionLog): Promise<IngestionLog>;
-  getIngestionLogs(orgId?: string, limit?: number): Promise<IngestionLog[]>;
+  getIngestionLogs(orgId: string, limit?: number): Promise<IngestionLog[]>;
   getIngestionLogsPaginated(params: {
-    orgId?: string;
+    orgId: string;
     offset: number;
     limit: number;
   }): Promise<{ items: IngestionLog[]; total: number }>;
-  getIngestionStats(orgId?: string): Promise<{
+  getIngestionStats(orgId: string): Promise<{
     totalIngested: number;
     totalCreated: number;
     totalDeduped: number;
@@ -437,7 +437,7 @@ export interface IStorage {
   }): Promise<{ items: Connector[]; total: number }>;
 
   createAiFeedback(feedback: InsertAiFeedback): Promise<AiFeedback>;
-  getAiFeedback(resourceType?: string, resourceId?: string): Promise<AiFeedback[]>;
+  getAiFeedback(orgId: string, resourceType?: string, resourceId?: string): Promise<AiFeedback[]>;
   countAiFeedbackByOrg(orgId: string): Promise<number>;
 
   getPlaybooks(orgId?: string): Promise<Playbook[]>;
@@ -446,7 +446,7 @@ export interface IStorage {
   updatePlaybook(id: string, data: Partial<Playbook>): Promise<Playbook | undefined>;
   deletePlaybook(id: string): Promise<boolean>;
 
-  getPlaybookExecutions(playbookId?: string, limit?: number): Promise<PlaybookExecution[]>;
+  getPlaybookExecutions(orgId: string, playbookId?: string, limit?: number): Promise<PlaybookExecution[]>;
   countPlaybookExecutionsByOrg(orgId: string): Promise<number>;
   getPlaybookExecution(id: string): Promise<PlaybookExecution | undefined>;
   createPlaybookExecution(execution: InsertPlaybookExecution): Promise<PlaybookExecution>;
@@ -714,7 +714,7 @@ export interface IStorage {
   deleteInvestigationTask(id: string): Promise<boolean>;
 
   // Runbook Templates
-  getRunbookTemplates(orgId?: string, incidentType?: string): Promise<RunbookTemplate[]>;
+  getRunbookTemplates(orgId: string, incidentType?: string): Promise<RunbookTemplate[]>;
   getRunbookTemplate(id: string): Promise<RunbookTemplate | undefined>;
   createRunbookTemplate(template: InsertRunbookTemplate): Promise<RunbookTemplate>;
   updateRunbookTemplate(id: string, data: Partial<RunbookTemplate>): Promise<RunbookTemplate | undefined>;
@@ -727,7 +727,7 @@ export interface IStorage {
   deleteRunbookStep(id: string): Promise<boolean>;
 
   // Reports
-  getReportTemplates(orgId?: string): Promise<ReportTemplate[]>;
+  getReportTemplates(orgId: string): Promise<ReportTemplate[]>;
   getReportTemplate(id: string): Promise<ReportTemplate | undefined>;
   createReportTemplate(template: InsertReportTemplate): Promise<ReportTemplate>;
   updateReportTemplate(id: string, data: Partial<ReportTemplate>): Promise<ReportTemplate | undefined>;
@@ -801,7 +801,7 @@ export interface IStorage {
   ): Promise<
     { date: string; avgRating: number; totalFeedback: number; negativeFeedback: number; positiveFeedback: number }[]
   >;
-  getAiFeedbackByResource(resourceType: string, resourceId: string): Promise<AiFeedback[]>;
+  getAiFeedbackByResource(orgId: string, resourceType: string, resourceId: string): Promise<AiFeedback[]>;
 
   getPolicyChecks(orgId: string): Promise<PolicyCheck[]>;
   getPolicyCheck(id: string): Promise<PolicyCheck | undefined>;
