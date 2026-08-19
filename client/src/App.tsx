@@ -24,6 +24,8 @@ import { NotificationBell } from "@/components/notification-bell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { LoadingScreen } from "@/components/loading-screen";
+import { Button } from "@/components/ui/button";
+import { getOrglessDestination } from "@/lib/org-routing";
 
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const AlertsPage = lazy(() => import("@/pages/alerts"));
@@ -236,17 +238,65 @@ function isContentPageRoute(path: string): boolean {
   return CONTENT_PAGE_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
 }
 
+function NoOrganizationState() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-6">
+      <div className="w-full max-w-md space-y-5 text-center">
+        <h1 className="text-2xl font-semibold">No organization yet</h1>
+        <p className="text-sm text-muted-foreground">
+          Access to SecureNexus is provisioned by your administrator. Please contact them to be added to an
+          organization.
+        </p>
+        <Button asChild variant="outline">
+          <a href="/api/logout">Sign out</a>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function NoTenantSelectedState() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-6">
+      <div className="w-full max-w-md space-y-5 text-center">
+        <h1 className="text-2xl font-semibold">Select or provision a tenant</h1>
+        <p className="text-sm text-muted-foreground">
+          Platform administrators manage tenants from the platform administration page. Select a tenant after
+          provisioning to use tenant-scoped features.
+        </p>
+        <Button asChild>
+          <a href="/platform-admin">Open platform administration</a>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function AuthenticatedApp() {
   useRoleLanding();
   const { connected, connectionState, eventCount, events, lastEvent } = useEventStream({ enabled: true });
+  const { user } = useAuth();
   const orgContext = useOrgContextProvider();
   const [location, navigate] = useLocation();
 
   useEffect(() => {
-    if (orgContext.needsOnboarding && location !== "/onboarding-wizard" && !isContentPageRoute(location)) {
-      navigate("/onboarding-wizard");
-    }
-  }, [orgContext.needsOnboarding, location, navigate]);
+    if (!orgContext.needsOnboarding || isContentPageRoute(location)) return;
+    const destination = getOrglessDestination(!!user?.isSuperAdmin);
+    if (location !== destination) navigate(destination);
+  }, [orgContext.needsOnboarding, location, navigate, user?.isSuperAdmin]);
+
+  if (orgContext.needsOnboarding && !user?.isSuperAdmin && !isContentPageRoute(location)) {
+    return <NoOrganizationState />;
+  }
+
+  if (
+    orgContext.needsOnboarding &&
+    user?.isSuperAdmin &&
+    location !== "/platform-admin" &&
+    !isContentPageRoute(location)
+  ) {
+    return <NoTenantSelectedState />;
+  }
 
   if (isContentPageRoute(location)) {
     return (

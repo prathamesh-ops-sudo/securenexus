@@ -11,7 +11,6 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Building2,
   CreditCard,
   Users,
   Plug,
@@ -75,7 +74,6 @@ interface InvitationEntry {
 }
 
 const STEP_CONFIG = [
-  { key: "create_org", label: "Create Organization", icon: Building2, description: "Set up your workspace" },
   { key: "choose_plan", label: "Choose Plan", icon: CreditCard, description: "Select your subscription" },
   { key: "invite_team", label: "Invite Team", icon: Users, description: "Add your colleagues" },
   { key: "connect_integration", label: "Connect Integration", icon: Plug, description: "Link your tools" },
@@ -135,109 +133,6 @@ function StepProgressBar({
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function CreateOrgStep({
-  options,
-  onComplete,
-  isLoading,
-}: {
-  options: WizardOptions | undefined;
-  onComplete: (data: { name: string; industry: string; companySize: string }) => void;
-  isLoading: boolean;
-}) {
-  const [name, setName] = useState("");
-  const [industry, setIndustry] = useState("");
-  const [companySize, setCompanySize] = useState("");
-  const [nameError, setNameError] = useState("");
-
-  const handleSubmit = () => {
-    const trimmed = name.trim();
-    if (trimmed.length < 2) {
-      setNameError("Organization name must be at least 2 characters");
-      return;
-    }
-    if (trimmed.length > 100) {
-      setNameError("Organization name must be less than 100 characters");
-      return;
-    }
-    setNameError("");
-    onComplete({ name: trimmed, industry, companySize });
-  };
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold">Create Your Organization</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          This is your workspace in SecureNexus. You can update these details later in settings.
-        </p>
-      </div>
-
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="org-name">Organization Name *</Label>
-          <Input
-            id="org-name"
-            placeholder="e.g. Acme Security"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-              if (nameError) setNameError("");
-            }}
-            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-            className={nameError ? "border-destructive" : ""}
-            autoFocus
-          />
-          {nameError && <p className="text-xs text-destructive">{nameError}</p>}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="industry">Industry</Label>
-          <select
-            id="industry"
-            value={industry}
-            onChange={(e) => setIndustry(e.target.value)}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            <option value="">Select industry...</option>
-            {options?.industries.map((ind) => (
-              <option key={ind} value={ind}>
-                {ind}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="company-size">Company Size</Label>
-          <select
-            id="company-size"
-            value={companySize}
-            onChange={(e) => setCompanySize(e.target.value)}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            <option value="">Select size...</option>
-            {options?.companySizes.map((size) => (
-              <option key={size} value={size}>
-                {size} employees
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <Button
-        data-testid="onboarding-wizard-btn-0"
-        onClick={handleSubmit}
-        disabled={isLoading || !name.trim()}
-        className="w-full"
-      >
-        {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Building2 className="h-4 w-4 mr-2" />}
-        Create Organization
-      </Button>
     </div>
   );
 }
@@ -810,22 +705,6 @@ export default function OnboardingWizardPage() {
     }
   }, [status]);
 
-  const createOrgMutation = useMutation({
-    mutationFn: async (data: { name: string; industry: string; companySize: string }) => {
-      const res = await apiRequest("POST", "/api/wizard/create-org", data);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/wizard/status"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      setActiveStep(1);
-      toast({ title: "Organization created", description: "Your workspace is ready." });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Failed to create organization", description: err.message, variant: "destructive" });
-    },
-  });
-
   const selectPlanMutation = useMutation({
     mutationFn: async (planId: string) => {
       const res = await apiRequest("POST", "/api/wizard/select-plan", { planId });
@@ -843,7 +722,7 @@ export default function OnboardingWizardPage() {
         return;
       }
       queryClient.invalidateQueries({ queryKey: ["/api/wizard/status"] });
-      setActiveStep(2);
+      setActiveStep(1);
       if (data.trialActivated) {
         toast({
           title: "Trial activated",
@@ -865,7 +744,7 @@ export default function OnboardingWizardPage() {
     },
     onSuccess: (data: { totalInvited: number }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/wizard/status"] });
-      setActiveStep(3);
+      setActiveStep(2);
       toast({ title: `${data.totalInvited} invitation${data.totalInvited !== 1 ? "s" : ""} sent` });
     },
     onError: (err: Error) => {
@@ -970,14 +849,6 @@ export default function OnboardingWizardPage() {
         <Card>
           <CardContent className="p-6">
             {activeStep === 0 && (
-              <CreateOrgStep
-                options={options}
-                onComplete={(data) => createOrgMutation.mutate(data)}
-                isLoading={createOrgMutation.isPending}
-              />
-            )}
-
-            {activeStep === 1 && (
               <ChoosePlanStep
                 options={options}
                 onSelect={(planId) => selectPlanMutation.mutate(planId)}
@@ -986,7 +857,7 @@ export default function OnboardingWizardPage() {
               />
             )}
 
-            {activeStep === 2 && (
+            {activeStep === 1 && (
               <InviteTeamStep
                 onInvite={(invitations) => inviteTeamMutation.mutate(invitations)}
                 onSkip={() => handleSkip("invite_team")}
@@ -994,7 +865,7 @@ export default function OnboardingWizardPage() {
               />
             )}
 
-            {activeStep === 3 && (
+            {activeStep === 2 && (
               <ConnectIntegrationStep
                 onConnect={() => connectIntegrationMutation.mutate()}
                 onSkip={() => handleSkip("connect_integration")}
@@ -1002,14 +873,14 @@ export default function OnboardingWizardPage() {
               />
             )}
 
-            {activeStep === 4 && (
+            {activeStep === 3 && (
               <DashboardTourStep
                 onComplete={() => completeTourMutation.mutate()}
                 isLoading={completeTourMutation.isPending}
               />
             )}
 
-            {activeStep >= 5 && (
+            {activeStep >= 4 && (
               <div className="text-center space-y-4 py-6">
                 <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto">
                   <Check className="h-8 w-8 text-emerald-500" />

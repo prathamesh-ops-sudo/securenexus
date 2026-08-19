@@ -1714,13 +1714,7 @@ export const attackGraphEdgesRelations = relations(attackGraphEdges, ({ one }) =
   graph: one(attackGraphs, { fields: [attackGraphEdges.graphId], references: [attackGraphs.id] }),
 }));
 
-export const WIZARD_STEPS = [
-  "create_org",
-  "choose_plan",
-  "invite_team",
-  "connect_integration",
-  "dashboard_tour",
-] as const;
+export const WIZARD_STEPS = ["choose_plan", "invite_team", "connect_integration", "dashboard_tour"] as const;
 
 export const wizardProgress = pgTable(
   "wizard_progress",

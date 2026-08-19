@@ -20,7 +20,6 @@ import { isStripeEnabled, createCheckoutSession } from "../stripe-service";
 import { sendEmail } from "../email-service";
 import { invitationEmail } from "../email-templates";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
-import { requireSuperAdmin } from "../middleware/super-admin";
 import { getAllPlanTiers, getPlanTierById } from "../tiered-packaging-engine";
 
 const INDUSTRY_OPTIONS = [
@@ -107,7 +106,7 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/wizard/status", isAuthenticated, async (req, res) => {
+  app.get("/api/wizard/status", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const userId = getUser(req)?.id;
       if (!userId)
@@ -148,35 +147,13 @@ export function registerOnboardingRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/wizard/options", isAuthenticated, async (_req, res) => {
+  app.get("/api/wizard/options", isAuthenticated, resolveOrgContext, requireOrgId, async (_req, res) => {
     return sendEnvelope(res, {
       industries: INDUSTRY_OPTIONS,
       companySizes: COMPANY_SIZE_OPTIONS,
       plans: PLAN_OPTIONS,
     });
   });
-
-  // Self-service org creation is disabled.
-  // Only platform admins can create organizations via the admin panel.
-  app.post(
-    "/api/wizard/create-org",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    requireSuperAdmin,
-    async (_req, res) => {
-      return sendEnvelope(res, null, {
-        status: 403,
-        errors: [
-          {
-            code: "ORG_CREATION_DISABLED",
-            message:
-              "Organization creation is managed by the platform administrator. Please contact your admin to be added to an organization.",
-          },
-        ],
-      });
-    },
-  );
 
   app.post(
     "/api/wizard/select-plan",
@@ -206,7 +183,7 @@ export function registerOnboardingRoutes(app: Express): void {
         if (!progress?.orgId) {
           return sendEnvelope(res, null, {
             status: 400,
-            errors: [{ code: "NO_ORG", message: "Create an organization first" }],
+            errors: [{ code: "NO_ORG", message: "Your organization membership is required for onboarding." }],
           });
         }
 
@@ -238,7 +215,7 @@ export function registerOnboardingRoutes(app: Express): void {
           : [];
 
         await storage.updateWizardProgress(userId, {
-          currentStep: 2,
+          currentStep: 1,
           completedSteps,
           skippedSteps,
         });
@@ -383,7 +360,7 @@ export function registerOnboardingRoutes(app: Express): void {
         if (!completedSteps.includes("invite_team")) completedSteps.push("invite_team");
 
         await storage.updateWizardProgress(userId, {
-          currentStep: 3,
+          currentStep: 2,
           completedSteps,
         });
 
@@ -435,7 +412,7 @@ export function registerOnboardingRoutes(app: Express): void {
         const completedSteps = Array.isArray(progress.completedSteps) ? [...(progress.completedSteps as string[])] : [];
         const existingSkipped = Array.isArray(progress.skippedSteps) ? [...(progress.skippedSteps as string[])] : [];
         const stepIndex = WIZARD_STEPS.indexOf(stepName as (typeof WIZARD_STEPS)[number]);
-        const MANDATORY_STEPS = ["create_org"] as const;
+        const MANDATORY_STEPS = [] as const;
         for (let i = 0; i < stepIndex; i++) {
           const priorStep = WIZARD_STEPS[i];
           const isMandatory = MANDATORY_STEPS.includes(priorStep as (typeof MANDATORY_STEPS)[number]);
@@ -497,7 +474,7 @@ export function registerOnboardingRoutes(app: Express): void {
         if (!progress?.orgId) {
           return sendEnvelope(res, null, {
             status: 400,
-            errors: [{ code: "NO_ORG", message: "Create an organization first" }],
+            errors: [{ code: "NO_ORG", message: "Your organization membership is required for onboarding." }],
           });
         }
 
@@ -505,7 +482,7 @@ export function registerOnboardingRoutes(app: Express): void {
         if (!completedSteps.includes("connect_integration")) completedSteps.push("connect_integration");
 
         await storage.updateWizardProgress(userId, {
-          currentStep: 4,
+          currentStep: 3,
           completedSteps,
         });
 
@@ -592,7 +569,7 @@ export function registerOnboardingRoutes(app: Express): void {
         // Validate mandatory steps are actually completed (not merely skipped)
         const completedSteps = Array.isArray(progress.completedSteps) ? (progress.completedSteps as string[]) : [];
         const skippedSteps = Array.isArray(progress.skippedSteps) ? (progress.skippedSteps as string[]) : [];
-        const MANDATORY_COMPLETE_STEPS = ["create_org", "choose_plan"] as const;
+        const MANDATORY_COMPLETE_STEPS = ["choose_plan"] as const;
         const missingSteps = MANDATORY_COMPLETE_STEPS.filter(
           (s) => !completedSteps.includes(s) || skippedSteps.includes(s),
         );

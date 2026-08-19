@@ -434,14 +434,17 @@ export function AppSidebar() {
 
   // Don't default to "analyst" while org context is still loading — this causes
   // a visible flicker ("Analyst" → "Owner") once the real role arrives.
-  const userRole = orgLoading ? null : currentRole || "analyst";
+  const userRole = orgLoading ? null : user?.isSuperAdmin ? "super_admin" : currentRole;
   const roleLabel = !userRole
-    ? ""
-    : userRole === "read_only"
-      ? "Read-only"
-      : userRole[0].toUpperCase() + userRole.slice(1);
+    ? "No organization"
+    : userRole === "super_admin"
+      ? "Super Admin"
+      : userRole === "read_only"
+        ? "Read-only"
+        : userRole[0].toUpperCase() + userRole.slice(1);
 
   const initials = user ? `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() || "U" : "U";
+  const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.email || "Signed-in user";
 
   function filterItems(items: NavItem[]) {
     if (userRole === "owner" || userRole === "admin") return items;
@@ -814,9 +817,7 @@ export function AppSidebar() {
             <AvatarFallback className="text-[10px] font-bold bg-blue-600/15 text-blue-400">{initials}</AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="text-[11px] font-semibold truncate leading-tight">
-              {user?.firstName || "User"} {user?.lastName || ""}
-            </p>
+            <p className="text-[11px] font-semibold truncate leading-tight">{displayName}</p>
             <p className="text-[9px] text-sidebar-foreground/35 truncate leading-tight">{roleLabel}</p>
           </div>
         </div>

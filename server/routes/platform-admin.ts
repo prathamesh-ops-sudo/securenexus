@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireSuperAdmin } from "../middleware/super-admin";
-import { invalidateDeserializeCache } from "../auth/session";
+import { hashPassword, invalidateDeserializeCache } from "../auth/session";
 import { db } from "../db";
 import {
   users,
@@ -14,6 +14,7 @@ import {
   plans,
   connectors,
   organizationMemberships,
+  passwordResetTokens,
   impersonationSessions,
   featureFlags,
   notificationDeliveryLog,
@@ -23,8 +24,8 @@ import { pool, getPoolHealth, checkPoolConnectivity } from "../db";
 import { logger } from "../logger";
 import { randomBytes } from "crypto";
 import { authStorage } from "../auth/storage";
-import { hashPassword } from "../auth/session";
 import { sendEmail } from "../email-service";
+import { passwordResetEmail, welcomeEmail } from "../email-templates";
 import {
   getLockedAccounts,
   adminUnlockAccount,
@@ -50,13 +51,17 @@ function getReqUser(req: Request): ReqUser {
   return (req as Request & { user: ReqUser }).user;
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+export function getRequiredAppBaseUrl(): string {
+  const configured = process.env.APP_BASE_URL?.trim();
+  if (!configured) {
+    throw new Error("APP_BASE_URL is required to provision tenant credentials");
+  }
+
+  const parsed = new URL(configured);
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("APP_BASE_URL must use http or https");
+  }
+  return configured.replace(/\/+$/, "");
 }
 
 export function registerPlatformAdminRoutes(app: Express): void {
@@ -1515,6 +1520,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
 
       const normalizedEmail = adminEmail.trim().toLowerCase();
       const trimmedName = orgName.trim();
+      const appBaseUrl = getRequiredAppBaseUrl();
 
       // Generate slug from org name
       const baseSlug = trimmedName
@@ -1523,35 +1529,40 @@ export function registerPlatformAdminRoutes(app: Express): void {
         .replace(/^-|-$/g, "");
       const slug = `${baseSlug}-${randomBytes(3).toString("hex")}`;
 
-      // Wrap org + user + membership creation in a transaction for atomicity
-      const { org, adminUser, isNewUser } = await db.transaction(async (_tx) => {
+      // Keep organization, user, membership, and credential token writes atomic.
+      const { org, adminUser, isNewUser, setPasswordToken } = await db.transaction(async (tx) => {
         // 1. Create the organization
-        const newOrg = await storage.createOrganization({
-          name: trimmedName,
-          slug,
-          industry: industry || null,
-          companySize: companySize || null,
-          contactEmail: normalizedEmail,
-        });
+        const [newOrg] = await tx
+          .insert(organizations)
+          .values({
+            name: trimmedName,
+            slug,
+            industry: industry || null,
+            companySize: companySize || null,
+            contactEmail: normalizedEmail,
+          })
+          .returning();
 
         // 2. Find or create the admin user
-        let foundUser = await authStorage.getUserByEmail(normalizedEmail);
+        const [existingUser] = await tx.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
+        let foundUser = existingUser;
         let createdNew = false;
         if (!foundUser) {
-          // Create user with a random temporary password (they'll reset via email)
-          const tempPassword = randomBytes(16).toString("hex");
-          const hashedPw = await hashPassword(tempPassword);
-          foundUser = await authStorage.upsertUser({
-            email: normalizedEmail,
-            passwordHash: hashedPw,
-            firstName: adminFirstName || null,
-            lastName: adminLastName || null,
-          });
+          const [createdUser] = await tx
+            .insert(users)
+            .values({
+              email: normalizedEmail,
+              passwordHash: null,
+              firstName: adminFirstName || null,
+              lastName: adminLastName || null,
+            })
+            .returning();
+          foundUser = createdUser;
           createdNew = true;
         }
 
         // 3. Create membership as owner (first user in org is always owner)
-        await storage.createOrgMembership({
+        await tx.insert(organizationMemberships).values({
           orgId: newOrg.id,
           userId: foundUser.id,
           role: "owner",
@@ -1560,7 +1571,16 @@ export function registerPlatformAdminRoutes(app: Express): void {
           invitedBy: getReqUser(req).id,
         });
 
-        return { org: newOrg, adminUser: foundUser, isNewUser: createdNew };
+        const setPasswordToken = !foundUser.passwordHash ? randomBytes(32).toString("hex") : null;
+        if (setPasswordToken) {
+          await tx.insert(passwordResetTokens).values({
+            userId: foundUser.id,
+            token: setPasswordToken,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          });
+        }
+
+        return { org: newOrg, adminUser: foundUser, isNewUser: createdNew, setPasswordToken };
       });
 
       // 4. Invalidate cache so the admin user picks up org context on next request
@@ -1581,21 +1601,23 @@ export function registerPlatformAdminRoutes(app: Express): void {
         },
       });
 
-      // 6. Send welcome/invitation email
+      const credentialEmail = setPasswordToken
+        ? passwordResetEmail({
+            firstName: adminFirstName || adminUser.firstName || undefined,
+            resetUrl: `${appBaseUrl}/reset-password?token=${setPasswordToken}`,
+            expiresInMinutes: 7 * 24 * 60,
+          })
+        : welcomeEmail({
+            firstName: adminFirstName || adminUser.firstName || undefined,
+            email: normalizedEmail,
+            loginUrl: `${appBaseUrl}/`,
+          });
+
       sendEmail({
         to: normalizedEmail,
-        subject: `You've been added as owner of ${trimmedName} on SecureNexus`,
-        html: `<p>Hi ${escapeHtml(adminFirstName || "there")},</p>
-<p>You have been added as the <strong>owner</strong> of <strong>${escapeHtml(trimmedName)}</strong> on SecureNexus by the platform team.</p>
-<p>${isNewUser ? "An account has been created for you. Please reset your password to get started." : "You can log in with your existing account."}</p>
-<p>As the owner, you can:</p>
-<ul>
-  <li>Invite team members to your organization</li>
-  <li>Manage roles and permissions</li>
-  <li>Configure security features</li>
-</ul>
-<p><a href="${process.env.APP_BASE_URL || "https://staging.aricatech.xyz"}">Log in to SecureNexus</a></p>`,
-        text: `Hi ${adminFirstName || "there"}, you have been added as owner of ${trimmedName} on SecureNexus. ${isNewUser ? "Please reset your password to get started." : "Log in with your existing account."} Visit: ${process.env.APP_BASE_URL || "https://staging.aricatech.xyz"}`,
+        subject: credentialEmail.subject,
+        html: credentialEmail.html,
+        text: credentialEmail.text,
       }).catch((err) =>
         log.error("Failed to send tenant welcome email", { error: String(err), email: normalizedEmail }),
       );
@@ -1617,6 +1639,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
             firstName: adminUser.firstName,
             lastName: adminUser.lastName,
             isNewUser,
+            setPasswordUrl: setPasswordToken ? `${appBaseUrl}/reset-password?token=${setPasswordToken}` : null,
           },
         },
         { status: 201 },
@@ -1624,6 +1647,12 @@ export function registerPlatformAdminRoutes(app: Express): void {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       log.error("Failed to create tenant", { error: message });
+      if (message.includes("APP_BASE_URL")) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "CONFIGURATION_ERROR", message }],
+        });
+      }
       return sendEnvelope(res, null, {
         status: 500,
         errors: [{ code: "TENANT_CREATE_FAILED", message: "Failed to create tenant", details: message }],
