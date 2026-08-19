@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { eq, and, desc, sql, lt, isNull, or, like, count } from "drizzle-orm";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
+
 import { db } from "../db";
 import {
   accessReviewCampaigns,
@@ -47,40 +49,47 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
   });
 
   // Create campaign
-  app.post("/api/identity/access-reviews", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { name, description, cadence, reviewerUserId, reviewerName, dueDate } = req.body;
+  app.post(
+    "/api/identity/access-reviews",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { name, description, cadence, reviewerUserId, reviewerName, dueDate } = req.body;
 
-      if (!name || typeof name !== "string" || name.trim().length < 2) {
-        return res.status(400).json({ message: "Campaign name is required (min 2 chars)" });
+        if (!name || typeof name !== "string" || name.trim().length < 2) {
+          return res.status(400).json({ message: "Campaign name is required (min 2 chars)" });
+        }
+
+        const validCadences = ["quarterly", "monthly", "annual", "one_time"];
+        if (cadence && !validCadences.includes(cadence)) {
+          return res.status(400).json({ message: `Invalid cadence. Valid: ${validCadences.join(", ")}` });
+        }
+
+        const [campaign] = await db
+          .insert(accessReviewCampaigns)
+          .values({
+            orgId,
+            name: String(name).trim(),
+            description: typeof description === "string" ? description.trim() : null,
+            cadence: cadence || "quarterly",
+            reviewerUserId: typeof reviewerUserId === "string" ? reviewerUserId : null,
+            reviewerName: typeof reviewerName === "string" ? reviewerName : null,
+            dueDate: dueDate ? new Date(dueDate) : null,
+            status: "draft",
+          })
+          .returning();
+
+        res.status(201).json(campaign);
+      } catch (error) {
+        log.error("Create access review campaign error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create access review campaign" });
       }
-
-      const validCadences = ["quarterly", "monthly", "annual", "one_time"];
-      if (cadence && !validCadences.includes(cadence)) {
-        return res.status(400).json({ message: `Invalid cadence. Valid: ${validCadences.join(", ")}` });
-      }
-
-      const [campaign] = await db
-        .insert(accessReviewCampaigns)
-        .values({
-          orgId,
-          name: String(name).trim(),
-          description: typeof description === "string" ? description.trim() : null,
-          cadence: cadence || "quarterly",
-          reviewerUserId: typeof reviewerUserId === "string" ? reviewerUserId : null,
-          reviewerName: typeof reviewerName === "string" ? reviewerName : null,
-          dueDate: dueDate ? new Date(dueDate) : null,
-          status: "draft",
-        })
-        .returning();
-
-      res.status(201).json(campaign);
-    } catch (error) {
-      log.error("Create access review campaign error", { error: String(error) });
-      res.status(500).json({ message: "Failed to create access review campaign" });
-    }
-  });
+    },
+  );
 
   // Get campaign detail with entitlements
   app.get("/api/identity/access-reviews/:id", isAuthenticated, async (req, res) => {
@@ -111,196 +120,217 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
   });
 
   // Start campaign — auto-populates entitlements from org members
-  app.post("/api/identity/access-reviews/:id/start", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
+  app.post(
+    "/api/identity/access-reviews/:id/start",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
 
-      const [campaign] = await db
-        .select()
-        .from(accessReviewCampaigns)
-        .where(and(eq(accessReviewCampaigns.id, id), eq(accessReviewCampaigns.orgId, orgId)));
+        const [campaign] = await db
+          .select()
+          .from(accessReviewCampaigns)
+          .where(and(eq(accessReviewCampaigns.id, id), eq(accessReviewCampaigns.orgId, orgId)));
 
-      if (!campaign) {
-        return res.status(404).json({ message: "Campaign not found" });
+        if (!campaign) {
+          return res.status(404).json({ message: "Campaign not found" });
+        }
+        if (campaign.status !== "draft") {
+          return res.status(400).json({ message: "Campaign must be in draft status to start" });
+        }
+
+        // Auto-populate entitlements from org members (scoped to this org)
+        const orgMemberRows = await db
+          .select({ user: users })
+          .from(users)
+          .innerJoin(
+            organizationMemberships,
+            and(
+              eq(organizationMemberships.userId, users.id),
+              eq(organizationMemberships.orgId, orgId),
+              eq(organizationMemberships.status, "active"),
+            ),
+          )
+          .limit(500);
+
+        const entitlementValues = orgMemberRows.map(({ user }) => ({
+          orgId,
+          campaignId: id,
+          userId: user.id,
+          userName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "Unknown",
+          userEmail: user.email,
+          entitlementType: "role" as const,
+          entitlementName: user.isSuperAdmin ? "superadmin" : "analyst",
+          entitlementDescription: user.isSuperAdmin ? "Full platform access" : "Standard analyst access",
+          grantedAt: user.createdAt,
+          lastUsedAt: user.lastLoginAt,
+          riskLevel: user.isSuperAdmin ? "high" : "low",
+          status: "pending" as const,
+        }));
+
+        if (entitlementValues.length > 0) {
+          await db.insert(accessReviewEntitlements).values(entitlementValues);
+        }
+
+        const [updated] = await db
+          .update(accessReviewCampaigns)
+          .set({
+            status: "active",
+            startedAt: new Date(),
+            totalEntitlements: entitlementValues.length,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(accessReviewCampaigns.id, id), eq(accessReviewCampaigns.orgId, orgId)))
+          .returning();
+
+        res.json({ campaign: updated, entitlementsCreated: entitlementValues.length });
+      } catch (error) {
+        log.error("Start access review campaign error", { error: String(error) });
+        res.status(500).json({ message: "Failed to start campaign" });
       }
-      if (campaign.status !== "draft") {
-        return res.status(400).json({ message: "Campaign must be in draft status to start" });
-      }
-
-      // Auto-populate entitlements from org members (scoped to this org)
-      const orgMemberRows = await db
-        .select({ user: users })
-        .from(users)
-        .innerJoin(
-          organizationMemberships,
-          and(
-            eq(organizationMemberships.userId, users.id),
-            eq(organizationMemberships.orgId, orgId),
-            eq(organizationMemberships.status, "active"),
-          ),
-        )
-        .limit(500);
-
-      const entitlementValues = orgMemberRows.map(({ user }) => ({
-        orgId,
-        campaignId: id,
-        userId: user.id,
-        userName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "Unknown",
-        userEmail: user.email,
-        entitlementType: "role" as const,
-        entitlementName: user.isSuperAdmin ? "superadmin" : "analyst",
-        entitlementDescription: user.isSuperAdmin ? "Full platform access" : "Standard analyst access",
-        grantedAt: user.createdAt,
-        lastUsedAt: user.lastLoginAt,
-        riskLevel: user.isSuperAdmin ? "high" : "low",
-        status: "pending" as const,
-      }));
-
-      if (entitlementValues.length > 0) {
-        await db.insert(accessReviewEntitlements).values(entitlementValues);
-      }
-
-      const [updated] = await db
-        .update(accessReviewCampaigns)
-        .set({
-          status: "active",
-          startedAt: new Date(),
-          totalEntitlements: entitlementValues.length,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(accessReviewCampaigns.id, id), eq(accessReviewCampaigns.orgId, orgId)))
-        .returning();
-
-      res.json({ campaign: updated, entitlementsCreated: entitlementValues.length });
-    } catch (error) {
-      log.error("Start access review campaign error", { error: String(error) });
-      res.status(500).json({ message: "Failed to start campaign" });
-    }
-  });
+    },
+  );
 
   // Decide on entitlement (approve/revoke)
-  app.patch("/api/identity/access-reviews/entitlements/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const { decision, decisionReason } = req.body;
+  app.patch(
+    "/api/identity/access-reviews/entitlements/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const { decision, decisionReason } = req.body;
 
-      if (!decision || !["approve", "revoke"].includes(decision)) {
-        return res.status(400).json({ message: "decision must be 'approve' or 'revoke'" });
+        if (!decision || !["approve", "revoke"].includes(decision)) {
+          return res.status(400).json({ message: "decision must be 'approve' or 'revoke'" });
+        }
+
+        const [entitlement] = await db
+          .select()
+          .from(accessReviewEntitlements)
+          .where(and(eq(accessReviewEntitlements.id, id), eq(accessReviewEntitlements.orgId, orgId)));
+
+        if (!entitlement) {
+          return res.status(404).json({ message: "Entitlement not found" });
+        }
+
+        const userId = (req as any).user?.id || "system";
+
+        const [updated] = await db
+          .update(accessReviewEntitlements)
+          .set({
+            status: decision === "approve" ? "approved" : "revoked",
+            decision,
+            decisionBy: userId,
+            decisionAt: new Date(),
+            decisionReason: typeof decisionReason === "string" ? decisionReason : null,
+          })
+          .where(and(eq(accessReviewEntitlements.id, id), eq(accessReviewEntitlements.orgId, orgId)))
+          .returning();
+
+        // Update campaign counters
+        const campaignId = entitlement.campaignId;
+        const [stats] = await db
+          .select({
+            reviewed: count(),
+          })
+          .from(accessReviewEntitlements)
+          .where(
+            and(
+              eq(accessReviewEntitlements.campaignId, campaignId),
+              eq(accessReviewEntitlements.orgId, orgId),
+              or(eq(accessReviewEntitlements.status, "approved"), eq(accessReviewEntitlements.status, "revoked")),
+            ),
+          );
+
+        const [approvedStats] = await db
+          .select({ cnt: count() })
+          .from(accessReviewEntitlements)
+          .where(
+            and(
+              eq(accessReviewEntitlements.campaignId, campaignId),
+              eq(accessReviewEntitlements.orgId, orgId),
+              eq(accessReviewEntitlements.status, "approved"),
+            ),
+          );
+
+        const [revokedStats] = await db
+          .select({ cnt: count() })
+          .from(accessReviewEntitlements)
+          .where(
+            and(
+              eq(accessReviewEntitlements.campaignId, campaignId),
+              eq(accessReviewEntitlements.orgId, orgId),
+              eq(accessReviewEntitlements.status, "revoked"),
+            ),
+          );
+
+        await db
+          .update(accessReviewCampaigns)
+          .set({
+            reviewedCount: stats.reviewed,
+            approvedCount: approvedStats.cnt,
+            revokedCount: revokedStats.cnt,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(accessReviewCampaigns.id, campaignId), eq(accessReviewCampaigns.orgId, orgId)));
+
+        res.json(updated);
+      } catch (error) {
+        log.error("Decide on entitlement error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update entitlement" });
       }
-
-      const [entitlement] = await db
-        .select()
-        .from(accessReviewEntitlements)
-        .where(and(eq(accessReviewEntitlements.id, id), eq(accessReviewEntitlements.orgId, orgId)));
-
-      if (!entitlement) {
-        return res.status(404).json({ message: "Entitlement not found" });
-      }
-
-      const userId = (req as any).user?.id || "system";
-
-      const [updated] = await db
-        .update(accessReviewEntitlements)
-        .set({
-          status: decision === "approve" ? "approved" : "revoked",
-          decision,
-          decisionBy: userId,
-          decisionAt: new Date(),
-          decisionReason: typeof decisionReason === "string" ? decisionReason : null,
-        })
-        .where(and(eq(accessReviewEntitlements.id, id), eq(accessReviewEntitlements.orgId, orgId)))
-        .returning();
-
-      // Update campaign counters
-      const campaignId = entitlement.campaignId;
-      const [stats] = await db
-        .select({
-          reviewed: count(),
-        })
-        .from(accessReviewEntitlements)
-        .where(
-          and(
-            eq(accessReviewEntitlements.campaignId, campaignId),
-            eq(accessReviewEntitlements.orgId, orgId),
-            or(eq(accessReviewEntitlements.status, "approved"), eq(accessReviewEntitlements.status, "revoked")),
-          ),
-        );
-
-      const [approvedStats] = await db
-        .select({ cnt: count() })
-        .from(accessReviewEntitlements)
-        .where(
-          and(
-            eq(accessReviewEntitlements.campaignId, campaignId),
-            eq(accessReviewEntitlements.orgId, orgId),
-            eq(accessReviewEntitlements.status, "approved"),
-          ),
-        );
-
-      const [revokedStats] = await db
-        .select({ cnt: count() })
-        .from(accessReviewEntitlements)
-        .where(
-          and(
-            eq(accessReviewEntitlements.campaignId, campaignId),
-            eq(accessReviewEntitlements.orgId, orgId),
-            eq(accessReviewEntitlements.status, "revoked"),
-          ),
-        );
-
-      await db
-        .update(accessReviewCampaigns)
-        .set({
-          reviewedCount: stats.reviewed,
-          approvedCount: approvedStats.cnt,
-          revokedCount: revokedStats.cnt,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(accessReviewCampaigns.id, campaignId), eq(accessReviewCampaigns.orgId, orgId)));
-
-      res.json(updated);
-    } catch (error) {
-      log.error("Decide on entitlement error", { error: String(error) });
-      res.status(500).json({ message: "Failed to update entitlement" });
-    }
-  });
+    },
+  );
 
   // Complete campaign
-  app.post("/api/identity/access-reviews/:id/complete", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
+  app.post(
+    "/api/identity/access-reviews/:id/complete",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
 
-      const [campaign] = await db
-        .select()
-        .from(accessReviewCampaigns)
-        .where(and(eq(accessReviewCampaigns.id, id), eq(accessReviewCampaigns.orgId, orgId)));
+        const [campaign] = await db
+          .select()
+          .from(accessReviewCampaigns)
+          .where(and(eq(accessReviewCampaigns.id, id), eq(accessReviewCampaigns.orgId, orgId)));
 
-      if (!campaign) {
-        return res.status(404).json({ message: "Campaign not found" });
+        if (!campaign) {
+          return res.status(404).json({ message: "Campaign not found" });
+        }
+        if (campaign.status !== "active") {
+          return res.status(400).json({ message: "Campaign must be active to complete" });
+        }
+
+        const [updated] = await db
+          .update(accessReviewCampaigns)
+          .set({
+            status: "completed",
+            completedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(accessReviewCampaigns.id, id), eq(accessReviewCampaigns.orgId, orgId)))
+          .returning();
+
+        res.json(updated);
+      } catch (error) {
+        log.error("Complete access review campaign error", { error: String(error) });
+        res.status(500).json({ message: "Failed to complete campaign" });
       }
-      if (campaign.status !== "active") {
-        return res.status(400).json({ message: "Campaign must be active to complete" });
-      }
-
-      const [updated] = await db
-        .update(accessReviewCampaigns)
-        .set({
-          status: "completed",
-          completedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(and(eq(accessReviewCampaigns.id, id), eq(accessReviewCampaigns.orgId, orgId)))
-        .returning();
-
-      res.json(updated);
-    } catch (error) {
-      log.error("Complete access review campaign error", { error: String(error) });
-      res.status(500).json({ message: "Failed to complete campaign" });
-    }
-  });
+    },
+  );
 
   // =========================================================================
   // SCIM 2.0 PROVISIONING
@@ -355,43 +385,50 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
   });
 
   // SCIM webhook endpoint (Okta/Azure AD push to this)
-  app.post("/api/identity/scim/provision", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { provider, operationType, externalUserId, externalUserName, externalEmail, groupName, rawPayload } =
-        req.body;
+  app.post(
+    "/api/identity/scim/provision",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { provider, operationType, externalUserId, externalUserName, externalEmail, groupName, rawPayload } =
+          req.body;
 
-      const validProviders = ["azure_ad", "okta", "google_workspace", "onelogin", "jumpcloud"];
-      if (!provider || !validProviders.includes(provider)) {
-        return res.status(400).json({ message: `Invalid provider. Valid: ${validProviders.join(", ")}` });
+        const validProviders = ["azure_ad", "okta", "google_workspace", "onelogin", "jumpcloud"];
+        if (!provider || !validProviders.includes(provider)) {
+          return res.status(400).json({ message: `Invalid provider. Valid: ${validProviders.join(", ")}` });
+        }
+
+        const validOps = ["create", "update", "delete", "activate", "deactivate", "group_add", "group_remove"];
+        if (!operationType || !validOps.includes(operationType)) {
+          return res.status(400).json({ message: `Invalid operationType. Valid: ${validOps.join(", ")}` });
+        }
+
+        const [logEntry] = await db
+          .insert(scimProvisioningLogs)
+          .values({
+            orgId,
+            provider,
+            operationType,
+            externalUserId: typeof externalUserId === "string" ? externalUserId : null,
+            externalUserName: typeof externalUserName === "string" ? externalUserName : null,
+            externalEmail: typeof externalEmail === "string" ? externalEmail : null,
+            groupName: typeof groupName === "string" ? groupName : null,
+            success: true,
+            rawPayload: rawPayload || null,
+          })
+          .returning();
+
+        res.status(201).json(logEntry);
+      } catch (error) {
+        log.error("SCIM provision error", { error: String(error) });
+        res.status(500).json({ message: "Failed to process SCIM provisioning" });
       }
-
-      const validOps = ["create", "update", "delete", "activate", "deactivate", "group_add", "group_remove"];
-      if (!operationType || !validOps.includes(operationType)) {
-        return res.status(400).json({ message: `Invalid operationType. Valid: ${validOps.join(", ")}` });
-      }
-
-      const [logEntry] = await db
-        .insert(scimProvisioningLogs)
-        .values({
-          orgId,
-          provider,
-          operationType,
-          externalUserId: typeof externalUserId === "string" ? externalUserId : null,
-          externalUserName: typeof externalUserName === "string" ? externalUserName : null,
-          externalEmail: typeof externalEmail === "string" ? externalEmail : null,
-          groupName: typeof groupName === "string" ? groupName : null,
-          success: true,
-          rawPayload: rawPayload || null,
-        })
-        .returning();
-
-      res.status(201).json(logEntry);
-    } catch (error) {
-      log.error("SCIM provision error", { error: String(error) });
-      res.status(500).json({ message: "Failed to process SCIM provisioning" });
-    }
-  });
+    },
+  );
 
   // =========================================================================
   // STALE ACCOUNT DETECTION
@@ -531,130 +568,137 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
   });
 
   // Assess identity risk (run assessment for a user)
-  app.post("/api/identity/risk-profiles/assess", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { userId, userName, userEmail } = req.body;
+  app.post(
+    "/api/identity/risk-profiles/assess",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { userId, userName, userEmail } = req.body;
 
-      if (!userId || typeof userId !== "string") {
-        return res.status(400).json({ message: "userId is required" });
-      }
-      if (!userName || typeof userName !== "string") {
-        return res.status(400).json({ message: "userName is required" });
-      }
+        if (!userId || typeof userId !== "string") {
+          return res.status(400).json({ message: "userId is required" });
+        }
+        if (!userName || typeof userName !== "string") {
+          return res.status(400).json({ message: "userName is required" });
+        }
 
-      // Look up the user's access graph for blast radius calculation
-      const accessPaths = await db
-        .select()
-        .from(identityAccessGraph)
-        .where(
-          and(
-            eq(identityAccessGraph.orgId, orgId),
-            eq(identityAccessGraph.sourceUserId, userId),
-            eq(identityAccessGraph.isActive, true),
-          ),
-        );
+        // Look up the user's access graph for blast radius calculation
+        const accessPaths = await db
+          .select()
+          .from(identityAccessGraph)
+          .where(
+            and(
+              eq(identityAccessGraph.orgId, orgId),
+              eq(identityAccessGraph.sourceUserId, userId),
+              eq(identityAccessGraph.isActive, true),
+            ),
+          );
 
-      const accessibleSystems = new Set(accessPaths.map((p) => p.targetSystem));
-      const adminPaths = accessPaths.filter((p) => ["admin", "superadmin"].includes(p.permissionLevel));
-      const canReachCritical = adminPaths.length > 0;
+        const accessibleSystems = new Set(accessPaths.map((p) => p.targetSystem));
+        const adminPaths = accessPaths.filter((p) => ["admin", "superadmin"].includes(p.permissionLevel));
+        const canReachCritical = adminPaths.length > 0;
 
-      // Calculate blast radius score (0-100)
-      const blastRadiusScore = Math.min(100, accessibleSystems.size * 10 + adminPaths.length * 20);
+        // Calculate blast radius score (0-100)
+        const blastRadiusScore = Math.min(100, accessibleSystems.size * 10 + adminPaths.length * 20);
 
-      // Look up user record for stale detection
-      const [userRecord] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+        // Look up user record for stale detection
+        const [userRecord] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 
-      const daysSinceActivity = userRecord?.lastLoginAt
-        ? Math.floor((Date.now() - new Date(userRecord.lastLoginAt).getTime()) / (1000 * 60 * 60 * 24))
-        : 999;
+        const daysSinceActivity = userRecord?.lastLoginAt
+          ? Math.floor((Date.now() - new Date(userRecord.lastLoginAt).getTime()) / (1000 * 60 * 60 * 24))
+          : 999;
 
-      const isStale = daysSinceActivity > 90;
-      const mfaEnabled = userRecord?.mfaEnabled ?? false;
+        const isStale = daysSinceActivity > 90;
+        const mfaEnabled = userRecord?.mfaEnabled ?? false;
 
-      // Calculate overall risk score
-      let riskScore = 0;
-      if (isStale) riskScore += 25;
-      if (!mfaEnabled) riskScore += 20;
-      if (canReachCritical) riskScore += 30;
-      riskScore += Math.min(25, blastRadiusScore / 4);
+        // Calculate overall risk score
+        let riskScore = 0;
+        if (isStale) riskScore += 25;
+        if (!mfaEnabled) riskScore += 20;
+        if (canReachCritical) riskScore += 30;
+        riskScore += Math.min(25, blastRadiusScore / 4);
 
-      const riskLevel = riskScore >= 80 ? "critical" : riskScore >= 60 ? "high" : riskScore >= 30 ? "medium" : "low";
+        const riskLevel = riskScore >= 80 ? "critical" : riskScore >= 60 ? "high" : riskScore >= 30 ? "medium" : "low";
 
-      // Upsert the profile
-      const existing = await db
-        .select()
-        .from(identityRiskProfiles)
-        .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.userId, userId)))
-        .limit(1);
-
-      let profile;
-      if (existing.length > 0) {
-        [profile] = await db
-          .update(identityRiskProfiles)
-          .set({
-            userName: String(userName),
-            userEmail: typeof userEmail === "string" ? userEmail : null,
-            riskLevel,
-            riskScore,
-            isStale,
-            lastActivityAt: userRecord?.lastLoginAt || null,
-            daysSinceActivity,
-            isServiceAccount: false,
-            blastRadiusScore,
-            accessibleSystems: accessibleSystems.size,
-            accessibleSecrets: 0,
-            privilegedRoles: adminPaths.map((p) => p.grantedVia),
-            lateralMovementPaths: accessPaths.length,
-            canReachCritical,
-            pivotPoints: accessPaths
-              .filter((p) => ["admin", "superadmin"].includes(p.permissionLevel))
-              .map((p) => p.targetSystem),
-            mfaEnabled,
-            hasExcessivePermissions: adminPaths.length > 3,
-            failedLoginCount: userRecord?.failedLoginCount || 0,
-            lastAssessedAt: new Date(),
-            updatedAt: new Date(),
-          })
+        // Upsert the profile
+        const existing = await db
+          .select()
+          .from(identityRiskProfiles)
           .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.userId, userId)))
-          .returning();
-      } else {
-        [profile] = await db
-          .insert(identityRiskProfiles)
-          .values({
-            orgId,
-            userId: String(userId),
-            userName: String(userName),
-            userEmail: typeof userEmail === "string" ? userEmail : null,
-            riskLevel,
-            riskScore,
-            isStale,
-            lastActivityAt: userRecord?.lastLoginAt || null,
-            daysSinceActivity,
-            isServiceAccount: false,
-            blastRadiusScore,
-            accessibleSystems: accessibleSystems.size,
-            accessibleSecrets: 0,
-            privilegedRoles: adminPaths.map((p) => p.grantedVia),
-            lateralMovementPaths: accessPaths.length,
-            canReachCritical,
-            pivotPoints: accessPaths
-              .filter((p) => ["admin", "superadmin"].includes(p.permissionLevel))
-              .map((p) => p.targetSystem),
-            mfaEnabled,
-            hasExcessivePermissions: adminPaths.length > 3,
-            failedLoginCount: userRecord?.failedLoginCount || 0,
-            lastAssessedAt: new Date(),
-          })
-          .returning();
-      }
+          .limit(1);
 
-      res.json(profile);
-    } catch (error) {
-      log.error("Assess identity risk error", { error: String(error) });
-      res.status(500).json({ message: "Failed to assess identity risk" });
-    }
-  });
+        let profile;
+        if (existing.length > 0) {
+          [profile] = await db
+            .update(identityRiskProfiles)
+            .set({
+              userName: String(userName),
+              userEmail: typeof userEmail === "string" ? userEmail : null,
+              riskLevel,
+              riskScore,
+              isStale,
+              lastActivityAt: userRecord?.lastLoginAt || null,
+              daysSinceActivity,
+              isServiceAccount: false,
+              blastRadiusScore,
+              accessibleSystems: accessibleSystems.size,
+              accessibleSecrets: 0,
+              privilegedRoles: adminPaths.map((p) => p.grantedVia),
+              lateralMovementPaths: accessPaths.length,
+              canReachCritical,
+              pivotPoints: accessPaths
+                .filter((p) => ["admin", "superadmin"].includes(p.permissionLevel))
+                .map((p) => p.targetSystem),
+              mfaEnabled,
+              hasExcessivePermissions: adminPaths.length > 3,
+              failedLoginCount: userRecord?.failedLoginCount || 0,
+              lastAssessedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(and(eq(identityRiskProfiles.orgId, orgId), eq(identityRiskProfiles.userId, userId)))
+            .returning();
+        } else {
+          [profile] = await db
+            .insert(identityRiskProfiles)
+            .values({
+              orgId,
+              userId: String(userId),
+              userName: String(userName),
+              userEmail: typeof userEmail === "string" ? userEmail : null,
+              riskLevel,
+              riskScore,
+              isStale,
+              lastActivityAt: userRecord?.lastLoginAt || null,
+              daysSinceActivity,
+              isServiceAccount: false,
+              blastRadiusScore,
+              accessibleSystems: accessibleSystems.size,
+              accessibleSecrets: 0,
+              privilegedRoles: adminPaths.map((p) => p.grantedVia),
+              lateralMovementPaths: accessPaths.length,
+              canReachCritical,
+              pivotPoints: accessPaths
+                .filter((p) => ["admin", "superadmin"].includes(p.permissionLevel))
+                .map((p) => p.targetSystem),
+              mfaEnabled,
+              hasExcessivePermissions: adminPaths.length > 3,
+              failedLoginCount: userRecord?.failedLoginCount || 0,
+              lastAssessedAt: new Date(),
+            })
+            .returning();
+        }
+
+        res.json(profile);
+      } catch (error) {
+        log.error("Assess identity risk error", { error: String(error) });
+        res.status(500).json({ message: "Failed to assess identity risk" });
+      }
+    },
+  );
 
   // Blast radius for a specific user
   app.get("/api/identity/blast-radius/:userId", isAuthenticated, async (req, res) => {
@@ -770,66 +814,73 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
   });
 
   // Add access graph edge
-  app.post("/api/identity/access-graph", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const {
-        sourceUserId,
-        sourceUserName,
-        targetSystem,
-        targetResource,
-        accessType,
-        permissionLevel,
-        grantedVia,
-        expiresAt,
-      } = req.body;
-
-      if (!sourceUserId || typeof sourceUserId !== "string") {
-        return res.status(400).json({ message: "sourceUserId is required" });
-      }
-      if (!sourceUserName || typeof sourceUserName !== "string") {
-        return res.status(400).json({ message: "sourceUserName is required" });
-      }
-      if (!targetSystem || typeof targetSystem !== "string") {
-        return res.status(400).json({ message: "targetSystem is required" });
-      }
-
-      const validAccessTypes = ["direct", "inherited", "delegated"];
-      if (!accessType || !validAccessTypes.includes(accessType)) {
-        return res.status(400).json({ message: `accessType must be: ${validAccessTypes.join(", ")}` });
-      }
-
-      const validPermissions = ["read", "write", "admin", "superadmin"];
-      if (!permissionLevel || !validPermissions.includes(permissionLevel)) {
-        return res.status(400).json({ message: `permissionLevel must be: ${validPermissions.join(", ")}` });
-      }
-
-      const riskWeight =
-        permissionLevel === "superadmin" ? 10 : permissionLevel === "admin" ? 7 : permissionLevel === "write" ? 4 : 1;
-
-      const [edge] = await db
-        .insert(identityAccessGraph)
-        .values({
-          orgId,
-          sourceUserId: String(sourceUserId),
-          sourceUserName: String(sourceUserName),
-          targetSystem: String(targetSystem),
-          targetResource: typeof targetResource === "string" ? targetResource : null,
+  app.post(
+    "/api/identity/access-graph",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const {
+          sourceUserId,
+          sourceUserName,
+          targetSystem,
+          targetResource,
           accessType,
           permissionLevel,
-          grantedVia: typeof grantedVia === "string" ? grantedVia : null,
-          isActive: true,
-          riskWeight,
-          expiresAt: expiresAt ? new Date(expiresAt) : null,
-        })
-        .returning();
+          grantedVia,
+          expiresAt,
+        } = req.body;
 
-      res.status(201).json(edge);
-    } catch (error) {
-      log.error("Add access graph edge error", { error: String(error) });
-      res.status(500).json({ message: "Failed to add access graph edge" });
-    }
-  });
+        if (!sourceUserId || typeof sourceUserId !== "string") {
+          return res.status(400).json({ message: "sourceUserId is required" });
+        }
+        if (!sourceUserName || typeof sourceUserName !== "string") {
+          return res.status(400).json({ message: "sourceUserName is required" });
+        }
+        if (!targetSystem || typeof targetSystem !== "string") {
+          return res.status(400).json({ message: "targetSystem is required" });
+        }
+
+        const validAccessTypes = ["direct", "inherited", "delegated"];
+        if (!accessType || !validAccessTypes.includes(accessType)) {
+          return res.status(400).json({ message: `accessType must be: ${validAccessTypes.join(", ")}` });
+        }
+
+        const validPermissions = ["read", "write", "admin", "superadmin"];
+        if (!permissionLevel || !validPermissions.includes(permissionLevel)) {
+          return res.status(400).json({ message: `permissionLevel must be: ${validPermissions.join(", ")}` });
+        }
+
+        const riskWeight =
+          permissionLevel === "superadmin" ? 10 : permissionLevel === "admin" ? 7 : permissionLevel === "write" ? 4 : 1;
+
+        const [edge] = await db
+          .insert(identityAccessGraph)
+          .values({
+            orgId,
+            sourceUserId: String(sourceUserId),
+            sourceUserName: String(sourceUserName),
+            targetSystem: String(targetSystem),
+            targetResource: typeof targetResource === "string" ? targetResource : null,
+            accessType,
+            permissionLevel,
+            grantedVia: typeof grantedVia === "string" ? grantedVia : null,
+            isActive: true,
+            riskWeight,
+            expiresAt: expiresAt ? new Date(expiresAt) : null,
+          })
+          .returning();
+
+        res.status(201).json(edge);
+      } catch (error) {
+        log.error("Add access graph edge error", { error: String(error) });
+        res.status(500).json({ message: "Failed to add access graph edge" });
+      }
+    },
+  );
 
   // =========================================================================
   // IDENTITY GOVERNANCE SUMMARY
@@ -1120,58 +1171,65 @@ export function registerIdentityGovernanceRoutes(app: Express): void {
   // 53.5: SCIM Provisioning/Deprovisioning Lifecycle
   // =========================================================================
 
-  app.post("/api/identity/scim/lifecycle", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { action, externalUserId, externalUserName, externalEmail, provider, groupName, metadata } = req.body as {
-        action: "hire" | "role_change" | "terminate" | "verify";
-        externalUserId: string;
-        externalUserName?: string;
-        externalEmail?: string;
-        provider?: string;
-        groupName?: string;
-        metadata?: Record<string, unknown>;
-      };
+  app.post(
+    "/api/identity/scim/lifecycle",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { action, externalUserId, externalUserName, externalEmail, provider, groupName, metadata } = req.body as {
+          action: "hire" | "role_change" | "terminate" | "verify";
+          externalUserId: string;
+          externalUserName?: string;
+          externalEmail?: string;
+          provider?: string;
+          groupName?: string;
+          metadata?: Record<string, unknown>;
+        };
 
-      if (!action || !externalUserId) {
-        return res.status(400).json({ message: "action and externalUserId are required" });
-      }
+        if (!action || !externalUserId) {
+          return res.status(400).json({ message: "action and externalUserId are required" });
+        }
 
-      const operationTypeMap: Record<string, string> = {
-        hire: "create",
-        role_change: "update",
-        terminate: "delete",
-        verify: "deprovision_check",
-      };
+        const operationTypeMap: Record<string, string> = {
+          hire: "create",
+          role_change: "update",
+          terminate: "delete",
+          verify: "deprovision_check",
+        };
 
-      const [logEntry] = await db
-        .insert(scimProvisioningLogs)
-        .values({
-          orgId,
-          provider: provider || "manual",
-          operationType: operationTypeMap[action] || action,
+        const [logEntry] = await db
+          .insert(scimProvisioningLogs)
+          .values({
+            orgId,
+            provider: provider || "manual",
+            operationType: operationTypeMap[action] || action,
+            externalUserId,
+            externalUserName: externalUserName || null,
+            externalEmail: externalEmail || null,
+            groupName: groupName || null,
+            success: true,
+            rawPayload: metadata || {},
+          })
+          .returning();
+
+        log.info(`SCIM lifecycle: ${action} for ${externalUserId}`, { orgId });
+        res.json({
+          logId: logEntry.id,
+          action,
           externalUserId,
-          externalUserName: externalUserName || null,
-          externalEmail: externalEmail || null,
-          groupName: groupName || null,
-          success: true,
-          rawPayload: metadata || {},
-        })
-        .returning();
-
-      log.info(`SCIM lifecycle: ${action} for ${externalUserId}`, { orgId });
-      res.json({
-        logId: logEntry.id,
-        action,
-        externalUserId,
-        status: "success",
-        message: `SCIM lifecycle action '${action}' completed for ${externalUserName || externalUserId}`,
-      });
-    } catch (error) {
-      log.error("SCIM lifecycle error", { error: String(error) });
-      res.status(500).json({ message: "Failed to process SCIM lifecycle action" });
-    }
-  });
+          status: "success",
+          message: `SCIM lifecycle action '${action}' completed for ${externalUserName || externalUserId}`,
+        });
+      } catch (error) {
+        log.error("SCIM lifecycle error", { error: String(error) });
+        res.status(500).json({ message: "Failed to process SCIM lifecycle action" });
+      }
+    },
+  );
 
   // =========================================================================
   // 53.6: Role Mining and Optimization

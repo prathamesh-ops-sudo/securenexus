@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId } from "../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { logger, getOrgId, generateApiKey, hashApiKey } from "./shared";
 import { db } from "../db";
 import { sql, eq, and, desc, ilike, or, count } from "drizzle-orm";
@@ -181,216 +181,244 @@ export function registerNativeSensorRoutes(app: Express): void {
   });
 
   // Register a new sensor with a one-time token
-  app.post("/api/native-sensors/register", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { hostname, platform, osVersion, tags } = req.body;
+  app.post(
+    "/api/native-sensors/register",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { hostname, platform, osVersion, tags } = req.body;
 
-      if (!hostname || typeof hostname !== "string") {
-        return res.status(400).json({ message: "hostname is required" });
-      }
-      if (!platform || !SENSOR_PLATFORMS.includes(platform as any)) {
-        return res.status(400).json({ message: `platform must be one of: ${SENSOR_PLATFORMS.join(", ")}` });
-      }
+        if (!hostname || typeof hostname !== "string") {
+          return res.status(400).json({ message: "hostname is required" });
+        }
+        if (!platform || !SENSOR_PLATFORMS.includes(platform as any)) {
+          return res.status(400).json({ message: `platform must be one of: ${SENSOR_PLATFORMS.join(", ")}` });
+        }
 
-      // Generate one-time registration token and API key
-      const registrationToken = `snx-reg-${randomBytes(24).toString("hex")}`;
-      const { key: apiKey, hash: apiKeyHash } = generateApiKey();
+        // Generate one-time registration token and API key
+        const registrationToken = `snx-reg-${randomBytes(24).toString("hex")}`;
+        const { key: apiKey, hash: apiKeyHash } = generateApiKey();
 
-      const [sensor] = await db
-        .insert(nativeSensors)
-        .values({
-          orgId,
-          hostname,
-          platform,
-          osVersion: osVersion || null,
+        const [sensor] = await db
+          .insert(nativeSensors)
+          .values({
+            orgId,
+            hostname,
+            platform,
+            osVersion: osVersion || null,
+            registrationToken,
+            apiKey: apiKeyHash, // Store hash only
+            status: "provisioning",
+            tags: tags || [],
+          })
+          .returning();
+
+        // Seed built-in rules if not already done
+        await seedBuiltinRules();
+
+        log.info(`Sensor registered: ${hostname} (${platform})`, { sensorId: sensor.id, orgId });
+
+        res.status(201).json({
+          sensor,
           registrationToken,
-          apiKey: apiKeyHash, // Store hash only
-          status: "provisioning",
-          tags: tags || [],
-        })
-        .returning();
-
-      // Seed built-in rules if not already done
-      await seedBuiltinRules();
-
-      log.info(`Sensor registered: ${hostname} (${platform})`, { sensorId: sensor.id, orgId });
-
-      res.status(201).json({
-        sensor,
-        registrationToken,
-        apiKey, // Return raw key once — not stored
-        message: "Sensor registered. Use the apiKey for heartbeat and event ingestion.",
-      });
-    } catch (error) {
-      log.error("Failed to register sensor", { error: String(error) });
-      res.status(500).json({ message: "Failed to register sensor" });
-    }
-  });
+          apiKey, // Return raw key once — not stored
+          message: "Sensor registered. Use the apiKey for heartbeat and event ingestion.",
+        });
+      } catch (error) {
+        log.error("Failed to register sensor", { error: String(error) });
+        res.status(500).json({ message: "Failed to register sensor" });
+      }
+    },
+  );
 
   // Heartbeat — agent calls home every 30s (supports both session auth and sensor API key auth)
-  app.post("/api/native-sensors/:id/heartbeat", sensorApiKeyAuth, async (req, res) => {
-    try {
-      const orgId = (req as any).sensorOrgId;
-      const sensorId = String(req.params.id);
+  app.post(
+    "/api/native-sensors/:id/heartbeat",
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    sensorApiKeyAuth,
+    async (req, res) => {
+      try {
+        const orgId = (req as any).sensorOrgId;
+        const sensorId = String(req.params.id);
 
-      const [sensor] = await db
-        .select()
-        .from(nativeSensors)
-        .where(and(eq(nativeSensors.id, sensorId), eq(nativeSensors.orgId, orgId)))
-        .limit(1);
+        const [sensor] = await db
+          .select()
+          .from(nativeSensors)
+          .where(and(eq(nativeSensors.id, sensorId), eq(nativeSensors.orgId, orgId)))
+          .limit(1);
 
-      if (!sensor) {
-        return res.status(404).json({ message: "Sensor not found" });
+        if (!sensor) {
+          return res.status(404).json({ message: "Sensor not found" });
+        }
+
+        const { cpuUsage, memoryUsage, diskUsage, agentVersion } = req.body;
+
+        await db
+          .update(nativeSensors)
+          .set({
+            lastHeartbeat: new Date(),
+            status: "online",
+            cpuUsage: typeof cpuUsage === "number" ? cpuUsage : sensor.cpuUsage,
+            memoryUsage: typeof memoryUsage === "number" ? memoryUsage : sensor.memoryUsage,
+            diskUsage: typeof diskUsage === "number" ? diskUsage : sensor.diskUsage,
+            agentVersion: agentVersion || sensor.agentVersion,
+            updatedAt: new Date(),
+          })
+          .where(eq(nativeSensors.id, sensorId));
+
+        res.json({ status: "ok", serverTime: new Date().toISOString() });
+      } catch (error) {
+        log.error("Heartbeat failed", { error: String(error) });
+        res.status(500).json({ message: "Heartbeat failed" });
       }
-
-      const { cpuUsage, memoryUsage, diskUsage, agentVersion } = req.body;
-
-      await db
-        .update(nativeSensors)
-        .set({
-          lastHeartbeat: new Date(),
-          status: "online",
-          cpuUsage: typeof cpuUsage === "number" ? cpuUsage : sensor.cpuUsage,
-          memoryUsage: typeof memoryUsage === "number" ? memoryUsage : sensor.memoryUsage,
-          diskUsage: typeof diskUsage === "number" ? diskUsage : sensor.diskUsage,
-          agentVersion: agentVersion || sensor.agentVersion,
-          updatedAt: new Date(),
-        })
-        .where(eq(nativeSensors.id, sensorId));
-
-      res.json({ status: "ok", serverTime: new Date().toISOString() });
-    } catch (error) {
-      log.error("Heartbeat failed", { error: String(error) });
-      res.status(500).json({ message: "Heartbeat failed" });
-    }
-  });
+    },
+  );
 
   // Bulk event ingestion — up to 500 events per call (supports both session auth and sensor API key auth)
-  app.post("/api/native-sensors/:id/events", sensorApiKeyAuth, async (req, res) => {
-    try {
-      const orgId = (req as any).sensorOrgId;
-      const sensorId = String(req.params.id);
+  app.post(
+    "/api/native-sensors/:id/events",
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    sensorApiKeyAuth,
+    async (req, res) => {
+      try {
+        const orgId = (req as any).sensorOrgId;
+        const sensorId = String(req.params.id);
 
-      const [sensor] = await db
-        .select()
-        .from(nativeSensors)
-        .where(and(eq(nativeSensors.id, sensorId), eq(nativeSensors.orgId, orgId)))
-        .limit(1);
+        const [sensor] = await db
+          .select()
+          .from(nativeSensors)
+          .where(and(eq(nativeSensors.id, sensorId), eq(nativeSensors.orgId, orgId)))
+          .limit(1);
 
-      if (!sensor) {
-        return res.status(404).json({ message: "Sensor not found" });
+        if (!sensor) {
+          return res.status(404).json({ message: "Sensor not found" });
+        }
+
+        const { events } = req.body;
+        if (!Array.isArray(events) || events.length === 0) {
+          return res.status(400).json({ message: "events array is required and must not be empty" });
+        }
+        if (events.length > 500) {
+          return res.status(400).json({ message: "Maximum 500 events per call" });
+        }
+
+        // Validate and insert events
+        const validEvents = events.filter((e: any) => {
+          return e.eventType && SENSOR_EVENT_TYPES.includes(e.eventType);
+        });
+
+        if (validEvents.length === 0) {
+          return res
+            .status(400)
+            .json({ message: `No valid events. eventType must be one of: ${SENSOR_EVENT_TYPES.join(", ")}` });
+        }
+
+        const eventRows = await db
+          .insert(sensorEvents)
+          .values(
+            validEvents.map((e: any) => ({
+              orgId,
+              sensorId,
+              eventType: e.eventType,
+              timestamp: e.timestamp ? new Date(e.timestamp) : new Date(),
+              processName: e.processName || null,
+              processPath: e.processPath || null,
+              processArgs: e.processArgs || null,
+              parentProcess: e.parentProcess || null,
+              pid: typeof e.pid === "number" ? e.pid : null,
+              ppid: typeof e.ppid === "number" ? e.ppid : null,
+              userName: e.userName || null,
+              srcIp: e.srcIp || null,
+              dstIp: e.dstIp || null,
+              srcPort: typeof e.srcPort === "number" ? e.srcPort : null,
+              dstPort: typeof e.dstPort === "number" ? e.dstPort : null,
+              protocol: e.protocol || null,
+              bytesIn: typeof e.bytesIn === "number" ? e.bytesIn : null,
+              bytesOut: typeof e.bytesOut === "number" ? e.bytesOut : null,
+              filePath: e.filePath || null,
+              fileAction: e.fileAction || null,
+              fileHash: e.fileHash || null,
+              fileSize: typeof e.fileSize === "number" ? e.fileSize : null,
+              authAction: e.authAction || null,
+              authResult: e.authResult || null,
+              authMethod: e.authMethod || null,
+              dnsQuery: e.dnsQuery || null,
+              dnsType: e.dnsType || null,
+              dnsResponse: e.dnsResponse || null,
+              logSource: e.logSource || null,
+              logLevel: e.logLevel || null,
+              logMessage: e.logMessage || null,
+              rawData: e.rawData || null,
+            })),
+          )
+          .returning();
+
+        // Run detection engine on the batch
+        const detectionResult = await processEventBatch(eventRows, orgId, sensorId);
+
+        // Update sensor stats
+        await db
+          .update(nativeSensors)
+          .set({
+            eventsIngested: sql`${nativeSensors.eventsIngested} + ${eventRows.length}`,
+            alertsGenerated: sql`${nativeSensors.alertsGenerated} + ${detectionResult.alertsCreated}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(nativeSensors.id, sensorId));
+
+        res.json({
+          accepted: eventRows.length,
+          rejected: events.length - validEvents.length,
+          alertsCreated: detectionResult.alertsCreated,
+          eventsMatched: detectionResult.eventsMatched,
+        });
+      } catch (error) {
+        log.error("Event ingestion failed", { error: String(error) });
+        res.status(500).json({ message: "Event ingestion failed" });
       }
-
-      const { events } = req.body;
-      if (!Array.isArray(events) || events.length === 0) {
-        return res.status(400).json({ message: "events array is required and must not be empty" });
-      }
-      if (events.length > 500) {
-        return res.status(400).json({ message: "Maximum 500 events per call" });
-      }
-
-      // Validate and insert events
-      const validEvents = events.filter((e: any) => {
-        return e.eventType && SENSOR_EVENT_TYPES.includes(e.eventType);
-      });
-
-      if (validEvents.length === 0) {
-        return res
-          .status(400)
-          .json({ message: `No valid events. eventType must be one of: ${SENSOR_EVENT_TYPES.join(", ")}` });
-      }
-
-      const eventRows = await db
-        .insert(sensorEvents)
-        .values(
-          validEvents.map((e: any) => ({
-            orgId,
-            sensorId,
-            eventType: e.eventType,
-            timestamp: e.timestamp ? new Date(e.timestamp) : new Date(),
-            processName: e.processName || null,
-            processPath: e.processPath || null,
-            processArgs: e.processArgs || null,
-            parentProcess: e.parentProcess || null,
-            pid: typeof e.pid === "number" ? e.pid : null,
-            ppid: typeof e.ppid === "number" ? e.ppid : null,
-            userName: e.userName || null,
-            srcIp: e.srcIp || null,
-            dstIp: e.dstIp || null,
-            srcPort: typeof e.srcPort === "number" ? e.srcPort : null,
-            dstPort: typeof e.dstPort === "number" ? e.dstPort : null,
-            protocol: e.protocol || null,
-            bytesIn: typeof e.bytesIn === "number" ? e.bytesIn : null,
-            bytesOut: typeof e.bytesOut === "number" ? e.bytesOut : null,
-            filePath: e.filePath || null,
-            fileAction: e.fileAction || null,
-            fileHash: e.fileHash || null,
-            fileSize: typeof e.fileSize === "number" ? e.fileSize : null,
-            authAction: e.authAction || null,
-            authResult: e.authResult || null,
-            authMethod: e.authMethod || null,
-            dnsQuery: e.dnsQuery || null,
-            dnsType: e.dnsType || null,
-            dnsResponse: e.dnsResponse || null,
-            logSource: e.logSource || null,
-            logLevel: e.logLevel || null,
-            logMessage: e.logMessage || null,
-            rawData: e.rawData || null,
-          })),
-        )
-        .returning();
-
-      // Run detection engine on the batch
-      const detectionResult = await processEventBatch(eventRows, orgId, sensorId);
-
-      // Update sensor stats
-      await db
-        .update(nativeSensors)
-        .set({
-          eventsIngested: sql`${nativeSensors.eventsIngested} + ${eventRows.length}`,
-          alertsGenerated: sql`${nativeSensors.alertsGenerated} + ${detectionResult.alertsCreated}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(nativeSensors.id, sensorId));
-
-      res.json({
-        accepted: eventRows.length,
-        rejected: events.length - validEvents.length,
-        alertsCreated: detectionResult.alertsCreated,
-        eventsMatched: detectionResult.eventsMatched,
-      });
-    } catch (error) {
-      log.error("Event ingestion failed", { error: String(error) });
-      res.status(500).json({ message: "Event ingestion failed" });
-    }
-  });
+    },
+  );
 
   // Delete / deregister a sensor
-  app.delete("/api/native-sensors/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const sensorId = String(req.params.id);
+  app.delete(
+    "/api/native-sensors/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const sensorId = String(req.params.id);
 
-      const [sensor] = await db
-        .select()
-        .from(nativeSensors)
-        .where(and(eq(nativeSensors.id, sensorId), eq(nativeSensors.orgId, orgId)))
-        .limit(1);
+        const [sensor] = await db
+          .select()
+          .from(nativeSensors)
+          .where(and(eq(nativeSensors.id, sensorId), eq(nativeSensors.orgId, orgId)))
+          .limit(1);
 
-      if (!sensor) {
-        return res.status(404).json({ message: "Sensor not found" });
+        if (!sensor) {
+          return res.status(404).json({ message: "Sensor not found" });
+        }
+
+        await db.delete(nativeSensors).where(eq(nativeSensors.id, sensorId));
+
+        log.info(`Sensor deregistered: ${sensor.hostname}`, { sensorId, orgId });
+        res.json({ message: "Sensor deregistered" });
+      } catch (error) {
+        log.error("Failed to delete sensor", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete sensor" });
       }
-
-      await db.delete(nativeSensors).where(eq(nativeSensors.id, sensorId));
-
-      log.info(`Sensor deregistered: ${sensor.hostname}`, { sensorId, orgId });
-      res.json({ message: "Sensor deregistered" });
-    } catch (error) {
-      log.error("Failed to delete sensor", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete sensor" });
-    }
-  });
+    },
+  );
 
   // Generate one-line install command for a platform
   app.post(
@@ -398,6 +426,7 @@ export function registerNativeSensorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const { platform, sensorId, apiKey } = req.body;
@@ -806,142 +835,166 @@ EOF`;
   });
 
   // Create custom detection rule
-  app.post("/api/detection-rules", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const {
-        name,
-        description,
-        severity,
-        mitreTactic,
-        mitreTechnique,
-        mitreSubtechnique,
-        eventTypes,
-        conditionTree,
-        tags,
-        falsePositiveNotes,
-        references: refs,
-      } = req.body;
-
-      if (!name || typeof name !== "string") {
-        return res.status(400).json({ message: "name is required" });
-      }
-      if (!conditionTree || typeof conditionTree !== "object") {
-        return res.status(400).json({ message: "conditionTree is required and must be an object" });
-      }
-
-      const [rule] = await db
-        .insert(detectionRules)
-        .values({
-          orgId,
+  app.post(
+    "/api/detection-rules",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const {
           name,
-          description: description || null,
-          severity: severity || "medium",
-          status: "enabled",
-          mitreTactic: mitreTactic || null,
-          mitreTechnique: mitreTechnique || null,
-          mitreSubtechnique: mitreSubtechnique || null,
-          eventTypes: eventTypes || [],
+          description,
+          severity,
+          mitreTactic,
+          mitreTechnique,
+          mitreSubtechnique,
+          eventTypes,
           conditionTree,
-          author: (req as any).user?.email || "custom",
-          tags: tags || [],
-          falsePositiveNotes: falsePositiveNotes || null,
-          references: refs || [],
-          isBuiltin: false,
-        })
-        .returning();
+          tags,
+          falsePositiveNotes,
+          references: refs,
+        } = req.body;
 
-      log.info(`Custom detection rule created: ${name}`, { ruleId: rule.id, orgId });
-      res.status(201).json({ rule });
-    } catch (error) {
-      log.error("Failed to create detection rule", { error: String(error) });
-      res.status(500).json({ message: "Failed to create detection rule" });
-    }
-  });
+        if (!name || typeof name !== "string") {
+          return res.status(400).json({ message: "name is required" });
+        }
+        if (!conditionTree || typeof conditionTree !== "object") {
+          return res.status(400).json({ message: "conditionTree is required and must be an object" });
+        }
+
+        const [rule] = await db
+          .insert(detectionRules)
+          .values({
+            orgId,
+            name,
+            description: description || null,
+            severity: severity || "medium",
+            status: "enabled",
+            mitreTactic: mitreTactic || null,
+            mitreTechnique: mitreTechnique || null,
+            mitreSubtechnique: mitreSubtechnique || null,
+            eventTypes: eventTypes || [],
+            conditionTree,
+            author: (req as any).user?.email || "custom",
+            tags: tags || [],
+            falsePositiveNotes: falsePositiveNotes || null,
+            references: refs || [],
+            isBuiltin: false,
+          })
+          .returning();
+
+        log.info(`Custom detection rule created: ${name}`, { ruleId: rule.id, orgId });
+        res.status(201).json({ rule });
+      } catch (error) {
+        log.error("Failed to create detection rule", { error: String(error) });
+        res.status(500).json({ message: "Failed to create detection rule" });
+      }
+    },
+  );
 
   // Update detection rule (enable/disable, edit conditions)
-  app.patch("/api/detection-rules/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const ruleId = String(req.params.id);
+  app.patch(
+    "/api/detection-rules/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const ruleId = String(req.params.id);
 
-      const [existing] = await db
-        .select()
-        .from(detectionRules)
-        .where(
-          and(eq(detectionRules.id, ruleId), or(eq(detectionRules.orgId, orgId), sql`${detectionRules.orgId} IS NULL`)),
-        )
-        .limit(1);
+        const [existing] = await db
+          .select()
+          .from(detectionRules)
+          .where(
+            and(
+              eq(detectionRules.id, ruleId),
+              or(eq(detectionRules.orgId, orgId), sql`${detectionRules.orgId} IS NULL`),
+            ),
+          )
+          .limit(1);
 
-      if (!existing) {
-        return res.status(404).json({ message: "Detection rule not found" });
-      }
-
-      // Only allow status changes on built-in rules; full edits on custom rules
-      const allowedFields = ["status"];
-      if (!existing.isBuiltin) {
-        allowedFields.push(
-          "name",
-          "description",
-          "severity",
-          "mitreTactic",
-          "mitreTechnique",
-          "mitreSubtechnique",
-          "eventTypes",
-          "conditionTree",
-          "tags",
-          "falsePositiveNotes",
-          "references",
-        );
-      }
-
-      const updateData: Record<string, unknown> = { updatedAt: new Date() };
-      for (const field of allowedFields) {
-        if (req.body[field] !== undefined) {
-          updateData[field] = req.body[field];
+        if (!existing) {
+          return res.status(404).json({ message: "Detection rule not found" });
         }
+
+        // Only allow status changes on built-in rules; full edits on custom rules
+        const allowedFields = ["status"];
+        if (!existing.isBuiltin) {
+          allowedFields.push(
+            "name",
+            "description",
+            "severity",
+            "mitreTactic",
+            "mitreTechnique",
+            "mitreSubtechnique",
+            "eventTypes",
+            "conditionTree",
+            "tags",
+            "falsePositiveNotes",
+            "references",
+          );
+        }
+
+        const updateData: Record<string, unknown> = { updatedAt: new Date() };
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            updateData[field] = req.body[field];
+          }
+        }
+
+        const [updated] = await db
+          .update(detectionRules)
+          .set(updateData)
+          .where(eq(detectionRules.id, ruleId))
+          .returning();
+
+        res.json({ rule: updated });
+      } catch (error) {
+        log.error("Failed to update detection rule", { error: String(error) });
+        res.status(500).json({ message: "Failed to update detection rule" });
       }
-
-      const [updated] = await db
-        .update(detectionRules)
-        .set(updateData)
-        .where(eq(detectionRules.id, ruleId))
-        .returning();
-
-      res.json({ rule: updated });
-    } catch (error) {
-      log.error("Failed to update detection rule", { error: String(error) });
-      res.status(500).json({ message: "Failed to update detection rule" });
-    }
-  });
+    },
+  );
 
   // Delete custom detection rule (built-in rules cannot be deleted)
-  app.delete("/api/detection-rules/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const ruleId = String(req.params.id);
+  app.delete(
+    "/api/detection-rules/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const ruleId = String(req.params.id);
 
-      const [existing] = await db
-        .select()
-        .from(detectionRules)
-        .where(and(eq(detectionRules.id, ruleId), eq(detectionRules.orgId, orgId)))
-        .limit(1);
+        const [existing] = await db
+          .select()
+          .from(detectionRules)
+          .where(and(eq(detectionRules.id, ruleId), eq(detectionRules.orgId, orgId)))
+          .limit(1);
 
-      if (!existing) {
-        return res.status(404).json({ message: "Detection rule not found" });
+        if (!existing) {
+          return res.status(404).json({ message: "Detection rule not found" });
+        }
+
+        if (existing.isBuiltin) {
+          return res.status(403).json({ message: "Built-in rules cannot be deleted. You can disable them instead." });
+        }
+
+        await db.delete(detectionRules).where(eq(detectionRules.id, ruleId));
+        res.json({ message: "Detection rule deleted" });
+      } catch (error) {
+        log.error("Failed to delete detection rule", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete detection rule" });
       }
-
-      if (existing.isBuiltin) {
-        return res.status(403).json({ message: "Built-in rules cannot be deleted. You can disable them instead." });
-      }
-
-      await db.delete(detectionRules).where(eq(detectionRules.id, ruleId));
-      res.json({ message: "Detection rule deleted" });
-    } catch (error) {
-      log.error("Failed to delete detection rule", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete detection rule" });
-    }
-  });
+    },
+  );
 
   // ==========================================================================
   // DETECTION ALERTS
@@ -986,6 +1039,7 @@ EOF`;
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -1020,15 +1074,22 @@ EOF`;
   );
 
   // Seed built-in rules endpoint (admin)
-  app.post("/api/detection-rules/seed", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const inserted = await seedBuiltinRules();
-      res.json({ message: `Seeded ${inserted} built-in detection rules`, inserted });
-    } catch (error) {
-      log.error("Failed to seed detection rules", { error: String(error) });
-      res.status(500).json({ message: "Failed to seed detection rules" });
-    }
-  });
+  app.post(
+    "/api/detection-rules/seed",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const inserted = await seedBuiltinRules();
+        res.json({ message: `Seeded ${inserted} built-in detection rules`, inserted });
+      } catch (error) {
+        log.error("Failed to seed detection rules", { error: String(error) });
+        res.status(500).json({ message: "Failed to seed detection rules" });
+      }
+    },
+  );
 
   // 47.3: Sensor policy management — retrieve policies
   app.get("/api/native-sensors/policies", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -1048,37 +1109,44 @@ EOF`;
   });
 
   // 47.3: Create sensor policy
-  app.post("/api/native-sensors/policies", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { name, platform, telemetryLevel, heartbeatInterval, autoUpdate } = req.body;
-      if (!name) {
-        return res.status(400).json({ message: "Policy name is required" });
+  app.post(
+    "/api/native-sensors/policies",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { name, platform, telemetryLevel, heartbeatInterval, autoUpdate } = req.body;
+        if (!name) {
+          return res.status(400).json({ message: "Policy name is required" });
+        }
+
+        const policy = {
+          id: randomBytes(16).toString("hex"),
+          orgId,
+          name,
+          platform: platform === "all_platforms" ? null : platform || null,
+          telemetryLevel: telemetryLevel || "standard",
+          heartbeatInterval: heartbeatInterval || 60,
+          autoUpdate: autoUpdate !== false,
+          sensorCount: 0,
+          createdAt: new Date().toISOString(),
+        };
+
+        const policiesKey = `sensor_policies_${orgId}`;
+        const existing = ((globalThis as Record<string, unknown>)[policiesKey] as Array<Record<string, unknown>>) || [];
+        existing.push(policy);
+        (globalThis as Record<string, unknown>)[policiesKey] = existing;
+
+        res.status(201).json(policy);
+      } catch (error) {
+        log.error("Failed to create sensor policy", { error: String(error) });
+        res.status(500).json({ message: "Failed to create sensor policy" });
       }
-
-      const policy = {
-        id: randomBytes(16).toString("hex"),
-        orgId,
-        name,
-        platform: platform === "all_platforms" ? null : platform || null,
-        telemetryLevel: telemetryLevel || "standard",
-        heartbeatInterval: heartbeatInterval || 60,
-        autoUpdate: autoUpdate !== false,
-        sensorCount: 0,
-        createdAt: new Date().toISOString(),
-      };
-
-      const policiesKey = `sensor_policies_${orgId}`;
-      const existing = ((globalThis as Record<string, unknown>)[policiesKey] as Array<Record<string, unknown>>) || [];
-      existing.push(policy);
-      (globalThis as Record<string, unknown>)[policiesKey] = existing;
-
-      res.status(201).json(policy);
-    } catch (error) {
-      log.error("Failed to create sensor policy", { error: String(error) });
-      res.status(500).json({ message: "Failed to create sensor policy" });
-    }
-  });
+    },
+  );
 
   // 47.5: Sensor health monitoring — heartbeat-based health checks
   app.get("/api/native-sensors/health-check", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -1138,197 +1206,221 @@ EOF`;
   });
 
   // 47.6: Sensor auto-update with maintenance windows
-  app.post("/api/native-sensors/auto-update", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { targetVersion, sensorIds, strategy, maintenanceWindow } = req.body;
+  app.post(
+    "/api/native-sensors/auto-update",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { targetVersion, sensorIds, strategy, maintenanceWindow } = req.body;
 
-      if (!targetVersion) {
-        return res.status(400).json({ message: "Target version is required" });
-      }
+        if (!targetVersion) {
+          return res.status(400).json({ message: "Target version is required" });
+        }
 
-      const sensors = await db.select().from(nativeSensors).where(eq(nativeSensors.orgId, orgId));
+        const sensors = await db.select().from(nativeSensors).where(eq(nativeSensors.orgId, orgId));
 
-      const targets = sensorIds
-        ? sensors.filter((s) => sensorIds.includes(s.id))
-        : sensors.filter((s) => s.agentVersion !== targetVersion);
+        const targets = sensorIds
+          ? sensors.filter((s) => sensorIds.includes(s.id))
+          : sensors.filter((s) => s.agentVersion !== targetVersion);
 
-      // Calculate canary set (10% for staged rollout)
-      const canarySize = Math.max(1, Math.ceil(targets.length * 0.1));
-      const canarySet = strategy === "canary" ? targets.slice(0, canarySize) : targets;
+        // Calculate canary set (10% for staged rollout)
+        const canarySize = Math.max(1, Math.ceil(targets.length * 0.1));
+        const canarySet = strategy === "canary" ? targets.slice(0, canarySize) : targets;
 
-      const updatePlan = {
-        id: randomBytes(16).toString("hex"),
-        targetVersion,
-        strategy: strategy || "rolling",
-        totalSensors: targets.length,
-        canarySize: strategy === "canary" ? canarySize : targets.length,
-        maintenanceWindow: maintenanceWindow || null,
-        status: "scheduled",
-        sensors: canarySet.map((s) => ({
-          id: s.id,
-          hostname: s.hostname,
-          currentVersion: s.agentVersion,
+        const updatePlan = {
+          id: randomBytes(16).toString("hex"),
           targetVersion,
-          updateStatus: "pending",
-        })),
-        createdAt: new Date().toISOString(),
-      };
+          strategy: strategy || "rolling",
+          totalSensors: targets.length,
+          canarySize: strategy === "canary" ? canarySize : targets.length,
+          maintenanceWindow: maintenanceWindow || null,
+          status: "scheduled",
+          sensors: canarySet.map((s) => ({
+            id: s.id,
+            hostname: s.hostname,
+            currentVersion: s.agentVersion,
+            targetVersion,
+            updateStatus: "pending",
+          })),
+          createdAt: new Date().toISOString(),
+        };
 
-      log.info("Auto-update scheduled", {
-        orgId,
-        targetVersion,
-        totalSensors: targets.length,
-        strategy: strategy || "rolling",
-      });
+        log.info("Auto-update scheduled", {
+          orgId,
+          targetVersion,
+          totalSensors: targets.length,
+          strategy: strategy || "rolling",
+        });
 
-      res.json(updatePlan);
-    } catch (error) {
-      log.error("Sensor auto-update error", { error: String(error) });
-      res.status(500).json({ message: "Failed to schedule sensor auto-update" });
-    }
-  });
+        res.json(updatePlan);
+      } catch (error) {
+        log.error("Sensor auto-update error", { error: String(error) });
+        res.status(500).json({ message: "Failed to schedule sensor auto-update" });
+      }
+    },
+  );
 
   // 47.6: Sensor rollback
-  app.post("/api/native-sensors/:id/rollback", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const { targetVersion } = req.body;
+  app.post(
+    "/api/native-sensors/:id/rollback",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const { targetVersion } = req.body;
 
-      const [sensor] = await db
-        .select()
-        .from(nativeSensors)
-        .where(and(eq(nativeSensors.id, id), eq(nativeSensors.orgId, orgId)))
-        .limit(1);
+        const [sensor] = await db
+          .select()
+          .from(nativeSensors)
+          .where(and(eq(nativeSensors.id, id), eq(nativeSensors.orgId, orgId)))
+          .limit(1);
 
-      if (!sensor) {
-        return res.status(404).json({ message: "Sensor not found" });
+        if (!sensor) {
+          return res.status(404).json({ message: "Sensor not found" });
+        }
+
+        log.info("Sensor rollback initiated", {
+          sensorId: id,
+          currentVersion: sensor.agentVersion,
+          targetVersion: targetVersion || "previous",
+        });
+
+        res.json({
+          sensorId: id,
+          hostname: sensor.hostname,
+          previousVersion: sensor.agentVersion,
+          rollbackVersion: targetVersion || "previous",
+          status: "rollback_initiated",
+          message: `Rollback initiated for sensor ${sensor.hostname}`,
+        });
+      } catch (error) {
+        log.error("Sensor rollback error", { error: String(error) });
+        res.status(500).json({ message: "Failed to rollback sensor" });
       }
-
-      log.info("Sensor rollback initiated", {
-        sensorId: id,
-        currentVersion: sensor.agentVersion,
-        targetVersion: targetVersion || "previous",
-      });
-
-      res.json({
-        sensorId: id,
-        hostname: sensor.hostname,
-        previousVersion: sensor.agentVersion,
-        rollbackVersion: targetVersion || "previous",
-        status: "rollback_initiated",
-        message: `Rollback initiated for sensor ${sensor.hostname}`,
-      });
-    } catch (error) {
-      log.error("Sensor rollback error", { error: String(error) });
-      res.status(500).json({ message: "Failed to rollback sensor" });
-    }
-  });
+    },
+  );
 
   // ==========================================================================
   // 48.x: DETECTION RULES — ADVANCED FEATURES
   // ==========================================================================
 
   // 48.2: Rule testing sandbox — dry-run against historical data
-  app.post("/api/detection-rules/:id/test", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const ruleId = String(req.params.id);
-      const { days } = req.body;
-      const lookbackDays = Math.min(Math.max(parseInt(days) || 7, 1), 30);
+  app.post(
+    "/api/detection-rules/:id/test",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const ruleId = String(req.params.id);
+        const { days } = req.body;
+        const lookbackDays = Math.min(Math.max(parseInt(days) || 7, 1), 30);
 
-      const [rule] = await db
-        .select()
-        .from(detectionRules)
-        .where(
-          and(eq(detectionRules.id, ruleId), or(eq(detectionRules.orgId, orgId), sql`${detectionRules.orgId} IS NULL`)),
-        )
-        .limit(1);
+        const [rule] = await db
+          .select()
+          .from(detectionRules)
+          .where(
+            and(
+              eq(detectionRules.id, ruleId),
+              or(eq(detectionRules.orgId, orgId), sql`${detectionRules.orgId} IS NULL`),
+            ),
+          )
+          .limit(1);
 
-      if (!rule) return res.status(404).json({ message: "Rule not found" });
+        if (!rule) return res.status(404).json({ message: "Rule not found" });
 
-      // Fetch historical events within the lookback window
-      const cutoff = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
-      const events = await db
-        .select()
-        .from(sensorEvents)
-        .where(and(eq(sensorEvents.orgId, orgId), sql`${sensorEvents.timestamp} >= ${cutoff.toISOString()}`))
-        .limit(5000);
+        // Fetch historical events within the lookback window
+        const cutoff = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
+        const events = await db
+          .select()
+          .from(sensorEvents)
+          .where(and(eq(sensorEvents.orgId, orgId), sql`${sensorEvents.timestamp} >= ${cutoff.toISOString()}`))
+          .limit(5000);
 
-      // Evaluate rule condition tree against events
-      const matches: Array<{ timestamp: string; sensorId: string; eventType: string; matched: boolean }> = [];
-      let matchCount = 0;
+        // Evaluate rule condition tree against events
+        const matches: Array<{ timestamp: string; sensorId: string; eventType: string; matched: boolean }> = [];
+        let matchCount = 0;
 
-      const evaluateCondition = (event: Record<string, unknown>, condition: Record<string, unknown>): boolean => {
-        if (condition.and && Array.isArray(condition.and)) {
-          return (condition.and as Record<string, unknown>[]).every((c) => evaluateCondition(event, c));
-        }
-        if (condition.or && Array.isArray(condition.or)) {
-          return (condition.or as Record<string, unknown>[]).some((c) => evaluateCondition(event, c));
-        }
-        if (condition.not && typeof condition.not === "object") {
-          return !evaluateCondition(event, condition.not as Record<string, unknown>);
-        }
-        if (condition.field && condition.op) {
-          const fieldVal = String(event[condition.field as string] ?? "");
-          const condVal = String(condition.value ?? "");
-          switch (condition.op) {
-            case "eq":
-              return fieldVal === condVal;
-            case "neq":
-              return fieldVal !== condVal;
-            case "contains":
-              return fieldVal.includes(condVal);
-            case "exists":
-              return event[condition.field as string] !== undefined;
-            default:
-              return false;
+        const evaluateCondition = (event: Record<string, unknown>, condition: Record<string, unknown>): boolean => {
+          if (condition.and && Array.isArray(condition.and)) {
+            return (condition.and as Record<string, unknown>[]).every((c) => evaluateCondition(event, c));
           }
-        }
-        return false;
-      };
-
-      const startTime = Date.now();
-      for (const event of events) {
-        const eventData = {
-          ...(event as Record<string, unknown>),
-          ...(((event as Record<string, unknown>).payload as Record<string, unknown>) || {}),
+          if (condition.or && Array.isArray(condition.or)) {
+            return (condition.or as Record<string, unknown>[]).some((c) => evaluateCondition(event, c));
+          }
+          if (condition.not && typeof condition.not === "object") {
+            return !evaluateCondition(event, condition.not as Record<string, unknown>);
+          }
+          if (condition.field && condition.op) {
+            const fieldVal = String(event[condition.field as string] ?? "");
+            const condVal = String(condition.value ?? "");
+            switch (condition.op) {
+              case "eq":
+                return fieldVal === condVal;
+              case "neq":
+                return fieldVal !== condVal;
+              case "contains":
+                return fieldVal.includes(condVal);
+              case "exists":
+                return event[condition.field as string] !== undefined;
+              default:
+                return false;
+            }
+          }
+          return false;
         };
-        const matched = rule.conditionTree
-          ? evaluateCondition(eventData, rule.conditionTree as Record<string, unknown>)
-          : false;
-        if (matched) {
-          matchCount++;
-          if (matches.length < 10) {
-            matches.push({
-              timestamp: String(event.timestamp),
-              sensorId: event.sensorId,
-              eventType: event.eventType,
-              matched: true,
-            });
+
+        const startTime = Date.now();
+        for (const event of events) {
+          const eventData = {
+            ...(event as Record<string, unknown>),
+            ...(((event as Record<string, unknown>).payload as Record<string, unknown>) || {}),
+          };
+          const matched = rule.conditionTree
+            ? evaluateCondition(eventData, rule.conditionTree as Record<string, unknown>)
+            : false;
+          if (matched) {
+            matchCount++;
+            if (matches.length < 10) {
+              matches.push({
+                timestamp: String(event.timestamp),
+                sensorId: event.sensorId,
+                eventType: event.eventType,
+                matched: true,
+              });
+            }
           }
         }
+        const evalTimeMs = Date.now() - startTime;
+
+        // Estimate FP rate: if match ratio is very high relative to events, likely high FP
+        const matchRatio = events.length > 0 ? matchCount / events.length : 0;
+        const estimatedFpRate = Math.min(matchRatio * 100, 95);
+
+        res.json({
+          wouldHaveMatched: matchCount,
+          estimatedFpRate: parseFloat(estimatedFpRate.toFixed(1)),
+          avgEvalTimeMs: events.length > 0 ? parseFloat((evalTimeMs / events.length).toFixed(2)) : 0,
+          sampleMatches: matches,
+          totalEventsScanned: events.length,
+          lookbackDays,
+        });
+      } catch (error) {
+        log.error("Rule test sandbox error", { error: String(error) });
+        res.status(500).json({ message: "Failed to test rule" });
       }
-      const evalTimeMs = Date.now() - startTime;
-
-      // Estimate FP rate: if match ratio is very high relative to events, likely high FP
-      const matchRatio = events.length > 0 ? matchCount / events.length : 0;
-      const estimatedFpRate = Math.min(matchRatio * 100, 95);
-
-      res.json({
-        wouldHaveMatched: matchCount,
-        estimatedFpRate: parseFloat(estimatedFpRate.toFixed(1)),
-        avgEvalTimeMs: events.length > 0 ? parseFloat((evalTimeMs / events.length).toFixed(2)) : 0,
-        sampleMatches: matches,
-        totalEventsScanned: events.length,
-        lookbackDays,
-      });
-    } catch (error) {
-      log.error("Rule test sandbox error", { error: String(error) });
-      res.status(500).json({ message: "Failed to test rule" });
-    }
-  });
+    },
+  );
 
   // 48.3: Rule effectiveness scoring
   app.get("/api/detection-rules/effectiveness", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -1456,38 +1548,48 @@ EOF`;
   });
 
   // 48.5: Rule rollback to specific version
-  app.post("/api/detection-rules/:id/rollback", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const ruleId = String(req.params.id);
-      const { version } = req.body;
+  app.post(
+    "/api/detection-rules/:id/rollback",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const ruleId = String(req.params.id);
+        const { version } = req.body;
 
-      const [rule] = await db
-        .select()
-        .from(detectionRules)
-        .where(
-          and(eq(detectionRules.id, ruleId), or(eq(detectionRules.orgId, orgId), sql`${detectionRules.orgId} IS NULL`)),
-        )
-        .limit(1);
+        const [rule] = await db
+          .select()
+          .from(detectionRules)
+          .where(
+            and(
+              eq(detectionRules.id, ruleId),
+              or(eq(detectionRules.orgId, orgId), sql`${detectionRules.orgId} IS NULL`),
+            ),
+          )
+          .limit(1);
 
-      if (!rule) return res.status(404).json({ message: "Rule not found" });
-      if (rule.isBuiltin) return res.status(403).json({ message: "Cannot rollback built-in rules" });
+        if (!rule) return res.status(404).json({ message: "Rule not found" });
+        if (rule.isBuiltin) return res.status(403).json({ message: "Cannot rollback built-in rules" });
 
-      const versionKey = `rule_versions_${ruleId}`;
-      const versions = ((globalThis as Record<string, unknown>)[versionKey] as Array<Record<string, unknown>>) || [];
-      const targetVersion = versions.find((v) => v.version === version);
+        const versionKey = `rule_versions_${ruleId}`;
+        const versions = ((globalThis as Record<string, unknown>)[versionKey] as Array<Record<string, unknown>>) || [];
+        const targetVersion = versions.find((v) => v.version === version);
 
-      if (!targetVersion && version !== undefined) {
-        return res.status(404).json({ message: `Version ${version} not found` });
+        if (!targetVersion && version !== undefined) {
+          return res.status(404).json({ message: `Version ${version} not found` });
+        }
+
+        log.info("Rule rollback", { ruleId, version: version || "previous", orgId });
+        res.json({ ruleId, rolledBackTo: version || "previous", status: "rolled_back" });
+      } catch (error) {
+        log.error("Rule rollback error", { error: String(error) });
+        res.status(500).json({ message: "Failed to rollback rule" });
       }
-
-      log.info("Rule rollback", { ruleId, version: version || "previous", orgId });
-      res.json({ ruleId, rolledBackTo: version || "previous", status: "rolled_back" });
-    } catch (error) {
-      log.error("Rule rollback error", { error: String(error) });
-      res.status(500).json({ message: "Failed to rollback rule" });
-    }
-  });
+    },
+  );
 
   // 48.6: Rule performance monitoring
   app.get(
@@ -1543,87 +1645,94 @@ EOF`;
   );
 
   // 48.7: Sigma → backend query compilation verification
-  app.post("/api/detection-rules/compile-sigma", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const { sigmaYaml, targetBackend } = req.body;
+  app.post(
+    "/api/detection-rules/compile-sigma",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const { sigmaYaml, targetBackend } = req.body;
 
-      if (!sigmaYaml || typeof sigmaYaml !== "string") {
-        return res.status(400).json({ message: "sigmaYaml is required" });
-      }
-
-      // Parse Sigma YAML structure to extract detection logic
-      const lines = sigmaYaml.split("\n");
-      const detectionSection: Record<string, string[]> = {};
-      let inDetection = false;
-      let currentKey = "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed === "detection:") {
-          inDetection = true;
-          continue;
+        if (!sigmaYaml || typeof sigmaYaml !== "string") {
+          return res.status(400).json({ message: "sigmaYaml is required" });
         }
-        if (inDetection && !line.startsWith("  ") && !line.startsWith("\t") && trimmed.length > 0) {
-          inDetection = false;
-          continue;
-        }
-        if (inDetection) {
-          const match = trimmed.match(/^(\w+):$/);
-          if (match) {
-            currentKey = match[1];
-            detectionSection[currentKey] = [];
+
+        // Parse Sigma YAML structure to extract detection logic
+        const lines = sigmaYaml.split("\n");
+        const detectionSection: Record<string, string[]> = {};
+        let inDetection = false;
+        let currentKey = "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed === "detection:") {
+            inDetection = true;
             continue;
           }
-          if (currentKey && trimmed.includes(":")) {
-            detectionSection[currentKey] = detectionSection[currentKey] || [];
-            detectionSection[currentKey].push(trimmed);
+          if (inDetection && !line.startsWith("  ") && !line.startsWith("\t") && trimmed.length > 0) {
+            inDetection = false;
+            continue;
+          }
+          if (inDetection) {
+            const match = trimmed.match(/^(\w+):$/);
+            if (match) {
+              currentKey = match[1];
+              detectionSection[currentKey] = [];
+              continue;
+            }
+            if (currentKey && trimmed.includes(":")) {
+              detectionSection[currentKey] = detectionSection[currentKey] || [];
+              detectionSection[currentKey].push(trimmed);
+            }
           }
         }
+
+        const backend = targetBackend || "elasticsearch";
+        let compiledQuery = "";
+
+        if (backend === "elasticsearch") {
+          const conditions = Object.entries(detectionSection)
+            .filter(([k]) => k !== "condition")
+            .map(([, vals]) =>
+              vals
+                .map((v) => {
+                  const [field, value] = v.split(":").map((s) => s.trim());
+                  return `${field}:${value}`;
+                })
+                .join(" AND "),
+            );
+          compiledQuery = conditions.join(" OR ");
+        } else if (backend === "splunk") {
+          const conditions = Object.entries(detectionSection)
+            .filter(([k]) => k !== "condition")
+            .map(([, vals]) =>
+              vals
+                .map((v) => {
+                  const [field, value] = v.split(":").map((s) => s.trim());
+                  return `${field}="${value}"`;
+                })
+                .join(" "),
+            );
+          compiledQuery = `index=* ${conditions.join(" OR ")}`;
+        } else {
+          compiledQuery = JSON.stringify(detectionSection, null, 2);
+        }
+
+        res.json({
+          backend,
+          compiledQuery: compiledQuery || "(empty — could not extract detection section)",
+          valid: compiledQuery.length > 0,
+          warnings: Object.keys(detectionSection).length === 0 ? ["No detection section found in Sigma rule"] : [],
+          supportedBackends: ["elasticsearch", "splunk", "opensearch", "qradar", "sentinel"],
+        });
+      } catch (error) {
+        log.error("Sigma compilation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to compile Sigma rule" });
       }
-
-      const backend = targetBackend || "elasticsearch";
-      let compiledQuery = "";
-
-      if (backend === "elasticsearch") {
-        const conditions = Object.entries(detectionSection)
-          .filter(([k]) => k !== "condition")
-          .map(([, vals]) =>
-            vals
-              .map((v) => {
-                const [field, value] = v.split(":").map((s) => s.trim());
-                return `${field}:${value}`;
-              })
-              .join(" AND "),
-          );
-        compiledQuery = conditions.join(" OR ");
-      } else if (backend === "splunk") {
-        const conditions = Object.entries(detectionSection)
-          .filter(([k]) => k !== "condition")
-          .map(([, vals]) =>
-            vals
-              .map((v) => {
-                const [field, value] = v.split(":").map((s) => s.trim());
-                return `${field}="${value}"`;
-              })
-              .join(" "),
-          );
-        compiledQuery = `index=* ${conditions.join(" OR ")}`;
-      } else {
-        compiledQuery = JSON.stringify(detectionSection, null, 2);
-      }
-
-      res.json({
-        backend,
-        compiledQuery: compiledQuery || "(empty — could not extract detection section)",
-        valid: compiledQuery.length > 0,
-        warnings: Object.keys(detectionSection).length === 0 ? ["No detection section found in Sigma rule"] : [],
-        supportedBackends: ["elasticsearch", "splunk", "opensearch", "qradar", "sentinel"],
-      });
-    } catch (error) {
-      log.error("Sigma compilation error", { error: String(error) });
-      res.status(500).json({ message: "Failed to compile Sigma rule" });
-    }
-  });
+    },
+  );
 
   // 48.8: Rule → MITRE ATT&CK coverage mapping
   app.get("/api/detection-rules/mitre-coverage", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -1696,6 +1805,7 @@ EOF`;
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);

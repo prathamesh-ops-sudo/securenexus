@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { eq, and, desc, sql, count } from "drizzle-orm";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
+
 import { db } from "../db";
 import { canaryTokens, honeypotAssets, deceptionHits, alerts } from "@shared/schema";
 import {
@@ -160,58 +162,67 @@ export function registerDeceptionRoutes(app: Express): void {
   });
 
   // Create canary token
-  app.post("/api/deception/canary-tokens", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { name, description, tokenType, deploymentTarget } = req.body;
+  app.post(
+    "/api/deception/canary-tokens",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { name, description, tokenType, deploymentTarget } = req.body;
 
-      if (!name || typeof name !== "string") {
-        return res.status(400).json({ message: "Name is required" });
+        if (!name || typeof name !== "string") {
+          return res.status(400).json({ message: "Name is required" });
+        }
+        if (!tokenType || !ALLOWED_TOKEN_TYPES.includes(tokenType)) {
+          return res
+            .status(400)
+            .json({ message: `Invalid token type. Must be one of: ${ALLOWED_TOKEN_TYPES.join(", ")}` });
+        }
+        if (deploymentTarget && !ALLOWED_DEPLOYMENT_TARGETS.includes(deploymentTarget)) {
+          return res.status(400).json({ message: `Invalid deployment target` });
+        }
+
+        const { tokenValue, tokenHash, callbackSecret } = generateCanaryToken(tokenType);
+        const tempId = crypto.randomUUID();
+        const callbackUrl = generateCallbackUrl(orgId, tempId);
+
+        const [token] = await db
+          .insert(canaryTokens)
+          .values({
+            orgId,
+            name: name.substring(0, 200),
+            description: typeof description === "string" ? description.substring(0, 1000) : null,
+            tokenType,
+            tokenValue,
+            tokenHash,
+            callbackUrl,
+            callbackSecret,
+            deploymentTarget: deploymentTarget || null,
+            createdBy: ((req as unknown as Record<string, unknown>).userId as string) || null,
+          })
+          .returning();
+
+        // Generate deployment instructions
+        const instructions = deploymentTarget
+          ? getDeploymentInstructions(tokenType, deploymentTarget, tokenValue)
+          : null;
+
+        res.status(201).json({
+          token: {
+            ...token,
+            callbackSecret: "***", // Don't expose the HMAC secret
+          },
+          deploymentInstructions: instructions,
+        });
+      } catch (error) {
+        log.error("Create canary token error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create canary token" });
       }
-      if (!tokenType || !ALLOWED_TOKEN_TYPES.includes(tokenType)) {
-        return res
-          .status(400)
-          .json({ message: `Invalid token type. Must be one of: ${ALLOWED_TOKEN_TYPES.join(", ")}` });
-      }
-      if (deploymentTarget && !ALLOWED_DEPLOYMENT_TARGETS.includes(deploymentTarget)) {
-        return res.status(400).json({ message: `Invalid deployment target` });
-      }
-
-      const { tokenValue, tokenHash, callbackSecret } = generateCanaryToken(tokenType);
-      const tempId = crypto.randomUUID();
-      const callbackUrl = generateCallbackUrl(orgId, tempId);
-
-      const [token] = await db
-        .insert(canaryTokens)
-        .values({
-          orgId,
-          name: name.substring(0, 200),
-          description: typeof description === "string" ? description.substring(0, 1000) : null,
-          tokenType,
-          tokenValue,
-          tokenHash,
-          callbackUrl,
-          callbackSecret,
-          deploymentTarget: deploymentTarget || null,
-          createdBy: ((req as unknown as Record<string, unknown>).userId as string) || null,
-        })
-        .returning();
-
-      // Generate deployment instructions
-      const instructions = deploymentTarget ? getDeploymentInstructions(tokenType, deploymentTarget, tokenValue) : null;
-
-      res.status(201).json({
-        token: {
-          ...token,
-          callbackSecret: "***", // Don't expose the HMAC secret
-        },
-        deploymentInstructions: instructions,
-      });
-    } catch (error) {
-      log.error("Create canary token error", { error: String(error) });
-      res.status(500).json({ message: "Failed to create canary token" });
-    }
-  });
+    },
+  );
 
   // Get single canary token with full details
   app.get("/api/deception/canary-tokens/:id", isAuthenticated, async (req, res) => {
@@ -251,56 +262,70 @@ export function registerDeceptionRoutes(app: Express): void {
   });
 
   // Toggle canary token active/inactive
-  app.patch("/api/deception/canary-tokens/:id/toggle", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
+  app.patch(
+    "/api/deception/canary-tokens/:id/toggle",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
 
-      const [token] = await db
-        .select()
-        .from(canaryTokens)
-        .where(and(eq(canaryTokens.id, id), eq(canaryTokens.orgId, orgId)));
+        const [token] = await db
+          .select()
+          .from(canaryTokens)
+          .where(and(eq(canaryTokens.id, id), eq(canaryTokens.orgId, orgId)));
 
-      if (!token) {
-        return res.status(404).json({ message: "Token not found" });
+        if (!token) {
+          return res.status(404).json({ message: "Token not found" });
+        }
+
+        const [updated] = await db
+          .update(canaryTokens)
+          .set({ isActive: !token.isActive, updatedAt: new Date() })
+          .where(and(eq(canaryTokens.id, id), eq(canaryTokens.orgId, orgId)))
+          .returning();
+
+        res.json({ token: { ...updated, tokenValue: "***", callbackSecret: "***" } });
+      } catch (error) {
+        log.error("Toggle canary token error", { error: String(error) });
+        res.status(500).json({ message: "Failed to toggle canary token" });
       }
-
-      const [updated] = await db
-        .update(canaryTokens)
-        .set({ isActive: !token.isActive, updatedAt: new Date() })
-        .where(and(eq(canaryTokens.id, id), eq(canaryTokens.orgId, orgId)))
-        .returning();
-
-      res.json({ token: { ...updated, tokenValue: "***", callbackSecret: "***" } });
-    } catch (error) {
-      log.error("Toggle canary token error", { error: String(error) });
-      res.status(500).json({ message: "Failed to toggle canary token" });
-    }
-  });
+    },
+  );
 
   // Delete canary token
-  app.delete("/api/deception/canary-tokens/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
+  app.delete(
+    "/api/deception/canary-tokens/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
 
-      const [token] = await db
-        .select()
-        .from(canaryTokens)
-        .where(and(eq(canaryTokens.id, id), eq(canaryTokens.orgId, orgId)));
+        const [token] = await db
+          .select()
+          .from(canaryTokens)
+          .where(and(eq(canaryTokens.id, id), eq(canaryTokens.orgId, orgId)));
 
-      if (!token) {
-        return res.status(404).json({ message: "Token not found" });
+        if (!token) {
+          return res.status(404).json({ message: "Token not found" });
+        }
+
+        await db.delete(canaryTokens).where(and(eq(canaryTokens.id, id), eq(canaryTokens.orgId, orgId)));
+
+        res.json({ message: "Token deleted" });
+      } catch (error) {
+        log.error("Delete canary token error", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete canary token" });
       }
-
-      await db.delete(canaryTokens).where(and(eq(canaryTokens.id, id), eq(canaryTokens.orgId, orgId)));
-
-      res.json({ message: "Token deleted" });
-    } catch (error) {
-      log.error("Delete canary token error", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete canary token" });
-    }
-  });
+    },
+  );
 
   // Get deployment instructions for a token
   app.get("/api/deception/canary-tokens/:id/deploy-instructions", isAuthenticated, async (req, res) => {
@@ -361,63 +386,70 @@ export function registerDeceptionRoutes(app: Express): void {
   });
 
   // Create honeypot asset
-  app.post("/api/deception/honeypot-assets", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const {
-        name,
-        description,
-        assetType,
-        fakeUsername,
-        fakeEmail,
-        fakeDomain,
-        listenAddress,
-        protocol,
-        sharePath,
-        decoyFiles,
-        decoyHostname,
-        decoyIp,
-        openPorts,
-        configuration,
-      } = req.body;
-
-      if (!name || typeof name !== "string") {
-        return res.status(400).json({ message: "Name is required" });
-      }
-      if (!assetType || !ALLOWED_ASSET_TYPES.includes(assetType)) {
-        return res
-          .status(400)
-          .json({ message: `Invalid asset type. Must be one of: ${ALLOWED_ASSET_TYPES.join(", ")}` });
-      }
-
-      const [asset] = await db
-        .insert(honeypotAssets)
-        .values({
-          orgId,
-          name: name.substring(0, 200),
-          description: typeof description === "string" ? description.substring(0, 1000) : null,
+  app.post(
+    "/api/deception/honeypot-assets",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const {
+          name,
+          description,
           assetType,
-          fakeUsername: typeof fakeUsername === "string" ? fakeUsername.substring(0, 200) : null,
-          fakeEmail: typeof fakeEmail === "string" ? fakeEmail.substring(0, 200) : null,
-          fakeDomain: typeof fakeDomain === "string" ? fakeDomain.substring(0, 200) : null,
-          listenAddress: typeof listenAddress === "string" ? listenAddress.substring(0, 200) : null,
-          protocol: typeof protocol === "string" ? protocol.substring(0, 50) : null,
-          sharePath: typeof sharePath === "string" ? sharePath.substring(0, 500) : null,
-          decoyFiles: Array.isArray(decoyFiles) ? decoyFiles : null,
-          decoyHostname: typeof decoyHostname === "string" ? decoyHostname.substring(0, 200) : null,
-          decoyIp: typeof decoyIp === "string" ? decoyIp.substring(0, 50) : null,
-          openPorts: Array.isArray(openPorts) ? openPorts : null,
-          configuration: configuration || null,
-          createdBy: ((req as unknown as Record<string, unknown>).userId as string) || null,
-        })
-        .returning();
+          fakeUsername,
+          fakeEmail,
+          fakeDomain,
+          listenAddress,
+          protocol,
+          sharePath,
+          decoyFiles,
+          decoyHostname,
+          decoyIp,
+          openPorts,
+          configuration,
+        } = req.body;
 
-      res.status(201).json({ asset });
-    } catch (error) {
-      log.error("Create honeypot asset error", { error: String(error) });
-      res.status(500).json({ message: "Failed to create honeypot asset" });
-    }
-  });
+        if (!name || typeof name !== "string") {
+          return res.status(400).json({ message: "Name is required" });
+        }
+        if (!assetType || !ALLOWED_ASSET_TYPES.includes(assetType)) {
+          return res
+            .status(400)
+            .json({ message: `Invalid asset type. Must be one of: ${ALLOWED_ASSET_TYPES.join(", ")}` });
+        }
+
+        const [asset] = await db
+          .insert(honeypotAssets)
+          .values({
+            orgId,
+            name: name.substring(0, 200),
+            description: typeof description === "string" ? description.substring(0, 1000) : null,
+            assetType,
+            fakeUsername: typeof fakeUsername === "string" ? fakeUsername.substring(0, 200) : null,
+            fakeEmail: typeof fakeEmail === "string" ? fakeEmail.substring(0, 200) : null,
+            fakeDomain: typeof fakeDomain === "string" ? fakeDomain.substring(0, 200) : null,
+            listenAddress: typeof listenAddress === "string" ? listenAddress.substring(0, 200) : null,
+            protocol: typeof protocol === "string" ? protocol.substring(0, 50) : null,
+            sharePath: typeof sharePath === "string" ? sharePath.substring(0, 500) : null,
+            decoyFiles: Array.isArray(decoyFiles) ? decoyFiles : null,
+            decoyHostname: typeof decoyHostname === "string" ? decoyHostname.substring(0, 200) : null,
+            decoyIp: typeof decoyIp === "string" ? decoyIp.substring(0, 50) : null,
+            openPorts: Array.isArray(openPorts) ? openPorts : null,
+            configuration: configuration || null,
+            createdBy: ((req as unknown as Record<string, unknown>).userId as string) || null,
+          })
+          .returning();
+
+        res.status(201).json({ asset });
+      } catch (error) {
+        log.error("Create honeypot asset error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create honeypot asset" });
+      }
+    },
+  );
 
   // Get single honeypot asset
   app.get("/api/deception/honeypot-assets/:id", isAuthenticated, async (req, res) => {
@@ -449,56 +481,70 @@ export function registerDeceptionRoutes(app: Express): void {
   });
 
   // Toggle honeypot asset
-  app.patch("/api/deception/honeypot-assets/:id/toggle", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
+  app.patch(
+    "/api/deception/honeypot-assets/:id/toggle",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
 
-      const [asset] = await db
-        .select()
-        .from(honeypotAssets)
-        .where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)));
+        const [asset] = await db
+          .select()
+          .from(honeypotAssets)
+          .where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)));
 
-      if (!asset) {
-        return res.status(404).json({ message: "Asset not found" });
+        if (!asset) {
+          return res.status(404).json({ message: "Asset not found" });
+        }
+
+        const [updated] = await db
+          .update(honeypotAssets)
+          .set({ isActive: !asset.isActive, updatedAt: new Date() })
+          .where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)))
+          .returning();
+
+        res.json({ asset: updated });
+      } catch (error) {
+        log.error("Toggle honeypot asset error", { error: String(error) });
+        res.status(500).json({ message: "Failed to toggle honeypot asset" });
       }
-
-      const [updated] = await db
-        .update(honeypotAssets)
-        .set({ isActive: !asset.isActive, updatedAt: new Date() })
-        .where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)))
-        .returning();
-
-      res.json({ asset: updated });
-    } catch (error) {
-      log.error("Toggle honeypot asset error", { error: String(error) });
-      res.status(500).json({ message: "Failed to toggle honeypot asset" });
-    }
-  });
+    },
+  );
 
   // Delete honeypot asset
-  app.delete("/api/deception/honeypot-assets/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
+  app.delete(
+    "/api/deception/honeypot-assets/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
 
-      const [asset] = await db
-        .select()
-        .from(honeypotAssets)
-        .where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)));
+        const [asset] = await db
+          .select()
+          .from(honeypotAssets)
+          .where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)));
 
-      if (!asset) {
-        return res.status(404).json({ message: "Asset not found" });
+        if (!asset) {
+          return res.status(404).json({ message: "Asset not found" });
+        }
+
+        await db.delete(honeypotAssets).where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)));
+
+        res.json({ message: "Asset deleted" });
+      } catch (error) {
+        log.error("Delete honeypot asset error", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete honeypot asset" });
       }
-
-      await db.delete(honeypotAssets).where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)));
-
-      res.json({ message: "Asset deleted" });
-    } catch (error) {
-      log.error("Delete honeypot asset error", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete honeypot asset" });
-    }
-  });
+    },
+  );
 
   // =========================================================================
   // DECEPTION HITS
@@ -619,54 +665,61 @@ export function registerDeceptionRoutes(app: Express): void {
   // SIMULATE HIT (for testing — authenticated)
   // =========================================================================
 
-  app.post("/api/deception/simulate-hit", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { canaryTokenId, honeypotAssetId, sourceIp, sourceHostname } = req.body;
+  app.post(
+    "/api/deception/simulate-hit",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { canaryTokenId, honeypotAssetId, sourceIp, sourceHostname } = req.body;
 
-      if (!canaryTokenId && !honeypotAssetId) {
-        return res.status(400).json({ message: "Either canaryTokenId or honeypotAssetId is required" });
-      }
-
-      // Verify ownership
-      if (canaryTokenId) {
-        const [token] = await db
-          .select()
-          .from(canaryTokens)
-          .where(and(eq(canaryTokens.id, String(canaryTokenId)), eq(canaryTokens.orgId, orgId)));
-        if (!token) {
-          return res.status(404).json({ message: "Token not found" });
+        if (!canaryTokenId && !honeypotAssetId) {
+          return res.status(400).json({ message: "Either canaryTokenId or honeypotAssetId is required" });
         }
-      }
-      if (honeypotAssetId) {
-        const [asset] = await db
-          .select()
-          .from(honeypotAssets)
-          .where(and(eq(honeypotAssets.id, String(honeypotAssetId)), eq(honeypotAssets.orgId, orgId)));
-        if (!asset) {
-          return res.status(404).json({ message: "Asset not found" });
+
+        // Verify ownership
+        if (canaryTokenId) {
+          const [token] = await db
+            .select()
+            .from(canaryTokens)
+            .where(and(eq(canaryTokens.id, String(canaryTokenId)), eq(canaryTokens.orgId, orgId)));
+          if (!token) {
+            return res.status(404).json({ message: "Token not found" });
+          }
         }
+        if (honeypotAssetId) {
+          const [asset] = await db
+            .select()
+            .from(honeypotAssets)
+            .where(and(eq(honeypotAssets.id, String(honeypotAssetId)), eq(honeypotAssets.orgId, orgId)));
+          if (!asset) {
+            return res.status(404).json({ message: "Asset not found" });
+          }
+        }
+
+        const result = await processDeceptionHit(
+          orgId,
+          canaryTokenId ? String(canaryTokenId) : null,
+          honeypotAssetId ? String(honeypotAssetId) : null,
+          {
+            sourceIp: typeof sourceIp === "string" ? sourceIp : "192.168.1.100",
+            sourceHostname: typeof sourceHostname === "string" ? sourceHostname : "attacker-workstation",
+            sourceUserAgent: "SimulatedHit/1.0",
+            httpMethod: "GET",
+            httpPath: "/simulated",
+          },
+        );
+
+        res.json({ message: "Hit simulated", ...result });
+      } catch (error) {
+        log.error("Simulate hit error", { error: String(error) });
+        res.status(500).json({ message: "Failed to simulate hit" });
       }
-
-      const result = await processDeceptionHit(
-        orgId,
-        canaryTokenId ? String(canaryTokenId) : null,
-        honeypotAssetId ? String(honeypotAssetId) : null,
-        {
-          sourceIp: typeof sourceIp === "string" ? sourceIp : "192.168.1.100",
-          sourceHostname: typeof sourceHostname === "string" ? sourceHostname : "attacker-workstation",
-          sourceUserAgent: "SimulatedHit/1.0",
-          httpMethod: "GET",
-          httpPath: "/simulated",
-        },
-      );
-
-      res.json({ message: "Hit simulated", ...result });
-    } catch (error) {
-      log.error("Simulate hit error", { error: String(error) });
-      res.status(500).json({ message: "Failed to simulate hit" });
-    }
-  });
+    },
+  );
 
   // =========================================================================
   // 54.4 — CANARY TOKEN TYPES METADATA
@@ -705,51 +758,58 @@ export function registerDeceptionRoutes(app: Express): void {
   });
 
   /** Set emulation depth on a honeypot asset */
-  app.patch("/api/deception/honeypot-assets/:id/emulation-depth", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const { emulationDepth } = req.body;
+  app.patch(
+    "/api/deception/honeypot-assets/:id/emulation-depth",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const { emulationDepth } = req.body;
 
-      if (!emulationDepth || !(EMULATION_DEPTH_LEVELS as readonly string[]).includes(emulationDepth)) {
-        return res
-          .status(400)
-          .json({ message: `Invalid emulation depth. Must be one of: ${EMULATION_DEPTH_LEVELS.join(", ")}` });
+        if (!emulationDepth || !(EMULATION_DEPTH_LEVELS as readonly string[]).includes(emulationDepth)) {
+          return res
+            .status(400)
+            .json({ message: `Invalid emulation depth. Must be one of: ${EMULATION_DEPTH_LEVELS.join(", ")}` });
+        }
+
+        const [asset] = await db
+          .select()
+          .from(honeypotAssets)
+          .where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)));
+
+        if (!asset) {
+          return res.status(404).json({ message: "Asset not found" });
+        }
+
+        // Store emulation depth in the configuration JSON field
+        const existingConfig = (asset.configuration as Record<string, unknown>) || {};
+        const newConfig = { ...existingConfig, emulationDepth };
+
+        const [updated] = await db
+          .update(honeypotAssets)
+          .set({ configuration: newConfig, updatedAt: new Date() })
+          .where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)))
+          .returning();
+
+        const depthInfo = EMULATION_DEPTH_META[emulationDepth as EmulationDepth];
+
+        res.json({
+          asset: updated,
+          emulationDepth: {
+            level: emulationDepth,
+            ...depthInfo,
+          },
+        });
+      } catch (error) {
+        log.error("Set emulation depth error", { error: String(error) });
+        res.status(500).json({ message: "Failed to set emulation depth" });
       }
-
-      const [asset] = await db
-        .select()
-        .from(honeypotAssets)
-        .where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)));
-
-      if (!asset) {
-        return res.status(404).json({ message: "Asset not found" });
-      }
-
-      // Store emulation depth in the configuration JSON field
-      const existingConfig = (asset.configuration as Record<string, unknown>) || {};
-      const newConfig = { ...existingConfig, emulationDepth };
-
-      const [updated] = await db
-        .update(honeypotAssets)
-        .set({ configuration: newConfig, updatedAt: new Date() })
-        .where(and(eq(honeypotAssets.id, id), eq(honeypotAssets.orgId, orgId)))
-        .returning();
-
-      const depthInfo = EMULATION_DEPTH_META[emulationDepth as EmulationDepth];
-
-      res.json({
-        asset: updated,
-        emulationDepth: {
-          level: emulationDepth,
-          ...depthInfo,
-        },
-      });
-    } catch (error) {
-      log.error("Set emulation depth error", { error: String(error) });
-      res.status(500).json({ message: "Failed to set emulation depth" });
-    }
-  });
+    },
+  );
 
   // =========================================================================
   // DASHBOARD STATS
@@ -821,60 +881,67 @@ export function registerDeceptionRoutes(app: Express): void {
   // TOKEN DEPLOYMENT WIZARD
   // =========================================================================
 
-  app.post("/api/deception/deploy-wizard", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { tokenType, deploymentTarget, name, description } = req.body;
+  app.post(
+    "/api/deception/deploy-wizard",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { tokenType, deploymentTarget, name, description } = req.body;
 
-      if (!tokenType || !ALLOWED_TOKEN_TYPES.includes(tokenType)) {
-        return res.status(400).json({ message: "Invalid token type" });
+        if (!tokenType || !ALLOWED_TOKEN_TYPES.includes(tokenType)) {
+          return res.status(400).json({ message: "Invalid token type" });
+        }
+        if (!deploymentTarget || !ALLOWED_DEPLOYMENT_TARGETS.includes(deploymentTarget)) {
+          return res.status(400).json({ message: "Invalid deployment target" });
+        }
+        if (!name || typeof name !== "string") {
+          return res.status(400).json({ message: "Name is required" });
+        }
+
+        // Generate the token
+        const { tokenValue, tokenHash, callbackSecret } = generateCanaryToken(tokenType);
+        const tempId = crypto.randomUUID();
+        const callbackUrl = generateCallbackUrl(orgId, tempId);
+
+        // Create and save
+        const [token] = await db
+          .insert(canaryTokens)
+          .values({
+            orgId,
+            name: name.substring(0, 200),
+            description: typeof description === "string" ? description.substring(0, 1000) : null,
+            tokenType,
+            tokenValue,
+            tokenHash,
+            callbackUrl,
+            callbackSecret,
+            deploymentTarget,
+            deployedTo: deploymentTarget,
+            createdBy: ((req as unknown as Record<string, unknown>).userId as string) || null,
+          })
+          .returning();
+
+        // Get deployment instructions
+        const instructions = getDeploymentInstructions(tokenType, deploymentTarget, tokenValue);
+
+        res.status(201).json({
+          token: {
+            ...token,
+            callbackSecret: "***",
+          },
+          deploymentInstructions: instructions,
+          steps: getWizardSteps(tokenType, deploymentTarget),
+        });
+      } catch (error) {
+        log.error("Deploy wizard error", { error: String(error) });
+        res.status(500).json({ message: "Failed to deploy token" });
       }
-      if (!deploymentTarget || !ALLOWED_DEPLOYMENT_TARGETS.includes(deploymentTarget)) {
-        return res.status(400).json({ message: "Invalid deployment target" });
-      }
-      if (!name || typeof name !== "string") {
-        return res.status(400).json({ message: "Name is required" });
-      }
-
-      // Generate the token
-      const { tokenValue, tokenHash, callbackSecret } = generateCanaryToken(tokenType);
-      const tempId = crypto.randomUUID();
-      const callbackUrl = generateCallbackUrl(orgId, tempId);
-
-      // Create and save
-      const [token] = await db
-        .insert(canaryTokens)
-        .values({
-          orgId,
-          name: name.substring(0, 200),
-          description: typeof description === "string" ? description.substring(0, 1000) : null,
-          tokenType,
-          tokenValue,
-          tokenHash,
-          callbackUrl,
-          callbackSecret,
-          deploymentTarget,
-          deployedTo: deploymentTarget,
-          createdBy: ((req as unknown as Record<string, unknown>).userId as string) || null,
-        })
-        .returning();
-
-      // Get deployment instructions
-      const instructions = getDeploymentInstructions(tokenType, deploymentTarget, tokenValue);
-
-      res.status(201).json({
-        token: {
-          ...token,
-          callbackSecret: "***",
-        },
-        deploymentInstructions: instructions,
-        steps: getWizardSteps(tokenType, deploymentTarget),
-      });
-    } catch (error) {
-      log.error("Deploy wizard error", { error: String(error) });
-      res.status(500).json({ message: "Failed to deploy token" });
-    }
-  });
+    },
+  );
 }
 
 // =========================================================================

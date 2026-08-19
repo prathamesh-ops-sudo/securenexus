@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId } from "../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { logger, getOrgId } from "./shared";
 import { z } from "zod";
 import { getMarketplaceCatalog, getConnectorDetails, type ConnectorCategory } from "../integration-marketplace-engine";
@@ -92,6 +92,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       const parsed = installSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -163,6 +164,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       const parsed = configureSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -191,6 +193,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -211,6 +214,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       const parsed = permissionSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -237,6 +241,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -362,6 +367,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       const parsed = webhookSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -431,6 +437,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -455,6 +462,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -477,6 +485,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -525,6 +534,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       const parsed = fieldMappingSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -648,6 +658,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);

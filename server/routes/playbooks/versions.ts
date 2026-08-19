@@ -37,6 +37,7 @@ export function registerPlaybooksVersionsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     validatePathId("playbookId"),
     async (req, res) => {
       try {
@@ -87,21 +88,30 @@ export function registerPlaybooksVersionsRoutes(app: Express): void {
     },
   );
 
-  app.patch("/api/playbook-versions/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const updated = await storage.updatePlaybookVersion(p(req.params.id), req.body);
-      if (!updated) return res.status(404).json({ message: "Playbook version not found" });
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update playbook version" });
-    }
-  });
+  app.patch(
+    "/api/playbook-versions/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const updated = await storage.updatePlaybookVersion(p(req.params.id), req.body);
+        if (!updated) return res.status(404).json({ message: "Playbook version not found" });
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update playbook version" });
+      }
+    },
+  );
 
   app.post(
     "/api/playbook-versions/:id/activate",
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     validatePathId("id"),
     async (req, res) => {
       try {
@@ -157,6 +167,7 @@ export function registerPlaybooksVersionsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     validatePathId("id"),
     async (req, res) => {
       try {
@@ -229,6 +240,7 @@ export function registerPlaybooksVersionsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     validatePathId("playbookId"),
     async (req, res) => {
       try {

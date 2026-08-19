@@ -532,6 +532,7 @@ export function registerEmailSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
@@ -671,6 +672,7 @@ export function registerEmailSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const { headers } = req.body;
@@ -692,6 +694,7 @@ export function registerEmailSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const { senderAddress, senderDisplayName, subject, bodyPreview, replyTo, trustedDomains, executiveNames } =
@@ -722,6 +725,7 @@ export function registerEmailSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const { url } = req.body;
@@ -743,6 +747,7 @@ export function registerEmailSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const { attachmentNames } = req.body;
@@ -764,6 +769,7 @@ export function registerEmailSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
@@ -795,6 +801,7 @@ export function registerEmailSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
@@ -1123,7 +1130,7 @@ export function registerEmailSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
-    requireMinRole("analyst"),
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
@@ -1182,7 +1189,7 @@ export function registerEmailSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
-    requireMinRole("analyst"),
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
@@ -1215,7 +1222,7 @@ export function registerEmailSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
-    requireMinRole("analyst"),
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);

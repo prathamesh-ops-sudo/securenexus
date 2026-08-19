@@ -11,7 +11,7 @@ import {
 } from "../../shared/schema";
 import { getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId, requirePermission } from "../rbac";
+import { resolveOrgContext, requireOrgId, requirePermission, requireMinRole } from "../rbac";
 import { logger } from "../logger";
 import {
   generateSigmaRule,
@@ -37,92 +37,99 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
   // ==========================================================================
 
   // Generate rule from context (incident, threat intel, manual)
-  app.post("/api/ai-detection-rules/generate", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { source, sourceId, context, ruleFormat } = req.body;
-
-      if (!context || typeof context !== "string" || context.trim().length < 10) {
-        return res.status(400).json({ message: "context is required (min 10 characters)" });
-      }
-      const format = VALID_RULE_FORMATS.includes(ruleFormat) ? ruleFormat : "sigma";
-      const src = VALID_SOURCES.includes(source) ? source : "manual";
-
-      // Create generation job
-      const [job] = await db
-        .insert(ruleGenerationJobs)
-        .values({
-          orgId,
-          source: src,
-          sourceId: sourceId || null,
-          sourceContext: context.slice(0, 10000),
-          ruleFormat: format,
-          status: "generating",
-          requestedBy: (req as any).user?.email || null,
-        })
-        .returning();
-
-      // Generate rule asynchronously but wait for result
-      const start = Date.now();
+  app.post(
+    "/api/ai-detection-rules/generate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
       try {
-        const result =
-          format === "yara" ? await generateYaraRule(context, orgId) : await generateSigmaRule(context, orgId);
+        const orgId = getOrgId(req);
+        const { source, sourceId, context, ruleFormat } = req.body;
 
-        const updateData: Record<string, unknown> = {
-          status: "completed",
-          generatedName: result.rule.name,
-          generatedDescription: result.rule.description,
-          generatedSeverity: result.rule.severity,
-          generatedMitreTactic: result.rule.mitreTactic,
-          generatedMitreTechnique: result.rule.mitreTechnique,
-          generatedTags: result.rule.tags,
-          generatedConditionTree: result.rule.conditionTree,
-          qualityScore: result.quality.overall,
-          estimatedFpRate: result.quality.estimatedFpRate,
-          qualityBreakdown: result.quality.breakdown,
-          modelId: result.modelId,
-          inputTokens: result.inputTokens,
-          outputTokens: result.outputTokens,
-          costUsd: result.costUsd,
-          latencyMs: result.latencyMs,
-          completedAt: new Date(),
-        };
-
-        if ("sigmaYaml" in result.rule) {
-          updateData.generatedSigmaYaml = result.rule.sigmaYaml;
+        if (!context || typeof context !== "string" || context.trim().length < 10) {
+          return res.status(400).json({ message: "context is required (min 10 characters)" });
         }
-        if ("yaraRule" in result.rule) {
-          updateData.generatedYaraRule = result.rule.yaraRule;
-        }
+        const format = VALID_RULE_FORMATS.includes(ruleFormat) ? ruleFormat : "sigma";
+        const src = VALID_SOURCES.includes(source) ? source : "manual";
 
-        const [updated] = await db
-          .update(ruleGenerationJobs)
-          .set(updateData)
-          .where(eq(ruleGenerationJobs.id, job.id))
+        // Create generation job
+        const [job] = await db
+          .insert(ruleGenerationJobs)
+          .values({
+            orgId,
+            source: src,
+            sourceId: sourceId || null,
+            sourceContext: context.slice(0, 10000),
+            ruleFormat: format,
+            status: "generating",
+            requestedBy: (req as any).user?.email || null,
+          })
           .returning();
 
-        res.status(201).json({ job: updated, quality: result.quality });
-      } catch (genError) {
-        await db
-          .update(ruleGenerationJobs)
-          .set({
-            status: "failed",
-            errorMessage: String(genError),
-            latencyMs: Date.now() - start,
-          })
-          .where(eq(ruleGenerationJobs.id, job.id));
+        // Generate rule asynchronously but wait for result
+        const start = Date.now();
+        try {
+          const result =
+            format === "yara" ? await generateYaraRule(context, orgId) : await generateSigmaRule(context, orgId);
 
-        return res.status(500).json({
-          message: "Rule generation failed",
-          error: String(genError),
-          jobId: job.id,
-        });
+          const updateData: Record<string, unknown> = {
+            status: "completed",
+            generatedName: result.rule.name,
+            generatedDescription: result.rule.description,
+            generatedSeverity: result.rule.severity,
+            generatedMitreTactic: result.rule.mitreTactic,
+            generatedMitreTechnique: result.rule.mitreTechnique,
+            generatedTags: result.rule.tags,
+            generatedConditionTree: result.rule.conditionTree,
+            qualityScore: result.quality.overall,
+            estimatedFpRate: result.quality.estimatedFpRate,
+            qualityBreakdown: result.quality.breakdown,
+            modelId: result.modelId,
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            costUsd: result.costUsd,
+            latencyMs: result.latencyMs,
+            completedAt: new Date(),
+          };
+
+          if ("sigmaYaml" in result.rule) {
+            updateData.generatedSigmaYaml = result.rule.sigmaYaml;
+          }
+          if ("yaraRule" in result.rule) {
+            updateData.generatedYaraRule = result.rule.yaraRule;
+          }
+
+          const [updated] = await db
+            .update(ruleGenerationJobs)
+            .set(updateData)
+            .where(eq(ruleGenerationJobs.id, job.id))
+            .returning();
+
+          res.status(201).json({ job: updated, quality: result.quality });
+        } catch (genError) {
+          await db
+            .update(ruleGenerationJobs)
+            .set({
+              status: "failed",
+              errorMessage: String(genError),
+              latencyMs: Date.now() - start,
+            })
+            .where(eq(ruleGenerationJobs.id, job.id));
+
+          return res.status(500).json({
+            message: "Rule generation failed",
+            error: String(genError),
+            jobId: job.id,
+          });
+        }
+      } catch (error) {
+        log.error("Failed to generate rule", { error: String(error) });
+        res.status(500).json({ message: "Failed to generate rule" });
       }
-    } catch (error) {
-      log.error("Failed to generate rule", { error: String(error) });
-      res.status(500).json({ message: "Failed to generate rule" });
-    }
-  });
+    },
+  );
 
   // Generate rules from threat intel report (extract TTPs, then generate)
   app.post(
@@ -130,6 +137,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -271,6 +279,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -381,49 +390,56 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
   // ==========================================================================
 
   // Create A/B test for a rule (shadow mode)
-  app.post("/api/ai-detection-rules/ab-tests", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { name, description, ruleId, durationDays } = req.body;
+  app.post(
+    "/api/ai-detection-rules/ab-tests",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { name, description, ruleId, durationDays } = req.body;
 
-      if (!name || typeof name !== "string") {
-        return res.status(400).json({ message: "name is required" });
+        if (!name || typeof name !== "string") {
+          return res.status(400).json({ message: "name is required" });
+        }
+        if (!ruleId || typeof ruleId !== "string") {
+          return res.status(400).json({ message: "ruleId is required" });
+        }
+
+        // Verify rule exists and belongs to org
+        const [rule] = await db
+          .select()
+          .from(detectionRules)
+          .where(and(eq(detectionRules.id, ruleId), eq(detectionRules.orgId, orgId)))
+          .limit(1);
+
+        if (!rule) {
+          return res.status(404).json({ message: "Detection rule not found" });
+        }
+
+        const [test] = await db
+          .insert(ruleAbTests)
+          .values({
+            orgId,
+            name,
+            description: description || null,
+            ruleId,
+            durationDays: durationDays || 7,
+            status: "pending",
+            shadowModeEnabled: true,
+            createdBy: (req as any).user?.email || null,
+          })
+          .returning();
+
+        res.status(201).json({ test });
+      } catch (error) {
+        log.error("Failed to create A/B test", { error: String(error) });
+        res.status(500).json({ message: "Failed to create A/B test" });
       }
-      if (!ruleId || typeof ruleId !== "string") {
-        return res.status(400).json({ message: "ruleId is required" });
-      }
-
-      // Verify rule exists and belongs to org
-      const [rule] = await db
-        .select()
-        .from(detectionRules)
-        .where(and(eq(detectionRules.id, ruleId), eq(detectionRules.orgId, orgId)))
-        .limit(1);
-
-      if (!rule) {
-        return res.status(404).json({ message: "Detection rule not found" });
-      }
-
-      const [test] = await db
-        .insert(ruleAbTests)
-        .values({
-          orgId,
-          name,
-          description: description || null,
-          ruleId,
-          durationDays: durationDays || 7,
-          status: "pending",
-          shadowModeEnabled: true,
-          createdBy: (req as any).user?.email || null,
-        })
-        .returning();
-
-      res.status(201).json({ test });
-    } catch (error) {
-      log.error("Failed to create A/B test", { error: String(error) });
-      res.status(500).json({ message: "Failed to create A/B test" });
-    }
-  });
+    },
+  );
 
   // List A/B tests
   app.get("/api/ai-detection-rules/ab-tests", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -455,6 +471,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -507,6 +524,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -597,51 +615,61 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
   );
 
   // Log a lifecycle event
-  app.post("/api/ai-detection-rules/lifecycle", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { ruleId, action, previousStatus, newStatus, reason } = req.body;
+  app.post(
+    "/api/ai-detection-rules/lifecycle",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { ruleId, action, previousStatus, newStatus, reason } = req.body;
 
-      if (!ruleId || typeof ruleId !== "string") {
-        return res.status(400).json({ message: "ruleId is required" });
+        if (!ruleId || typeof ruleId !== "string") {
+          return res.status(400).json({ message: "ruleId is required" });
+        }
+        if (!action || !VALID_LIFECYCLE_ACTIONS.includes(action)) {
+          return res.status(400).json({ message: `action must be one of: ${VALID_LIFECYCLE_ACTIONS.join(", ")}` });
+        }
+
+        // Verify rule exists
+        const [rule] = await db
+          .select()
+          .from(detectionRules)
+          .where(
+            and(
+              eq(detectionRules.id, ruleId),
+              or(eq(detectionRules.orgId, orgId), sql`${detectionRules.orgId} IS NULL`),
+            ),
+          )
+          .limit(1);
+
+        if (!rule) {
+          return res.status(404).json({ message: "Detection rule not found" });
+        }
+
+        const [event] = await db
+          .insert(ruleLifecycleEvents)
+          .values({
+            orgId,
+            ruleId,
+            action,
+            previousStatus: previousStatus || null,
+            newStatus: newStatus || null,
+            reason: reason || null,
+            matchCountAtAction: rule.matchCount,
+            performedBy: (req as any).user?.email || null,
+          })
+          .returning();
+
+        res.status(201).json({ event });
+      } catch (error) {
+        log.error("Failed to log lifecycle event", { error: String(error) });
+        res.status(500).json({ message: "Failed to log lifecycle event" });
       }
-      if (!action || !VALID_LIFECYCLE_ACTIONS.includes(action)) {
-        return res.status(400).json({ message: `action must be one of: ${VALID_LIFECYCLE_ACTIONS.join(", ")}` });
-      }
-
-      // Verify rule exists
-      const [rule] = await db
-        .select()
-        .from(detectionRules)
-        .where(
-          and(eq(detectionRules.id, ruleId), or(eq(detectionRules.orgId, orgId), sql`${detectionRules.orgId} IS NULL`)),
-        )
-        .limit(1);
-
-      if (!rule) {
-        return res.status(404).json({ message: "Detection rule not found" });
-      }
-
-      const [event] = await db
-        .insert(ruleLifecycleEvents)
-        .values({
-          orgId,
-          ruleId,
-          action,
-          previousStatus: previousStatus || null,
-          newStatus: newStatus || null,
-          reason: reason || null,
-          matchCountAtAction: rule.matchCount,
-          performedBy: (req as any).user?.email || null,
-        })
-        .returning();
-
-      res.status(201).json({ event });
-    } catch (error) {
-      log.error("Failed to log lifecycle event", { error: String(error) });
-      res.status(500).json({ message: "Failed to log lifecycle event" });
-    }
-  });
+    },
+  );
 
   // Get deprecation candidates (rules with 0 hits in 90 days)
   app.get(
@@ -695,6 +723,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -792,6 +821,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -860,6 +890,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const entryId = String(req.params.id);
@@ -970,6 +1001,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);

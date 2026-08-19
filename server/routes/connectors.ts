@@ -19,7 +19,11 @@ import { cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { sendEmail } from "../email-service";
 import { getConnectorHealthStatus } from "../connector-health-loop";
-import { getAllCircuitBreakerStates, getCircuitBreakerState, resetConnectorCircuitBreaker } from "../connector-circuit-breaker";
+import {
+  getAllCircuitBreakerStates,
+  getCircuitBreakerState,
+  resetConnectorCircuitBreaker,
+} from "../connector-circuit-breaker";
 
 export function registerConnectorsRoutes(app: Express): void {
   // Connector Engine Routes
@@ -62,6 +66,7 @@ export function registerConnectorsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     validatePathId("id"),
     async (req, res) => {
       try {
@@ -279,6 +284,7 @@ export function registerConnectorsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     enforcePlanLimit("connectors"),
     validateBody(bodySchemas.connectorCreate),
     async (req, res) => {
@@ -392,139 +398,163 @@ export function registerConnectorsRoutes(app: Express): void {
     },
   );
 
-  app.post("/api/connectors/:id/test", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const orgId = (req as any).user?.orgId;
-      const connector = await storage.getConnector(p(req.params.id));
-      if (!connector || !orgId || connector.orgId !== orgId) {
-        return res.status(404).json({ message: "Connector not found" });
+  app.post(
+    "/api/connectors/:id/test",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).user?.orgId;
+        const connector = await storage.getConnector(p(req.params.id));
+        if (!connector || !orgId || connector.orgId !== orgId) {
+          return res.status(404).json({ message: "Connector not found" });
+        }
+        const config = connector.config as ConnectorConfig;
+        const result = await testConnector(connector.type, config);
+        res.json(result);
+      } catch (error: any) {
+        logger.child("routes").error("Route error", { error: String(error) });
+        res.status(500).json({ success: false, message: "Connector test failed." });
       }
-      const config = connector.config as ConnectorConfig;
-      const result = await testConnector(connector.type, config);
-      res.json(result);
-    } catch (error: any) {
-      logger.child("routes").error("Route error", { error: String(error) });
-      res.status(500).json({ success: false, message: "Connector test failed." });
-    }
-  });
+    },
+  );
 
-  app.post("/api/connectors/test", isAuthenticated, validateBody(bodySchemas.connectorTest), async (req, res) => {
-    try {
-      const { type, config } = (req as any).validatedBody;
-      const configValidation = validateConnectorConfig(type, config);
-      if (!configValidation.valid) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid connector configuration", errors: configValidation.errors });
+  app.post(
+    "/api/connectors/test",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    validateBody(bodySchemas.connectorTest),
+    async (req, res) => {
+      try {
+        const { type, config } = (req as any).validatedBody;
+        const configValidation = validateConnectorConfig(type, config);
+        if (!configValidation.valid) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid connector configuration", errors: configValidation.errors });
+        }
+        const result = await testConnector(type, config);
+        res.json(result);
+      } catch (error: any) {
+        logger.child("routes").error("Route error", { error: String(error) });
+        res.status(500).json({ success: false, message: "Connector test failed." });
       }
-      const result = await testConnector(type, config);
-      res.json(result);
-    } catch (error: any) {
-      logger.child("routes").error("Route error", { error: String(error) });
-      res.status(500).json({ success: false, message: "Connector test failed." });
-    }
-  });
+    },
+  );
 
-  app.post("/api/connectors/:id/sync", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const orgId = (req as any).user?.orgId;
-      const connector = await storage.getConnector(p(req.params.id));
-      if (!connector || !orgId || connector.orgId !== orgId) {
-        return res.status(404).json({ message: "Connector not found" });
-      }
+  app.post(
+    "/api/connectors/:id/sync",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).user?.orgId;
+        const connector = await storage.getConnector(p(req.params.id));
+        if (!connector || !orgId || connector.orgId !== orgId) {
+          return res.status(404).json({ message: "Connector not found" });
+        }
 
-      await storage.updateConnector(connector.id, { status: "syncing" } as any);
+        await storage.updateConnector(connector.id, { status: "syncing" } as any);
 
-      const { jobRun, syncResult } = await syncConnectorWithRetry(connector);
+        const { jobRun, syncResult } = await syncConnectorWithRetry(connector);
 
-      let created = 0;
-      let deduped = 0;
-      let failed = syncResult.alertsFailed;
-      const UPSERT_BATCH = 50;
+        let created = 0;
+        let deduped = 0;
+        let failed = syncResult.alertsFailed;
+        const UPSERT_BATCH = 50;
 
-      for (let i = 0; i < syncResult.rawAlerts.length; i += UPSERT_BATCH) {
-        const batch = syncResult.rawAlerts.slice(i, i + UPSERT_BATCH);
-        const results = await Promise.allSettled(batch.map((alertData) => storage.upsertAlert(alertData as any)));
-        for (const r of results) {
-          if (r.status === "fulfilled") {
-            if (r.value.isNew) created++;
-            else deduped++;
-          } else {
-            failed++;
-            syncResult.errors.push(`DB insert failed: ${r.reason?.message ?? "unknown"}`);
+        for (let i = 0; i < syncResult.rawAlerts.length; i += UPSERT_BATCH) {
+          const batch = syncResult.rawAlerts.slice(i, i + UPSERT_BATCH);
+          const results = await Promise.allSettled(batch.map((alertData) => storage.upsertAlert(alertData as any)));
+          for (const r of results) {
+            if (r.status === "fulfilled") {
+              if (r.value.isNew) created++;
+              else deduped++;
+            } else {
+              failed++;
+              syncResult.errors.push(`DB insert failed: ${r.reason?.message ?? "unknown"}`);
+            }
           }
         }
-      }
 
-      const totalSynced = (connector.totalAlertsSynced || 0) + created;
-      const syncStatus = syncResult.errors.length > 0 && created === 0 ? "error" : "success";
+        const totalSynced = (connector.totalAlertsSynced || 0) + created;
+        const syncStatus = syncResult.errors.length > 0 && created === 0 ? "error" : "success";
 
-      await storage.updateConnectorSyncStatus(connector.id, {
-        lastSyncAt: new Date(),
-        lastSyncStatus: syncStatus,
-        lastSyncAlerts: created,
-        lastSyncError: syncResult.errors.length > 0 ? syncResult.errors[0] : undefined,
-        totalAlertsSynced: totalSynced,
-      });
-
-      await storage.updateConnector(connector.id, { status: syncStatus === "error" ? "error" : "active" } as any);
-
-      await storage.createIngestionLog({
-        source: connector.type,
-        status: syncStatus,
-        alertsReceived: syncResult.alertsReceived,
-        alertsCreated: created,
-        alertsDeduped: deduped,
-        alertsFailed: failed,
-        errorMessage: syncResult.errors.length > 0 ? syncResult.errors.join("; ") : undefined,
-        requestId: `sync_${connector.id}_${Date.now()}`,
-      });
-
-      await storage.createAuditLog({
-        userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName
-          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
-          : "Analyst",
-        action: "connector_synced",
-        resourceType: "connector",
-        resourceId: connector.id,
-        details: {
-          type: connector.type,
-          received: syncResult.alertsReceived,
-          created,
-          deduped,
-          failed,
-          jobRunId: jobRun.id,
-        },
-      });
-
-      cacheInvalidate("dashboard:");
-      cacheInvalidate("ingestion:");
-
-      res.json({
-        success: syncStatus !== "error",
-        jobRunId: jobRun.id,
-        alertsReceived: syncResult.alertsReceived,
-        alertsCreated: created,
-        alertsDeduped: deduped,
-        alertsFailed: failed,
-        errors: syncResult.errors,
-      });
-    } catch (error: any) {
-      const connector = await storage.getConnector(p(req.params.id));
-      if (connector) {
         await storage.updateConnectorSyncStatus(connector.id, {
           lastSyncAt: new Date(),
-          lastSyncStatus: "error",
-          lastSyncAlerts: 0,
-          lastSyncError: error.message,
+          lastSyncStatus: syncStatus,
+          lastSyncAlerts: created,
+          lastSyncError: syncResult.errors.length > 0 ? syncResult.errors[0] : undefined,
+          totalAlertsSynced: totalSynced,
         });
-        await storage.updateConnector(connector.id, { status: "error" } as any);
+
+        await storage.updateConnector(connector.id, { status: syncStatus === "error" ? "error" : "active" } as any);
+
+        await storage.createIngestionLog({
+          source: connector.type,
+          status: syncStatus,
+          alertsReceived: syncResult.alertsReceived,
+          alertsCreated: created,
+          alertsDeduped: deduped,
+          alertsFailed: failed,
+          errorMessage: syncResult.errors.length > 0 ? syncResult.errors.join("; ") : undefined,
+          requestId: `sync_${connector.id}_${Date.now()}`,
+        });
+
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "connector_synced",
+          resourceType: "connector",
+          resourceId: connector.id,
+          details: {
+            type: connector.type,
+            received: syncResult.alertsReceived,
+            created,
+            deduped,
+            failed,
+            jobRunId: jobRun.id,
+          },
+        });
+
+        cacheInvalidate("dashboard:");
+        cacheInvalidate("ingestion:");
+
+        res.json({
+          success: syncStatus !== "error",
+          jobRunId: jobRun.id,
+          alertsReceived: syncResult.alertsReceived,
+          alertsCreated: created,
+          alertsDeduped: deduped,
+          alertsFailed: failed,
+          errors: syncResult.errors,
+        });
+      } catch (error: any) {
+        const connector = await storage.getConnector(p(req.params.id));
+        if (connector) {
+          await storage.updateConnectorSyncStatus(connector.id, {
+            lastSyncAt: new Date(),
+            lastSyncStatus: "error",
+            lastSyncAlerts: 0,
+            lastSyncError: error.message,
+          });
+          await storage.updateConnector(connector.id, { status: "error" } as any);
+        }
+        logger.child("routes").error("Route error", { error: String(error) });
+        res.status(500).json({ success: false, message: "Sync failed. Please try again." });
       }
-      logger.child("routes").error("Route error", { error: String(error) });
-      res.status(500).json({ success: false, message: "Sync failed. Please try again." });
-    }
-  });
+    },
+  );
 
   app.get("/api/connectors/:id/jobs", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
@@ -545,38 +575,46 @@ export function registerConnectorsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/connectors/:id/health-check", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const connector = await storage.getConnector(p(req.params.id));
-      if (!connector) return res.status(404).json({ message: "Connector not found" });
-      const config = connector.config as ConnectorConfig;
-      const startTime = Date.now();
-      let status = "healthy";
-      let errorMessage: string | undefined;
+  app.post(
+    "/api/connectors/:id/health-check",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    validatePathId("id"),
+    async (req, res) => {
       try {
-        const result = await testConnector(connector.type, config);
-        if (!result.success) {
+        const connector = await storage.getConnector(p(req.params.id));
+        if (!connector) return res.status(404).json({ message: "Connector not found" });
+        const config = connector.config as ConnectorConfig;
+        const startTime = Date.now();
+        let status = "healthy";
+        let errorMessage: string | undefined;
+        try {
+          const result = await testConnector(connector.type, config);
+          if (!result.success) {
+            status = "unhealthy";
+            errorMessage = result.message || "Connection test failed";
+          }
+        } catch (err: any) {
           status = "unhealthy";
-          errorMessage = result.message || "Connection test failed";
+          errorMessage = err.message || "Connection test error";
         }
-      } catch (err: any) {
-        status = "unhealthy";
-        errorMessage = err.message || "Connection test error";
+        const latencyMs = Date.now() - startTime;
+        const healthCheck = await storage.createConnectorHealthCheck({
+          connectorId: connector.id,
+          orgId: connector.orgId,
+          status,
+          latencyMs,
+          errorMessage,
+          credentialStatus: status === "healthy" ? "valid" : "unknown",
+        });
+        res.status(201).json(healthCheck);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to run health check" });
       }
-      const latencyMs = Date.now() - startTime;
-      const healthCheck = await storage.createConnectorHealthCheck({
-        connectorId: connector.id,
-        orgId: connector.orgId,
-        status,
-        latencyMs,
-        errorMessage,
-        credentialStatus: status === "healthy" ? "valid" : "unknown",
-      });
-      res.status(201).json(healthCheck);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to run health check" });
-    }
-  });
+    },
+  );
 
   app.get("/api/connectors/:id/health", isAuthenticated, validatePathId("id"), async (req, res) => {
     try {
@@ -605,6 +643,7 @@ export function registerConnectorsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = (req as any).orgId;
@@ -647,6 +686,7 @@ export function registerConnectorsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = (req as any).orgId;
@@ -698,6 +738,7 @@ export function registerConnectorsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = (req as any).orgId;

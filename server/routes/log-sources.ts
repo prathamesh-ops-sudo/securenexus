@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId } from "../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { logger, getOrgId } from "./shared";
 import { db } from "../db";
 import { sql, eq, and, desc, count } from "drizzle-orm";
@@ -141,164 +141,192 @@ export function registerLogSourceRoutes(app: Express): void {
   });
 
   // Create log source
-  app.post("/api/native/log-sources", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { name, sourceType } = req.body;
+  app.post(
+    "/api/native/log-sources",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { name, sourceType } = req.body;
 
-      if (!name || !sourceType) {
-        return res.status(400).json({ message: "name and sourceType are required" });
-      }
-
-      if (!LOG_SOURCE_TYPES.includes(sourceType as any)) {
-        return res.status(400).json({ message: `sourceType must be one of: ${LOG_SOURCE_TYPES.join(", ")}` });
-      }
-
-      if (req.body.format && !LOG_SOURCE_FORMATS.includes(req.body.format as any)) {
-        return res.status(400).json({ message: `format must be one of: ${LOG_SOURCE_FORMATS.join(", ")}` });
-      }
-
-      // Validate sensorId belongs to org if provided
-      if (req.body.sensorId) {
-        const [sensor] = await db
-          .select({ id: nativeSensors.id })
-          .from(nativeSensors)
-          .where(and(eq(nativeSensors.id, req.body.sensorId), eq(nativeSensors.orgId, orgId)))
-          .limit(1);
-        if (!sensor) {
-          return res.status(400).json({ message: "Sensor not found in your organization" });
+        if (!name || !sourceType) {
+          return res.status(400).json({ message: "name and sourceType are required" });
         }
-      }
 
-      // Generate HTTP endpoint + auth token for http_push type
-      let httpEndpoint: string | undefined;
-      let httpAuthToken: string | undefined;
-      if (sourceType === "http_push") {
-        const token = randomBytes(32).toString("hex");
-        httpAuthToken = token;
-        httpEndpoint = `/api/native/log-sources/ingest/${token}`;
-      }
-
-      // Build insert values from allowed fields only
-      const insertValues: Record<string, unknown> = { orgId, name, sourceType };
-      for (const field of LOG_SOURCE_WRITABLE_FIELDS) {
-        if (field === "name" || field === "sourceType") continue;
-        if (req.body[field] !== undefined) {
-          insertValues[field] = req.body[field];
+        if (!LOG_SOURCE_TYPES.includes(sourceType as any)) {
+          return res.status(400).json({ message: `sourceType must be one of: ${LOG_SOURCE_TYPES.join(", ")}` });
         }
+
+        if (req.body.format && !LOG_SOURCE_FORMATS.includes(req.body.format as any)) {
+          return res.status(400).json({ message: `format must be one of: ${LOG_SOURCE_FORMATS.join(", ")}` });
+        }
+
+        // Validate sensorId belongs to org if provided
+        if (req.body.sensorId) {
+          const [sensor] = await db
+            .select({ id: nativeSensors.id })
+            .from(nativeSensors)
+            .where(and(eq(nativeSensors.id, req.body.sensorId), eq(nativeSensors.orgId, orgId)))
+            .limit(1);
+          if (!sensor) {
+            return res.status(400).json({ message: "Sensor not found in your organization" });
+          }
+        }
+
+        // Generate HTTP endpoint + auth token for http_push type
+        let httpEndpoint: string | undefined;
+        let httpAuthToken: string | undefined;
+        if (sourceType === "http_push") {
+          const token = randomBytes(32).toString("hex");
+          httpAuthToken = token;
+          httpEndpoint = `/api/native/log-sources/ingest/${token}`;
+        }
+
+        // Build insert values from allowed fields only
+        const insertValues: Record<string, unknown> = { orgId, name, sourceType };
+        for (const field of LOG_SOURCE_WRITABLE_FIELDS) {
+          if (field === "name" || field === "sourceType") continue;
+          if (req.body[field] !== undefined) {
+            insertValues[field] = req.body[field];
+          }
+        }
+        if (httpEndpoint) insertValues.httpEndpoint = httpEndpoint;
+        if (httpAuthToken) insertValues.httpAuthToken = httpAuthToken;
+
+        const [source] = await db
+          .insert(logSources)
+          .values(insertValues as any)
+          .returning();
+
+        log.info(`Log source created: ${name} (${sourceType})`, { orgId });
+        res.status(201).json({
+          source,
+          ...(httpAuthToken ? { httpAuthToken } : {}),
+        });
+      } catch (error) {
+        log.error("Failed to create log source", { error: String(error) });
+        res.status(500).json({ message: "Failed to create log source" });
       }
-      if (httpEndpoint) insertValues.httpEndpoint = httpEndpoint;
-      if (httpAuthToken) insertValues.httpAuthToken = httpAuthToken;
-
-      const [source] = await db
-        .insert(logSources)
-        .values(insertValues as any)
-        .returning();
-
-      log.info(`Log source created: ${name} (${sourceType})`, { orgId });
-      res.status(201).json({
-        source,
-        ...(httpAuthToken ? { httpAuthToken } : {}),
-      });
-    } catch (error) {
-      log.error("Failed to create log source", { error: String(error) });
-      res.status(500).json({ message: "Failed to create log source" });
-    }
-  });
+    },
+  );
 
   // Update log source
-  app.patch("/api/native/log-sources/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(logSources)
-        .where(and(eq(logSources.id, String(req.params.id)), eq(logSources.orgId, orgId)))
-        .limit(1);
+  app.patch(
+    "/api/native/log-sources/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(logSources)
+          .where(and(eq(logSources.id, String(req.params.id)), eq(logSources.orgId, orgId)))
+          .limit(1);
 
-      if (!existing) {
-        return res.status(404).json({ message: "Log source not found" });
-      }
-
-      if (req.body.format && !LOG_SOURCE_FORMATS.includes(req.body.format as any)) {
-        return res.status(400).json({ message: `format must be one of: ${LOG_SOURCE_FORMATS.join(", ")}` });
-      }
-
-      // Build update from allowed fields only
-      const updates: Record<string, unknown> = { updatedAt: new Date() };
-      for (const field of LOG_SOURCE_WRITABLE_FIELDS) {
-        if (req.body[field] !== undefined) {
-          updates[field] = req.body[field];
+        if (!existing) {
+          return res.status(404).json({ message: "Log source not found" });
         }
-      }
-      // Allow status update
-      if (req.body.status !== undefined) {
-        updates.status = req.body.status;
-      }
 
-      const [updated] = await db
-        .update(logSources)
-        .set(updates)
-        .where(eq(logSources.id, String(req.params.id)))
-        .returning();
+        if (req.body.format && !LOG_SOURCE_FORMATS.includes(req.body.format as any)) {
+          return res.status(400).json({ message: `format must be one of: ${LOG_SOURCE_FORMATS.join(", ")}` });
+        }
 
-      res.json({ source: updated });
-    } catch (error) {
-      log.error("Failed to update log source", { error: String(error) });
-      res.status(500).json({ message: "Failed to update log source" });
-    }
-  });
+        // Build update from allowed fields only
+        const updates: Record<string, unknown> = { updatedAt: new Date() };
+        for (const field of LOG_SOURCE_WRITABLE_FIELDS) {
+          if (req.body[field] !== undefined) {
+            updates[field] = req.body[field];
+          }
+        }
+        // Allow status update
+        if (req.body.status !== undefined) {
+          updates.status = req.body.status;
+        }
+
+        const [updated] = await db
+          .update(logSources)
+          .set(updates)
+          .where(eq(logSources.id, String(req.params.id)))
+          .returning();
+
+        res.json({ source: updated });
+      } catch (error) {
+        log.error("Failed to update log source", { error: String(error) });
+        res.status(500).json({ message: "Failed to update log source" });
+      }
+    },
+  );
 
   // Delete log source
-  app.delete("/api/native/log-sources/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(logSources)
-        .where(and(eq(logSources.id, String(req.params.id)), eq(logSources.orgId, orgId)))
-        .limit(1);
+  app.delete(
+    "/api/native/log-sources/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(logSources)
+          .where(and(eq(logSources.id, String(req.params.id)), eq(logSources.orgId, orgId)))
+          .limit(1);
 
-      if (!existing) {
-        return res.status(404).json({ message: "Log source not found" });
+        if (!existing) {
+          return res.status(404).json({ message: "Log source not found" });
+        }
+
+        await db.delete(logSources).where(eq(logSources.id, String(req.params.id)));
+        log.info(`Log source deleted: ${existing.name}`, { orgId });
+        res.json({ message: "Log source deleted" });
+      } catch (error) {
+        log.error("Failed to delete log source", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete log source" });
       }
-
-      await db.delete(logSources).where(eq(logSources.id, String(req.params.id)));
-      log.info(`Log source deleted: ${existing.name}`, { orgId });
-      res.json({ message: "Log source deleted" });
-    } catch (error) {
-      log.error("Failed to delete log source", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete log source" });
-    }
-  });
+    },
+  );
 
   // Toggle log source status (active/inactive)
-  app.post("/api/native/log-sources/:id/toggle", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(logSources)
-        .where(and(eq(logSources.id, String(req.params.id)), eq(logSources.orgId, orgId)))
-        .limit(1);
+  app.post(
+    "/api/native/log-sources/:id/toggle",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(logSources)
+          .where(and(eq(logSources.id, String(req.params.id)), eq(logSources.orgId, orgId)))
+          .limit(1);
 
-      if (!existing) {
-        return res.status(404).json({ message: "Log source not found" });
+        if (!existing) {
+          return res.status(404).json({ message: "Log source not found" });
+        }
+
+        const newStatus = existing.status === "active" ? "inactive" : "active";
+        const [updated] = await db
+          .update(logSources)
+          .set({ status: newStatus, updatedAt: new Date() })
+          .where(eq(logSources.id, String(req.params.id)))
+          .returning();
+
+        res.json({ source: updated });
+      } catch (error) {
+        log.error("Failed to toggle log source", { error: String(error) });
+        res.status(500).json({ message: "Failed to toggle log source" });
       }
-
-      const newStatus = existing.status === "active" ? "inactive" : "active";
-      const [updated] = await db
-        .update(logSources)
-        .set({ status: newStatus, updatedAt: new Date() })
-        .where(eq(logSources.id, String(req.params.id)))
-        .returning();
-
-      res.json({ source: updated });
-    } catch (error) {
-      log.error("Failed to toggle log source", { error: String(error) });
-      res.status(500).json({ message: "Failed to toggle log source" });
-    }
-  });
+    },
+  );
 
   // Rotate HTTP auth token (secure server-side generation only)
   app.post(
@@ -306,6 +334,7 @@ export function registerLogSourceRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -341,62 +370,69 @@ export function registerLogSourceRoutes(app: Express): void {
   );
 
   // Test log source connectivity
-  app.post("/api/native/log-sources/:id/test", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [source] = await db
-        .select()
-        .from(logSources)
-        .where(and(eq(logSources.id, String(req.params.id)), eq(logSources.orgId, orgId)))
-        .limit(1);
+  app.post(
+    "/api/native/log-sources/:id/test",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [source] = await db
+          .select()
+          .from(logSources)
+          .where(and(eq(logSources.id, String(req.params.id)), eq(logSources.orgId, orgId)))
+          .limit(1);
 
-      if (!source) {
-        return res.status(404).json({ message: "Log source not found" });
+        if (!source) {
+          return res.status(404).json({ message: "Log source not found" });
+        }
+
+        // Simulate connectivity test based on source type
+        const testResults: Record<string, unknown> = {
+          sourceType: source.sourceType,
+          tested: true,
+          timestamp: new Date().toISOString(),
+        };
+
+        switch (source.sourceType) {
+          case "syslog":
+            testResults.status = "success";
+            testResults.message = `Syslog listener ready on ${source.listenAddress || "0.0.0.0"}:${source.listenPort || 514} (${source.protocol || "udp"})`;
+            break;
+          case "windows_event_log":
+            testResults.status = "success";
+            testResults.message = `Windows Event Log collection configured for channels: ${(source.winEventChannels || []).join(", ") || "Security, System, Application"}`;
+            break;
+          case "http_push":
+            testResults.status = "success";
+            testResults.message = `HTTP push endpoint active at ${source.httpEndpoint || "/api/native/log-sources/ingest/..."}`;
+            testResults.endpoint = source.httpEndpoint;
+            break;
+          case "journald":
+            testResults.status = "success";
+            testResults.message = `journald collection configured for units: ${(source.journaldUnits || []).join(", ") || "all units"}`;
+            break;
+          case "cloudwatch":
+            testResults.status = source.cloudwatchRegion && source.cloudwatchLogGroup ? "success" : "error";
+            testResults.message =
+              source.cloudwatchRegion && source.cloudwatchLogGroup
+                ? `CloudWatch Logs connected: ${source.cloudwatchLogGroup} in ${source.cloudwatchRegion}`
+                : "Missing cloudwatchRegion or cloudwatchLogGroup configuration";
+            break;
+          default:
+            testResults.status = "error";
+            testResults.message = "Unknown source type";
+        }
+
+        res.json(testResults);
+      } catch (error) {
+        log.error("Failed to test log source", { error: String(error) });
+        res.status(500).json({ message: "Failed to test log source" });
       }
-
-      // Simulate connectivity test based on source type
-      const testResults: Record<string, unknown> = {
-        sourceType: source.sourceType,
-        tested: true,
-        timestamp: new Date().toISOString(),
-      };
-
-      switch (source.sourceType) {
-        case "syslog":
-          testResults.status = "success";
-          testResults.message = `Syslog listener ready on ${source.listenAddress || "0.0.0.0"}:${source.listenPort || 514} (${source.protocol || "udp"})`;
-          break;
-        case "windows_event_log":
-          testResults.status = "success";
-          testResults.message = `Windows Event Log collection configured for channels: ${(source.winEventChannels || []).join(", ") || "Security, System, Application"}`;
-          break;
-        case "http_push":
-          testResults.status = "success";
-          testResults.message = `HTTP push endpoint active at ${source.httpEndpoint || "/api/native/log-sources/ingest/..."}`;
-          testResults.endpoint = source.httpEndpoint;
-          break;
-        case "journald":
-          testResults.status = "success";
-          testResults.message = `journald collection configured for units: ${(source.journaldUnits || []).join(", ") || "all units"}`;
-          break;
-        case "cloudwatch":
-          testResults.status = source.cloudwatchRegion && source.cloudwatchLogGroup ? "success" : "error";
-          testResults.message =
-            source.cloudwatchRegion && source.cloudwatchLogGroup
-              ? `CloudWatch Logs connected: ${source.cloudwatchLogGroup} in ${source.cloudwatchRegion}`
-              : "Missing cloudwatchRegion or cloudwatchLogGroup configuration";
-          break;
-        default:
-          testResults.status = "error";
-          testResults.message = "Unknown source type";
-      }
-
-      res.json(testResults);
-    } catch (error) {
-      log.error("Failed to test log source", { error: String(error) });
-      res.status(500).json({ message: "Failed to test log source" });
-    }
-  });
+    },
+  );
 
   // ==========================================================================
   // LOG INGESTION ENDPOINTS
@@ -464,50 +500,57 @@ export function registerLogSourceRoutes(app: Express): void {
   });
 
   // Syslog-style batch ingestion (authenticated, for agent-forwarded syslog)
-  app.post("/api/native/log-sources/:id/ingest", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [source] = await db
-        .select()
-        .from(logSources)
-        .where(and(eq(logSources.id, String(req.params.id)), eq(logSources.orgId, orgId)))
-        .limit(1);
+  app.post(
+    "/api/native/log-sources/:id/ingest",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [source] = await db
+          .select()
+          .from(logSources)
+          .where(and(eq(logSources.id, String(req.params.id)), eq(logSources.orgId, orgId)))
+          .limit(1);
 
-      if (!source) {
-        return res.status(404).json({ message: "Log source not found" });
+        if (!source) {
+          return res.status(404).json({ message: "Log source not found" });
+        }
+
+        const events = Array.isArray(req.body) ? req.body : req.body.events || [req.body];
+        if (events.length > 500) {
+          return res.status(400).json({ message: "Maximum 500 events per request" });
+        }
+
+        const eventRows = await insertLogEvents(events, orgId, source.sensorId, source.name, source.format || "raw");
+
+        // Update source stats
+        await db
+          .update(logSources)
+          .set({
+            eventsReceived: sql`${logSources.eventsReceived} + ${eventRows.length}`,
+            bytesReceived: sql`${logSources.bytesReceived} + ${JSON.stringify(req.body).length}`,
+            lastEventAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(logSources.id, source.id));
+
+        // Run detection engine
+        let alertsCreated = 0;
+        if (eventRows.length > 0 && source.sensorId) {
+          const result = await processEventBatch(eventRows, orgId, source.sensorId);
+          alertsCreated = result.alertsCreated;
+        }
+
+        res.json({ accepted: eventRows.length, alertsCreated });
+      } catch (error) {
+        log.error("Log source ingestion failed", { error: String(error) });
+        res.status(500).json({ message: "Ingestion failed" });
       }
-
-      const events = Array.isArray(req.body) ? req.body : req.body.events || [req.body];
-      if (events.length > 500) {
-        return res.status(400).json({ message: "Maximum 500 events per request" });
-      }
-
-      const eventRows = await insertLogEvents(events, orgId, source.sensorId, source.name, source.format || "raw");
-
-      // Update source stats
-      await db
-        .update(logSources)
-        .set({
-          eventsReceived: sql`${logSources.eventsReceived} + ${eventRows.length}`,
-          bytesReceived: sql`${logSources.bytesReceived} + ${JSON.stringify(req.body).length}`,
-          lastEventAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(logSources.id, source.id));
-
-      // Run detection engine
-      let alertsCreated = 0;
-      if (eventRows.length > 0 && source.sensorId) {
-        const result = await processEventBatch(eventRows, orgId, source.sensorId);
-        alertsCreated = result.alertsCreated;
-      }
-
-      res.json({ accepted: eventRows.length, alertsCreated });
-    } catch (error) {
-      log.error("Log source ingestion failed", { error: String(error) });
-      res.status(500).json({ message: "Ingestion failed" });
-    }
-  });
+    },
+  );
 
   // Get ingestion configuration snippet for a log source
   app.get("/api/native/log-sources/:id/config", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {

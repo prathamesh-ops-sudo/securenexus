@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
+
 import { storage } from "../storage";
 import {
   getBrowserDomEvents,
@@ -77,34 +79,48 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/browser-defense/sessions/:id/isolate", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const session = await storage.updateBrowserSession(id, orgId, { state: "isolated" });
-      if (!session) return res.status(404).json({ message: "Session not found" });
-      res.json(session);
-    } catch (error) {
-      logger.child("routes").error("Isolate session error", { error: String(error) });
-      res.status(500).json({ message: "Failed to isolate session" });
-    }
-  });
+  app.post(
+    "/api/browser-defense/sessions/:id/isolate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const session = await storage.updateBrowserSession(id, orgId, { state: "isolated" });
+        if (!session) return res.status(404).json({ message: "Session not found" });
+        res.json(session);
+      } catch (error) {
+        logger.child("routes").error("Isolate session error", { error: String(error) });
+        res.status(500).json({ message: "Failed to isolate session" });
+      }
+    },
+  );
 
-  app.post("/api/browser-defense/sessions/:id/terminate", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const session = await storage.updateBrowserSession(id, orgId, {
-        state: "terminated",
-        endedAt: new Date(),
-      });
-      if (!session) return res.status(404).json({ message: "Session not found" });
-      res.json(session);
-    } catch (error) {
-      logger.child("routes").error("Terminate session error", { error: String(error) });
-      res.status(500).json({ message: "Failed to terminate session" });
-    }
-  });
+  app.post(
+    "/api/browser-defense/sessions/:id/terminate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const session = await storage.updateBrowserSession(id, orgId, {
+          state: "terminated",
+          endedAt: new Date(),
+        });
+        if (!session) return res.status(404).json({ message: "Session not found" });
+        res.json(session);
+      } catch (error) {
+        logger.child("routes").error("Terminate session error", { error: String(error) });
+        res.status(500).json({ message: "Failed to terminate session" });
+      }
+    },
+  );
 
   // DOM events — stateless classification, kept on engine
   app.get("/api/browser-defense/dom-events", isAuthenticated, async (req, res) => {
@@ -130,60 +146,67 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/browser-defense/dom-events/classify", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const body = req.body;
-      if (!body.sessionId || typeof body.sessionId !== "string") {
-        return res.status(400).json({ message: "sessionId is required" });
-      }
-      if (!body.eventType || typeof body.eventType !== "string") {
-        return res.status(400).json({ message: "eventType is required" });
-      }
-      if (!body.targetSelector || typeof body.targetSelector !== "string") {
-        return res.status(400).json({ message: "targetSelector is required" });
-      }
-      if (!body.rawPayload || typeof body.rawPayload !== "string") {
-        return res.status(400).json({ message: "rawPayload is required" });
-      }
-      // Classify against DB-backed injection patterns before storing
-      const patterns = await getInjectionPatternsFromDb(orgId);
-      let matchedSeverity: ActionSeverity = "info";
-      let matchedVerdict: PolicyVerdict = "log_only";
-      let matchedPatternId: string | null = null;
-      for (const pat of patterns) {
-        if (!pat.enabled) continue;
-        try {
-          const regex = new RegExp(pat.pattern, "i");
-          if (regex.test(body.rawPayload) || regex.test(body.targetSelector)) {
-            matchedSeverity = (pat.severity as ActionSeverity) || "high";
-            matchedVerdict = "block";
-            matchedPatternId = pat.id;
-            // Increment match count for the pattern
-            incrementInjectionPatternMatchCount(pat.id, orgId).catch(() => {});
-            break;
-          }
-        } catch (_regexErr) {
-          // Skip invalid regex patterns
+  app.post(
+    "/api/browser-defense/dom-events/classify",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const body = req.body;
+        if (!body.sessionId || typeof body.sessionId !== "string") {
+          return res.status(400).json({ message: "sessionId is required" });
         }
+        if (!body.eventType || typeof body.eventType !== "string") {
+          return res.status(400).json({ message: "eventType is required" });
+        }
+        if (!body.targetSelector || typeof body.targetSelector !== "string") {
+          return res.status(400).json({ message: "targetSelector is required" });
+        }
+        if (!body.rawPayload || typeof body.rawPayload !== "string") {
+          return res.status(400).json({ message: "rawPayload is required" });
+        }
+        // Classify against DB-backed injection patterns before storing
+        const patterns = await getInjectionPatternsFromDb(orgId);
+        let matchedSeverity: ActionSeverity = "info";
+        let matchedVerdict: PolicyVerdict = "log_only";
+        let matchedPatternId: string | null = null;
+        for (const pat of patterns) {
+          if (!pat.enabled) continue;
+          try {
+            const regex = new RegExp(pat.pattern, "i");
+            if (regex.test(body.rawPayload) || regex.test(body.targetSelector)) {
+              matchedSeverity = (pat.severity as ActionSeverity) || "high";
+              matchedVerdict = "block";
+              matchedPatternId = pat.id;
+              // Increment match count for the pattern
+              incrementInjectionPatternMatchCount(pat.id, orgId).catch(() => {});
+              break;
+            }
+          } catch (_regexErr) {
+            // Skip invalid regex patterns
+          }
+        }
+        const event = await createBrowserDomEvent({
+          orgId,
+          sessionId: body.sessionId,
+          eventType: body.eventType,
+          target: body.targetSelector,
+          severity: matchedSeverity,
+          verdict: matchedVerdict,
+          details: { rawPayload: body.rawPayload, matchedPatternId },
+        });
+        res.status(201).json(event);
+      } catch (error) {
+        const errMsg = String(error);
+        if (errMsg.includes("SESSION_NOT_FOUND")) return res.status(404).json({ message: "Session not found" });
+        logger.child("routes").error("Classify DOM action error", { error: errMsg });
+        res.status(500).json({ message: "Failed to classify DOM action" });
       }
-      const event = await createBrowserDomEvent({
-        orgId,
-        sessionId: body.sessionId,
-        eventType: body.eventType,
-        target: body.targetSelector,
-        severity: matchedSeverity,
-        verdict: matchedVerdict,
-        details: { rawPayload: body.rawPayload, matchedPatternId },
-      });
-      res.status(201).json(event);
-    } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("SESSION_NOT_FOUND")) return res.status(404).json({ message: "Session not found" });
-      logger.child("routes").error("Classify DOM action error", { error: errMsg });
-      res.status(500).json({ message: "Failed to classify DOM action" });
-    }
-  });
+    },
+  );
 
   // Egress Rules — persisted to DB
   app.get("/api/browser-defense/egress-rules", isAuthenticated, async (req, res) => {
@@ -197,93 +220,114 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/browser-defense/egress-rules", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const body = req.body;
-      if (!body.name || typeof body.name !== "string") {
-        return res.status(400).json({ message: "name is required" });
-      }
-      if (!body.domainPattern || typeof body.domainPattern !== "string") {
-        return res.status(400).json({ message: "domainPattern is required" });
-      }
-      if (!body.direction || !VALID_DIRECTIONS.includes(body.direction)) {
-        return res.status(400).json({ message: `direction must be one of: ${VALID_DIRECTIONS.join(", ")}` });
-      }
-      if (!body.protocol || !VALID_PROTOCOLS.includes(body.protocol)) {
-        return res.status(400).json({ message: `protocol must be one of: ${VALID_PROTOCOLS.join(", ")}` });
-      }
-      if (!body.action || !VALID_VERDICTS.includes(body.action)) {
-        return res.status(400).json({ message: `action must be one of: ${VALID_VERDICTS.join(", ")}` });
-      }
-      const rule = await storage.createBrowserEgressRule({
-        orgId,
-        name: body.name,
-        domain: body.domainPattern,
-        protocol: body.protocol,
-        direction: body.direction,
-        verdict: body.action,
-        priority: typeof body.priority === "number" ? body.priority : 100,
-        enabled: body.enabled !== false,
-        metadata: {
-          description: typeof body.description === "string" ? body.description : "",
-          portRange: typeof body.portRange === "string" ? body.portRange : "*",
-        },
-      });
-      res.status(201).json(rule);
-    } catch (error) {
-      logger.child("routes").error("Create egress rule error", { error: String(error) });
-      res.status(500).json({ message: "Failed to create egress rule" });
-    }
-  });
-
-  app.patch("/api/browser-defense/egress-rules/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const body = req.body;
-      const updates: Record<string, unknown> = {};
-      if (body.name !== undefined) {
-        if (typeof body.name !== "string") return res.status(400).json({ message: "name must be a string" });
-        updates.name = body.name;
-      }
-      if (body.domainPattern !== undefined) {
-        if (typeof body.domainPattern !== "string")
-          return res.status(400).json({ message: "domainPattern must be a string" });
-        updates.domain = body.domainPattern;
-      }
-      if (body.protocol !== undefined) {
-        if (!VALID_PROTOCOLS.includes(body.protocol))
+  app.post(
+    "/api/browser-defense/egress-rules",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const body = req.body;
+        if (!body.name || typeof body.name !== "string") {
+          return res.status(400).json({ message: "name is required" });
+        }
+        if (!body.domainPattern || typeof body.domainPattern !== "string") {
+          return res.status(400).json({ message: "domainPattern is required" });
+        }
+        if (!body.direction || !VALID_DIRECTIONS.includes(body.direction)) {
+          return res.status(400).json({ message: `direction must be one of: ${VALID_DIRECTIONS.join(", ")}` });
+        }
+        if (!body.protocol || !VALID_PROTOCOLS.includes(body.protocol)) {
           return res.status(400).json({ message: `protocol must be one of: ${VALID_PROTOCOLS.join(", ")}` });
-        updates.protocol = body.protocol;
-      }
-      if (body.action !== undefined) {
-        if (!VALID_VERDICTS.includes(body.action))
+        }
+        if (!body.action || !VALID_VERDICTS.includes(body.action)) {
           return res.status(400).json({ message: `action must be one of: ${VALID_VERDICTS.join(", ")}` });
-        updates.verdict = body.action;
+        }
+        const rule = await storage.createBrowserEgressRule({
+          orgId,
+          name: body.name,
+          domain: body.domainPattern,
+          protocol: body.protocol,
+          direction: body.direction,
+          verdict: body.action,
+          priority: typeof body.priority === "number" ? body.priority : 100,
+          enabled: body.enabled !== false,
+          metadata: {
+            description: typeof body.description === "string" ? body.description : "",
+            portRange: typeof body.portRange === "string" ? body.portRange : "*",
+          },
+        });
+        res.status(201).json(rule);
+      } catch (error) {
+        logger.child("routes").error("Create egress rule error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create egress rule" });
       }
-      if (body.enabled !== undefined) updates.enabled = body.enabled === true;
-      const updated = await storage.updateBrowserEgressRule(id, orgId, updates);
-      if (!updated) return res.status(404).json({ message: "Egress rule not found" });
-      res.json(updated);
-    } catch (error) {
-      logger.child("routes").error("Update egress rule error", { error: String(error) });
-      res.status(500).json({ message: "Failed to update egress rule" });
-    }
-  });
+    },
+  );
 
-  app.delete("/api/browser-defense/egress-rules/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const deleted = await storage.deleteBrowserEgressRule(id, orgId);
-      if (!deleted) return res.status(404).json({ message: "Egress rule not found" });
-      res.json({ message: "Egress rule deleted" });
-    } catch (error) {
-      logger.child("routes").error("Delete egress rule error", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete egress rule" });
-    }
-  });
+  app.patch(
+    "/api/browser-defense/egress-rules/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const body = req.body;
+        const updates: Record<string, unknown> = {};
+        if (body.name !== undefined) {
+          if (typeof body.name !== "string") return res.status(400).json({ message: "name must be a string" });
+          updates.name = body.name;
+        }
+        if (body.domainPattern !== undefined) {
+          if (typeof body.domainPattern !== "string")
+            return res.status(400).json({ message: "domainPattern must be a string" });
+          updates.domain = body.domainPattern;
+        }
+        if (body.protocol !== undefined) {
+          if (!VALID_PROTOCOLS.includes(body.protocol))
+            return res.status(400).json({ message: `protocol must be one of: ${VALID_PROTOCOLS.join(", ")}` });
+          updates.protocol = body.protocol;
+        }
+        if (body.action !== undefined) {
+          if (!VALID_VERDICTS.includes(body.action))
+            return res.status(400).json({ message: `action must be one of: ${VALID_VERDICTS.join(", ")}` });
+          updates.verdict = body.action;
+        }
+        if (body.enabled !== undefined) updates.enabled = body.enabled === true;
+        const updated = await storage.updateBrowserEgressRule(id, orgId, updates);
+        if (!updated) return res.status(404).json({ message: "Egress rule not found" });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Update egress rule error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update egress rule" });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/browser-defense/egress-rules/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const deleted = await storage.deleteBrowserEgressRule(id, orgId);
+        if (!deleted) return res.status(404).json({ message: "Egress rule not found" });
+        res.json({ message: "Egress rule deleted" });
+      } catch (error) {
+        logger.child("routes").error("Delete egress rule error", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete egress rule" });
+      }
+    },
+  );
 
   // Trusted Paths — persisted to DB
   app.get("/api/browser-defense/trusted-paths", isAuthenticated, async (req, res) => {
@@ -310,73 +354,95 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/browser-defense/trusted-paths", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const body = req.body;
-      if (!body.name || typeof body.name !== "string") {
-        return res.status(400).json({ message: "name is required" });
+  app.post(
+    "/api/browser-defense/trusted-paths",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const body = req.body;
+        if (!body.name || typeof body.name !== "string") {
+          return res.status(400).json({ message: "name is required" });
+        }
+        if (!Array.isArray(body.steps) || body.steps.length === 0) {
+          return res.status(400).json({ message: "steps must be a non-empty array" });
+        }
+        const tp = await storage.createBrowserTrustedPath({
+          orgId,
+          name: body.name,
+          description: typeof body.description === "string" ? body.description : "",
+          steps: body.steps,
+          enabled: body.enabled !== false,
+          metadata: {
+            enforceOrder: body.enforceOrder === true,
+            maxDurationMs:
+              typeof body.maxDurationMs === "number" && body.maxDurationMs > 0 ? body.maxDurationMs : 60000,
+            failAction: body.failAction && VALID_VERDICTS.includes(body.failAction) ? body.failAction : "block",
+          },
+        });
+        res.status(201).json(tp);
+      } catch (error) {
+        logger.child("routes").error("Create trusted path error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create trusted path" });
       }
-      if (!Array.isArray(body.steps) || body.steps.length === 0) {
-        return res.status(400).json({ message: "steps must be a non-empty array" });
-      }
-      const tp = await storage.createBrowserTrustedPath({
-        orgId,
-        name: body.name,
-        description: typeof body.description === "string" ? body.description : "",
-        steps: body.steps,
-        enabled: body.enabled !== false,
-        metadata: {
-          enforceOrder: body.enforceOrder === true,
-          maxDurationMs: typeof body.maxDurationMs === "number" && body.maxDurationMs > 0 ? body.maxDurationMs : 60000,
-          failAction: body.failAction && VALID_VERDICTS.includes(body.failAction) ? body.failAction : "block",
-        },
-      });
-      res.status(201).json(tp);
-    } catch (error) {
-      logger.child("routes").error("Create trusted path error", { error: String(error) });
-      res.status(500).json({ message: "Failed to create trusted path" });
-    }
-  });
+    },
+  );
 
-  app.patch("/api/browser-defense/trusted-paths/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const body = req.body;
-      const updates: Record<string, unknown> = {};
-      if (body.name !== undefined) {
-        if (typeof body.name !== "string") return res.status(400).json({ message: "name must be a string" });
-        updates.name = body.name;
+  app.patch(
+    "/api/browser-defense/trusted-paths/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const body = req.body;
+        const updates: Record<string, unknown> = {};
+        if (body.name !== undefined) {
+          if (typeof body.name !== "string") return res.status(400).json({ message: "name must be a string" });
+          updates.name = body.name;
+        }
+        if (body.description !== undefined)
+          updates.description = typeof body.description === "string" ? body.description : "";
+        if (body.enabled !== undefined) updates.enabled = body.enabled === true;
+        if (body.steps !== undefined) {
+          if (!Array.isArray(body.steps)) return res.status(400).json({ message: "steps must be an array" });
+          updates.steps = body.steps;
+        }
+        const updated = await storage.updateBrowserTrustedPath(id, orgId, updates);
+        if (!updated) return res.status(404).json({ message: "Trusted path not found" });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Update trusted path error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update trusted path" });
       }
-      if (body.description !== undefined)
-        updates.description = typeof body.description === "string" ? body.description : "";
-      if (body.enabled !== undefined) updates.enabled = body.enabled === true;
-      if (body.steps !== undefined) {
-        if (!Array.isArray(body.steps)) return res.status(400).json({ message: "steps must be an array" });
-        updates.steps = body.steps;
-      }
-      const updated = await storage.updateBrowserTrustedPath(id, orgId, updates);
-      if (!updated) return res.status(404).json({ message: "Trusted path not found" });
-      res.json(updated);
-    } catch (error) {
-      logger.child("routes").error("Update trusted path error", { error: String(error) });
-      res.status(500).json({ message: "Failed to update trusted path" });
-    }
-  });
+    },
+  );
 
-  app.delete("/api/browser-defense/trusted-paths/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const deleted = await storage.deleteBrowserTrustedPath(id, orgId);
-      if (!deleted) return res.status(404).json({ message: "Trusted path not found" });
-      res.json({ message: "Trusted path deleted" });
-    } catch (error) {
-      logger.child("routes").error("Delete trusted path error", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete trusted path" });
-    }
-  });
+  app.delete(
+    "/api/browser-defense/trusted-paths/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const deleted = await storage.deleteBrowserTrustedPath(id, orgId);
+        if (!deleted) return res.status(404).json({ message: "Trusted path not found" });
+        res.json({ message: "Trusted path deleted" });
+      } catch (error) {
+        logger.child("routes").error("Delete trusted path error", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete trusted path" });
+      }
+    },
+  );
 
   // Injection patterns — stateless reference data, kept on engine
   app.get("/api/browser-defense/injection-patterns", isAuthenticated, async (req, res) => {
@@ -390,72 +456,86 @@ export function registerBrowserDefenseRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/browser-defense/injection-patterns/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const body = req.body;
-      const sanitized: Record<string, unknown> = {};
-      if (body.name !== undefined) {
-        if (typeof body.name !== "string") return res.status(400).json({ message: "name must be a string" });
-        sanitized.name = body.name;
+  app.patch(
+    "/api/browser-defense/injection-patterns/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const body = req.body;
+        const sanitized: Record<string, unknown> = {};
+        if (body.name !== undefined) {
+          if (typeof body.name !== "string") return res.status(400).json({ message: "name must be a string" });
+          sanitized.name = body.name;
+        }
+        if (body.severity !== undefined) {
+          if (!VALID_SEVERITIES.includes(body.severity))
+            return res.status(400).json({ message: `severity must be one of: ${VALID_SEVERITIES.join(", ")}` });
+          sanitized.severity = body.severity;
+        }
+        if (body.action !== undefined) {
+          if (!VALID_VERDICTS.includes(body.action))
+            return res.status(400).json({ message: `action must be one of: ${VALID_VERDICTS.join(", ")}` });
+          sanitized.action = body.action;
+        }
+        if (body.enabled !== undefined) sanitized.enabled = body.enabled === true;
+        const updated = await updateInjectionPatternInDb(id, orgId, sanitized as Record<string, unknown>);
+        if (!updated) return res.status(404).json({ message: "Injection pattern not found" });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Update injection pattern error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update injection pattern" });
       }
-      if (body.severity !== undefined) {
-        if (!VALID_SEVERITIES.includes(body.severity))
-          return res.status(400).json({ message: `severity must be one of: ${VALID_SEVERITIES.join(", ")}` });
-        sanitized.severity = body.severity;
-      }
-      if (body.action !== undefined) {
-        if (!VALID_VERDICTS.includes(body.action))
-          return res.status(400).json({ message: `action must be one of: ${VALID_VERDICTS.join(", ")}` });
-        sanitized.action = body.action;
-      }
-      if (body.enabled !== undefined) sanitized.enabled = body.enabled === true;
-      const updated = await updateInjectionPatternInDb(id, orgId, sanitized as Record<string, unknown>);
-      if (!updated) return res.status(404).json({ message: "Injection pattern not found" });
-      res.json(updated);
-    } catch (error) {
-      logger.child("routes").error("Update injection pattern error", { error: String(error) });
-      res.status(500).json({ message: "Failed to update injection pattern" });
-    }
-  });
+    },
+  );
 
   // Egress evaluation — stateless computation, kept on engine
-  app.post("/api/browser-defense/evaluate-egress", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const body = req.body;
-      if (!body.destination || typeof body.destination !== "string") {
-        return res.status(400).json({ message: "destination is required" });
-      }
-      if (!body.protocol || typeof body.protocol !== "string") {
-        return res.status(400).json({ message: "protocol is required" });
-      }
-      const rules = await getBrowserEgressRules(orgId);
-      const dest = body.destination.toLowerCase();
-      const proto = body.protocol.toLowerCase();
-      const matchedRule = rules.find((r) => {
-        if (!r.enabled) return false;
-        const domainPatterns = r.domain.split(",").map((d) => d.trim());
-        const domainMatch = domainPatterns.some((dp) => {
-          if (dp === "*") return true;
-          try {
-            const regex = new RegExp("^" + dp.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$", "i");
-            return regex.test(dest);
-          } catch (_regexErr) {
-            return false;
-          }
+  app.post(
+    "/api/browser-defense/evaluate-egress",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const body = req.body;
+        if (!body.destination || typeof body.destination !== "string") {
+          return res.status(400).json({ message: "destination is required" });
+        }
+        if (!body.protocol || typeof body.protocol !== "string") {
+          return res.status(400).json({ message: "protocol is required" });
+        }
+        const rules = await getBrowserEgressRules(orgId);
+        const dest = body.destination.toLowerCase();
+        const proto = body.protocol.toLowerCase();
+        const matchedRule = rules.find((r) => {
+          if (!r.enabled) return false;
+          const domainPatterns = r.domain.split(",").map((d) => d.trim());
+          const domainMatch = domainPatterns.some((dp) => {
+            if (dp === "*") return true;
+            try {
+              const regex = new RegExp("^" + dp.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$", "i");
+              return regex.test(dest);
+            } catch (_regexErr) {
+              return false;
+            }
+          });
+          const protoMatch = r.protocol === "any" || r.protocol === proto;
+          return domainMatch && protoMatch;
         });
-        const protoMatch = r.protocol === "any" || r.protocol === proto;
-        return domainMatch && protoMatch;
-      });
-      const result = matchedRule
-        ? { allowed: matchedRule.verdict === "allow", rule: matchedRule, destination: dest, protocol: proto }
-        : { allowed: true, rule: null, destination: dest, protocol: proto, note: "No matching rule — default allow" };
-      res.json(result);
-    } catch (error) {
-      logger.child("routes").error("Evaluate egress error", { error: String(error) });
-      res.status(500).json({ message: "Failed to evaluate egress" });
-    }
-  });
+        const result = matchedRule
+          ? { allowed: matchedRule.verdict === "allow", rule: matchedRule, destination: dest, protocol: proto }
+          : { allowed: true, rule: null, destination: dest, protocol: proto, note: "No matching rule — default allow" };
+        res.json(result);
+      } catch (error) {
+        logger.child("routes").error("Evaluate egress error", { error: String(error) });
+        res.status(500).json({ message: "Failed to evaluate egress" });
+      }
+    },
+  );
 }

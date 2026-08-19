@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { getOrgId, logger, p, storage } from "../shared";
 import { isAuthenticated } from "../../auth";
-import { requireOrgId, requirePermission, resolveOrgContext } from "../../rbac";
+import { requireOrgId, requirePermission, resolveOrgContext, requireMinRole } from "../../rbac";
 import { bodySchemas, validateBody, validatePathId } from "../../request-validator";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
 
@@ -34,6 +34,7 @@ export function registerPlaybooksCrudRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     enforcePlanLimit("playbooks"),
     validateBody(bodySchemas.playbookCreate),
     async (req, res) => {

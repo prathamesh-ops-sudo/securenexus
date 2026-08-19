@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId, requirePermission } from "../rbac";
+import { resolveOrgContext, requireOrgId, requirePermission, requireMinRole } from "../rbac";
 import { logger, getOrgId } from "./shared";
 import { db } from "../db";
 import { sql, eq, and, desc, gte, lte, count, ilike, or } from "drizzle-orm";
@@ -515,6 +515,7 @@ export function registerDnsSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const { domain } = req.body;
@@ -536,6 +537,7 @@ export function registerDnsSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
@@ -558,6 +560,7 @@ export function registerDnsSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
@@ -580,6 +583,7 @@ export function registerDnsSecurityRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const { domain, whoisData } = req.body;

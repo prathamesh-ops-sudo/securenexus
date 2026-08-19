@@ -44,39 +44,48 @@ export function registerIntegrationsRoutes(app: Express): void {
     },
   );
 
-  app.post("/api/integrations", isAuthenticated, validateBody(bodySchemas.integrationCreate), async (req, res) => {
-    try {
-      const { name, type, config } = (req as any).validatedBody;
-      const created = await storage.createIntegrationConfig({
-        name,
-        type,
-        config,
-        orgId: (req as any).user?.orgId,
-        status: "inactive",
-        createdBy: (req as any).user?.id,
-      });
-      await storage.createAuditLog({
-        orgId: (req as any).user?.orgId,
-        userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName
-          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
-          : "Analyst",
-        action: "integration_created",
-        resourceType: "integration",
-        resourceId: created.id,
-        details: { type, name },
-      });
-      res.status(201).json(created);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create integration" });
-    }
-  });
+  app.post(
+    "/api/integrations",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    validateBody(bodySchemas.integrationCreate),
+    async (req, res) => {
+      try {
+        const { name, type, config } = (req as any).validatedBody;
+        const created = await storage.createIntegrationConfig({
+          name,
+          type,
+          config,
+          orgId: (req as any).user?.orgId,
+          status: "inactive",
+          createdBy: (req as any).user?.id,
+        });
+        await storage.createAuditLog({
+          orgId: (req as any).user?.orgId,
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "integration_created",
+          resourceType: "integration",
+          resourceId: created.id,
+          details: { type, name },
+        });
+        res.status(201).json(created);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to create integration" });
+      }
+    },
+  );
 
   app.patch(
     "/api/integrations/:id",
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     validatePathId("id"),
     async (req, res) => {
       try {
@@ -110,6 +119,7 @@ export function registerIntegrationsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     validatePathId("id"),
     async (req, res) => {
       try {
@@ -139,6 +149,7 @@ export function registerIntegrationsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     validatePathId("id"),
     async (req, res) => {
       try {
@@ -197,6 +208,9 @@ export function registerIntegrationsRoutes(app: Express): void {
   app.post(
     "/api/notification-channels",
     isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
     validateBody(bodySchemas.notificationChannelCreate),
     async (req, res) => {
       try {
@@ -233,6 +247,7 @@ export function registerIntegrationsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     validatePathId("id"),
     async (req, res) => {
       try {
@@ -252,6 +267,7 @@ export function registerIntegrationsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     validatePathId("id"),
     async (req, res) => {
       try {
@@ -271,6 +287,7 @@ export function registerIntegrationsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     validatePathId("id"),
     async (req, res) => {
       try {
@@ -318,6 +335,9 @@ export function registerIntegrationsRoutes(app: Express): void {
   app.put(
     "/api/notification-preferences",
     isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
     validateBody(bodySchemas.notificationPreferencesUpdate),
     async (req, res) => {
       try {
@@ -384,6 +404,9 @@ export function registerIntegrationsRoutes(app: Express): void {
   app.post(
     "/api/response-actions",
     isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
     validateBody(bodySchemas.responseActionCreate),
     async (req, res) => {
       try {
@@ -512,31 +535,47 @@ export function registerIntegrationsRoutes(app: Express): void {
     },
   );
 
-  app.patch("/api/ticket-sync/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const existing = await storage.getTicketSyncJob(p(req.params.id));
-      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Ticket sync job not found" });
-      const updated = await storage.updateTicketSyncJob(p(req.params.id), req.body);
-      if (!updated) return res.status(404).json({ message: "Ticket sync job not found" });
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update ticket sync job" });
-    }
-  });
+  app.patch(
+    "/api/ticket-sync/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getTicketSyncJob(p(req.params.id));
+        if (!existing || existing.orgId !== orgId)
+          return res.status(404).json({ message: "Ticket sync job not found" });
+        const updated = await storage.updateTicketSyncJob(p(req.params.id), req.body);
+        if (!updated) return res.status(404).json({ message: "Ticket sync job not found" });
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update ticket sync job" });
+      }
+    },
+  );
 
-  app.delete("/api/ticket-sync/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const existing = await storage.getTicketSyncJob(p(req.params.id));
-      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Ticket sync job not found" });
-      const deleted = await storage.deleteTicketSyncJob(p(req.params.id));
-      if (!deleted) return res.status(404).json({ message: "Ticket sync job not found" });
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete ticket sync job" });
-    }
-  });
+  app.delete(
+    "/api/ticket-sync/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const existing = await storage.getTicketSyncJob(p(req.params.id));
+        if (!existing || existing.orgId !== orgId)
+          return res.status(404).json({ message: "Ticket sync job not found" });
+        const deleted = await storage.deleteTicketSyncJob(p(req.params.id));
+        if (!deleted) return res.status(404).json({ message: "Ticket sync job not found" });
+        res.json({ success: true });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete ticket sync job" });
+      }
+    },
+  );
 
   // ============================
   // Response Action Approvals (with dry-run simulation)
@@ -645,6 +684,7 @@ export function registerIntegrationsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     validatePathId("id"),
     validateBody(bodySchemas.approvalDecision),
     async (req, res) => {

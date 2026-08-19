@@ -1,6 +1,6 @@
 import type { Express, Request } from "express";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId } from "../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { logger, getOrgId, reply, replyError } from "./shared";
 import { z } from "zod";
 import { storage } from "../storage";
@@ -184,36 +184,43 @@ export function registerNativeCollectorRoutes(app: Express): void {
   });
 
   // ─── Deploy (create instance in DB) ───────────────────────────────────────
-  app.post("/api/native-collectors/deploy", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    const parsed = deploySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
-    }
-    try {
-      const orgId = getOrgId(req);
-      const template = getTemplateBySlug(parsed.data.templateSlug);
-      if (!template) {
-        return replyError(res, 404, [{ code: "NOT_FOUND", message: "Template not found" }]);
+  app.post(
+    "/api/native-collectors/deploy",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      const parsed = deploySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid request", errors: parsed.error.issues });
       }
+      try {
+        const orgId = getOrgId(req);
+        const template = getTemplateBySlug(parsed.data.templateSlug);
+        if (!template) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Template not found" }]);
+        }
 
-      const instance = await storage.createCollectorInstance({
-        orgId,
-        templateSlug: parsed.data.templateSlug,
-        name: parsed.data.name,
-        platform: parsed.data.platform,
-        deploymentMethod: parsed.data.deploymentMethod,
-        config: parsed.data.config,
-        tags: parsed.data.tags,
-        status: "pending_install",
-        version: "1.0.0",
-      });
+        const instance = await storage.createCollectorInstance({
+          orgId,
+          templateSlug: parsed.data.templateSlug,
+          name: parsed.data.name,
+          platform: parsed.data.platform,
+          deploymentMethod: parsed.data.deploymentMethod,
+          config: parsed.data.config,
+          tags: parsed.data.tags,
+          status: "pending_install",
+          version: "1.0.0",
+        });
 
-      res.status(201).json(redactInstanceConfig(instance));
-    } catch (err: unknown) {
-      log.error("Deploy error", { error: String(err) });
-      res.status(400).json({ message: (err as Error).message });
-    }
-  });
+        res.status(201).json(redactInstanceConfig(instance));
+      } catch (err: unknown) {
+        log.error("Deploy error", { error: String(err) });
+        res.status(400).json({ message: (err as Error).message });
+      }
+    },
+  );
 
   // ─── List Instances (from DB) ─────────────────────────────────────────────
   app.get("/api/native-collectors/instances", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -255,6 +262,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       const parsed = updateSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -297,6 +305,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -321,6 +330,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       const parsed = heartbeatSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -358,6 +368,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       const parsed = ingestSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -423,6 +434,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       const parsed = scanSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -527,6 +539,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -757,53 +770,64 @@ export function registerNativeCollectorRoutes(app: Express): void {
   });
 
   // ─── Custom Log Parser Testing (stateless) ───────────────────────────────
-  app.post("/api/native-collectors/parsers/test", isAuthenticated, resolveOrgContext, requireOrgId, (req, res) => {
-    const { pattern, patternType, sampleLog } = req.body as { pattern: string; patternType: string; sampleLog: string };
-    if (!pattern || !sampleLog) return res.status(400).json({ message: "pattern and sampleLog are required" });
-    try {
-      const fields: Record<string, string> = {};
-      if (patternType === "regex") {
-        const regex = new RegExp(pattern);
-        const match = regex.exec(sampleLog);
-        if (match && match.groups) {
-          for (const [k, v] of Object.entries(match.groups)) fields[k] = v;
-        } else if (match) {
-          match.slice(1).forEach((v, i) => {
-            fields[`group_${i + 1}`] = v;
-          });
-        }
-      } else if (patternType === "json_path") {
-        try {
-          const parsed = JSON.parse(sampleLog);
-          const paths = pattern.split(",").map((p) => p.trim());
-          for (const p of paths) {
-            const keys = p.split(".");
-            let val: unknown = parsed;
-            for (const k of keys) {
-              if (val && typeof val === "object" && k in (val as Record<string, unknown>)) {
-                val = (val as Record<string, unknown>)[k];
-              } else {
-                val = undefined;
-                break;
-              }
-            }
-            if (val !== undefined) fields[p] = String(val);
+  app.post(
+    "/api/native-collectors/parsers/test",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    (req, res) => {
+      const { pattern, patternType, sampleLog } = req.body as {
+        pattern: string;
+        patternType: string;
+        sampleLog: string;
+      };
+      if (!pattern || !sampleLog) return res.status(400).json({ message: "pattern and sampleLog are required" });
+      try {
+        const fields: Record<string, string> = {};
+        if (patternType === "regex") {
+          const regex = new RegExp(pattern);
+          const match = regex.exec(sampleLog);
+          if (match && match.groups) {
+            for (const [k, v] of Object.entries(match.groups)) fields[k] = v;
+          } else if (match) {
+            match.slice(1).forEach((v, i) => {
+              fields[`group_${i + 1}`] = v;
+            });
           }
-        } catch {
-          return res.status(400).json({ message: "Invalid JSON in sampleLog" });
+        } else if (patternType === "json_path") {
+          try {
+            const parsed = JSON.parse(sampleLog);
+            const paths = pattern.split(",").map((p) => p.trim());
+            for (const p of paths) {
+              const keys = p.split(".");
+              let val: unknown = parsed;
+              for (const k of keys) {
+                if (val && typeof val === "object" && k in (val as Record<string, unknown>)) {
+                  val = (val as Record<string, unknown>)[k];
+                } else {
+                  val = undefined;
+                  break;
+                }
+              }
+              if (val !== undefined) fields[p] = String(val);
+            }
+          } catch {
+            return res.status(400).json({ message: "Invalid JSON in sampleLog" });
+          }
+        } else if (patternType === "kv") {
+          const kvRegex = /(\w+)=("([^"]*)"|(\S+))/g;
+          let m: RegExpExecArray | null;
+          while ((m = kvRegex.exec(sampleLog)) !== null) {
+            fields[m[1]] = m[3] ?? m[4];
+          }
         }
-      } else if (patternType === "kv") {
-        const kvRegex = /(\w+)=("([^"]*)"|(\S+))/g;
-        let m: RegExpExecArray | null;
-        while ((m = kvRegex.exec(sampleLog)) !== null) {
-          fields[m[1]] = m[3] ?? m[4];
-        }
+        res.json({ success: true, extractedFields: fields, fieldCount: Object.keys(fields).length, patternType });
+      } catch (err: unknown) {
+        res.status(400).json({ message: "Pattern error: " + (err as Error).message });
       }
-      res.json({ success: true, extractedFields: fields, fieldCount: Object.keys(fields).length, patternType });
-    } catch (err: unknown) {
-      res.status(400).json({ message: "Pattern error: " + (err as Error).message });
-    }
-  });
+    },
+  );
 
   // ─── List Built-in Parsers (static catalog) ──────────────────────────────
   app.get("/api/native-collectors/parsers", isAuthenticated, resolveOrgContext, requireOrgId, (_req, res) => {
@@ -866,6 +890,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -893,6 +918,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
