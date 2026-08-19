@@ -9717,7 +9717,9 @@ export type InsertPostureScoreHistoryEntry = typeof postureScoreHistory.$inferIn
 
 export const chaosSimulations = pgTable("chaos_simulations", {
   id: uuid("id").primaryKey().defaultRandom(),
-  orgId: uuid("org_id").notNull(),
+  orgId: varchar("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
   mitreId: text("mitre_id").notNull(),
@@ -9741,7 +9743,9 @@ export const chaosSimulations = pgTable("chaos_simulations", {
 
 export const controlEffectiveness = pgTable("control_effectiveness", {
   id: uuid("id").primaryKey().defaultRandom(),
-  orgId: uuid("org_id").notNull(),
+  orgId: varchar("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   controlName: text("control_name").notNull(),
   controlType: text("control_type").notNull(),
   totalTests: integer("total_tests").notNull().default(0),
@@ -9757,7 +9761,9 @@ export const controlEffectiveness = pgTable("control_effectiveness", {
 
 export const detectionGaps = pgTable("detection_gaps", {
   id: uuid("id").primaryKey().defaultRandom(),
-  orgId: uuid("org_id").notNull(),
+  orgId: varchar("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   mitreId: text("mitre_id").notNull(),
   mitreTactic: text("mitre_tactic").notNull(),
   mitreTechnique: text("mitre_technique").notNull(),
@@ -9772,7 +9778,9 @@ export const detectionGaps = pgTable("detection_gaps", {
 
 export const chaosSchedules = pgTable("chaos_schedules", {
   id: uuid("id").primaryKey().defaultRandom(),
-  orgId: uuid("org_id").notNull(),
+  orgId: varchar("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
   frequency: text("frequency").notNull().default("weekly"),
@@ -9790,7 +9798,9 @@ export const chaosSchedules = pgTable("chaos_schedules", {
 
 export const purpleTeamExercises = pgTable("purple_team_exercises", {
   id: uuid("id").primaryKey().defaultRandom(),
-  orgId: uuid("org_id").notNull(),
+  orgId: varchar("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
   attackScenario: text("attack_scenario").notNull(),
@@ -9882,7 +9892,9 @@ export const ruleGenerationJobs = pgTable(
   "rule_generation_jobs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    orgId: uuid("org_id").notNull(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     source: text("source").notNull().default("manual"),
     sourceId: text("source_id"),
     sourceContext: text("source_context"),
@@ -9921,7 +9933,9 @@ export const ruleAbTests = pgTable(
   "rule_ab_tests",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    orgId: uuid("org_id").notNull(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
     ruleId: varchar("rule_id").notNull(),
@@ -9952,7 +9966,9 @@ export const ruleMarketplace = pgTable(
   "rule_marketplace",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    orgId: uuid("org_id").notNull(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     ruleId: varchar("rule_id").notNull(),
     title: text("title").notNull(),
     description: text("description"),
@@ -9987,7 +10003,9 @@ export const ruleLifecycleEvents = pgTable(
   "rule_lifecycle_events",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    orgId: uuid("org_id").notNull(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     ruleId: varchar("rule_id").notNull(),
     action: text("action").notNull(),
     previousStatus: text("previous_status"),
@@ -11044,7 +11062,7 @@ export const DARK_WEB_SOURCE_TYPES = [
 
 export const breachMonitoringTargets = pgTable("breach_monitoring_targets", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   targetType: text("target_type").notNull(), // BREACH_MONITOR_TARGET_TYPES
@@ -11059,7 +11077,7 @@ export const breachMonitoringTargets = pgTable("breach_monitoring_targets", {
 
 export const darkWebExposures = pgTable("dark_web_exposures", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   targetId: uuid("target_id").references(() => breachMonitoringTargets.id, { onDelete: "set null" }),
@@ -11088,7 +11106,7 @@ export const darkWebExposures = pgTable("dark_web_exposures", {
 
 export const darkWebMonitoringConfig = pgTable("dark_web_monitoring_config", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   isEnabled: boolean("is_enabled").default(true).notNull(),
@@ -11107,7 +11125,7 @@ export const darkWebMonitoringConfig = pgTable("dark_web_monitoring_config", {
 
 export const darkWebScanHistory = pgTable("dark_web_scan_history", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   scanType: text("scan_type").notNull(), // "full", "incremental", "manual"
@@ -11198,7 +11216,7 @@ export const VISITOR_STATUSES = ["pre_registered", "checked_in", "checked_out", 
 
 export const physicalAssets = pgTable("physical_assets", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
@@ -11219,7 +11237,7 @@ export const physicalAssets = pgTable("physical_assets", {
 
 export const badgeEvents = pgTable("badge_events", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   assetId: uuid("asset_id").references(() => physicalAssets.id, { onDelete: "set null" }),
@@ -11241,7 +11259,7 @@ export const badgeEvents = pgTable("badge_events", {
 
 export const physicalIncidents = pgTable("physical_incidents", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
@@ -11262,7 +11280,7 @@ export const physicalIncidents = pgTable("physical_incidents", {
 
 export const visitors = pgTable("visitors", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
@@ -11283,7 +11301,7 @@ export const visitors = pgTable("visitors", {
 
 export const physicalSecurityConfig = pgTable("physical_security_config", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   isEnabled: boolean("is_enabled").default(true).notNull(),
@@ -11379,7 +11397,7 @@ export const TRAINING_MODULE_TYPES = [
 
 export const phishingCampaigns = pgTable("phishing_campaigns", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
@@ -11410,7 +11428,7 @@ export const phishingCampaigns = pgTable("phishing_campaigns", {
 
 export const phishingTemplates = pgTable("phishing_templates", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
@@ -11430,7 +11448,7 @@ export const phishingTemplates = pgTable("phishing_templates", {
 
 export const phishingResults = pgTable("phishing_results", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   campaignId: uuid("campaign_id")
@@ -11451,7 +11469,7 @@ export const phishingResults = pgTable("phishing_results", {
 
 export const employeeRiskScores = pgTable("employee_risk_scores", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   email: text("email").notNull(),
@@ -11475,7 +11493,7 @@ export const employeeRiskScores = pgTable("employee_risk_scores", {
 
 export const trainingModules = pgTable("training_modules", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
@@ -11495,7 +11513,7 @@ export const trainingModules = pgTable("training_modules", {
 
 export const trainingAssignments = pgTable("training_assignments", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   moduleId: uuid("module_id")
@@ -11516,7 +11534,7 @@ export const trainingAssignments = pgTable("training_assignments", {
 
 export const securityAwarenessConfig = pgTable("security_awareness_config", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   isEnabled: boolean("is_enabled").default(true).notNull(),
@@ -11682,7 +11700,7 @@ export const NIST_PQC_STANDARDS = [
 
 export const cryptoInventory = pgTable("crypto_inventory", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   assetName: text("asset_name").notNull(),
@@ -11710,7 +11728,7 @@ export const cryptoInventory = pgTable("crypto_inventory", {
 
 export const quantumRiskScores = pgTable("quantum_risk_scores", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   overallScore: integer("overall_score").default(0).notNull(), // 0-100 (100 = fully quantum-safe)
@@ -11736,7 +11754,7 @@ export const quantumRiskScores = pgTable("quantum_risk_scores", {
 
 export const quantumMigrationTasks = pgTable("quantum_migration_tasks", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
@@ -11758,7 +11776,7 @@ export const quantumMigrationTasks = pgTable("quantum_migration_tasks", {
 
 export const quantumScanHistory = pgTable("quantum_scan_history", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id")
+  orgId: varchar("org_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   scanType: text("scan_type").notNull(), // "full", "tls", "ssh", "code", "config"
