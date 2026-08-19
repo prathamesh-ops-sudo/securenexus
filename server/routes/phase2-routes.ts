@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { isAuthenticated } from "../auth";
-import { requireOrgId, resolveOrgContext } from "../rbac";
+import { requireOrgId, resolveOrgContext, requireMinRole } from "../rbac";
 import { sendEnvelope, getOrgId, logger, storage } from "./shared";
 
 /**
@@ -83,16 +83,12 @@ export function registerPhase2Routes(app: Express): void {
       }).length;
 
       // Pending Reviews: incidents in "investigating" or "open" status that need analyst attention
-      const pendingReviews = incidents.filter(
-        (i: any) => i.status === "investigating" || i.status === "open",
-      ).length;
+      const pendingReviews = incidents.filter((i: any) => i.status === "investigating" || i.status === "open").length;
 
       // MTTD: average minutes between detectedAt and createdAt for alerts with detectedAt set
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      const alertsWithDetection = alerts.filter(
-        (a: any) => a.detectedAt && new Date(a.createdAt) >= todayStart,
-      );
+      const alertsWithDetection = alerts.filter((a: any) => a.detectedAt && new Date(a.createdAt) >= todayStart);
       let mttdMinutes = 0;
       if (alertsWithDetection.length > 0) {
         const totalMs = alertsWithDetection.reduce((sum: number, a: any) => {
@@ -194,27 +190,34 @@ export function registerPhase2Routes(app: Express): void {
     }
   });
 
-  app.patch("/api/ai/budget-config", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const { monthlyLimit } = req.body;
-      if (typeof monthlyLimit !== "number" || monthlyLimit <= 0) {
-        return sendEnvelope(res, null, {
-          status: 400,
-          errors: [{ code: "VALIDATION", message: "monthlyLimit must be a positive number" }],
+  app.patch(
+    "/api/ai/budget-config",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const { monthlyLimit } = req.body;
+        if (typeof monthlyLimit !== "number" || monthlyLimit <= 0) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "VALIDATION", message: "monthlyLimit must be a positive number" }],
+          });
+        }
+        const { setOrgBudget } = await import("../ai/budget");
+        await setOrgBudget(orgId, monthlyLimit, 0);
+        sendEnvelope(res, { monthlyLimit });
+      } catch (err) {
+        log.error("PATCH /api/ai/budget-config failed", { error: String(err) });
+        sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "INTERNAL", message: "Failed to update budget config" }],
         });
       }
-      const { setOrgBudget } = await import("../ai/budget");
-      await setOrgBudget(orgId, monthlyLimit, 0);
-      sendEnvelope(res, { monthlyLimit });
-    } catch (err) {
-      log.error("PATCH /api/ai/budget-config failed", { error: String(err) });
-      sendEnvelope(res, null, {
-        status: 500,
-        errors: [{ code: "INTERNAL", message: "Failed to update budget config" }],
-      });
-    }
-  });
+    },
+  );
 
   // ── Job Queue ────────────────────────────────────────────────────
   app.get("/api/jobs/stats", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -243,53 +246,67 @@ export function registerPhase2Routes(app: Express): void {
     }
   });
 
-  app.post("/api/jobs/:jobId/retry", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const jobId = Array.isArray(req.params.jobId) ? req.params.jobId[0] : req.params.jobId;
-      const job = await storage.getJob(jobId as string);
-      if (!job) {
-        return sendEnvelope(res, null, {
-          status: 404,
-          errors: [{ code: "NOT_FOUND", message: "Job not found" }],
+  app.post(
+    "/api/jobs/:jobId/retry",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const jobId = Array.isArray(req.params.jobId) ? req.params.jobId[0] : req.params.jobId;
+        const job = await storage.getJob(jobId as string);
+        if (!job) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "Job not found" }],
+          });
+        }
+        // Verify job belongs to requesting user's org (IDOR protection)
+        if ((job as any).orgId !== orgId) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "Job not found" }],
+          });
+        }
+        const updated = await storage.updateJob(jobId as string, {
+          status: "pending",
+          attempts: (job.attempts || 0) + 1,
+          lastError: null,
+          startedAt: null,
+          completedAt: null,
         });
+        sendEnvelope(res, updated);
+      } catch (err) {
+        log.error("POST /api/jobs/:jobId/retry failed", { error: String(err) });
+        sendEnvelope(res, null, { status: 500, errors: [{ code: "INTERNAL", message: "Failed to retry job" }] });
       }
-      // Verify job belongs to requesting user's org (IDOR protection)
-      if ((job as any).orgId !== orgId) {
-        return sendEnvelope(res, null, {
-          status: 404,
-          errors: [{ code: "NOT_FOUND", message: "Job not found" }],
-        });
-      }
-      const updated = await storage.updateJob(jobId as string, {
-        status: "pending",
-        attempts: (job.attempts || 0) + 1,
-        lastError: null,
-        startedAt: null,
-        completedAt: null,
-      });
-      sendEnvelope(res, updated);
-    } catch (err) {
-      log.error("POST /api/jobs/:jobId/retry failed", { error: String(err) });
-      sendEnvelope(res, null, { status: 500, errors: [{ code: "INTERNAL", message: "Failed to retry job" }] });
-    }
-  });
+    },
+  );
 
-  app.post("/api/jobs/purge-dead", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const deadJobs = await storage.getJobs(orgId, "dead");
-      let purged = 0;
-      for (const job of deadJobs) {
-        await storage.updateJob(job.id, { status: "purged" });
-        purged++;
+  app.post(
+    "/api/jobs/purge-dead",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const deadJobs = await storage.getJobs(orgId, "dead");
+        let purged = 0;
+        for (const job of deadJobs) {
+          await storage.updateJob(job.id, { status: "purged" });
+          purged++;
+        }
+        sendEnvelope(res, { purged });
+      } catch (err) {
+        log.error("POST /api/jobs/purge-dead failed", { error: String(err) });
+        sendEnvelope(res, null, { status: 500, errors: [{ code: "INTERNAL", message: "Failed to purge jobs" }] });
       }
-      sendEnvelope(res, { purged });
-    } catch (err) {
-      log.error("POST /api/jobs/purge-dead failed", { error: String(err) });
-      sendEnvelope(res, null, { status: 500, errors: [{ code: "INTERNAL", message: "Failed to purge jobs" }] });
-    }
-  });
+    },
+  );
 
   // ── Data Lifecycle ───────────────────────────────────────────────
   app.get("/api/data-lifecycle/status", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -322,6 +339,7 @@ export function registerPhase2Routes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("owner"),
     async (req, res) => {
       try {
         const { policyId } = req.params;
@@ -346,31 +364,38 @@ export function registerPhase2Routes(app: Express): void {
     }
   });
 
-  app.post("/api/dr-drills", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const userId = (req as any).user?.id;
-      const { runbookId, drillType, scope } = req.body;
-      if (!drillType) {
-        return sendEnvelope(res, null, {
-          status: 400,
-          errors: [{ code: "VALIDATION", message: "drillType is required" }],
+  app.post(
+    "/api/dr-drills",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const userId = (req as any).user?.id;
+        const { runbookId, drillType, scope } = req.body;
+        if (!drillType) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "VALIDATION", message: "drillType is required" }],
+          });
+        }
+        const drill = await storage.createDrDrillResult({
+          orgId,
+          runbookId: runbookId || null,
+          status: "running",
+          startedAt: new Date(),
+          notes: drillType ? `Type: ${drillType}` : undefined,
+          triggeredBy: userId || "manual",
         });
+        sendEnvelope(res, drill);
+      } catch (err) {
+        log.error("POST /api/dr-drills failed", { error: String(err) });
+        sendEnvelope(res, null, { status: 500, errors: [{ code: "INTERNAL", message: "Failed to create DR drill" }] });
       }
-      const drill = await storage.createDrDrillResult({
-        orgId,
-        runbookId: runbookId || null,
-        status: "running",
-        startedAt: new Date(),
-        notes: drillType ? `Type: ${drillType}` : undefined,
-        triggeredBy: userId || "manual",
-      });
-      sendEnvelope(res, drill);
-    } catch (err) {
-      log.error("POST /api/dr-drills failed", { error: String(err) });
-      sendEnvelope(res, null, { status: 500, errors: [{ code: "INTERNAL", message: "Failed to create DR drill" }] });
-    }
-  });
+    },
+  );
 
   // ── Usage Metering Analytics ─────────────────────────────────────
   app.get("/api/usage-metering/analytics", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {

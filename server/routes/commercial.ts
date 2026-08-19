@@ -285,6 +285,7 @@ export function registerCommercialRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = (req as any).orgId;
@@ -298,20 +299,27 @@ export function registerCommercialRoutes(app: Express): void {
     },
   );
 
-  app.post("/api/onboarding-checklist/dismiss", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
-      const steps = await storage.getOnboardingProgress(orgId);
-      for (const step of steps) {
-        if (!step.isCompleted) {
-          await storage.completeOnboardingStep(orgId, step.stepKey, "dismissed");
+  app.post(
+    "/api/onboarding-checklist/dismiss",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const steps = await storage.getOnboardingProgress(orgId);
+        for (const step of steps) {
+          if (!step.isCompleted) {
+            await storage.completeOnboardingStep(orgId, step.stepKey, "dismissed");
+          }
         }
+        res.json({ success: true });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to dismiss onboarding" });
       }
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to dismiss onboarding" });
-    }
-  });
+    },
+  );
 
   // ============================
   // Workspace Templates

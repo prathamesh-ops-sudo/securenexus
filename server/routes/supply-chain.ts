@@ -2,7 +2,7 @@
 import type { Express, Request, Response } from "express";
 import { randomBytes } from "crypto";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId, requirePermission } from "../rbac";
+import { resolveOrgContext, requireOrgId, requirePermission, requireMinRole } from "../rbac";
 import { logger, getOrgId } from "./shared";
 import { db } from "../db";
 import { sql, eq, and, desc, ilike, or, count } from "drizzle-orm";
@@ -554,6 +554,7 @@ export function registerSupplyChainRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
@@ -645,6 +646,7 @@ export function registerSupplyChainRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
@@ -712,6 +714,7 @@ export function registerSupplyChainRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
@@ -899,6 +902,7 @@ export function registerSupplyChainRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);

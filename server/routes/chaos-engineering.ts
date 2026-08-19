@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { logger, getOrgId, reply, replyError } from "./shared";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId } from "../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { storage } from "../storage";
 
 interface RequestWithUser extends Request {
@@ -115,60 +115,67 @@ export function registerChaosEngineeringRoutes(app: Express): void {
   });
 
   // ─── Run Simulation (persists to DB) ─────────────────────────────────────────
-  app.post("/api/chaos-engineering/simulate", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { techniqueId, trigger } = req.body as { techniqueId?: string; trigger?: string };
-      if (!techniqueId || typeof techniqueId !== "string") {
-        return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "techniqueId is required" }]);
-      }
-
-      // Look up the technique from the attack library catalog
-      const library = getAttackLibrary();
-      const technique = library.find((t: { id: string }) => t.id === techniqueId);
-      if (!technique) {
-        return replyError(res, 404, [{ code: "NOT_FOUND", message: "Technique not found in attack library" }]);
-      }
-
-      const simulation = await storage.createChaosSimulation({
-        orgId,
-        name: technique.name || techniqueId,
-        description: technique.description || "",
-        mitreId: technique.id,
-        mitreTactic: technique.tacticName || "unknown",
-        mitreTechnique: technique.name || techniqueId,
-        domain: "endpoint",
-        platform: technique.platform[0] || "windows",
-        severity: technique.severity || "medium",
-        payload: technique.simulationPayload || null,
-        expectedOutcome: technique.expectedDetection || null,
-        status: "pending",
-        trigger: trigger || "manual",
-        executedBy: (req as RequestWithUser).user?.id || null,
-        executedAt: new Date(),
-      });
-
-      // Simulate execution asynchronously — update status after short delay
-      setTimeout(async () => {
-        try {
-          const verdict = technique.expectedDetection ? "passed" : "failed";
-          await storage.updateChaosSimulation(simulation.id, {
-            status: verdict,
-            verdict,
-            durationMs: 500 + Math.floor(Date.now() % 2000),
-            output: `Simulation ${verdict}: ${technique.name}`,
-          });
-        } catch (err) {
-          log.error("Failed to update simulation result", { id: simulation.id, error: String(err) });
+  app.post(
+    "/api/chaos-engineering/simulate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { techniqueId, trigger } = req.body as { techniqueId?: string; trigger?: string };
+        if (!techniqueId || typeof techniqueId !== "string") {
+          return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "techniqueId is required" }]);
         }
-      }, 1000);
 
-      res.status(201).json(simulation);
-    } catch (error) {
-      log.error("Run simulation error", { error: String(error) });
-      replyError(res, 500, [{ code: "INTERNAL", message: "Failed to run simulation" }]);
-    }
-  });
+        // Look up the technique from the attack library catalog
+        const library = getAttackLibrary();
+        const technique = library.find((t: { id: string }) => t.id === techniqueId);
+        if (!technique) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "Technique not found in attack library" }]);
+        }
+
+        const simulation = await storage.createChaosSimulation({
+          orgId,
+          name: technique.name || techniqueId,
+          description: technique.description || "",
+          mitreId: technique.id,
+          mitreTactic: technique.tacticName || "unknown",
+          mitreTechnique: technique.name || techniqueId,
+          domain: "endpoint",
+          platform: technique.platform[0] || "windows",
+          severity: technique.severity || "medium",
+          payload: technique.simulationPayload || null,
+          expectedOutcome: technique.expectedDetection || null,
+          status: "pending",
+          trigger: trigger || "manual",
+          executedBy: (req as RequestWithUser).user?.id || null,
+          executedAt: new Date(),
+        });
+
+        // Simulate execution asynchronously — update status after short delay
+        setTimeout(async () => {
+          try {
+            const verdict = technique.expectedDetection ? "passed" : "failed";
+            await storage.updateChaosSimulation(simulation.id, {
+              status: verdict,
+              verdict,
+              durationMs: 500 + Math.floor(Date.now() % 2000),
+              output: `Simulation ${verdict}: ${technique.name}`,
+            });
+          } catch (err) {
+            log.error("Failed to update simulation result", { id: simulation.id, error: String(err) });
+          }
+        }, 1000);
+
+        res.status(201).json(simulation);
+      } catch (error) {
+        log.error("Run simulation error", { error: String(error) });
+        replyError(res, 500, [{ code: "INTERNAL", message: "Failed to run simulation" }]);
+      }
+    },
+  );
 
   // ─── Run Batch Simulation ────────────────────────────────────────────────────
   app.post(
@@ -176,6 +183,7 @@ export function registerChaosEngineeringRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("owner"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -330,42 +338,52 @@ export function registerChaosEngineeringRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/chaos-engineering/schedules", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const body = req.body;
-      if (!body.name || typeof body.name !== "string") {
-        return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "name is required" }]);
-      }
-      if (!body.frequency || !VALID_FREQUENCIES.includes(body.frequency)) {
-        return replyError(res, 400, [
-          { code: "VALIDATION_ERROR", message: `frequency must be one of: ${VALID_FREQUENCIES.join(", ")}` },
-        ]);
-      }
-      if (!Array.isArray(body.techniqueIds) || body.techniqueIds.length === 0) {
-        return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "techniqueIds must be a non-empty array" }]);
-      }
+  app.post(
+    "/api/chaos-engineering/schedules",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const body = req.body;
+        if (!body.name || typeof body.name !== "string") {
+          return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "name is required" }]);
+        }
+        if (!body.frequency || !VALID_FREQUENCIES.includes(body.frequency)) {
+          return replyError(res, 400, [
+            { code: "VALIDATION_ERROR", message: `frequency must be one of: ${VALID_FREQUENCIES.join(", ")}` },
+          ]);
+        }
+        if (!Array.isArray(body.techniqueIds) || body.techniqueIds.length === 0) {
+          return replyError(res, 400, [
+            { code: "VALIDATION_ERROR", message: "techniqueIds must be a non-empty array" },
+          ]);
+        }
 
-      const schedule = await storage.createChaosSchedule({
-        orgId,
-        name: body.name,
-        description: body.description || "",
-        frequency: body.frequency,
-        mitreIds: body.techniqueIds,
-        enabled: body.enabled !== false,
-      });
-      res.status(201).json(schedule);
-    } catch (error) {
-      log.error("Create schedule error", { error: String(error) });
-      replyError(res, 500, [{ code: "INTERNAL", message: "Failed to create schedule" }]);
-    }
-  });
+        const schedule = await storage.createChaosSchedule({
+          orgId,
+          name: body.name,
+          description: body.description || "",
+          frequency: body.frequency,
+          mitreIds: body.techniqueIds,
+          enabled: body.enabled !== false,
+        });
+        res.status(201).json(schedule);
+      } catch (error) {
+        log.error("Create schedule error", { error: String(error) });
+        replyError(res, 500, [{ code: "INTERNAL", message: "Failed to create schedule" }]);
+      }
+    },
+  );
 
   app.patch(
     "/api/chaos-engineering/schedules/:id",
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("owner"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -416,6 +434,7 @@ export function registerChaosEngineeringRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("owner"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -435,6 +454,7 @@ export function registerChaosEngineeringRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("owner"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -513,6 +533,7 @@ export function registerChaosEngineeringRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("owner"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -552,46 +573,53 @@ export function registerChaosEngineeringRoutes(app: Express): void {
   );
 
   // ─── Scenario Builder ────────────────────────────────────────────────────────
-  app.post("/api/chaos-engineering/scenarios", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { name, description, techniqueIds, targetScope, detectionExpectation } = req.body as {
-        name?: string;
-        description?: string;
-        techniqueIds?: string[];
-        targetScope?: string;
-        detectionExpectation?: string;
-      };
-      if (
-        !name ||
-        typeof name !== "string" ||
-        !techniqueIds ||
-        !Array.isArray(techniqueIds) ||
-        techniqueIds.length === 0
-      ) {
-        return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "name and techniqueIds[] are required" }]);
+  app.post(
+    "/api/chaos-engineering/scenarios",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { name, description, techniqueIds, targetScope, detectionExpectation } = req.body as {
+          name?: string;
+          description?: string;
+          techniqueIds?: string[];
+          targetScope?: string;
+          detectionExpectation?: string;
+        };
+        if (
+          !name ||
+          typeof name !== "string" ||
+          !techniqueIds ||
+          !Array.isArray(techniqueIds) ||
+          techniqueIds.length === 0
+        ) {
+          return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "name and techniqueIds[] are required" }]);
+        }
+
+        // Persist scenario as a chaos schedule with special status
+        const schedule = await storage.createChaosSchedule({
+          orgId,
+          name,
+          description: description || "",
+          frequency: "manual",
+          mitreIds: techniqueIds,
+          enabled: true,
+        });
+
+        res.status(201).json({
+          ...schedule,
+          targetScope: targetScope || "all",
+          detectionExpectation: detectionExpectation || "full_detection",
+        });
+      } catch (error) {
+        log.error("Create scenario error", { error: String(error) });
+        replyError(res, 500, [{ code: "INTERNAL", message: "Failed to create scenario" }]);
       }
-
-      // Persist scenario as a chaos schedule with special status
-      const schedule = await storage.createChaosSchedule({
-        orgId,
-        name,
-        description: description || "",
-        frequency: "manual",
-        mitreIds: techniqueIds,
-        enabled: true,
-      });
-
-      res.status(201).json({
-        ...schedule,
-        targetScope: targetScope || "all",
-        detectionExpectation: detectionExpectation || "full_detection",
-      });
-    } catch (error) {
-      log.error("Create scenario error", { error: String(error) });
-      replyError(res, 500, [{ code: "INTERNAL", message: "Failed to create scenario" }]);
-    }
-  });
+    },
+  );
 
   // ─── Safety verification ─────────────────────────────────────────────────────
   app.get("/api/chaos-engineering/safety-status", isAuthenticated, async (_req, res) => {

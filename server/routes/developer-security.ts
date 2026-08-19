@@ -10,7 +10,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { db } from "../db";
 import { storage } from "../storage";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId } from "../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { sastFindings, secretsExposed, ciGates, codeReviewFindings, securityDebtItems } from "@shared/schema";
 import { eq, and, desc, sql, count, ilike } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
@@ -91,38 +91,45 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   });
 
   /** Update a SAST finding (mark false positive, assign, etc.) */
-  app.patch("/api/developer-security/sast-findings/:id", ...authChain, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
+  app.patch(
+    "/api/developer-security/sast-findings/:id",
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    ...authChain,
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
 
-      const [existing] = await db
-        .select()
-        .from(sastFindings)
-        .where(and(eq(sastFindings.id, String(req.params.id)), eq(sastFindings.orgId, orgId)))
-        .limit(1);
+        const [existing] = await db
+          .select()
+          .from(sastFindings)
+          .where(and(eq(sastFindings.id, String(req.params.id)), eq(sastFindings.orgId, orgId)))
+          .limit(1);
 
-      if (!existing) return res.status(404).json({ message: "Finding not found" });
+        if (!existing) return res.status(404).json({ message: "Finding not found" });
 
-      const allowedFields = ["status", "assignee", "falsePositive", "falsePositiveBy", "falsePositiveReason"];
-      const updates: Record<string, unknown> = { updatedAt: new Date() };
-      for (const field of allowedFields) {
-        if (req.body[field] !== undefined) {
-          updates[field] = req.body[field];
+        const allowedFields = ["status", "assignee", "falsePositive", "falsePositiveBy", "falsePositiveReason"];
+        const updates: Record<string, unknown> = { updatedAt: new Date() };
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            updates[field] = req.body[field];
+          }
         }
+
+        const [updated] = await db
+          .update(sastFindings)
+          .set(updates)
+          .where(eq(sastFindings.id, String(req.params.id)))
+          .returning();
+
+        res.json({ data: updated });
+      } catch (err) {
+        log.error("Failed to update SAST finding", { error: String(err) });
+        res.status(500).json({ message: "Internal server error" });
       }
-
-      const [updated] = await db
-        .update(sastFindings)
-        .set(updates)
-        .where(eq(sastFindings.id, String(req.params.id)))
-        .returning();
-
-      res.json({ data: updated });
-    } catch (err) {
-      log.error("Failed to update SAST finding", { error: String(err) });
-      res.status(500).json({ message: "Internal server error" });
-    }
-  });
+    },
+  );
 
   // ── Secrets Scanning ───────────────────────────────────────────
 
@@ -154,67 +161,81 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   });
 
   /** Mark a secret as rotated */
-  app.post("/api/developer-security/secrets/:id/rotate", ...authChain, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
+  app.post(
+    "/api/developer-security/secrets/:id/rotate",
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    ...authChain,
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
 
-      const [existing] = await db
-        .select()
-        .from(secretsExposed)
-        .where(and(eq(secretsExposed.id, String(req.params.id)), eq(secretsExposed.orgId, orgId)))
-        .limit(1);
+        const [existing] = await db
+          .select()
+          .from(secretsExposed)
+          .where(and(eq(secretsExposed.id, String(req.params.id)), eq(secretsExposed.orgId, orgId)))
+          .limit(1);
 
-      if (!existing) return res.status(404).json({ message: "Secret not found" });
+        if (!existing) return res.status(404).json({ message: "Secret not found" });
 
-      const [updated] = await db
-        .update(secretsExposed)
-        .set({
-          rotated: true,
-          rotatedAt: new Date(),
-          rotatedBy: req.body.rotatedBy || (req as any).user?.id,
-          status: "rotated",
-          updatedAt: new Date(),
-        })
-        .where(eq(secretsExposed.id, String(req.params.id)))
-        .returning();
+        const [updated] = await db
+          .update(secretsExposed)
+          .set({
+            rotated: true,
+            rotatedAt: new Date(),
+            rotatedBy: req.body.rotatedBy || (req as any).user?.id,
+            status: "rotated",
+            updatedAt: new Date(),
+          })
+          .where(eq(secretsExposed.id, String(req.params.id)))
+          .returning();
 
-      res.json({ data: updated });
-    } catch (err) {
-      log.error("Failed to rotate secret", { error: String(err) });
-      res.status(500).json({ message: "Internal server error" });
-    }
-  });
+        res.json({ data: updated });
+      } catch (err) {
+        log.error("Failed to rotate secret", { error: String(err) });
+        res.status(500).json({ message: "Internal server error" });
+      }
+    },
+  );
 
   /** Mark secret as false positive */
-  app.post("/api/developer-security/secrets/:id/false-positive", ...authChain, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
+  app.post(
+    "/api/developer-security/secrets/:id/false-positive",
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    ...authChain,
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
 
-      const [existing] = await db
-        .select()
-        .from(secretsExposed)
-        .where(and(eq(secretsExposed.id, String(req.params.id)), eq(secretsExposed.orgId, orgId)))
-        .limit(1);
+        const [existing] = await db
+          .select()
+          .from(secretsExposed)
+          .where(and(eq(secretsExposed.id, String(req.params.id)), eq(secretsExposed.orgId, orgId)))
+          .limit(1);
 
-      if (!existing) return res.status(404).json({ message: "Secret not found" });
+        if (!existing) return res.status(404).json({ message: "Secret not found" });
 
-      const [updated] = await db
-        .update(secretsExposed)
-        .set({
-          falsePositive: true,
-          falsePositiveBy: req.body.userId || (req as any).user?.id,
-          status: "dismissed",
-          updatedAt: new Date(),
-        })
-        .where(eq(secretsExposed.id, String(req.params.id)))
-        .returning();
+        const [updated] = await db
+          .update(secretsExposed)
+          .set({
+            falsePositive: true,
+            falsePositiveBy: req.body.userId || (req as any).user?.id,
+            status: "dismissed",
+            updatedAt: new Date(),
+          })
+          .where(eq(secretsExposed.id, String(req.params.id)))
+          .returning();
 
-      res.json({ data: updated });
-    } catch (err) {
-      log.error("Failed to dismiss secret", { error: String(err) });
-      res.status(500).json({ message: "Internal server error" });
-    }
-  });
+        res.json({ data: updated });
+      } catch (err) {
+        log.error("Failed to dismiss secret", { error: String(err) });
+        res.status(500).json({ message: "Internal server error" });
+      }
+    },
+  );
 
   // ── CI Gates ───────────────────────────────────────────────────
 
@@ -302,38 +323,45 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   });
 
   /** Update security debt item */
-  app.patch("/api/developer-security/security-debt/:id", ...authChain, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
+  app.patch(
+    "/api/developer-security/security-debt/:id",
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    ...authChain,
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
 
-      const [existing] = await db
-        .select()
-        .from(securityDebtItems)
-        .where(and(eq(securityDebtItems.id, String(req.params.id)), eq(securityDebtItems.orgId, orgId)))
-        .limit(1);
+        const [existing] = await db
+          .select()
+          .from(securityDebtItems)
+          .where(and(eq(securityDebtItems.id, String(req.params.id)), eq(securityDebtItems.orgId, orgId)))
+          .limit(1);
 
-      if (!existing) return res.status(404).json({ message: "Debt item not found" });
+        if (!existing) return res.status(404).json({ message: "Debt item not found" });
 
-      const allowedFields = ["status", "assignee", "priority", "dueDate", "effortToFix"];
-      const updates: Record<string, unknown> = { updatedAt: new Date() };
-      for (const field of allowedFields) {
-        if (req.body[field] !== undefined) {
-          updates[field] = req.body[field];
+        const allowedFields = ["status", "assignee", "priority", "dueDate", "effortToFix"];
+        const updates: Record<string, unknown> = { updatedAt: new Date() };
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            updates[field] = req.body[field];
+          }
         }
+
+        const [updated] = await db
+          .update(securityDebtItems)
+          .set(updates)
+          .where(eq(securityDebtItems.id, String(req.params.id)))
+          .returning();
+
+        res.json({ data: updated });
+      } catch (err) {
+        log.error("Failed to update debt item", { error: String(err) });
+        res.status(500).json({ message: "Internal server error" });
       }
-
-      const [updated] = await db
-        .update(securityDebtItems)
-        .set(updates)
-        .where(eq(securityDebtItems.id, String(req.params.id)))
-        .returning();
-
-      res.json({ data: updated });
-    } catch (err) {
-      log.error("Failed to update debt item", { error: String(err) });
-      res.status(500).json({ message: "Internal server error" });
-    }
-  });
+    },
+  );
 
   // ── Dashboard Stats ────────────────────────────────────────────
 
@@ -439,24 +467,142 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   // ── Scan Triggers ──────────────────────────────────────────────
 
   /** Trigger a manual SAST scan on a repository */
-  app.post("/api/developer-security/scan", ...authChain, async (req, res) => {
-    try {
-      const orgId = (req as any).orgId;
+  app.post(
+    "/api/developer-security/scan",
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    ...authChain,
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
 
-      const { repository, branch, commitSha, files } = req.body;
-      if (!repository) return res.status(400).json({ message: "repository is required" });
+        const { repository, branch, commitSha, files } = req.body;
+        if (!repository) return res.status(400).json({ message: "repository is required" });
 
-      // If files are provided directly, scan them
-      if (files && Array.isArray(files)) {
-        const scanFiles = files
-          .filter((f: { path: string; content: string }) => f.path && f.content)
-          .map((f: { path: string; content: string }) => ({
-            path: f.path,
-            content: f.content,
-            language: inferLanguage(f.path) || "typescript",
-          }));
+        // If files are provided directly, scan them
+        if (files && Array.isArray(files)) {
+          const scanFiles = files
+            .filter((f: { path: string; content: string }) => f.path && f.content)
+            .map((f: { path: string; content: string }) => ({
+              path: f.path,
+              content: f.content,
+              language: inferLanguage(f.path) || "typescript",
+            }));
 
-        const result = runSastScan(scanFiles, repository, branch || "main", commitSha || "manual");
+          const result = runSastScan(scanFiles, repository, branch || "main", commitSha || "manual");
+
+          // Persist findings
+          for (const finding of result.findings) {
+            await db.insert(sastFindings).values({
+              orgId,
+              repository,
+              branch: branch || "main",
+              commitSha: commitSha || null,
+              filePath: finding.filePath,
+              startLine: finding.startLine,
+              endLine: finding.endLine,
+              codeSnippet: finding.codeSnippet,
+              category: finding.category,
+              severity: finding.severity,
+              title: finding.title,
+              description: finding.description,
+              remediation: finding.remediation,
+              cweId: finding.cweId,
+              owaspCategory: finding.owaspCategory,
+              confidence: finding.confidence,
+              ruleId: finding.ruleId,
+              scanId: result.scanId,
+            });
+          }
+
+          // Persist secrets
+          for (const secret of result.secretFindings) {
+            await db.insert(secretsExposed).values({
+              orgId,
+              repository,
+              branch: branch || "main",
+              commitSha: commitSha || "manual",
+              filePath: secret.filePath,
+              line: secret.line,
+              secretType: secret.secretType,
+              secretHash: secret.secretHash,
+              maskedValue: secret.maskedValue,
+              severity: secret.severity,
+              scanId: result.scanId,
+            });
+          }
+
+          // Evaluate CI gate
+          const policy: CiGatePolicy = {
+            maxCritical: 0,
+            maxHigh: 5,
+            blockOnSecrets: true,
+          };
+          const gateResult = evaluateCiGate(result, policy);
+
+          // Persist gate result
+          await db.insert(ciGates).values({
+            orgId,
+            repository,
+            branch: branch || "main",
+            commitSha: commitSha || "manual",
+            status: gateResult.status,
+            criticalFindings: gateResult.criticalFindings,
+            highFindings: gateResult.highFindings,
+            mediumFindings: gateResult.mediumFindings,
+            lowFindings: gateResult.lowFindings,
+            secretsFound: gateResult.secretsFound,
+            policyViolations: gateResult.policyViolations,
+            gatePolicy: policy,
+            failureReasons: gateResult.failureReasons,
+            scanDurationMs: result.scanDurationMs,
+          });
+
+          return res.json({
+            data: {
+              scanId: result.scanId,
+              findings: result.findings.length,
+              secrets: result.secretFindings.length,
+              gate: gateResult,
+              scanDurationMs: result.scanDurationMs,
+              filesScanned: result.filesScanned,
+              linesScanned: result.linesScanned,
+            },
+          });
+        }
+
+        // If no files provided, try to scan via GitHub
+        const [owner, repo] = repository.split("/");
+        if (!owner || !repo) {
+          return res.status(400).json({ message: "repository must be in owner/repo format" });
+        }
+
+        const ctx: GitHubScanContext = {
+          orgId,
+          owner,
+          repo,
+          commitSha: commitSha || "HEAD",
+          branch: branch || "main",
+        };
+
+        // Get repository tree and scan files
+        const tree = await getRepositoryTree(owner, repo, branch || "main");
+        const scannableFiles = tree.filter((f) => inferLanguage(f.path) !== null).slice(0, 200);
+
+        const scanFiles: { path: string; content: string; language: string }[] = [];
+        for (const file of scannableFiles) {
+          const content = await fetchFileContent(ctx, file.path);
+          if (content) {
+            scanFiles.push({
+              path: file.path,
+              content,
+              language: inferLanguage(file.path) || "typescript",
+            });
+          }
+        }
+
+        const result = runSastScan(scanFiles, repository, branch || "main", commitSha || "HEAD");
 
         // Persist findings
         for (const finding of result.findings) {
@@ -482,13 +628,12 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
           });
         }
 
-        // Persist secrets
         for (const secret of result.secretFindings) {
           await db.insert(secretsExposed).values({
             orgId,
             repository,
             branch: branch || "main",
-            commitSha: commitSha || "manual",
+            commitSha: commitSha || "HEAD",
             filePath: secret.filePath,
             line: secret.line,
             secretType: secret.secretType,
@@ -499,132 +644,22 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
           });
         }
 
-        // Evaluate CI gate
-        const policy: CiGatePolicy = {
-          maxCritical: 0,
-          maxHigh: 5,
-          blockOnSecrets: true,
-        };
-        const gateResult = evaluateCiGate(result, policy);
-
-        // Persist gate result
-        await db.insert(ciGates).values({
-          orgId,
-          repository,
-          branch: branch || "main",
-          commitSha: commitSha || "manual",
-          status: gateResult.status,
-          criticalFindings: gateResult.criticalFindings,
-          highFindings: gateResult.highFindings,
-          mediumFindings: gateResult.mediumFindings,
-          lowFindings: gateResult.lowFindings,
-          secretsFound: gateResult.secretsFound,
-          policyViolations: gateResult.policyViolations,
-          gatePolicy: policy,
-          failureReasons: gateResult.failureReasons,
-          scanDurationMs: result.scanDurationMs,
-        });
-
-        return res.json({
+        res.json({
           data: {
             scanId: result.scanId,
             findings: result.findings.length,
             secrets: result.secretFindings.length,
-            gate: gateResult,
             scanDurationMs: result.scanDurationMs,
             filesScanned: result.filesScanned,
             linesScanned: result.linesScanned,
           },
         });
+      } catch (err) {
+        log.error("Failed to run scan", { error: String(err) });
+        res.status(500).json({ message: "Internal server error" });
       }
-
-      // If no files provided, try to scan via GitHub
-      const [owner, repo] = repository.split("/");
-      if (!owner || !repo) {
-        return res.status(400).json({ message: "repository must be in owner/repo format" });
-      }
-
-      const ctx: GitHubScanContext = {
-        orgId,
-        owner,
-        repo,
-        commitSha: commitSha || "HEAD",
-        branch: branch || "main",
-      };
-
-      // Get repository tree and scan files
-      const tree = await getRepositoryTree(owner, repo, branch || "main");
-      const scannableFiles = tree.filter((f) => inferLanguage(f.path) !== null).slice(0, 200);
-
-      const scanFiles: { path: string; content: string; language: string }[] = [];
-      for (const file of scannableFiles) {
-        const content = await fetchFileContent(ctx, file.path);
-        if (content) {
-          scanFiles.push({
-            path: file.path,
-            content,
-            language: inferLanguage(file.path) || "typescript",
-          });
-        }
-      }
-
-      const result = runSastScan(scanFiles, repository, branch || "main", commitSha || "HEAD");
-
-      // Persist findings
-      for (const finding of result.findings) {
-        await db.insert(sastFindings).values({
-          orgId,
-          repository,
-          branch: branch || "main",
-          commitSha: commitSha || null,
-          filePath: finding.filePath,
-          startLine: finding.startLine,
-          endLine: finding.endLine,
-          codeSnippet: finding.codeSnippet,
-          category: finding.category,
-          severity: finding.severity,
-          title: finding.title,
-          description: finding.description,
-          remediation: finding.remediation,
-          cweId: finding.cweId,
-          owaspCategory: finding.owaspCategory,
-          confidence: finding.confidence,
-          ruleId: finding.ruleId,
-          scanId: result.scanId,
-        });
-      }
-
-      for (const secret of result.secretFindings) {
-        await db.insert(secretsExposed).values({
-          orgId,
-          repository,
-          branch: branch || "main",
-          commitSha: commitSha || "HEAD",
-          filePath: secret.filePath,
-          line: secret.line,
-          secretType: secret.secretType,
-          secretHash: secret.secretHash,
-          maskedValue: secret.maskedValue,
-          severity: secret.severity,
-          scanId: result.scanId,
-        });
-      }
-
-      res.json({
-        data: {
-          scanId: result.scanId,
-          findings: result.findings.length,
-          secrets: result.secretFindings.length,
-          scanDurationMs: result.scanDurationMs,
-          filesScanned: result.filesScanned,
-          linesScanned: result.linesScanned,
-        },
-      });
-    } catch (err) {
-      log.error("Failed to run scan", { error: String(err) });
-      res.status(500).json({ message: "Internal server error" });
-    }
-  });
+    },
+  );
 
   // ── GitHub Webhook ─────────────────────────────────────────────
 

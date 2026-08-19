@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId } from "../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { storage, logger, getOrgId, sendEnvelope } from "./shared";
 import { db } from "../db";
 import { sql, eq, desc, and, ilike, or } from "drizzle-orm";
@@ -220,50 +220,57 @@ export function registerPhase2FeatureRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/ai/budget-config", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { monthlyLimit, invocationCap } = req.body;
+  app.patch(
+    "/api/ai/budget-config",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { monthlyLimit, invocationCap } = req.body;
 
-      if (monthlyLimit !== undefined && (typeof monthlyLimit !== "number" || monthlyLimit <= 0)) {
-        return res.status(400).json({ message: "monthlyLimit must be a positive number" });
+        if (monthlyLimit !== undefined && (typeof monthlyLimit !== "number" || monthlyLimit <= 0)) {
+          return res.status(400).json({ message: "monthlyLimit must be a positive number" });
+        }
+        if (invocationCap !== undefined && (typeof invocationCap !== "number" || invocationCap <= 0)) {
+          return res.status(400).json({ message: "invocationCap must be a positive number" });
+        }
+
+        // Atomic upsert using onConflictDoUpdate to avoid TOCTOU race condition
+        const [updated] = await db
+          .insert(orgAiBudgets)
+          .values({
+            orgId,
+            budgetUsd: monthlyLimit ?? 50,
+            invocationCap: invocationCap ?? 5000,
+            dailySpendUsd: 0,
+            dailyInvocations: 0,
+            dailyInputTokens: 0,
+            dailyOutputTokens: 0,
+          })
+          .onConflictDoUpdate({
+            target: orgAiBudgets.orgId,
+            set: {
+              ...(monthlyLimit !== undefined ? { budgetUsd: monthlyLimit } : {}),
+              ...(invocationCap !== undefined ? { invocationCap } : {}),
+              updatedAt: new Date(),
+            },
+          })
+          .returning();
+
+        res.json({
+          monthlyLimit: updated?.budgetUsd ?? 50,
+          invocationCap: updated?.invocationCap ?? 5000,
+          updated: true,
+        });
+      } catch (error) {
+        log.error("Failed to update AI budget config", { error: String(error) });
+        res.status(500).json({ message: "Failed to update AI budget configuration" });
       }
-      if (invocationCap !== undefined && (typeof invocationCap !== "number" || invocationCap <= 0)) {
-        return res.status(400).json({ message: "invocationCap must be a positive number" });
-      }
-
-      // Atomic upsert using onConflictDoUpdate to avoid TOCTOU race condition
-      const [updated] = await db
-        .insert(orgAiBudgets)
-        .values({
-          orgId,
-          budgetUsd: monthlyLimit ?? 50,
-          invocationCap: invocationCap ?? 5000,
-          dailySpendUsd: 0,
-          dailyInvocations: 0,
-          dailyInputTokens: 0,
-          dailyOutputTokens: 0,
-        })
-        .onConflictDoUpdate({
-          target: orgAiBudgets.orgId,
-          set: {
-            ...(monthlyLimit !== undefined ? { budgetUsd: monthlyLimit } : {}),
-            ...(invocationCap !== undefined ? { invocationCap } : {}),
-            updatedAt: new Date(),
-          },
-        })
-        .returning();
-
-      res.json({
-        monthlyLimit: updated?.budgetUsd ?? 50,
-        invocationCap: updated?.invocationCap ?? 5000,
-        updated: true,
-      });
-    } catch (error) {
-      log.error("Failed to update AI budget config", { error: String(error) });
-      res.status(500).json({ message: "Failed to update AI budget configuration" });
-    }
-  });
+    },
+  );
 
   // ==========================================================================
   // 3. JOB QUEUE DASHBOARD
@@ -334,34 +341,47 @@ export function registerPhase2FeatureRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/jobs/:jobId/retry", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const jobId = String(req.params.jobId);
+  app.post(
+    "/api/jobs/:jobId/retry",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const jobId = String(req.params.jobId);
 
-      // Verify job exists and belongs to this org (use direct lookup, not bulk fetch)
-      const job = await storage.getJob(jobId);
-      if (!job || job.orgId !== orgId) {
-        return res.status(404).json({ message: "Job not found" });
+        // Verify job exists and belongs to this org (use direct lookup, not bulk fetch)
+        const job = await storage.getJob(jobId);
+        if (!job || job.orgId !== orgId) {
+          return res.status(404).json({ message: "Job not found" });
+        }
+
+        if (job.status !== "failed") {
+          return res.status(400).json({ message: "Only failed jobs can be retried" });
+        }
+
+        await retryDeadLetterJob(jobId);
+        res.json({ retried: true, jobId });
+      } catch (error) {
+        log.error("Failed to retry job", { error: String(error) });
+        res.status(500).json({ message: "Failed to retry job" });
       }
+    },
+  );
 
-      if (job.status !== "failed") {
-        return res.status(400).json({ message: "Only failed jobs can be retried" });
-      }
+  app.post(
+    "/api/jobs/purge-dead",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
 
-      await retryDeadLetterJob(jobId);
-      res.json({ retried: true, jobId });
-    } catch (error) {
-      log.error("Failed to retry job", { error: String(error) });
-      res.status(500).json({ message: "Failed to retry job" });
-    }
-  });
-
-  app.post("/api/jobs/purge-dead", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-
-      const result = await db.execute(sql`
+        const result = await db.execute(sql`
           DELETE FROM job_queue
           WHERE org_id = ${orgId}
             AND status = 'failed'
@@ -369,13 +389,14 @@ export function registerPhase2FeatureRoutes(app: Express): void {
           RETURNING id
         `);
 
-      const purgedCount = ((result as any).rows || []).length;
-      res.json({ purged: purgedCount });
-    } catch (error) {
-      log.error("Failed to purge dead jobs", { error: String(error) });
-      res.status(500).json({ message: "Failed to purge dead jobs" });
-    }
-  });
+        const purgedCount = ((result as any).rows || []).length;
+        res.json({ purged: purgedCount });
+      } catch (error) {
+        log.error("Failed to purge dead jobs", { error: String(error) });
+        res.status(500).json({ message: "Failed to purge dead jobs" });
+      }
+    },
+  );
 
   // ==========================================================================
   // 4. DR DRILL SCHEDULER
@@ -413,78 +434,85 @@ export function registerPhase2FeatureRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/dr-drills", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { type, name } = req.body;
+  app.post(
+    "/api/dr-drills",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { type, name } = req.body;
 
-      const drillType = type || "failover";
-      const drillName = name || `${drillType} drill - ${new Date().toISOString().slice(0, 10)}`;
+        const drillType = type || "failover";
+        const drillName = name || `${drillType} drill - ${new Date().toISOString().slice(0, 10)}`;
 
-      // Simulate a drill execution
-      const startedAt = new Date();
-      const rtoTarget = drillType === "failover" ? 30 : drillType === "canary" ? 15 : 60;
-      const rpoTarget = drillType === "failover" ? 15 : drillType === "canary" ? 5 : 30;
+        // Simulate a drill execution
+        const startedAt = new Date();
+        const rtoTarget = drillType === "failover" ? 30 : drillType === "canary" ? 15 : 60;
+        const rpoTarget = drillType === "failover" ? 15 : drillType === "canary" ? 5 : 30;
 
-      // Execute drill with deterministic results based on drill configuration
-      const rtoActual = rtoTarget * 0.75;
-      const rpoActual = rpoTarget * 0.6;
-      const durationMs = Math.round(rtoActual * 60 * 1000 + 15000);
-      const completedAt = new Date(startedAt.getTime() + durationMs);
-      const passed = rtoActual <= rtoTarget && rpoActual <= rpoTarget;
+        // Execute drill with deterministic results based on drill configuration
+        const rtoActual = rtoTarget * 0.75;
+        const rpoActual = rpoTarget * 0.6;
+        const durationMs = Math.round(rtoActual * 60 * 1000 + 15000);
+        const completedAt = new Date(startedAt.getTime() + durationMs);
+        const passed = rtoActual <= rtoTarget && rpoActual <= rpoTarget;
 
-      const stepResults = [
-        { step: "Health Check", status: "passed", durationMs: 2000 },
-        {
-          step: "Failover Trigger",
-          status: passed ? "passed" : "warning",
-          durationMs: 8000,
-        },
-        { step: "Data Verification", status: "passed", durationMs: 5000 },
-        {
-          step: "Service Recovery",
+        const stepResults = [
+          { step: "Health Check", status: "passed", durationMs: 2000 },
+          {
+            step: "Failover Trigger",
+            status: passed ? "passed" : "warning",
+            durationMs: 8000,
+          },
+          { step: "Data Verification", status: "passed", durationMs: 5000 },
+          {
+            step: "Service Recovery",
+            status: passed ? "passed" : "failed",
+            durationMs: Math.round(durationMs * 0.3),
+          },
+        ];
+
+        const drill = await storage.createDrDrillResult({
+          orgId,
+          dryRun: true,
           status: passed ? "passed" : "failed",
-          durationMs: Math.round(durationMs * 0.3),
-        },
-      ];
+          triggeredBy: "manual",
+          rtoTargetMinutes: rtoTarget,
+          rpoTargetMinutes: rpoTarget,
+          rtoActualMinutes: parseFloat(rtoActual.toFixed(2)),
+          rpoActualMinutes: parseFloat(rpoActual.toFixed(2)),
+          rtoMet: rtoActual <= rtoTarget,
+          rpoMet: rpoActual <= rpoTarget,
+          stepResults,
+          totalDurationMs: durationMs,
+          notes: drillName,
+          startedAt,
+          completedAt,
+        });
 
-      const drill = await storage.createDrDrillResult({
-        orgId,
-        dryRun: true,
-        status: passed ? "passed" : "failed",
-        triggeredBy: "manual",
-        rtoTargetMinutes: rtoTarget,
-        rpoTargetMinutes: rpoTarget,
-        rtoActualMinutes: parseFloat(rtoActual.toFixed(2)),
-        rpoActualMinutes: parseFloat(rpoActual.toFixed(2)),
-        rtoMet: rtoActual <= rtoTarget,
-        rpoMet: rpoActual <= rpoTarget,
-        stepResults,
-        totalDurationMs: durationMs,
-        notes: drillName,
-        startedAt,
-        completedAt,
-      });
-
-      res.json({
-        id: drill.id,
-        name: drillName,
-        type: drillType,
-        status: passed ? "passed" : "failed",
-        scheduledAt: drill.createdAt?.toISOString() || "",
-        startedAt: startedAt.toISOString(),
-        completedAt: completedAt.toISOString(),
-        rpoSeconds: Math.round(rpoActual * 60),
-        rtoSeconds: Math.round(rtoActual * 60),
-        rpoTargetSeconds: rpoTarget * 60,
-        rtoTargetSeconds: rtoTarget * 60,
-        findings: extractFindings(stepResults),
-      });
-    } catch (error) {
-      log.error("Failed to create DR drill", { error: String(error) });
-      res.status(500).json({ message: "Failed to create DR drill" });
-    }
-  });
+        res.json({
+          id: drill.id,
+          name: drillName,
+          type: drillType,
+          status: passed ? "passed" : "failed",
+          scheduledAt: drill.createdAt?.toISOString() || "",
+          startedAt: startedAt.toISOString(),
+          completedAt: completedAt.toISOString(),
+          rpoSeconds: Math.round(rpoActual * 60),
+          rtoSeconds: Math.round(rtoActual * 60),
+          rpoTargetSeconds: rpoTarget * 60,
+          rtoTargetSeconds: rtoTarget * 60,
+          findings: extractFindings(stepResults),
+        });
+      } catch (error) {
+        log.error("Failed to create DR drill", { error: String(error) });
+        res.status(500).json({ message: "Failed to create DR drill" });
+      }
+    },
+  );
 
   // ==========================================================================
   // 5. POST-INCIDENT REVIEW
@@ -550,24 +578,31 @@ export function registerPhase2FeatureRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/pir/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const pirId = String(req.params.id);
+  app.delete(
+    "/api/pir/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const pirId = String(req.params.id);
 
-      // Verify PIR belongs to this org
-      const pir = await storage.getPostIncidentReview(pirId);
-      if (!pir || pir.orgId !== orgId) {
-        return res.status(404).json({ message: "Post-incident review not found" });
+        // Verify PIR belongs to this org
+        const pir = await storage.getPostIncidentReview(pirId);
+        if (!pir || pir.orgId !== orgId) {
+          return res.status(404).json({ message: "Post-incident review not found" });
+        }
+
+        await storage.deletePostIncidentReview(pirId);
+        res.json({ deleted: true, id: pirId });
+      } catch (error) {
+        log.error("Failed to delete PIR", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete post-incident review" });
       }
-
-      await storage.deletePostIncidentReview(pirId);
-      res.json({ deleted: true, id: pirId });
-    } catch (error) {
-      log.error("Failed to delete PIR", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete post-incident review" });
-    }
-  });
+    },
+  );
 
   // ==========================================================================
   // 6. ROLE-BASED DASHBOARD
@@ -874,6 +909,7 @@ export function registerPhase2FeatureRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("owner"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);

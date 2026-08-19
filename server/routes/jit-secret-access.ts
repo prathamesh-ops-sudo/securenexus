@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
+
 import { storage } from "../storage";
 import {
   getJitManagedSecrets,
@@ -86,67 +88,76 @@ export function registerJitSecretAccessRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/jit-secrets/secrets", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
+  app.post(
+    "/api/jit-secrets/secrets",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
 
-      const {
-        name,
-        description,
-        secretType,
-        classification,
-        ownerId,
-        ownerName,
-        environment,
-        service,
-        rotationIntervalDays,
-        noPlaintextSharing,
-      } = req.body;
+        const {
+          name,
+          description,
+          secretType,
+          classification,
+          ownerId,
+          ownerName,
+          environment,
+          service,
+          rotationIntervalDays,
+          noPlaintextSharing,
+        } = req.body;
 
-      if (!name || typeof name !== "string" || name.trim().length < 2) {
-        return res.status(400).json({ message: "Name is required (min 2 chars)" });
-      }
-      if (!secretType || !isValidSecretType(secretType)) {
-        return res.status(400).json({ message: `Invalid secretType. Valid: ${VALID_SECRET_TYPES.join(", ")}` });
-      }
-      if (!classification || !isValidClassification(classification)) {
-        return res.status(400).json({ message: `Invalid classification. Valid: ${VALID_CLASSIFICATIONS.join(", ")}` });
-      }
-      if (!ownerId || typeof ownerId !== "string") {
-        return res.status(400).json({ message: "ownerId is required" });
-      }
-      if (!ownerName || typeof ownerName !== "string") {
-        return res.status(400).json({ message: "ownerName is required" });
-      }
+        if (!name || typeof name !== "string" || name.trim().length < 2) {
+          return res.status(400).json({ message: "Name is required (min 2 chars)" });
+        }
+        if (!secretType || !isValidSecretType(secretType)) {
+          return res.status(400).json({ message: `Invalid secretType. Valid: ${VALID_SECRET_TYPES.join(", ")}` });
+        }
+        if (!classification || !isValidClassification(classification)) {
+          return res
+            .status(400)
+            .json({ message: `Invalid classification. Valid: ${VALID_CLASSIFICATIONS.join(", ")}` });
+        }
+        if (!ownerId || typeof ownerId !== "string") {
+          return res.status(400).json({ message: "ownerId is required" });
+        }
+        if (!ownerName || typeof ownerName !== "string") {
+          return res.status(400).json({ message: "ownerName is required" });
+        }
 
-      const secret = await createJitManagedSecret({
-        orgId,
-        name: String(name).trim(),
-        description: typeof description === "string" ? description.trim() : "",
-        secretType,
-        classification,
-        ownerId: String(ownerId),
-        ownerName: String(ownerName),
-        environment: typeof environment === "string" ? environment.trim() : "production",
-        service: typeof service === "string" ? service.trim() : "unknown",
-        rotationIntervalDays:
-          typeof rotationIntervalDays === "number" && rotationIntervalDays > 0 ? rotationIntervalDays : 90,
-        noPlaintextSharing: noPlaintextSharing === true,
-      });
+        const secret = await createJitManagedSecret({
+          orgId,
+          name: String(name).trim(),
+          description: typeof description === "string" ? description.trim() : "",
+          secretType,
+          classification,
+          ownerId: String(ownerId),
+          ownerName: String(ownerName),
+          environment: typeof environment === "string" ? environment.trim() : "production",
+          service: typeof service === "string" ? service.trim() : "unknown",
+          rotationIntervalDays:
+            typeof rotationIntervalDays === "number" && rotationIntervalDays > 0 ? rotationIntervalDays : 90,
+          noPlaintextSharing: noPlaintextSharing === true,
+        });
 
-      await createJitAuditLogEntry({
-        orgId,
-        action: "secret_registered",
-        actor: String(ownerName),
-        details: `Registered secret: ${String(name).trim()}`,
-      });
+        await createJitAuditLogEntry({
+          orgId,
+          action: "secret_registered",
+          actor: String(ownerName),
+          details: `Registered secret: ${String(name).trim()}`,
+        });
 
-      res.status(201).json(secret);
-    } catch (error) {
-      logger.child("routes").error("Register secret error", { error: String(error) });
-      res.status(500).json({ message: "Failed to register secret" });
-    }
-  });
+        res.status(201).json(secret);
+      } catch (error) {
+        logger.child("routes").error("Register secret error", { error: String(error) });
+        res.status(500).json({ message: "Failed to register secret" });
+      }
+    },
+  );
 
   // ─── Access Requests — DB persisted ────────────────────────────────────────
 
@@ -161,153 +172,181 @@ export function registerJitSecretAccessRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/jit-secrets/access-requests", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
+  app.post(
+    "/api/jit-secrets/access-requests",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
 
-      const { secretId, requesterId, requesterName, reason, durationMinutes, approverRole } = req.body;
+        const { secretId, requesterId, requesterName, reason, durationMinutes, approverRole } = req.body;
 
-      if (!secretId || typeof secretId !== "string") {
-        return res.status(400).json({ message: "secretId is required" });
-      }
-      if (!requesterId || typeof requesterId !== "string") {
-        return res.status(400).json({ message: "requesterId is required" });
-      }
-      if (!requesterName || typeof requesterName !== "string") {
-        return res.status(400).json({ message: "requesterName is required" });
-      }
-      if (!reason || typeof reason !== "string" || reason.trim().length < 10) {
-        return res.status(400).json({ message: "reason is required (min 10 chars)" });
-      }
-      if (typeof durationMinutes !== "number" || durationMinutes < 1 || durationMinutes > 1440) {
-        return res.status(400).json({ message: "durationMinutes must be 1-1440" });
-      }
-      if (!approverRole || !VALID_APPROVER_ROLES.includes(approverRole)) {
-        return res.status(400).json({ message: `approverRole must be: ${VALID_APPROVER_ROLES.join(", ")}` });
-      }
+        if (!secretId || typeof secretId !== "string") {
+          return res.status(400).json({ message: "secretId is required" });
+        }
+        if (!requesterId || typeof requesterId !== "string") {
+          return res.status(400).json({ message: "requesterId is required" });
+        }
+        if (!requesterName || typeof requesterName !== "string") {
+          return res.status(400).json({ message: "requesterName is required" });
+        }
+        if (!reason || typeof reason !== "string" || reason.trim().length < 10) {
+          return res.status(400).json({ message: "reason is required (min 10 chars)" });
+        }
+        if (typeof durationMinutes !== "number" || durationMinutes < 1 || durationMinutes > 1440) {
+          return res.status(400).json({ message: "durationMinutes must be 1-1440" });
+        }
+        if (!approverRole || !VALID_APPROVER_ROLES.includes(approverRole)) {
+          return res.status(400).json({ message: `approverRole must be: ${VALID_APPROVER_ROLES.join(", ")}` });
+        }
 
-      // Verify secret exists in registry
-      const secret = await getJitManagedSecret(String(secretId), orgId);
-      if (!secret) {
-        return res.status(404).json({ message: "Secret not found" });
-      }
+        // Verify secret exists in registry
+        const secret = await getJitManagedSecret(String(secretId), orgId);
+        if (!secret) {
+          return res.status(404).json({ message: "Secret not found" });
+        }
 
-      const request = await storage.createJitAccessRequest({
-        orgId,
-        requesterId: String(requesterId),
-        requesterEmail: String(requesterName),
-        secretPath: secret.name,
-        secretProvider: secret.secretType || "other",
-        reason: String(reason).trim(),
-        durationMinutes,
-        status: "pending",
-        metadata: {
-          secretId: String(secretId),
-          secretName: secret.name,
-          requesterName: String(requesterName),
-          approverRole,
-          classification: secret.classification,
-        },
-      });
+        const request = await storage.createJitAccessRequest({
+          orgId,
+          requesterId: String(requesterId),
+          requesterEmail: String(requesterName),
+          secretPath: secret.name,
+          secretProvider: secret.secretType || "other",
+          reason: String(reason).trim(),
+          durationMinutes,
+          status: "pending",
+          metadata: {
+            secretId: String(secretId),
+            secretName: secret.name,
+            requesterName: String(requesterName),
+            approverRole,
+            classification: secret.classification,
+          },
+        });
 
-      res.status(201).json(request);
-    } catch (error) {
-      logger.child("routes").error("Request access error", { error: String(error) });
-      res.status(500).json({ message: "Failed to request access" });
-    }
-  });
+        res.status(201).json(request);
+      } catch (error) {
+        logger.child("routes").error("Request access error", { error: String(error) });
+        res.status(500).json({ message: "Failed to request access" });
+      }
+    },
+  );
 
-  app.post("/api/jit-secrets/access-requests/:id/approve", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const { approverName } = req.body;
-      if (!approverName || typeof approverName !== "string") {
-        return res.status(400).json({ message: "approverName is required" });
-      }
+  app.post(
+    "/api/jit-secrets/access-requests/:id/approve",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const { approverName } = req.body;
+        if (!approverName || typeof approverName !== "string") {
+          return res.status(400).json({ message: "approverName is required" });
+        }
 
-      const existing = await storage.getJitAccessRequest(id, orgId);
-      if (!existing) {
-        return res.status(404).json({ message: "Access request not found" });
-      }
-      if (existing.status !== "pending") {
-        return res.status(400).json({ message: "Request is not in pending status" });
-      }
+        const existing = await storage.getJitAccessRequest(id, orgId);
+        if (!existing) {
+          return res.status(404).json({ message: "Access request not found" });
+        }
+        if (existing.status !== "pending") {
+          return res.status(400).json({ message: "Request is not in pending status" });
+        }
 
-      const expiresAt = new Date(Date.now() + existing.durationMinutes * 60 * 1000);
-      const updated = await storage.updateJitAccessRequest(id, orgId, {
-        status: "approved",
-        approvedBy: String(approverName),
-        approvedAt: new Date(),
-        expiresAt,
-      });
-      res.json(updated);
-    } catch (error) {
-      logger.child("routes").error("Approve access error", { error: String(error) });
-      res.status(500).json({ message: "Failed to approve access request" });
-    }
-  });
+        const expiresAt = new Date(Date.now() + existing.durationMinutes * 60 * 1000);
+        const updated = await storage.updateJitAccessRequest(id, orgId, {
+          status: "approved",
+          approvedBy: String(approverName),
+          approvedAt: new Date(),
+          expiresAt,
+        });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Approve access error", { error: String(error) });
+        res.status(500).json({ message: "Failed to approve access request" });
+      }
+    },
+  );
 
-  app.post("/api/jit-secrets/access-requests/:id/deny", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const { denierName, reason } = req.body;
-      if (!denierName || typeof denierName !== "string") {
-        return res.status(400).json({ message: "denierName is required" });
-      }
-      if (!reason || typeof reason !== "string") {
-        return res.status(400).json({ message: "reason is required" });
-      }
+  app.post(
+    "/api/jit-secrets/access-requests/:id/deny",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const { denierName, reason } = req.body;
+        if (!denierName || typeof denierName !== "string") {
+          return res.status(400).json({ message: "denierName is required" });
+        }
+        if (!reason || typeof reason !== "string") {
+          return res.status(400).json({ message: "reason is required" });
+        }
 
-      const existing = await storage.getJitAccessRequest(id, orgId);
-      if (!existing) {
-        return res.status(404).json({ message: "Access request not found" });
-      }
-      if (existing.status !== "pending") {
-        return res.status(400).json({ message: "Request is not in pending status" });
-      }
+        const existing = await storage.getJitAccessRequest(id, orgId);
+        if (!existing) {
+          return res.status(404).json({ message: "Access request not found" });
+        }
+        if (existing.status !== "pending") {
+          return res.status(400).json({ message: "Request is not in pending status" });
+        }
 
-      const updated = await storage.updateJitAccessRequest(id, orgId, {
-        status: "denied",
-        approvedBy: String(denierName),
-        metadata: { ...(existing.metadata as Record<string, unknown>), denyReason: String(reason) },
-      });
-      res.json(updated);
-    } catch (error) {
-      logger.child("routes").error("Deny access error", { error: String(error) });
-      res.status(500).json({ message: "Failed to deny access request" });
-    }
-  });
-
-  app.post("/api/jit-secrets/access-requests/:id/release", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const { releaserName } = req.body;
-      if (!releaserName || typeof releaserName !== "string") {
-        return res.status(400).json({ message: "releaserName is required" });
+        const updated = await storage.updateJitAccessRequest(id, orgId, {
+          status: "denied",
+          approvedBy: String(denierName),
+          metadata: { ...(existing.metadata as Record<string, unknown>), denyReason: String(reason) },
+        });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Deny access error", { error: String(error) });
+        res.status(500).json({ message: "Failed to deny access request" });
       }
+    },
+  );
 
-      const existing = await storage.getJitAccessRequest(id, orgId);
-      if (!existing) {
-        return res.status(404).json({ message: "Access request not found" });
-      }
-      if (existing.status !== "approved") {
-        return res.status(400).json({ message: "Request is not active" });
-      }
+  app.post(
+    "/api/jit-secrets/access-requests/:id/release",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const { releaserName } = req.body;
+        if (!releaserName || typeof releaserName !== "string") {
+          return res.status(400).json({ message: "releaserName is required" });
+        }
 
-      const updated = await storage.updateJitAccessRequest(id, orgId, {
-        status: "revoked",
-        revokedAt: new Date(),
-        metadata: { ...(existing.metadata as Record<string, unknown>), releasedBy: String(releaserName) },
-      });
-      res.json(updated);
-    } catch (error) {
-      logger.child("routes").error("Release access error", { error: String(error) });
-      res.status(500).json({ message: "Failed to release access" });
-    }
-  });
+        const existing = await storage.getJitAccessRequest(id, orgId);
+        if (!existing) {
+          return res.status(404).json({ message: "Access request not found" });
+        }
+        if (existing.status !== "approved") {
+          return res.status(400).json({ message: "Request is not active" });
+        }
+
+        const updated = await storage.updateJitAccessRequest(id, orgId, {
+          status: "revoked",
+          revokedAt: new Date(),
+          metadata: { ...(existing.metadata as Record<string, unknown>), releasedBy: String(releaserName) },
+        });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Release access error", { error: String(error) });
+        res.status(500).json({ message: "Failed to release access" });
+      }
+    },
+  );
 
   // ─── Shares — engine (no DB table yet) ─────────────────────────────────────
 
@@ -322,202 +361,230 @@ export function registerJitSecretAccessRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/jit-secrets/shares", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
+  app.post(
+    "/api/jit-secrets/shares",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
 
-      const { secretId, createdBy, recipientEmail, expiresInHours, maxUses } = req.body;
+        const { secretId, createdBy, recipientEmail, expiresInHours, maxUses } = req.body;
 
-      if (!secretId || typeof secretId !== "string") {
-        return res.status(400).json({ message: "secretId is required" });
-      }
-      if (!createdBy || typeof createdBy !== "string") {
-        return res.status(400).json({ message: "createdBy is required" });
-      }
-      if (!recipientEmail || typeof recipientEmail !== "string" || !recipientEmail.includes("@")) {
-        return res.status(400).json({ message: "Valid recipientEmail is required" });
-      }
-      if (typeof expiresInHours !== "number" || expiresInHours < 1 || expiresInHours > 168) {
-        return res.status(400).json({ message: "expiresInHours must be 1-168" });
-      }
+        if (!secretId || typeof secretId !== "string") {
+          return res.status(400).json({ message: "secretId is required" });
+        }
+        if (!createdBy || typeof createdBy !== "string") {
+          return res.status(400).json({ message: "createdBy is required" });
+        }
+        if (!recipientEmail || typeof recipientEmail !== "string" || !recipientEmail.includes("@")) {
+          return res.status(400).json({ message: "Valid recipientEmail is required" });
+        }
+        if (typeof expiresInHours !== "number" || expiresInHours < 1 || expiresInHours > 168) {
+          return res.status(400).json({ message: "expiresInHours must be 1-168" });
+        }
 
-      const secretRecord = await getJitManagedSecret(String(secretId), orgId);
-      if (!secretRecord) {
-        return res.status(404).json({ message: "Secret not found" });
-      }
+        const secretRecord = await getJitManagedSecret(String(secretId), orgId);
+        if (!secretRecord) {
+          return res.status(404).json({ message: "Secret not found" });
+        }
 
-      const shareToken = randomBytes(32).toString("hex");
-      const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
-      const share = await createJitExternalShareEntry({
-        orgId,
-        secretId: String(secretId),
-        secretName: secretRecord.name,
-        createdBy: String(createdBy),
-        recipientEmail: String(recipientEmail),
-        shareToken,
-        expiresAt,
-        maxUses: typeof maxUses === "number" && maxUses >= 1 && maxUses <= 10 ? maxUses : 1,
-        noPlaintext: secretRecord.noPlaintextSharing,
-      });
+        const shareToken = randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
+        const share = await createJitExternalShareEntry({
+          orgId,
+          secretId: String(secretId),
+          secretName: secretRecord.name,
+          createdBy: String(createdBy),
+          recipientEmail: String(recipientEmail),
+          shareToken,
+          expiresAt,
+          maxUses: typeof maxUses === "number" && maxUses >= 1 && maxUses <= 10 ? maxUses : 1,
+          noPlaintext: secretRecord.noPlaintextSharing,
+        });
 
-      await createJitAuditLogEntry({
-        orgId,
-        action: "share_created",
-        actor: String(createdBy),
-        details: `Share to ${String(recipientEmail)} for ${secretRecord.name}`,
-      });
+        await createJitAuditLogEntry({
+          orgId,
+          action: "share_created",
+          actor: String(createdBy),
+          details: `Share to ${String(recipientEmail)} for ${secretRecord.name}`,
+        });
 
-      res.status(201).json(share);
-    } catch (error) {
-      const errMsg = String(error);
-      if (errMsg.includes("SECRET_NOT_FOUND")) {
-        return res.status(404).json({ message: "Secret not found" });
+        res.status(201).json(share);
+      } catch (error) {
+        const errMsg = String(error);
+        if (errMsg.includes("SECRET_NOT_FOUND")) {
+          return res.status(404).json({ message: "Secret not found" });
+        }
+        if (errMsg.includes("INVALID_EXPIRY")) {
+          return res.status(400).json({ message: "Expiry must be 1-168 hours" });
+        }
+        if (errMsg.includes("INVALID_EMAIL")) {
+          return res.status(400).json({ message: "Invalid email format" });
+        }
+        logger.child("routes").error("Create share error", { error: errMsg });
+        res.status(500).json({ message: "Failed to create share" });
       }
-      if (errMsg.includes("INVALID_EXPIRY")) {
-        return res.status(400).json({ message: "Expiry must be 1-168 hours" });
-      }
-      if (errMsg.includes("INVALID_EMAIL")) {
-        return res.status(400).json({ message: "Invalid email format" });
-      }
-      logger.child("routes").error("Create share error", { error: errMsg });
-      res.status(500).json({ message: "Failed to create share" });
-    }
-  });
+    },
+  );
 
-  app.post("/api/jit-secrets/shares/:id/consume", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const { consumerIdentity } = req.body;
-      if (!consumerIdentity || typeof consumerIdentity !== "string") {
-        return res.status(400).json({ message: "consumerIdentity is required" });
-      }
-      const existing = await getJitExternalShare(id, orgId);
-      if (!existing) {
-        return res.status(404).json({ message: "Share not found" });
-      }
-      if (existing.status !== "active") {
-        return res.status(400).json({ message: "Share is not active" });
-      }
-      if (existing.expiresAt && new Date(existing.expiresAt) < new Date()) {
-        await updateJitExternalShareEntry(id, orgId, { status: "expired" });
-        return res.status(400).json({ message: "Share has expired" });
-      }
-      const newUses = existing.currentUses + 1;
-      const newStatus = newUses >= existing.maxUses ? "consumed" : "active";
-      const share = await updateJitExternalShareEntry(id, orgId, { currentUses: newUses, status: newStatus });
+  app.post(
+    "/api/jit-secrets/shares/:id/consume",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const { consumerIdentity } = req.body;
+        if (!consumerIdentity || typeof consumerIdentity !== "string") {
+          return res.status(400).json({ message: "consumerIdentity is required" });
+        }
+        const existing = await getJitExternalShare(id, orgId);
+        if (!existing) {
+          return res.status(404).json({ message: "Share not found" });
+        }
+        if (existing.status !== "active") {
+          return res.status(400).json({ message: "Share is not active" });
+        }
+        if (existing.expiresAt && new Date(existing.expiresAt) < new Date()) {
+          await updateJitExternalShareEntry(id, orgId, { status: "expired" });
+          return res.status(400).json({ message: "Share has expired" });
+        }
+        const newUses = existing.currentUses + 1;
+        const newStatus = newUses >= existing.maxUses ? "consumed" : "active";
+        const share = await updateJitExternalShareEntry(id, orgId, { currentUses: newUses, status: newStatus });
 
-      await createJitAuditLogEntry({
-        orgId,
-        action: "share_consumed",
-        actor: String(consumerIdentity),
-        details: `Share ${id} consumed`,
-      });
+        await createJitAuditLogEntry({
+          orgId,
+          action: "share_consumed",
+          actor: String(consumerIdentity),
+          details: `Share ${id} consumed`,
+        });
 
-      res.json(share);
-    } catch (error) {
-      logger.child("routes").error("Consume share error", { error: String(error) });
-      res.status(500).json({ message: "Failed to consume share" });
-    }
-  });
+        res.json(share);
+      } catch (error) {
+        logger.child("routes").error("Consume share error", { error: String(error) });
+        res.status(500).json({ message: "Failed to consume share" });
+      }
+    },
+  );
 
   // ─── Break Glass — engine (no DB table yet) ────────────────────────────────
 
-  app.post("/api/jit-secrets/break-glass", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
+  app.post(
+    "/api/jit-secrets/break-glass",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
 
-      const { secretId, requesterId, requesterName, justification, incidentId, durationMinutes } = req.body;
+        const { secretId, requesterId, requesterName, justification, incidentId, durationMinutes } = req.body;
 
-      if (!secretId || typeof secretId !== "string") {
-        return res.status(400).json({ message: "secretId is required" });
-      }
-      if (!requesterId || typeof requesterId !== "string") {
-        return res.status(400).json({ message: "requesterId is required" });
-      }
-      if (!requesterName || typeof requesterName !== "string") {
-        return res.status(400).json({ message: "requesterName is required" });
-      }
-      if (!justification || typeof justification !== "string" || justification.trim().length < 20) {
-        return res.status(400).json({ message: "justification is required (min 20 chars)" });
-      }
-      if (typeof durationMinutes !== "number" || durationMinutes < 5 || durationMinutes > 120) {
-        return res.status(400).json({ message: "durationMinutes must be 5-120" });
-      }
+        if (!secretId || typeof secretId !== "string") {
+          return res.status(400).json({ message: "secretId is required" });
+        }
+        if (!requesterId || typeof requesterId !== "string") {
+          return res.status(400).json({ message: "requesterId is required" });
+        }
+        if (!requesterName || typeof requesterName !== "string") {
+          return res.status(400).json({ message: "requesterName is required" });
+        }
+        if (!justification || typeof justification !== "string" || justification.trim().length < 20) {
+          return res.status(400).json({ message: "justification is required (min 20 chars)" });
+        }
+        if (typeof durationMinutes !== "number" || durationMinutes < 5 || durationMinutes > 120) {
+          return res.status(400).json({ message: "durationMinutes must be 5-120" });
+        }
 
-      const secretRecord = await getJitManagedSecret(String(secretId), orgId);
-      if (!secretRecord) {
-        return res.status(404).json({ message: "Secret not found" });
+        const secretRecord = await getJitManagedSecret(String(secretId), orgId);
+        if (!secretRecord) {
+          return res.status(404).json({ message: "Secret not found" });
+        }
+
+        const ephemeralToken = randomBytes(48).toString("hex");
+        const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000);
+        const access = await createJitBreakGlassEntry({
+          orgId,
+          secretId: String(secretId),
+          secretName: secretRecord.name,
+          requesterId: String(requesterId),
+          requesterName: String(requesterName),
+          justification: String(justification).trim(),
+          incidentId: typeof incidentId === "string" ? incidentId : null,
+          ephemeralToken,
+          expiresAt,
+          durationMinutes,
+        });
+
+        await incrementJitSecretAccessCount(String(secretId), orgId);
+        await createJitAuditLogEntry({
+          orgId,
+          action: "break_glass_activated",
+          actor: String(requesterName),
+          details: `Break glass: ${secretRecord.name}${incidentId ? ` (${incidentId})` : ""}`,
+        });
+
+        res.status(201).json(access);
+      } catch (error) {
+        logger.child("routes").error("Break glass error", { error: String(error) });
+        res.status(500).json({ message: "Failed to activate break-glass access" });
       }
+    },
+  );
 
-      const ephemeralToken = randomBytes(48).toString("hex");
-      const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000);
-      const access = await createJitBreakGlassEntry({
-        orgId,
-        secretId: String(secretId),
-        secretName: secretRecord.name,
-        requesterId: String(requesterId),
-        requesterName: String(requesterName),
-        justification: String(justification).trim(),
-        incidentId: typeof incidentId === "string" ? incidentId : null,
-        ephemeralToken,
-        expiresAt,
-        durationMinutes,
-      });
+  app.post(
+    "/api/jit-secrets/break-glass/:id/review",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const { reviewerName, notes } = req.body;
+        if (!reviewerName || typeof reviewerName !== "string") {
+          return res.status(400).json({ message: "reviewerName is required" });
+        }
+        if (!notes || typeof notes !== "string") {
+          return res.status(400).json({ message: "notes is required" });
+        }
+        const existing = await getJitBreakGlassEntry(id, orgId);
+        if (!existing) {
+          return res.status(404).json({ message: "Break-glass entry not found" });
+        }
+        if (existing.status === "reviewed") {
+          return res.status(400).json({ message: "Break-glass entry already reviewed" });
+        }
+        const entry = await updateJitBreakGlassEntry(id, orgId, {
+          status: "reviewed",
+          reviewedBy: String(reviewerName),
+          reviewedAt: new Date(),
+          reviewNotes: String(notes),
+        });
 
-      await incrementJitSecretAccessCount(String(secretId), orgId);
-      await createJitAuditLogEntry({
-        orgId,
-        action: "break_glass_activated",
-        actor: String(requesterName),
-        details: `Break glass: ${secretRecord.name}${incidentId ? ` (${incidentId})` : ""}`,
-      });
+        await createJitAuditLogEntry({
+          orgId,
+          action: "break_glass_reviewed",
+          actor: String(reviewerName),
+          details: `Reviewed break glass ${id}`,
+        });
 
-      res.status(201).json(access);
-    } catch (error) {
-      logger.child("routes").error("Break glass error", { error: String(error) });
-      res.status(500).json({ message: "Failed to activate break-glass access" });
-    }
-  });
-
-  app.post("/api/jit-secrets/break-glass/:id/review", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const { reviewerName, notes } = req.body;
-      if (!reviewerName || typeof reviewerName !== "string") {
-        return res.status(400).json({ message: "reviewerName is required" });
+        res.json(entry);
+      } catch (error) {
+        logger.child("routes").error("Review break glass error", { error: String(error) });
+        res.status(500).json({ message: "Failed to review break-glass access" });
       }
-      if (!notes || typeof notes !== "string") {
-        return res.status(400).json({ message: "notes is required" });
-      }
-      const existing = await getJitBreakGlassEntry(id, orgId);
-      if (!existing) {
-        return res.status(404).json({ message: "Break-glass entry not found" });
-      }
-      if (existing.status === "reviewed") {
-        return res.status(400).json({ message: "Break-glass entry already reviewed" });
-      }
-      const entry = await updateJitBreakGlassEntry(id, orgId, {
-        status: "reviewed",
-        reviewedBy: String(reviewerName),
-        reviewedAt: new Date(),
-        reviewNotes: String(notes),
-      });
-
-      await createJitAuditLogEntry({
-        orgId,
-        action: "break_glass_reviewed",
-        actor: String(reviewerName),
-        details: `Reviewed break glass ${id}`,
-      });
-
-      res.json(entry);
-    } catch (error) {
-      logger.child("routes").error("Review break glass error", { error: String(error) });
-      res.status(500).json({ message: "Failed to review break-glass access" });
-    }
-  });
+    },
+  );
 
   app.get("/api/jit-secrets/break-glass", isAuthenticated, async (req, res) => {
     try {
@@ -532,125 +599,139 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   // ─── Ownership Transfers — engine (no DB table yet) ────────────────────────
 
-  app.post("/api/jit-secrets/ownership/transfer", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
+  app.post(
+    "/api/jit-secrets/ownership/transfer",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
 
-      const { secretId, toOwnerId, toOwnerName, reason, isOffboarding, initiatedBy } = req.body;
+        const { secretId, toOwnerId, toOwnerName, reason, isOffboarding, initiatedBy } = req.body;
 
-      if (!secretId || typeof secretId !== "string") {
-        return res.status(400).json({ message: "secretId is required" });
+        if (!secretId || typeof secretId !== "string") {
+          return res.status(400).json({ message: "secretId is required" });
+        }
+        if (!toOwnerId || typeof toOwnerId !== "string") {
+          return res.status(400).json({ message: "toOwnerId is required" });
+        }
+        if (!toOwnerName || typeof toOwnerName !== "string") {
+          return res.status(400).json({ message: "toOwnerName is required" });
+        }
+        if (!reason || typeof reason !== "string" || reason.trim().length < 10) {
+          return res.status(400).json({ message: "reason is required (min 10 chars)" });
+        }
+        if (!initiatedBy || typeof initiatedBy !== "string") {
+          return res.status(400).json({ message: "initiatedBy is required" });
+        }
+
+        const secretRecord = await getJitManagedSecret(String(secretId), orgId);
+        if (!secretRecord) {
+          return res.status(404).json({ message: "Secret not found" });
+        }
+
+        const transfer = await createJitOwnershipTransferEntry({
+          orgId,
+          secretId: String(secretId),
+          secretName: secretRecord.name,
+          fromOwnerId: secretRecord.ownerId,
+          fromOwnerName: secretRecord.ownerName,
+          toOwnerId: String(toOwnerId),
+          toOwnerName: String(toOwnerName),
+          action: "transfer",
+          reason: String(reason).trim(),
+          isOffboarding: isOffboarding === true,
+          initiatedBy: String(initiatedBy),
+        });
+
+        await updateJitManagedSecret(String(secretId), orgId, {
+          ownerId: String(toOwnerId),
+          ownerName: String(toOwnerName),
+        });
+
+        await createJitAuditLogEntry({
+          orgId,
+          action: "ownership_transferred",
+          actor: String(initiatedBy),
+          details: `${secretRecord.name}: ${secretRecord.ownerName} → ${String(toOwnerName)}`,
+        });
+
+        res.status(201).json(transfer);
+      } catch (error) {
+        logger.child("routes").error("Transfer ownership error", { error: String(error) });
+        res.status(500).json({ message: "Failed to transfer ownership" });
       }
-      if (!toOwnerId || typeof toOwnerId !== "string") {
-        return res.status(400).json({ message: "toOwnerId is required" });
+    },
+  );
+
+  app.post(
+    "/api/jit-secrets/ownership/reclaim",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+
+        const { secretId, toOwnerId, toOwnerName, reason, initiatedBy } = req.body;
+
+        if (!secretId || typeof secretId !== "string") {
+          return res.status(400).json({ message: "secretId is required" });
+        }
+        if (!toOwnerId || typeof toOwnerId !== "string") {
+          return res.status(400).json({ message: "toOwnerId is required" });
+        }
+        if (!toOwnerName || typeof toOwnerName !== "string") {
+          return res.status(400).json({ message: "toOwnerName is required" });
+        }
+        if (!reason || typeof reason !== "string" || reason.trim().length < 10) {
+          return res.status(400).json({ message: "reason is required (min 10 chars)" });
+        }
+        if (!initiatedBy || typeof initiatedBy !== "string") {
+          return res.status(400).json({ message: "initiatedBy is required" });
+        }
+
+        const secretRecord = await getJitManagedSecret(String(secretId), orgId);
+        if (!secretRecord) {
+          return res.status(404).json({ message: "Secret not found" });
+        }
+
+        const transfer = await createJitOwnershipTransferEntry({
+          orgId,
+          secretId: String(secretId),
+          secretName: secretRecord.name,
+          fromOwnerId: secretRecord.ownerId,
+          fromOwnerName: secretRecord.ownerName,
+          toOwnerId: String(toOwnerId),
+          toOwnerName: String(toOwnerName),
+          action: "reclaim",
+          reason: String(reason).trim(),
+          isOffboarding: false,
+          initiatedBy: String(initiatedBy),
+        });
+
+        await updateJitManagedSecret(String(secretId), orgId, {
+          ownerId: String(toOwnerId),
+          ownerName: String(toOwnerName),
+        });
+
+        await createJitAuditLogEntry({
+          orgId,
+          action: "ownership_reclaimed",
+          actor: String(initiatedBy),
+          details: `${secretRecord.name}: reclaimed to ${String(toOwnerName)}`,
+        });
+
+        res.status(201).json(transfer);
+      } catch (error) {
+        logger.child("routes").error("Reclaim ownership error", { error: String(error) });
+        res.status(500).json({ message: "Failed to reclaim ownership" });
       }
-      if (!toOwnerName || typeof toOwnerName !== "string") {
-        return res.status(400).json({ message: "toOwnerName is required" });
-      }
-      if (!reason || typeof reason !== "string" || reason.trim().length < 10) {
-        return res.status(400).json({ message: "reason is required (min 10 chars)" });
-      }
-      if (!initiatedBy || typeof initiatedBy !== "string") {
-        return res.status(400).json({ message: "initiatedBy is required" });
-      }
-
-      const secretRecord = await getJitManagedSecret(String(secretId), orgId);
-      if (!secretRecord) {
-        return res.status(404).json({ message: "Secret not found" });
-      }
-
-      const transfer = await createJitOwnershipTransferEntry({
-        orgId,
-        secretId: String(secretId),
-        secretName: secretRecord.name,
-        fromOwnerId: secretRecord.ownerId,
-        fromOwnerName: secretRecord.ownerName,
-        toOwnerId: String(toOwnerId),
-        toOwnerName: String(toOwnerName),
-        action: "transfer",
-        reason: String(reason).trim(),
-        isOffboarding: isOffboarding === true,
-        initiatedBy: String(initiatedBy),
-      });
-
-      await updateJitManagedSecret(String(secretId), orgId, {
-        ownerId: String(toOwnerId),
-        ownerName: String(toOwnerName),
-      });
-
-      await createJitAuditLogEntry({
-        orgId,
-        action: "ownership_transferred",
-        actor: String(initiatedBy),
-        details: `${secretRecord.name}: ${secretRecord.ownerName} → ${String(toOwnerName)}`,
-      });
-
-      res.status(201).json(transfer);
-    } catch (error) {
-      logger.child("routes").error("Transfer ownership error", { error: String(error) });
-      res.status(500).json({ message: "Failed to transfer ownership" });
-    }
-  });
-
-  app.post("/api/jit-secrets/ownership/reclaim", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-
-      const { secretId, toOwnerId, toOwnerName, reason, initiatedBy } = req.body;
-
-      if (!secretId || typeof secretId !== "string") {
-        return res.status(400).json({ message: "secretId is required" });
-      }
-      if (!toOwnerId || typeof toOwnerId !== "string") {
-        return res.status(400).json({ message: "toOwnerId is required" });
-      }
-      if (!toOwnerName || typeof toOwnerName !== "string") {
-        return res.status(400).json({ message: "toOwnerName is required" });
-      }
-      if (!reason || typeof reason !== "string" || reason.trim().length < 10) {
-        return res.status(400).json({ message: "reason is required (min 10 chars)" });
-      }
-      if (!initiatedBy || typeof initiatedBy !== "string") {
-        return res.status(400).json({ message: "initiatedBy is required" });
-      }
-
-      const secretRecord = await getJitManagedSecret(String(secretId), orgId);
-      if (!secretRecord) {
-        return res.status(404).json({ message: "Secret not found" });
-      }
-
-      const transfer = await createJitOwnershipTransferEntry({
-        orgId,
-        secretId: String(secretId),
-        secretName: secretRecord.name,
-        fromOwnerId: secretRecord.ownerId,
-        fromOwnerName: secretRecord.ownerName,
-        toOwnerId: String(toOwnerId),
-        toOwnerName: String(toOwnerName),
-        action: "reclaim",
-        reason: String(reason).trim(),
-        isOffboarding: false,
-        initiatedBy: String(initiatedBy),
-      });
-
-      await updateJitManagedSecret(String(secretId), orgId, {
-        ownerId: String(toOwnerId),
-        ownerName: String(toOwnerName),
-      });
-
-      await createJitAuditLogEntry({
-        orgId,
-        action: "ownership_reclaimed",
-        actor: String(initiatedBy),
-        details: `${secretRecord.name}: reclaimed to ${String(toOwnerName)}`,
-      });
-
-      res.status(201).json(transfer);
-    } catch (error) {
-      logger.child("routes").error("Reclaim ownership error", { error: String(error) });
-      res.status(500).json({ message: "Failed to reclaim ownership" });
-    }
-  });
+    },
+  );
 
   app.get("/api/jit-secrets/transfers", isAuthenticated, async (req, res) => {
     try {
@@ -785,46 +866,53 @@ export function registerJitSecretAccessRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/jit-secrets/active-sessions/:id/revoke", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const { revokerName, reason } = req.body;
-      if (!revokerName || typeof revokerName !== "string") {
-        return res.status(400).json({ message: "revokerName is required" });
+  app.post(
+    "/api/jit-secrets/active-sessions/:id/revoke",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const { revokerName, reason } = req.body;
+        if (!revokerName || typeof revokerName !== "string") {
+          return res.status(400).json({ message: "revokerName is required" });
+        }
+        if (!reason || typeof reason !== "string") {
+          return res.status(400).json({ message: "reason is required" });
+        }
+
+        const existing = await storage.getJitAccessRequest(id, orgId);
+        if (!existing) {
+          return res.status(404).json({ message: "Session not found" });
+        }
+
+        const updated = await storage.updateJitAccessRequest(id, orgId, {
+          status: "revoked",
+          revokedAt: new Date(),
+          metadata: {
+            ...(existing.metadata as Record<string, unknown>),
+            revokedBy: String(revokerName),
+            revocationReason: String(reason),
+          },
+        });
+
+        logger.child("routes").info("Emergency session revocation", {
+          orgId,
+          sessionId: id,
+          revokerName,
+          reason,
+        });
+
+        res.json({ ...updated, revocationReason: reason, revokedAt: new Date().toISOString() });
+      } catch (error) {
+        logger.child("routes").error("Revoke session error", { error: String(error) });
+        res.status(500).json({ message: "Failed to revoke session" });
       }
-      if (!reason || typeof reason !== "string") {
-        return res.status(400).json({ message: "reason is required" });
-      }
-
-      const existing = await storage.getJitAccessRequest(id, orgId);
-      if (!existing) {
-        return res.status(404).json({ message: "Session not found" });
-      }
-
-      const updated = await storage.updateJitAccessRequest(id, orgId, {
-        status: "revoked",
-        revokedAt: new Date(),
-        metadata: {
-          ...(existing.metadata as Record<string, unknown>),
-          revokedBy: String(revokerName),
-          revocationReason: String(reason),
-        },
-      });
-
-      logger.child("routes").info("Emergency session revocation", {
-        orgId,
-        sessionId: id,
-        revokerName,
-        reason,
-      });
-
-      res.json({ ...updated, revocationReason: reason, revokedAt: new Date().toISOString() });
-    } catch (error) {
-      logger.child("routes").error("Revoke session error", { error: String(error) });
-      res.status(500).json({ message: "Failed to revoke session" });
-    }
-  });
+    },
+  );
 
   // ─── 28.3 Access Request History with Analytics — DB persisted ─────────────
 
@@ -903,49 +991,56 @@ export function registerJitSecretAccessRoutes(app: Express): void {
 
   // ─── 28.4 Automatic Access Revocation — DB persisted ───────────────────────
 
-  app.post("/api/jit-secrets/enforce-expiration", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const requests = await storage.getJitAccessRequests(orgId, 500);
-      const now = Date.now();
-      const revoked: string[] = [];
-      const failed: string[] = [];
+  app.post(
+    "/api/jit-secrets/enforce-expiration",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const requests = await storage.getJitAccessRequests(orgId, 500);
+        const now = Date.now();
+        const revoked: string[] = [];
+        const failed: string[] = [];
 
-      for (const r of requests) {
-        if (r.status === "approved" && r.expiresAt && new Date(r.expiresAt).getTime() < now) {
-          try {
-            await storage.updateJitAccessRequest(r.id, orgId, {
-              status: "expired",
-              revokedAt: new Date(),
-            });
-            revoked.push(r.id);
-            logger.child("routes").info("Auto-revoked expired JIT access", {
-              orgId,
-              requestId: r.id,
-              secretPath: r.secretPath,
-            });
-          } catch {
-            failed.push(r.id);
+        for (const r of requests) {
+          if (r.status === "approved" && r.expiresAt && new Date(r.expiresAt).getTime() < now) {
+            try {
+              await storage.updateJitAccessRequest(r.id, orgId, {
+                status: "expired",
+                revokedAt: new Date(),
+              });
+              revoked.push(r.id);
+              logger.child("routes").info("Auto-revoked expired JIT access", {
+                orgId,
+                requestId: r.id,
+                secretPath: r.secretPath,
+              });
+            } catch {
+              failed.push(r.id);
+            }
           }
         }
-      }
 
-      res.json({
-        revokedCount: revoked.length,
-        failedCount: failed.length,
-        revokedIds: revoked,
-        failedIds: failed,
-        timestamp: new Date().toISOString(),
-        message:
-          revoked.length > 0
-            ? `Successfully revoked ${revoked.length} expired access(es)`
-            : "No expired accesses to revoke",
-      });
-    } catch (error) {
-      logger.child("routes").error("Enforce expiration error", { error: String(error) });
-      res.status(500).json({ message: "Failed to enforce expiration" });
-    }
-  });
+        res.json({
+          revokedCount: revoked.length,
+          failedCount: failed.length,
+          revokedIds: revoked,
+          failedIds: failed,
+          timestamp: new Date().toISOString(),
+          message:
+            revoked.length > 0
+              ? `Successfully revoked ${revoked.length} expired access(es)`
+              : "No expired accesses to revoke",
+        });
+      } catch (error) {
+        logger.child("routes").error("Enforce expiration error", { error: String(error) });
+        res.status(500).json({ message: "Failed to enforce expiration" });
+      }
+    },
+  );
 
   // ─── 28.5 Session Recording During JIT Access — DB persisted ───────────────
 
@@ -1044,47 +1139,54 @@ export function registerJitSecretAccessRoutes(app: Express): void {
     }
   });
 
-  app.put("/api/jit-secrets/approval-chains/:secretId", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const secretId = String(req.params.secretId);
-      const { approvalLevels } = req.body;
+  app.put(
+    "/api/jit-secrets/approval-chains/:secretId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const secretId = String(req.params.secretId);
+        const { approvalLevels } = req.body;
 
-      if (!Array.isArray(approvalLevels) || approvalLevels.length === 0) {
-        return res.status(400).json({ message: "approvalLevels array is required" });
-      }
-
-      const secret = await getJitManagedSecret(secretId, orgId);
-      if (!secret) {
-        return res.status(404).json({ message: "Secret not found" });
-      }
-
-      for (const level of approvalLevels) {
-        if (!level.role || !["manager", "security", "owner"].includes(level.role)) {
-          return res.status(400).json({ message: "Each level must have a valid role: manager, security, owner" });
+        if (!Array.isArray(approvalLevels) || approvalLevels.length === 0) {
+          return res.status(400).json({ message: "approvalLevels array is required" });
         }
+
+        const secret = await getJitManagedSecret(secretId, orgId);
+        if (!secret) {
+          return res.status(404).json({ message: "Secret not found" });
+        }
+
+        for (const level of approvalLevels) {
+          if (!level.role || !["manager", "security", "owner"].includes(level.role)) {
+            return res.status(400).json({ message: "Each level must have a valid role: manager, security, owner" });
+          }
+        }
+
+        logger.child("routes").info("Approval chain updated", {
+          orgId,
+          secretId,
+          levels: approvalLevels.length,
+        });
+
+        res.json({
+          secretId,
+          secretName: secret.name,
+          approvalLevels: approvalLevels.map((l: { role: string; description?: string }, idx: number) => ({
+            level: idx + 1,
+            role: l.role,
+            description: l.description || `Level ${idx + 1} approval`,
+            required: true,
+          })),
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        logger.child("routes").error("Update approval chain error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update approval chain" });
       }
-
-      logger.child("routes").info("Approval chain updated", {
-        orgId,
-        secretId,
-        levels: approvalLevels.length,
-      });
-
-      res.json({
-        secretId,
-        secretName: secret.name,
-        approvalLevels: approvalLevels.map((l: { role: string; description?: string }, idx: number) => ({
-          level: idx + 1,
-          role: l.role,
-          description: l.description || `Level ${idx + 1} approval`,
-          required: true,
-        })),
-        updatedAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      logger.child("routes").error("Update approval chain error", { error: String(error) });
-      res.status(500).json({ message: "Failed to update approval chain" });
-    }
-  });
+    },
+  );
 }

@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId } from "../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { requirePermission } from "../rbac";
 import { logger, getOrgId } from "./shared";
 import { db } from "../db";
@@ -684,97 +684,104 @@ export function registerUebaRoutes(app: Express): void {
   // 51.6: CONTEXTUAL ANOMALY ADJUSTMENT — adjust scores for context
   // ==========================================================================
 
-  app.post("/api/ueba/contextual-adjustment", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { entityId, entityType, context } = req.body as {
-        entityId: string;
-        entityType: string;
-        context: {
-          type: "travel" | "role_change" | "holiday" | "scheduled_maintenance" | "custom";
-          description: string;
-          startDate?: string;
-          endDate?: string;
-          scoreAdjustment?: number; // negative to reduce score
+  app.post(
+    "/api/ueba/contextual-adjustment",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { entityId, entityType, context } = req.body as {
+          entityId: string;
+          entityType: string;
+          context: {
+            type: "travel" | "role_change" | "holiday" | "scheduled_maintenance" | "custom";
+            description: string;
+            startDate?: string;
+            endDate?: string;
+            scoreAdjustment?: number; // negative to reduce score
+          };
         };
-      };
 
-      if (!entityId || !entityType || !context?.type) {
-        res.status(400).json({ message: "entityId, entityType, and context.type are required" });
-        return;
+        if (!entityId || !entityType || !context?.type) {
+          res.status(400).json({ message: "entityId, entityType, and context.type are required" });
+          return;
+        }
+
+        // Find active anomalies for this entity
+        const activeAnomalies = await db
+          .select()
+          .from(uebaAnomalies)
+          .where(
+            and(
+              eq(uebaAnomalies.orgId, orgId),
+              eq(uebaAnomalies.entityType, entityType),
+              eq(uebaAnomalies.entityId, entityId),
+              eq(uebaAnomalies.dismissed, false),
+            ),
+          );
+
+        // Default score reduction by context type
+        const reductionMap: Record<string, number> = {
+          travel: -15,
+          role_change: -20,
+          holiday: -10,
+          scheduled_maintenance: -25,
+          custom: context.scoreAdjustment ?? -10,
+        };
+
+        const adjustment = reductionMap[context.type] ?? -10;
+        let adjustedCount = 0;
+
+        // Update the entity score
+        const [entityScore] = await db
+          .select()
+          .from(uebaEntityScores)
+          .where(
+            and(
+              eq(uebaEntityScores.orgId, orgId),
+              eq(uebaEntityScores.entityType, entityType),
+              eq(uebaEntityScores.entityId, entityId),
+            ),
+          )
+          .limit(1);
+
+        if (entityScore) {
+          const newScore = Math.max(0, Math.min(100, entityScore.riskScore + adjustment));
+          await db
+            .update(uebaEntityScores)
+            .set({
+              riskScore: newScore,
+              riskLevel: riskLevel(newScore),
+              updatedAt: new Date(),
+            })
+            .where(eq(uebaEntityScores.id, entityScore.id));
+          adjustedCount = 1;
+        }
+
+        log.info("Contextual adjustment applied", {
+          orgId,
+          entityId,
+          context: context.type,
+          adjustment,
+        });
+
+        res.json({
+          entityId,
+          contextType: context.type,
+          scoreAdjustment: adjustment,
+          activeAnomalies: activeAnomalies.length,
+          adjustedEntities: adjustedCount,
+          newScore: entityScore ? Math.max(0, Math.min(100, entityScore.riskScore + adjustment)) : null,
+        });
+      } catch (error) {
+        log.error("Contextual adjustment failed", { error: String(error) });
+        res.status(500).json({ message: "Failed to apply contextual adjustment" });
       }
-
-      // Find active anomalies for this entity
-      const activeAnomalies = await db
-        .select()
-        .from(uebaAnomalies)
-        .where(
-          and(
-            eq(uebaAnomalies.orgId, orgId),
-            eq(uebaAnomalies.entityType, entityType),
-            eq(uebaAnomalies.entityId, entityId),
-            eq(uebaAnomalies.dismissed, false),
-          ),
-        );
-
-      // Default score reduction by context type
-      const reductionMap: Record<string, number> = {
-        travel: -15,
-        role_change: -20,
-        holiday: -10,
-        scheduled_maintenance: -25,
-        custom: context.scoreAdjustment ?? -10,
-      };
-
-      const adjustment = reductionMap[context.type] ?? -10;
-      let adjustedCount = 0;
-
-      // Update the entity score
-      const [entityScore] = await db
-        .select()
-        .from(uebaEntityScores)
-        .where(
-          and(
-            eq(uebaEntityScores.orgId, orgId),
-            eq(uebaEntityScores.entityType, entityType),
-            eq(uebaEntityScores.entityId, entityId),
-          ),
-        )
-        .limit(1);
-
-      if (entityScore) {
-        const newScore = Math.max(0, Math.min(100, entityScore.riskScore + adjustment));
-        await db
-          .update(uebaEntityScores)
-          .set({
-            riskScore: newScore,
-            riskLevel: riskLevel(newScore),
-            updatedAt: new Date(),
-          })
-          .where(eq(uebaEntityScores.id, entityScore.id));
-        adjustedCount = 1;
-      }
-
-      log.info("Contextual adjustment applied", {
-        orgId,
-        entityId,
-        context: context.type,
-        adjustment,
-      });
-
-      res.json({
-        entityId,
-        contextType: context.type,
-        scoreAdjustment: adjustment,
-        activeAnomalies: activeAnomalies.length,
-        adjustedEntities: adjustedCount,
-        newScore: entityScore ? Math.max(0, Math.min(100, entityScore.riskScore + adjustment)) : null,
-      });
-    } catch (error) {
-      log.error("Contextual adjustment failed", { error: String(error) });
-      res.status(500).json({ message: "Failed to apply contextual adjustment" });
-    }
-  });
+    },
+  );
 
   // ==========================================================================
   // 51.7: ML MODEL TRANSPARENCY — feature importance and explainability
@@ -865,80 +872,88 @@ export function registerUebaRoutes(app: Express): void {
   // 51.8: UEBA → AUTONOMOUS SOC TRIAGE — auto-trigger for high-risk entities
   // ==========================================================================
 
-  app.post("/api/ueba/soc-triage", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { threshold } = req.body as { threshold?: number };
-      const riskThreshold = threshold ?? 70;
+  app.post(
+    "/api/ueba/soc-triage",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { threshold } = req.body as { threshold?: number };
+        const riskThreshold = threshold ?? 70;
 
-      // Find entities above the risk threshold
-      const highRiskEntities = await db
-        .select()
-        .from(uebaEntityScores)
-        .where(and(eq(uebaEntityScores.orgId, orgId), sql`${uebaEntityScores.riskScore} >= ${riskThreshold}`))
-        .orderBy(desc(uebaEntityScores.riskScore));
-
-      const triageResults = [];
-      for (const entity of highRiskEntities) {
-        // Get recent anomalies for this entity
-        const recentAnomalies = await db
+        // Find entities above the risk threshold
+        const highRiskEntities = await db
           .select()
-          .from(uebaAnomalies)
-          .where(
-            and(
-              eq(uebaAnomalies.orgId, orgId),
-              eq(uebaAnomalies.entityType, entity.entityType),
-              eq(uebaAnomalies.entityId, entity.entityId),
-              eq(uebaAnomalies.dismissed, false),
-            ),
-          )
-          .orderBy(desc(uebaAnomalies.createdAt))
-          .limit(5);
+          .from(uebaEntityScores)
+          .where(and(eq(uebaEntityScores.orgId, orgId), sql`${uebaEntityScores.riskScore} >= ${riskThreshold}`))
+          .orderBy(desc(uebaEntityScores.riskScore));
 
-        // Determine recommended tier
-        const tier = entity.riskScore >= 90 ? 1 : entity.riskScore >= 75 ? 2 : 3;
+        const triageResults = [];
+        for (const entity of highRiskEntities) {
+          // Get recent anomalies for this entity
+          const recentAnomalies = await db
+            .select()
+            .from(uebaAnomalies)
+            .where(
+              and(
+                eq(uebaAnomalies.orgId, orgId),
+                eq(uebaAnomalies.entityType, entity.entityType),
+                eq(uebaAnomalies.entityId, entity.entityId),
+                eq(uebaAnomalies.dismissed, false),
+              ),
+            )
+            .orderBy(desc(uebaAnomalies.createdAt))
+            .limit(5);
 
-        triageResults.push({
-          entityId: entity.entityId,
-          entityName: entity.entityName || entity.entityId,
-          entityType: entity.entityType,
-          riskScore: entity.riskScore,
-          riskLevel: entity.riskLevel,
-          recommendedTier: tier,
-          tierLabel: tier === 1 ? "Autonomous (Tier 1)" : tier === 2 ? "Semi-Autonomous (Tier 2)" : "Assisted (Tier 3)",
-          recentAnomalyCount: recentAnomalies.length,
-          topAnomaly: recentAnomalies[0]
-            ? {
-                type: recentAnomalies[0].anomalyType,
-                severity: recentAnomalies[0].severity,
-                description: recentAnomalies[0].description,
-              }
-            : null,
-          suggestedAction:
-            entity.riskScore >= 90
-              ? "Immediate containment — auto-disable account or isolate host"
-              : entity.riskScore >= 80
-                ? "Escalate to senior analyst for investigation"
-                : "Queue for next analyst review cycle",
+          // Determine recommended tier
+          const tier = entity.riskScore >= 90 ? 1 : entity.riskScore >= 75 ? 2 : 3;
+
+          triageResults.push({
+            entityId: entity.entityId,
+            entityName: entity.entityName || entity.entityId,
+            entityType: entity.entityType,
+            riskScore: entity.riskScore,
+            riskLevel: entity.riskLevel,
+            recommendedTier: tier,
+            tierLabel:
+              tier === 1 ? "Autonomous (Tier 1)" : tier === 2 ? "Semi-Autonomous (Tier 2)" : "Assisted (Tier 3)",
+            recentAnomalyCount: recentAnomalies.length,
+            topAnomaly: recentAnomalies[0]
+              ? {
+                  type: recentAnomalies[0].anomalyType,
+                  severity: recentAnomalies[0].severity,
+                  description: recentAnomalies[0].description,
+                }
+              : null,
+            suggestedAction:
+              entity.riskScore >= 90
+                ? "Immediate containment — auto-disable account or isolate host"
+                : entity.riskScore >= 80
+                  ? "Escalate to senior analyst for investigation"
+                  : "Queue for next analyst review cycle",
+          });
+        }
+
+        log.info("SOC triage completed", {
+          orgId,
+          threshold: riskThreshold,
+          entitiesTriaged: triageResults.length,
         });
+
+        res.json({
+          threshold: riskThreshold,
+          entitiesTriaged: triageResults.length,
+          results: triageResults,
+        });
+      } catch (error) {
+        log.error("SOC triage failed", { error: String(error) });
+        res.status(500).json({ message: "Failed to run SOC triage" });
       }
-
-      log.info("SOC triage completed", {
-        orgId,
-        threshold: riskThreshold,
-        entitiesTriaged: triageResults.length,
-      });
-
-      res.json({
-        threshold: riskThreshold,
-        entitiesTriaged: triageResults.length,
-        results: triageResults,
-      });
-    } catch (error) {
-      log.error("SOC triage failed", { error: String(error) });
-      res.status(500).json({ message: "Failed to run SOC triage" });
-    }
-  });
+    },
+  );
 
   // ==========================================================================
   // 51.9: UEBA → IDENTITY GOVERNANCE CORRELATION

@@ -940,8 +940,8 @@ const CATALOG_FINDINGS: FindingLineage[] = [
         patchDiff: `--- a/server/routes/incidents.ts
 +++ b/server/routes/incidents.ts
 @@ -45,1 +45,1 @@
--  app.post("/api/incidents", isAuthenticated, async (req, res) => {
-+  app.post("/api/incidents", isAuthenticated, csrfProtection, async (req, res) => {`,
+-  app.post("/api/incidents", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("analyst"), async (req, res) => {
++  app.post("/api/incidents", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("analyst"), csrfProtection, async (req, res) => {`,
         filePath: "server/routes/incidents.ts",
         language: "typescript",
         confidenceScore: 0.82,

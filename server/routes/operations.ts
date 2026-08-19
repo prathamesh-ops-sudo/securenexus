@@ -4,6 +4,7 @@ import { randomBytes } from "crypto";
 import { getOrgId, p, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
+import { requireSuperAdmin } from "../middleware/super-admin";
 import { evaluateAllFlags, evaluateFlag } from "../feature-flags";
 import { runAllContractTests, runAutomationIntegrationTests, runConnectorContractTests } from "../integration-tests";
 import { evaluateAndAlert, getBreachHistory, seedDefaultSloTargets } from "../slo-alerting";
@@ -47,7 +48,7 @@ export function registerOperationsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/ops/jobs", isAuthenticated, async (req, res) => {
+  app.post("/api/ops/jobs", isAuthenticated, resolveOrgContext, requireOrgId, requireSuperAdmin, async (req, res) => {
     try {
       const orgId = getOrgId(req);
       const { type, payload, priority, runAt } = req.body;
@@ -68,15 +69,22 @@ export function registerOperationsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/ops/jobs/:id/cancel", isAuthenticated, async (req, res) => {
-    try {
-      const success = await storage.cancelJob(p(req.params.id));
-      if (!success) return res.status(404).json({ message: "Job not found or not cancellable" });
-      res.json({ cancelled: true });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to cancel job" });
-    }
-  });
+  app.post(
+    "/api/ops/jobs/:id/cancel",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireSuperAdmin,
+    async (req, res) => {
+      try {
+        const success = await storage.cancelJob(p(req.params.id));
+        if (!success) return res.status(404).json({ message: "Job not found or not cancellable" });
+        res.json({ cancelled: true });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to cancel job" });
+      }
+    },
+  );
 
   app.get("/api/ops/worker/status", isAuthenticated, async (req, res) => {
     try {
@@ -214,95 +222,102 @@ export function registerOperationsRoutes(app: Express): void {
     },
   );
 
-  app.post("/api/ops/slo-targets/seed", isAuthenticated, async (req, res) => {
-    try {
-      const defaults = [
-        {
-          service: "api",
-          metric: "availability",
-          target: 99.9,
-          operator: "gte",
-          windowMinutes: 60,
-          alertOnBreach: true,
-          description: "API Availability > 99.9%",
-        },
-        {
-          service: "api",
-          metric: "latency_p95",
-          target: 500,
-          operator: "lte",
-          windowMinutes: 60,
-          alertOnBreach: true,
-          description: "API P95 Latency < 500ms",
-        },
-        {
-          service: "ingestion",
-          metric: "error_rate",
-          target: 1.0,
-          operator: "lte",
-          windowMinutes: 60,
-          alertOnBreach: true,
-          description: "Ingestion Error Rate < 1%",
-        },
-        {
-          service: "ingestion",
-          metric: "throughput",
-          target: 10,
-          operator: "gte",
-          windowMinutes: 60,
-          alertOnBreach: false,
-          description: "Ingestion Throughput > 10 req/min",
-        },
-        {
-          service: "ai",
-          metric: "latency_p95",
-          target: 5000,
-          operator: "lte",
-          windowMinutes: 60,
-          alertOnBreach: true,
-          description: "AI P95 Latency < 5s",
-        },
-        {
-          service: "ai",
-          metric: "availability",
-          target: 99.0,
-          operator: "gte",
-          windowMinutes: 60,
-          alertOnBreach: true,
-          description: "AI Availability > 99%",
-        },
-        {
-          service: "connector",
-          metric: "error_rate",
-          target: 5.0,
-          operator: "lte",
-          windowMinutes: 60,
-          alertOnBreach: true,
-          description: "Connector Error Rate < 5%",
-        },
-        {
-          service: "enrichment",
-          metric: "latency_p95",
-          target: 3000,
-          operator: "lte",
-          windowMinutes: 60,
-          alertOnBreach: false,
-          description: "Enrichment P95 Latency < 3s",
-        },
-      ];
-      const results = [];
-      for (const d of defaults) {
-        try {
-          results.push(await storage.createSloTarget(d as any));
-        } catch (e) {
-          // skip duplicates
+  app.post(
+    "/api/ops/slo-targets/seed",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireSuperAdmin,
+    async (req, res) => {
+      try {
+        const defaults = [
+          {
+            service: "api",
+            metric: "availability",
+            target: 99.9,
+            operator: "gte",
+            windowMinutes: 60,
+            alertOnBreach: true,
+            description: "API Availability > 99.9%",
+          },
+          {
+            service: "api",
+            metric: "latency_p95",
+            target: 500,
+            operator: "lte",
+            windowMinutes: 60,
+            alertOnBreach: true,
+            description: "API P95 Latency < 500ms",
+          },
+          {
+            service: "ingestion",
+            metric: "error_rate",
+            target: 1.0,
+            operator: "lte",
+            windowMinutes: 60,
+            alertOnBreach: true,
+            description: "Ingestion Error Rate < 1%",
+          },
+          {
+            service: "ingestion",
+            metric: "throughput",
+            target: 10,
+            operator: "gte",
+            windowMinutes: 60,
+            alertOnBreach: false,
+            description: "Ingestion Throughput > 10 req/min",
+          },
+          {
+            service: "ai",
+            metric: "latency_p95",
+            target: 5000,
+            operator: "lte",
+            windowMinutes: 60,
+            alertOnBreach: true,
+            description: "AI P95 Latency < 5s",
+          },
+          {
+            service: "ai",
+            metric: "availability",
+            target: 99.0,
+            operator: "gte",
+            windowMinutes: 60,
+            alertOnBreach: true,
+            description: "AI Availability > 99%",
+          },
+          {
+            service: "connector",
+            metric: "error_rate",
+            target: 5.0,
+            operator: "lte",
+            windowMinutes: 60,
+            alertOnBreach: true,
+            description: "Connector Error Rate < 5%",
+          },
+          {
+            service: "enrichment",
+            metric: "latency_p95",
+            target: 3000,
+            operator: "lte",
+            windowMinutes: 60,
+            alertOnBreach: false,
+            description: "Enrichment P95 Latency < 3s",
+          },
+        ];
+        const results = [];
+        for (const d of defaults) {
+          try {
+            results.push(await storage.createSloTarget(d as any));
+          } catch (e) {
+            // skip duplicates
+          }
         }
+        res.status(201).json(results);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to seed SLO targets" });
       }
-      res.status(201).json(results);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to seed SLO targets" });
-    }
-  });
+    },
+  );
 
   // === Disaster Recovery Runbooks ===
   app.get("/api/ops/dr-runbooks", isAuthenticated, async (req, res) => {
@@ -325,273 +340,308 @@ export function registerOperationsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/ops/dr-runbooks", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const runbook = await storage.createDrRunbook({ ...req.body, orgId });
-      res.status(201).json(runbook);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create DR runbook" });
-    }
-  });
-
-  app.patch("/api/ops/dr-runbooks/:id", isAuthenticated, async (req, res) => {
-    try {
-      const updated = await storage.updateDrRunbook(p(req.params.id), req.body);
-      if (!updated) return res.status(404).json({ message: "Runbook not found" });
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update DR runbook" });
-    }
-  });
-
-  app.delete("/api/ops/dr-runbooks/:id", isAuthenticated, async (req, res) => {
-    try {
-      const deleted = await storage.deleteDrRunbook(p(req.params.id));
-      if (!deleted) return res.status(404).json({ message: "Runbook not found" });
-      res.json({ deleted: true });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete DR runbook" });
-    }
-  });
-
-  app.post("/api/ops/dr-runbooks/:id/test", isAuthenticated, async (req, res) => {
-    try {
-      const { result, notes } = req.body;
-      if (!result) return res.status(400).json({ message: "result (pass/fail/partial) required" });
-      const updated = await storage.updateDrRunbook(p(req.params.id), {
-        lastTestedAt: new Date(),
-        lastTestResult: result,
-        testNotes: notes || null,
-      });
-      if (!updated) return res.status(404).json({ message: "Runbook not found" });
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to record test result" });
-    }
-  });
-
-  app.post("/api/ops/dr-runbooks/seed", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const defaults = [
-        {
-          orgId,
-          title: "RDS Failover (Primary DB Failure)",
-          description:
-            "Procedure when primary RDS instance is unavailable or degraded performance >5 minutes. Promotes cross-region read replica and redirects traffic.",
-          category: "failover",
-          steps: [
-            {
-              order: 1,
-              instruction: "Verify primary DB is truly unavailable (check CloudWatch, attempt connection)",
-              expectedDuration: "2 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 2,
-              instruction:
-                "Promote cross-region read replica to standalone: aws rds promote-read-replica --db-instance-identifier securenexus-db-replica-west --region us-west-2",
-              expectedDuration: "5 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 3,
-              instruction: "Update Secrets Manager with new DB endpoint in us-west-2",
-              expectedDuration: "1 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 4,
-              instruction: "Update EKS deployment to use new DB endpoint (or deploy DR EKS cluster)",
-              expectedDuration: "5 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 5,
-              instruction: "Update DNS to point to DR region load balancer",
-              expectedDuration: "2 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 6,
-              instruction: "Verify application health via /api/health endpoint",
-              expectedDuration: "2 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 7,
-              instruction: "Notify stakeholders via incident channel",
-              expectedDuration: "1 min",
-              responsible: "Platform Team",
-            },
-          ],
-          rtoMinutes: 18,
-          rpoMinutes: 60,
-          owner: "Platform Team",
-          status: "active",
-        },
-        {
-          orgId,
-          title: "Full Region Failure (us-east-1 outage)",
-          description:
-            "Complete AWS us-east-1 region unavailable. Deploys full stack in us-west-2 DR region using replicated resources.",
-          category: "failover",
-          steps: [
-            {
-              order: 1,
-              instruction: "Confirm region-level outage via AWS Health Dashboard",
-              expectedDuration: "2 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 2,
-              instruction: "Promote RDS read replica in us-west-2",
-              expectedDuration: "5 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 3,
-              instruction: "Deploy EKS cluster in us-west-2 using stored manifests from Git",
-              expectedDuration: "15 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 4,
-              instruction: "Pull latest container images from ECR (cross-region replicated)",
-              expectedDuration: "3 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 5,
-              instruction: "Apply K8s manifests with DR-region secrets",
-              expectedDuration: "5 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 6,
-              instruction: "Update Route 53 DNS failover records to us-west-2 load balancer",
-              expectedDuration: "2 min",
-              responsible: "Platform Team",
-            },
-            { order: 7, instruction: "Verify all services healthy", expectedDuration: "3 min", responsible: "SRE" },
-            {
-              order: 8,
-              instruction: "Run smoke tests against DR deployment",
-              expectedDuration: "5 min",
-              responsible: "SRE",
-            },
-          ],
-          rtoMinutes: 40,
-          rpoMinutes: 60,
-          owner: "Platform Team + SRE",
-          status: "active",
-        },
-        {
-          orgId,
-          title: "Data Corruption Recovery",
-          description:
-            "Triggered when data integrity issue detected (bad migration, accidental deletion, etc.). Uses RDS point-in-time restore.",
-          category: "data_recovery",
-          steps: [
-            {
-              order: 1,
-              instruction: "Identify corruption scope and timestamp of last known good state",
-              expectedDuration: "5 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 2,
-              instruction: "Take snapshot of current (corrupted) state for forensics",
-              expectedDuration: "3 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 3,
-              instruction:
-                "Restore RDS to point-in-time before corruption: aws rds restore-db-instance-to-point-in-time --source-db-instance-identifier securenexus-db --target-db-instance-identifier securenexus-db-restored --restore-time TIMESTAMP",
-              expectedDuration: "15 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 4,
-              instruction: "Verify restored data integrity",
-              expectedDuration: "5 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 5,
-              instruction: "Update application to point to restored instance",
-              expectedDuration: "3 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 6,
-              instruction: "Run schema validation: npm run db:push --dry-run",
-              expectedDuration: "2 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 7,
-              instruction: "Verify application functionality",
-              expectedDuration: "5 min",
-              responsible: "Platform Team",
-            },
-          ],
-          rtoMinutes: 38,
-          rpoMinutes: 60,
-          owner: "Platform Team",
-          status: "active",
-        },
-        {
-          orgId,
-          title: "S3 Object Recovery",
-          description:
-            "Triggered when critical files deleted or corrupted in S3. Restores from version history or cross-region replication bucket.",
-          category: "backup",
-          steps: [
-            {
-              order: 1,
-              instruction: "Identify affected objects and versions in securenexus-platform-557845624595",
-              expectedDuration: "3 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 2,
-              instruction:
-                "Restore from version history: aws s3api get-object --bucket securenexus-platform-557845624595 --key {key} --version-id {version-id} {output}",
-              expectedDuration: "2 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 3,
-              instruction:
-                "Or restore from CRR bucket: aws s3 sync s3://securenexus-platform-dr-557845624595/{prefix} s3://securenexus-platform-557845624595/{prefix}",
-              expectedDuration: "5 min",
-              responsible: "Platform Team",
-            },
-            {
-              order: 4,
-              instruction: "Verify restored objects integrity and completeness",
-              expectedDuration: "2 min",
-              responsible: "Platform Team",
-            },
-          ],
-          rtoMinutes: 12,
-          rpoMinutes: 60,
-          owner: "Platform Team",
-          status: "active",
-        },
-      ];
-      const results = [];
-      for (const d of defaults) {
-        results.push(await storage.createDrRunbook(d as any));
+  app.post(
+    "/api/ops/dr-runbooks",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireSuperAdmin,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const runbook = await storage.createDrRunbook({ ...req.body, orgId });
+        res.status(201).json(runbook);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to create DR runbook" });
       }
-      res.status(201).json(results);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to seed DR runbooks" });
-    }
-  });
+    },
+  );
+
+  app.patch(
+    "/api/ops/dr-runbooks/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireSuperAdmin,
+    async (req, res) => {
+      try {
+        const updated = await storage.updateDrRunbook(p(req.params.id), req.body);
+        if (!updated) return res.status(404).json({ message: "Runbook not found" });
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update DR runbook" });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/ops/dr-runbooks/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireSuperAdmin,
+    async (req, res) => {
+      try {
+        const deleted = await storage.deleteDrRunbook(p(req.params.id));
+        if (!deleted) return res.status(404).json({ message: "Runbook not found" });
+        res.json({ deleted: true });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete DR runbook" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/ops/dr-runbooks/:id/test",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireSuperAdmin,
+    async (req, res) => {
+      try {
+        const { result, notes } = req.body;
+        if (!result) return res.status(400).json({ message: "result (pass/fail/partial) required" });
+        const updated = await storage.updateDrRunbook(p(req.params.id), {
+          lastTestedAt: new Date(),
+          lastTestResult: result,
+          testNotes: notes || null,
+        });
+        if (!updated) return res.status(404).json({ message: "Runbook not found" });
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to record test result" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/ops/dr-runbooks/seed",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireSuperAdmin,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const defaults = [
+          {
+            orgId,
+            title: "RDS Failover (Primary DB Failure)",
+            description:
+              "Procedure when primary RDS instance is unavailable or degraded performance >5 minutes. Promotes cross-region read replica and redirects traffic.",
+            category: "failover",
+            steps: [
+              {
+                order: 1,
+                instruction: "Verify primary DB is truly unavailable (check CloudWatch, attempt connection)",
+                expectedDuration: "2 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 2,
+                instruction:
+                  "Promote cross-region read replica to standalone: aws rds promote-read-replica --db-instance-identifier securenexus-db-replica-west --region us-west-2",
+                expectedDuration: "5 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 3,
+                instruction: "Update Secrets Manager with new DB endpoint in us-west-2",
+                expectedDuration: "1 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 4,
+                instruction: "Update EKS deployment to use new DB endpoint (or deploy DR EKS cluster)",
+                expectedDuration: "5 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 5,
+                instruction: "Update DNS to point to DR region load balancer",
+                expectedDuration: "2 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 6,
+                instruction: "Verify application health via /api/health endpoint",
+                expectedDuration: "2 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 7,
+                instruction: "Notify stakeholders via incident channel",
+                expectedDuration: "1 min",
+                responsible: "Platform Team",
+              },
+            ],
+            rtoMinutes: 18,
+            rpoMinutes: 60,
+            owner: "Platform Team",
+            status: "active",
+          },
+          {
+            orgId,
+            title: "Full Region Failure (us-east-1 outage)",
+            description:
+              "Complete AWS us-east-1 region unavailable. Deploys full stack in us-west-2 DR region using replicated resources.",
+            category: "failover",
+            steps: [
+              {
+                order: 1,
+                instruction: "Confirm region-level outage via AWS Health Dashboard",
+                expectedDuration: "2 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 2,
+                instruction: "Promote RDS read replica in us-west-2",
+                expectedDuration: "5 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 3,
+                instruction: "Deploy EKS cluster in us-west-2 using stored manifests from Git",
+                expectedDuration: "15 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 4,
+                instruction: "Pull latest container images from ECR (cross-region replicated)",
+                expectedDuration: "3 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 5,
+                instruction: "Apply K8s manifests with DR-region secrets",
+                expectedDuration: "5 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 6,
+                instruction: "Update Route 53 DNS failover records to us-west-2 load balancer",
+                expectedDuration: "2 min",
+                responsible: "Platform Team",
+              },
+              { order: 7, instruction: "Verify all services healthy", expectedDuration: "3 min", responsible: "SRE" },
+              {
+                order: 8,
+                instruction: "Run smoke tests against DR deployment",
+                expectedDuration: "5 min",
+                responsible: "SRE",
+              },
+            ],
+            rtoMinutes: 40,
+            rpoMinutes: 60,
+            owner: "Platform Team + SRE",
+            status: "active",
+          },
+          {
+            orgId,
+            title: "Data Corruption Recovery",
+            description:
+              "Triggered when data integrity issue detected (bad migration, accidental deletion, etc.). Uses RDS point-in-time restore.",
+            category: "data_recovery",
+            steps: [
+              {
+                order: 1,
+                instruction: "Identify corruption scope and timestamp of last known good state",
+                expectedDuration: "5 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 2,
+                instruction: "Take snapshot of current (corrupted) state for forensics",
+                expectedDuration: "3 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 3,
+                instruction:
+                  "Restore RDS to point-in-time before corruption: aws rds restore-db-instance-to-point-in-time --source-db-instance-identifier securenexus-db --target-db-instance-identifier securenexus-db-restored --restore-time TIMESTAMP",
+                expectedDuration: "15 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 4,
+                instruction: "Verify restored data integrity",
+                expectedDuration: "5 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 5,
+                instruction: "Update application to point to restored instance",
+                expectedDuration: "3 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 6,
+                instruction: "Run schema validation: npm run db:push --dry-run",
+                expectedDuration: "2 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 7,
+                instruction: "Verify application functionality",
+                expectedDuration: "5 min",
+                responsible: "Platform Team",
+              },
+            ],
+            rtoMinutes: 38,
+            rpoMinutes: 60,
+            owner: "Platform Team",
+            status: "active",
+          },
+          {
+            orgId,
+            title: "S3 Object Recovery",
+            description:
+              "Triggered when critical files deleted or corrupted in S3. Restores from version history or cross-region replication bucket.",
+            category: "backup",
+            steps: [
+              {
+                order: 1,
+                instruction: "Identify affected objects and versions in securenexus-platform-557845624595",
+                expectedDuration: "3 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 2,
+                instruction:
+                  "Restore from version history: aws s3api get-object --bucket securenexus-platform-557845624595 --key {key} --version-id {version-id} {output}",
+                expectedDuration: "2 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 3,
+                instruction:
+                  "Or restore from CRR bucket: aws s3 sync s3://securenexus-platform-dr-557845624595/{prefix} s3://securenexus-platform-557845624595/{prefix}",
+                expectedDuration: "5 min",
+                responsible: "Platform Team",
+              },
+              {
+                order: 4,
+                instruction: "Verify restored objects integrity and completeness",
+                expectedDuration: "2 min",
+                responsible: "Platform Team",
+              },
+            ],
+            rtoMinutes: 12,
+            rpoMinutes: 60,
+            owner: "Platform Team",
+            status: "active",
+          },
+        ];
+        const results = [];
+        for (const d of defaults) {
+          results.push(await storage.createDrRunbook(d as any));
+        }
+        res.status(201).json(results);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to seed DR runbooks" });
+      }
+    },
+  );
 
   // === Dashboard Metrics Cache ===
   app.get("/api/ops/metrics-cache", isAuthenticated, async (req, res) => {
@@ -605,21 +655,28 @@ export function registerOperationsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/ops/metrics-cache/refresh", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const stats = await storage.getDashboardStats(orgId);
-      const analytics = await storage.getDashboardAnalytics(orgId);
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 min TTL
-      await Promise.all([
-        storage.upsertCachedMetrics({ orgId, metricType: "stats", payload: stats, expiresAt }),
-        storage.upsertCachedMetrics({ orgId, metricType: "analytics", payload: analytics, expiresAt }),
-      ]);
-      res.json({ refreshed: true, expiresAt: expiresAt.toISOString() });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to refresh metrics cache" });
-    }
-  });
+  app.post(
+    "/api/ops/metrics-cache/refresh",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireSuperAdmin,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const stats = await storage.getDashboardStats(orgId);
+        const analytics = await storage.getDashboardAnalytics(orgId);
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 min TTL
+        await Promise.all([
+          storage.upsertCachedMetrics({ orgId, metricType: "stats", payload: stats, expiresAt }),
+          storage.upsertCachedMetrics({ orgId, metricType: "analytics", payload: analytics, expiresAt }),
+        ]);
+        res.json({ refreshed: true, expiresAt: expiresAt.toISOString() });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to refresh metrics cache" });
+      }
+    },
+  );
 
   // === Alert Daily Stats ===
   app.get("/api/ops/alert-daily-stats", isAuthenticated, async (req, res) => {
@@ -901,22 +958,29 @@ export function registerOperationsRoutes(app: Express): void {
     },
   );
 
-  app.post("/api/v1/feature-flags/:key/evaluate", isAuthenticated, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const result = await evaluateFlag(p(req.params.key), {
-        orgId: user?.orgId,
-        userId: user?.id,
-        role: user?.role,
-      });
-      return sendEnvelope(res, result);
-    } catch (error: any) {
-      return sendEnvelope(res, null, {
-        status: 500,
-        errors: [{ code: "FLAG_EVAL_FAILED", message: error?.message || "Failed to evaluate feature flag" }],
-      });
-    }
-  });
+  app.post(
+    "/api/v1/feature-flags/:key/evaluate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireSuperAdmin,
+    async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const result = await evaluateFlag(p(req.params.key), {
+          orgId: user?.orgId,
+          userId: user?.id,
+          role: user?.role,
+        });
+        return sendEnvelope(res, result);
+      } catch (error: any) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "FLAG_EVAL_FAILED", message: error?.message || "Failed to evaluate feature flag" }],
+        });
+      }
+    },
+  );
 
   app.get("/api/v1/feature-flags-evaluate-all", isAuthenticated, async (req, res) => {
     try {
@@ -1028,25 +1092,32 @@ export function registerOperationsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/ops/canary/evaluate-triggers", isAuthenticated, async (req, res) => {
-    try {
-      const { metrics } = req.body;
-      if (!metrics) return res.status(400).json({ message: "metrics object required in body" });
-      const evaluations = await evaluateRollbackTriggers(metrics);
-      const firedTriggers = evaluations.filter((e) => e.fired);
-      res.json({
-        evaluations,
-        firedCount: firedTriggers.length,
-        recommendation: firedTriggers.some((t) => t.action === "auto_rollback")
-          ? "rollback"
-          : firedTriggers.some((t) => t.action === "pause_rollout")
-            ? "pause"
-            : "continue",
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to evaluate rollback triggers" });
-    }
-  });
+  app.post(
+    "/api/ops/canary/evaluate-triggers",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireSuperAdmin,
+    async (req, res) => {
+      try {
+        const { metrics } = req.body;
+        if (!metrics) return res.status(400).json({ message: "metrics object required in body" });
+        const evaluations = await evaluateRollbackTriggers(metrics);
+        const firedTriggers = evaluations.filter((e) => e.fired);
+        res.json({
+          evaluations,
+          firedCount: firedTriggers.length,
+          recommendation: firedTriggers.some((t) => t.action === "auto_rollback")
+            ? "rollback"
+            : firedTriggers.some((t) => t.action === "pause_rollout")
+              ? "pause"
+              : "continue",
+        });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to evaluate rollback triggers" });
+      }
+    },
+  );
 
   app.get("/api/ops/canary/rollback-runbook", isAuthenticated, (_req, res) => {
     try {

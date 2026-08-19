@@ -2169,31 +2169,38 @@ export function registerEndpointsRoutes(app: Express): void {
 
   // ─── 26.4 Real-time Endpoint Status via Heartbeat ─────────────────────────
 
-  app.post("/api/endpoints/:id/heartbeat", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const asset = await storage.getEndpointAsset(p(req.params.id));
-      if (!asset || asset.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
+  app.post(
+    "/api/endpoints/:id/heartbeat",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const asset = await storage.getEndpointAsset(p(req.params.id));
+        if (!asset || asset.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
 
-      const now = new Date();
-      await endpointStorage.upsertEndpointHeartbeat({
-        orgId,
-        assetId: asset.id,
-        status: "online",
-        metadata: req.body.metadata || {},
-      });
+        const now = new Date();
+        await endpointStorage.upsertEndpointHeartbeat({
+          orgId,
+          assetId: asset.id,
+          status: "online",
+          metadata: req.body.metadata || {},
+        });
 
-      // Update asset status to online and last seen
-      await storage.updateEndpointAsset(p(req.params.id), {
-        agentStatus: "online",
-        lastSeenAt: now.toISOString(),
-      } as any);
+        // Update asset status to online and last seen
+        await storage.updateEndpointAsset(p(req.params.id), {
+          agentStatus: "online",
+          lastSeenAt: now.toISOString(),
+        } as any);
 
-      res.json({ acknowledged: true, timestamp: now.toISOString() });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to process heartbeat" });
-    }
-  });
+        res.json({ acknowledged: true, timestamp: now.toISOString() });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to process heartbeat" });
+      }
+    },
+  );
 
   app.get(
     "/api/endpoints/heartbeat-status",

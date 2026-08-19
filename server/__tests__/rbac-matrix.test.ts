@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import fs from "node:fs";
+import path from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Request, Response } from "express";
 
@@ -79,6 +81,7 @@ vi.mock("@shared/schema", () => ({
 
 import { ROLE_PERMISSIONS } from "@shared/schema";
 import { requirePermission, requireMinRole } from "../rbac";
+import { requireSuperAdmin } from "../middleware/super-admin";
 
 const ALL_ROLES = ["owner", "admin", "analyst", "read_only"];
 const ALL_SCOPES = ["incidents", "connectors", "api_keys", "response_actions", "settings", "team"];
@@ -264,5 +267,126 @@ describe("requireMinRole - Hierarchy Matrix", () => {
         expect(res.status).toHaveBeenCalledWith(403);
       });
     }
+  });
+});
+
+describe("write-route authorization coverage", () => {
+  const representativeRoutes = [
+    { tier: "analyst", route: "POST /api/incidents/:id/comments", minimumRole: "analyst" },
+    { tier: "admin", route: "POST /api/connectors", minimumRole: "admin" },
+    { tier: "owner", route: "POST /api/jit-secrets/access-requests", minimumRole: "owner" },
+  ] as const;
+
+  for (const representative of representativeRoutes) {
+    it(`rejects read_only on ${representative.tier} route ${representative.route}`, () => {
+      const req = mockReq({ orgRole: "read_only" });
+      const res = mockRes();
+      const next = vi.fn();
+
+      requireMinRole(representative.minimumRole)(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+    });
+  }
+
+  it("rejects read_only on a platform-operator route", () => {
+    const req = mockReq({ user: { id: "user-1", isSuperAdmin: false } });
+    const res = mockRes();
+    const next = vi.fn();
+
+    requireSuperAdmin(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it("rejects analyst on an admin-tier route", () => {
+    const req = mockReq({ orgRole: "analyst" });
+    const res = mockRes();
+    const next = vi.fn();
+
+    requireMinRole("admin")(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it("keeps every authenticated mutating API route behind authorization", () => {
+    const serverRoot = path.resolve(process.cwd(), "server");
+    const skipDirectories = new Set(["node_modules", "dist", ".git", "__tests__"]);
+    const authzPattern =
+      /requireMinRole|requirePermission|requireRole|requireSuperAdmin|requirePlatformAdmin|requireOwner|requireAdmin|requireScope|requireAnyPermission|requirePlanTier/;
+    const authnPattern = /isAuthenticated|apiKeyAuth|sensorApiKeyAuth|agentAuth|requireAuth|passport\.authenticate/;
+    const callPattern =
+      /\bapp\.(post|put|patch|delete)\(\s*["'`]([^"'`]+)["'`]\s*,(.*?)(?:async\s*\(|\(\s*req\b|function\s*\()/gis;
+    const arrayPattern = /const\s+(\w+)\s*(?::[^=]+)?=\s*\[([^\]]*)\]/gs;
+    const knownGoodUnauthenticated = [
+      ["POST", "server/finding-lineage-engine.ts", "/api/auth/login"],
+      ["POST", "server/finding-lineage-engine.ts", "/api/auth/login"],
+      ["POST", "server/remediation-engine.ts", "/api/auth/login"],
+      ["POST", "server/remediation-engine.ts", "/api/auth/login"],
+      ["POST", "server/remediation-engine.ts", "/api/auth/login"],
+      ["POST", "server/remediation-engine.ts", "/api/auth/login"],
+      ["POST", "server/remediation-engine.ts", "/api/auth/login"],
+      ["POST", "server/middleware/plan-enforcement-enhanced.ts", "/api/alerts"],
+      ["POST", "server/routes/billing.ts", "/api/billing/webhook"],
+      ["POST", "server/routes/developer-security.ts", "/api/developer-security/webhooks/github"],
+      ["POST", "server/routes/developer-security.ts", "/api/developer-security/webhooks/gitlab"],
+      ["POST", "server/routes/log-sources.ts", "/api/native/log-sources/ingest/:token"],
+      ["POST", "server/routes/native-sensors.ts", "/api/native-sensors/:id/action-result/:actionId"],
+      ["POST", "server/routes/password-reset.ts", "/api/auth/forgot-password"],
+      ["POST", "server/routes/password-reset.ts", "/api/auth/reset-password"],
+      ["POST", "server/routes/sso.ts", "/api/sso/:slug/acs"],
+      ["POST", "server/auth/routes.ts", "/api/register"],
+      ["POST", "server/auth/routes.ts", "/api/login"],
+      ["POST", "server/auth/routes.ts", "/api/logout"],
+    ] as const;
+    const failures: string[] = [];
+
+    function walk(directory: string): string[] {
+      return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+        const entryPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          if (skipDirectories.has(entry.name)) return [];
+          return walk(entryPath);
+        }
+        return entry.name.endsWith(".ts") ? [entryPath] : [];
+      });
+    }
+
+    for (const filePath of walk(serverRoot)) {
+      const relativeFile = path.relative(process.cwd(), filePath);
+      const source = fs.readFileSync(filePath, "utf8");
+      const localMiddleware = Object.fromEntries(
+        [...source.matchAll(arrayPattern)].map((match) => [match[1], match[2]]),
+      );
+
+      for (const match of source.matchAll(callPattern)) {
+        const verb = match[1].toUpperCase();
+        const route = match[2];
+        if (!route.startsWith("/api")) continue;
+
+        let middleware = match[3];
+        for (let pass = 0; pass < 3; pass += 1) {
+          for (const [name, body] of Object.entries(localMiddleware)) {
+            if (new RegExp(`\\b${name}\\b`).test(middleware)) middleware += ` ${body}`;
+          }
+        }
+
+        const key = `${verb} ${relativeFile} ${route}`;
+        const isKnownGoodUnauthenticated = knownGoodUnauthenticated.some(
+          ([allowedVerb, allowedFile, allowedRoute]) => key === `${allowedVerb} ${allowedFile} ${allowedRoute}`,
+        );
+        if (!authnPattern.test(middleware) && !isKnownGoodUnauthenticated) {
+          failures.push(`${key}: missing explicit allow-list entry`);
+        }
+        if (authnPattern.test(middleware) && !authzPattern.test(middleware)) {
+          failures.push(`${key}: authenticated route has no authorization middleware`);
+        }
+      }
+    }
+
+    expect(failures).toEqual([]);
   });
 });

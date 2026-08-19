@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
+
 import { storage } from "../storage";
 import {
   getAttackLibrary,
@@ -111,79 +113,93 @@ export function registerAdversarialTestingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/adversarial-testing/run", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { testCaseId, trigger } = req.body as { testCaseId?: string; trigger?: string };
-      if (!testCaseId || typeof testCaseId !== "string") {
-        return res.status(400).json({ message: "testCaseId is required" });
+  app.post(
+    "/api/adversarial-testing/run",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { testCaseId, trigger } = req.body as { testCaseId?: string; trigger?: string };
+        if (!testCaseId || typeof testCaseId !== "string") {
+          return res.status(400).json({ message: "testCaseId is required" });
+        }
+        const tc = getTestCaseById(testCaseId);
+        if (!tc) return res.status(404).json({ message: "Test case not found" });
+        if (!tc.enabled) return res.status(400).json({ message: "Test case is disabled" });
+
+        const validTrigger: RunTrigger =
+          trigger && VALID_TRIGGERS.includes(trigger as RunTrigger) ? (trigger as RunTrigger) : "manual";
+
+        const execution = await storage.createAdversarialExecution({
+          orgId,
+          testCaseId,
+          testCaseName: tc.name,
+          domain: tc.domain,
+          category: tc.category,
+          phase: tc.phase || "pre_production",
+          status: "running",
+          trigger: validTrigger,
+          severity: tc.severity || "medium",
+          result: {},
+          startedAt: new Date(),
+        });
+        res.status(201).json(execution);
+      } catch (error) {
+        logger.child("routes").error("Run test case error", { error: String(error) });
+        res.status(500).json({ message: "Failed to run test case" });
       }
-      const tc = getTestCaseById(testCaseId);
-      if (!tc) return res.status(404).json({ message: "Test case not found" });
-      if (!tc.enabled) return res.status(400).json({ message: "Test case is disabled" });
+    },
+  );
 
-      const validTrigger: RunTrigger =
-        trigger && VALID_TRIGGERS.includes(trigger as RunTrigger) ? (trigger as RunTrigger) : "manual";
+  app.post(
+    "/api/adversarial-testing/run-batch",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { testCaseIds, trigger } = req.body as { testCaseIds?: string[]; trigger?: string };
+        if (!Array.isArray(testCaseIds) || testCaseIds.length === 0) {
+          return res.status(400).json({ message: "testCaseIds must be a non-empty array" });
+        }
+        if (testCaseIds.length > 50) {
+          return res.status(400).json({ message: "Maximum 50 test cases per batch" });
+        }
+        const validTrigger: RunTrigger =
+          trigger && VALID_TRIGGERS.includes(trigger as RunTrigger) ? (trigger as RunTrigger) : "manual";
 
-      const execution = await storage.createAdversarialExecution({
-        orgId,
-        testCaseId,
-        testCaseName: tc.name,
-        domain: tc.domain,
-        category: tc.category,
-        phase: tc.phase || "pre_production",
-        status: "running",
-        trigger: validTrigger,
-        severity: tc.severity || "medium",
-        result: {},
-        startedAt: new Date(),
-      });
-      res.status(201).json(execution);
-    } catch (error) {
-      logger.child("routes").error("Run test case error", { error: String(error) });
-      res.status(500).json({ message: "Failed to run test case" });
-    }
-  });
-
-  app.post("/api/adversarial-testing/run-batch", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { testCaseIds, trigger } = req.body as { testCaseIds?: string[]; trigger?: string };
-      if (!Array.isArray(testCaseIds) || testCaseIds.length === 0) {
-        return res.status(400).json({ message: "testCaseIds must be a non-empty array" });
+        const executions = await Promise.all(
+          testCaseIds.map(async (tcId) => {
+            const tc = getTestCaseById(tcId);
+            if (!tc || !tc.enabled) return null;
+            return storage.createAdversarialExecution({
+              orgId,
+              testCaseId: tcId,
+              testCaseName: tc.name,
+              domain: tc.domain,
+              category: tc.category,
+              phase: tc.phase || "pre_production",
+              status: "running",
+              trigger: validTrigger,
+              severity: tc.severity || "medium",
+              result: {},
+              startedAt: new Date(),
+            });
+          }),
+        );
+        const created = executions.filter(Boolean);
+        res.status(201).json({ count: created.length, executions: created });
+      } catch (error) {
+        logger.child("routes").error("Run batch error", { error: String(error) });
+        res.status(500).json({ message: "Failed to run batch" });
       }
-      if (testCaseIds.length > 50) {
-        return res.status(400).json({ message: "Maximum 50 test cases per batch" });
-      }
-      const validTrigger: RunTrigger =
-        trigger && VALID_TRIGGERS.includes(trigger as RunTrigger) ? (trigger as RunTrigger) : "manual";
-
-      const executions = await Promise.all(
-        testCaseIds.map(async (tcId) => {
-          const tc = getTestCaseById(tcId);
-          if (!tc || !tc.enabled) return null;
-          return storage.createAdversarialExecution({
-            orgId,
-            testCaseId: tcId,
-            testCaseName: tc.name,
-            domain: tc.domain,
-            category: tc.category,
-            phase: tc.phase || "pre_production",
-            status: "running",
-            trigger: validTrigger,
-            severity: tc.severity || "medium",
-            result: {},
-            startedAt: new Date(),
-          });
-        }),
-      );
-      const created = executions.filter(Boolean);
-      res.status(201).json({ count: created.length, executions: created });
-    } catch (error) {
-      logger.child("routes").error("Run batch error", { error: String(error) });
-      res.status(500).json({ message: "Failed to run batch" });
-    }
-  });
+    },
+  );
 
   // Schedules — persisted to DB
   app.get("/api/adversarial-testing/schedules", isAuthenticated, async (req, res) => {
@@ -197,87 +213,109 @@ export function registerAdversarialTestingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/adversarial-testing/schedules", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const body = req.body;
-      if (!body.name || typeof body.name !== "string") {
-        return res.status(400).json({ message: "name is required" });
-      }
-      if (!body.frequency || !VALID_FREQUENCIES.includes(body.frequency)) {
-        return res.status(400).json({ message: `frequency must be one of: ${VALID_FREQUENCIES.join(", ")}` });
-      }
-      if (!Array.isArray(body.testCaseIds) || body.testCaseIds.length === 0) {
-        return res.status(400).json({ message: "testCaseIds must be a non-empty array" });
-      }
-      const schedule = await storage.createAdversarialSchedule({
-        orgId,
-        name: body.name,
-        frequency: body.frequency,
-        testCaseIds: body.testCaseIds,
-        enabled: body.enabled !== false,
-        nextRunAt: body.nextRunAt ? new Date(body.nextRunAt) : new Date(Date.now() + 86400000),
-        config: {
-          description: body.description || "",
-          domains: Array.isArray(body.domains)
-            ? body.domains.filter((d: string) => VALID_DOMAINS.includes(d as AttackDomain))
-            : [],
-          categories: Array.isArray(body.categories)
-            ? body.categories.filter((c: string) => VALID_CATEGORIES.includes(c as AttackCategory))
-            : [],
-          phase: body.phase && VALID_PHASES.includes(body.phase) ? body.phase : "pre_production",
-        },
-      });
-      res.status(201).json(schedule);
-    } catch (error) {
-      logger.child("routes").error("Create schedule error", { error: String(error) });
-      res.status(500).json({ message: "Failed to create schedule" });
-    }
-  });
-
-  app.patch("/api/adversarial-testing/schedules/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const body = req.body;
-      const updates: Record<string, unknown> = {};
-      if (body.name !== undefined) {
-        if (typeof body.name !== "string") return res.status(400).json({ message: "name must be a string" });
-        updates.name = body.name;
-      }
-      if (body.frequency !== undefined) {
-        if (!VALID_FREQUENCIES.includes(body.frequency))
+  app.post(
+    "/api/adversarial-testing/schedules",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const body = req.body;
+        if (!body.name || typeof body.name !== "string") {
+          return res.status(400).json({ message: "name is required" });
+        }
+        if (!body.frequency || !VALID_FREQUENCIES.includes(body.frequency)) {
           return res.status(400).json({ message: `frequency must be one of: ${VALID_FREQUENCIES.join(", ")}` });
-        updates.frequency = body.frequency;
+        }
+        if (!Array.isArray(body.testCaseIds) || body.testCaseIds.length === 0) {
+          return res.status(400).json({ message: "testCaseIds must be a non-empty array" });
+        }
+        const schedule = await storage.createAdversarialSchedule({
+          orgId,
+          name: body.name,
+          frequency: body.frequency,
+          testCaseIds: body.testCaseIds,
+          enabled: body.enabled !== false,
+          nextRunAt: body.nextRunAt ? new Date(body.nextRunAt) : new Date(Date.now() + 86400000),
+          config: {
+            description: body.description || "",
+            domains: Array.isArray(body.domains)
+              ? body.domains.filter((d: string) => VALID_DOMAINS.includes(d as AttackDomain))
+              : [],
+            categories: Array.isArray(body.categories)
+              ? body.categories.filter((c: string) => VALID_CATEGORIES.includes(c as AttackCategory))
+              : [],
+            phase: body.phase && VALID_PHASES.includes(body.phase) ? body.phase : "pre_production",
+          },
+        });
+        res.status(201).json(schedule);
+      } catch (error) {
+        logger.child("routes").error("Create schedule error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create schedule" });
       }
-      if (body.enabled !== undefined) {
-        updates.enabled = body.enabled === true;
-      }
-      if (body.testCaseIds !== undefined) {
-        if (!Array.isArray(body.testCaseIds)) return res.status(400).json({ message: "testCaseIds must be an array" });
-        updates.testCaseIds = body.testCaseIds;
-      }
-      const updated = await storage.updateAdversarialSchedule(id, orgId, updates);
-      if (!updated) return res.status(404).json({ message: "Schedule not found" });
-      res.json(updated);
-    } catch (error) {
-      logger.child("routes").error("Update schedule error", { error: String(error) });
-      res.status(500).json({ message: "Failed to update schedule" });
-    }
-  });
+    },
+  );
 
-  app.delete("/api/adversarial-testing/schedules/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const deleted = await storage.deleteAdversarialSchedule(id, orgId);
-      if (!deleted) return res.status(404).json({ message: "Schedule not found" });
-      res.json({ message: "Schedule deleted" });
-    } catch (error) {
-      logger.child("routes").error("Delete schedule error", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete schedule" });
-    }
-  });
+  app.patch(
+    "/api/adversarial-testing/schedules/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const body = req.body;
+        const updates: Record<string, unknown> = {};
+        if (body.name !== undefined) {
+          if (typeof body.name !== "string") return res.status(400).json({ message: "name must be a string" });
+          updates.name = body.name;
+        }
+        if (body.frequency !== undefined) {
+          if (!VALID_FREQUENCIES.includes(body.frequency))
+            return res.status(400).json({ message: `frequency must be one of: ${VALID_FREQUENCIES.join(", ")}` });
+          updates.frequency = body.frequency;
+        }
+        if (body.enabled !== undefined) {
+          updates.enabled = body.enabled === true;
+        }
+        if (body.testCaseIds !== undefined) {
+          if (!Array.isArray(body.testCaseIds))
+            return res.status(400).json({ message: "testCaseIds must be an array" });
+          updates.testCaseIds = body.testCaseIds;
+        }
+        const updated = await storage.updateAdversarialSchedule(id, orgId, updates);
+        if (!updated) return res.status(404).json({ message: "Schedule not found" });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Update schedule error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update schedule" });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/adversarial-testing/schedules/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const deleted = await storage.deleteAdversarialSchedule(id, orgId);
+        if (!deleted) return res.status(404).json({ message: "Schedule not found" });
+        res.json({ message: "Schedule deleted" });
+      } catch (error) {
+        logger.child("routes").error("Delete schedule error", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete schedule" });
+      }
+    },
+  );
 
   // Remediations — persisted to DB
   app.get("/api/adversarial-testing/remediations", isAuthenticated, async (req, res) => {
@@ -301,61 +339,75 @@ export function registerAdversarialTestingRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/adversarial-testing/remediations/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const body = req.body;
-      if (body.status !== undefined && !VALID_REMEDIATION_STATUSES.includes(body.status)) {
-        return res.status(400).json({ message: `status must be one of: ${VALID_REMEDIATION_STATUSES.join(", ")}` });
+  app.patch(
+    "/api/adversarial-testing/remediations/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const body = req.body;
+        if (body.status !== undefined && !VALID_REMEDIATION_STATUSES.includes(body.status)) {
+          return res.status(400).json({ message: `status must be one of: ${VALID_REMEDIATION_STATUSES.join(", ")}` });
+        }
+        const updates: Record<string, unknown> = {};
+        if (body.status !== undefined) {
+          updates.status = body.status;
+          if (body.status === "resolved") updates.resolvedAt = new Date();
+        }
+        if (body.assignee !== undefined) updates.assignee = body.assignee;
+        if (body.recommendation !== undefined) updates.recommendation = body.recommendation;
+        const updated = await storage.updateAdversarialRemediation(id, orgId, updates);
+        if (!updated) return res.status(404).json({ message: "Remediation not found" });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Update remediation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update remediation" });
       }
-      const updates: Record<string, unknown> = {};
-      if (body.status !== undefined) {
-        updates.status = body.status;
-        if (body.status === "resolved") updates.resolvedAt = new Date();
+    },
+  );
+
+  app.post(
+    "/api/adversarial-testing/remediations/:id/retest",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const remediation = await storage.getAdversarialRemediation(id, orgId);
+        if (!remediation) return res.status(404).json({ message: "Remediation not found" });
+
+        // Look up original execution to get correct testCaseId, domain, and category
+        const originalExecution = await storage.getAdversarialExecution(remediation.executionId, orgId);
+        if (!originalExecution) {
+          return res.status(404).json({ message: "Original execution not found, cannot retest" });
+        }
+
+        // Create a new execution for the retest
+        const execution = await storage.createAdversarialExecution({
+          orgId,
+          testCaseId: originalExecution.testCaseId,
+          testCaseName: remediation.testCaseName,
+          domain: originalExecution.domain,
+          category: originalExecution.category,
+          phase: "post_fix",
+          status: "running",
+          trigger: "post_fix",
+          severity: remediation.severity || "medium",
+          result: { retestOfRemediation: id },
+          startedAt: new Date(),
+        });
+        res.status(201).json(execution);
+      } catch (error) {
+        logger.child("routes").error("Retest remediation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to retest" });
       }
-      if (body.assignee !== undefined) updates.assignee = body.assignee;
-      if (body.recommendation !== undefined) updates.recommendation = body.recommendation;
-      const updated = await storage.updateAdversarialRemediation(id, orgId, updates);
-      if (!updated) return res.status(404).json({ message: "Remediation not found" });
-      res.json(updated);
-    } catch (error) {
-      logger.child("routes").error("Update remediation error", { error: String(error) });
-      res.status(500).json({ message: "Failed to update remediation" });
-    }
-  });
-
-  app.post("/api/adversarial-testing/remediations/:id/retest", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const remediation = await storage.getAdversarialRemediation(id, orgId);
-      if (!remediation) return res.status(404).json({ message: "Remediation not found" });
-
-      // Look up original execution to get correct testCaseId, domain, and category
-      const originalExecution = await storage.getAdversarialExecution(remediation.executionId, orgId);
-      if (!originalExecution) {
-        return res.status(404).json({ message: "Original execution not found, cannot retest" });
-      }
-
-      // Create a new execution for the retest
-      const execution = await storage.createAdversarialExecution({
-        orgId,
-        testCaseId: originalExecution.testCaseId,
-        testCaseName: remediation.testCaseName,
-        domain: originalExecution.domain,
-        category: originalExecution.category,
-        phase: "post_fix",
-        status: "running",
-        trigger: "post_fix",
-        severity: remediation.severity || "medium",
-        result: { retestOfRemediation: id },
-        startedAt: new Date(),
-      });
-      res.status(201).json(execution);
-    } catch (error) {
-      logger.child("routes").error("Retest remediation error", { error: String(error) });
-      res.status(500).json({ message: "Failed to retest" });
-    }
-  });
+    },
+  );
 }

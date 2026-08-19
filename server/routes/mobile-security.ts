@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { eq, and, desc, sql, count, gte, lte, isNull } from "drizzle-orm";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
-import { requireMinRole } from "../rbac";
+import { requireMinRole, resolveOrgContext, requireOrgId } from "../rbac";
 import { db } from "../db";
 import {
   mobileDevices,
@@ -161,187 +161,201 @@ export function registerMobileSecurityRoutes(app: Express): void {
   });
 
   /** Register a new mobile device */
-  app.post("/api/mobile/devices", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const {
-        deviceName,
-        platform,
-        osVersion,
-        model,
-        manufacturer,
-        serialNumber,
-        imei,
-        macAddress,
-        mdmProvider,
-        mdmDeviceId,
-        userId,
-        isEncrypted,
-        isRooted,
-        isJailbroken,
-        hasScreenLock,
-        hasFirewall,
-        isVpnActive,
-        vpnProvider,
-        lastKnownIp,
-        lastKnownLocation,
-        lastKnownCountry,
-        installedApps,
-        sideloadedApps,
-        certificates,
-        tags,
-        metadata,
-      } = req.body;
-
-      if (!deviceName || typeof deviceName !== "string" || deviceName.trim().length === 0) {
-        return res.status(400).json({ message: "Device name is required" });
-      }
-      if (!platform || !ALLOWED_PLATFORMS.includes(platform)) {
-        return res.status(400).json({ message: `Invalid platform. Allowed: ${ALLOWED_PLATFORMS.join(", ")}` });
-      }
-      if (mdmProvider && !ALLOWED_MDM.includes(mdmProvider)) {
-        return res.status(400).json({ message: `Invalid MDM provider. Allowed: ${ALLOWED_MDM.join(", ")}` });
-      }
-
-      const riskData = computeDeviceRiskScore({
-        isRooted,
-        isJailbroken,
-        isEncrypted,
-        hasScreenLock,
-        hasMdm: !!mdmProvider,
-        isVpnActive,
-        hasFirewall,
-        sideloadedApps,
-      });
-
-      const [device] = await db
-        .insert(mobileDevices)
-        .values({
-          orgId,
-          userId: userId || null,
-          deviceName: deviceName.trim(),
+  app.post(
+    "/api/mobile/devices",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const {
+          deviceName,
           platform,
-          osVersion: osVersion || null,
-          model: model || null,
-          manufacturer: manufacturer || null,
-          serialNumber: serialNumber || null,
-          imei: imei || null,
-          macAddress: macAddress || null,
-          mdmProvider: mdmProvider || null,
-          mdmDeviceId: mdmDeviceId || null,
-          mdmEnrolledAt: mdmProvider ? new Date() : null,
-          lastCheckIn: new Date(),
-          complianceStatus: mdmProvider ? "pending" : "unknown",
-          riskLevel: riskData.level,
-          riskScore: riskData.score,
-          isEncrypted: isEncrypted === true,
-          isRooted: isRooted === true,
-          isJailbroken: isJailbroken === true,
-          hasMdm: !!mdmProvider,
-          hasScreenLock: hasScreenLock === true,
-          hasFirewall: hasFirewall === true,
-          isVpnActive: isVpnActive === true,
-          vpnProvider: vpnProvider || null,
-          lastKnownIp: lastKnownIp || null,
-          lastKnownLocation: lastKnownLocation || null,
-          lastKnownCountry: lastKnownCountry || null,
-          installedApps: installedApps || null,
-          sideloadedApps: sideloadedApps || null,
-          certificates: certificates || null,
-          tags: tags || null,
-          metadata: metadata || null,
-          status: "active",
-        })
-        .returning();
+          osVersion,
+          model,
+          manufacturer,
+          serialNumber,
+          imei,
+          macAddress,
+          mdmProvider,
+          mdmDeviceId,
+          userId,
+          isEncrypted,
+          isRooted,
+          isJailbroken,
+          hasScreenLock,
+          hasFirewall,
+          isVpnActive,
+          vpnProvider,
+          lastKnownIp,
+          lastKnownLocation,
+          lastKnownCountry,
+          installedApps,
+          sideloadedApps,
+          certificates,
+          tags,
+          metadata,
+        } = req.body;
 
-      log.info(`Mobile device registered: ${device.deviceName} (${device.platform}) in org ${orgId}`);
-      res.status(201).json(device);
-    } catch (err) {
-      log.error("Failed to register mobile device", { error: String(err) });
-      res.status(500).json({ message: "Failed to register mobile device" });
-    }
-  });
+        if (!deviceName || typeof deviceName !== "string" || deviceName.trim().length === 0) {
+          return res.status(400).json({ message: "Device name is required" });
+        }
+        if (!platform || !ALLOWED_PLATFORMS.includes(platform)) {
+          return res.status(400).json({ message: `Invalid platform. Allowed: ${ALLOWED_PLATFORMS.join(", ")}` });
+        }
+        if (mdmProvider && !ALLOWED_MDM.includes(mdmProvider)) {
+          return res.status(400).json({ message: `Invalid MDM provider. Allowed: ${ALLOWED_MDM.join(", ")}` });
+        }
+
+        const riskData = computeDeviceRiskScore({
+          isRooted,
+          isJailbroken,
+          isEncrypted,
+          hasScreenLock,
+          hasMdm: !!mdmProvider,
+          isVpnActive,
+          hasFirewall,
+          sideloadedApps,
+        });
+
+        const [device] = await db
+          .insert(mobileDevices)
+          .values({
+            orgId,
+            userId: userId || null,
+            deviceName: deviceName.trim(),
+            platform,
+            osVersion: osVersion || null,
+            model: model || null,
+            manufacturer: manufacturer || null,
+            serialNumber: serialNumber || null,
+            imei: imei || null,
+            macAddress: macAddress || null,
+            mdmProvider: mdmProvider || null,
+            mdmDeviceId: mdmDeviceId || null,
+            mdmEnrolledAt: mdmProvider ? new Date() : null,
+            lastCheckIn: new Date(),
+            complianceStatus: mdmProvider ? "pending" : "unknown",
+            riskLevel: riskData.level,
+            riskScore: riskData.score,
+            isEncrypted: isEncrypted === true,
+            isRooted: isRooted === true,
+            isJailbroken: isJailbroken === true,
+            hasMdm: !!mdmProvider,
+            hasScreenLock: hasScreenLock === true,
+            hasFirewall: hasFirewall === true,
+            isVpnActive: isVpnActive === true,
+            vpnProvider: vpnProvider || null,
+            lastKnownIp: lastKnownIp || null,
+            lastKnownLocation: lastKnownLocation || null,
+            lastKnownCountry: lastKnownCountry || null,
+            installedApps: installedApps || null,
+            sideloadedApps: sideloadedApps || null,
+            certificates: certificates || null,
+            tags: tags || null,
+            metadata: metadata || null,
+            status: "active",
+          })
+          .returning();
+
+        log.info(`Mobile device registered: ${device.deviceName} (${device.platform}) in org ${orgId}`);
+        res.status(201).json(device);
+      } catch (err) {
+        log.error("Failed to register mobile device", { error: String(err) });
+        res.status(500).json({ message: "Failed to register mobile device" });
+      }
+    },
+  );
 
   /** Update a mobile device */
-  app.patch("/api/mobile/devices/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(mobileDevices)
-        .where(and(eq(mobileDevices.id, String(req.params.id)), eq(mobileDevices.orgId, orgId)));
-      if (!existing) return res.status(404).json({ message: "Device not found" });
+  app.patch(
+    "/api/mobile/devices/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(mobileDevices)
+          .where(and(eq(mobileDevices.id, String(req.params.id)), eq(mobileDevices.orgId, orgId)));
+        if (!existing) return res.status(404).json({ message: "Device not found" });
 
-      const allowedFields = [
-        "deviceName",
-        "platform",
-        "osVersion",
-        "model",
-        "manufacturer",
-        "serialNumber",
-        "imei",
-        "macAddress",
-        "mdmProvider",
-        "mdmDeviceId",
-        "userId",
-        "complianceStatus",
-        "isEncrypted",
-        "isRooted",
-        "isJailbroken",
-        "hasScreenLock",
-        "hasFirewall",
-        "isVpnActive",
-        "vpnProvider",
-        "lastKnownIp",
-        "lastKnownLocation",
-        "lastKnownCountry",
-        "installedApps",
-        "sideloadedApps",
-        "certificates",
-        "tags",
-        "metadata",
-        "status",
-      ];
-      const updates: Record<string, unknown> = { updatedAt: new Date() };
-      for (const field of allowedFields) {
-        if (req.body[field] !== undefined) {
-          updates[field] = req.body[field];
+        const allowedFields = [
+          "deviceName",
+          "platform",
+          "osVersion",
+          "model",
+          "manufacturer",
+          "serialNumber",
+          "imei",
+          "macAddress",
+          "mdmProvider",
+          "mdmDeviceId",
+          "userId",
+          "complianceStatus",
+          "isEncrypted",
+          "isRooted",
+          "isJailbroken",
+          "hasScreenLock",
+          "hasFirewall",
+          "isVpnActive",
+          "vpnProvider",
+          "lastKnownIp",
+          "lastKnownLocation",
+          "lastKnownCountry",
+          "installedApps",
+          "sideloadedApps",
+          "certificates",
+          "tags",
+          "metadata",
+          "status",
+        ];
+        const updates: Record<string, unknown> = { updatedAt: new Date() };
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            updates[field] = req.body[field];
+          }
         }
-      }
 
-      if (updates.platform && !ALLOWED_PLATFORMS.includes(updates.platform as string)) {
-        return res.status(400).json({ message: "Invalid platform" });
-      }
-      if (updates.complianceStatus && !ALLOWED_COMPLIANCE.includes(updates.complianceStatus as string)) {
-        return res.status(400).json({ message: "Invalid compliance status" });
-      }
+        if (updates.platform && !ALLOWED_PLATFORMS.includes(updates.platform as string)) {
+          return res.status(400).json({ message: "Invalid platform" });
+        }
+        if (updates.complianceStatus && !ALLOWED_COMPLIANCE.includes(updates.complianceStatus as string)) {
+          return res.status(400).json({ message: "Invalid compliance status" });
+        }
 
-      // Recompute risk score on posture changes
-      const merged = { ...existing, ...updates };
-      const riskData = computeDeviceRiskScore({
-        isRooted: merged.isRooted as boolean,
-        isJailbroken: merged.isJailbroken as boolean,
-        isEncrypted: merged.isEncrypted as boolean,
-        hasScreenLock: merged.hasScreenLock as boolean,
-        hasMdm: merged.hasMdm as boolean,
-        isVpnActive: merged.isVpnActive as boolean,
-        hasFirewall: merged.hasFirewall as boolean,
-        sideloadedApps: merged.sideloadedApps,
-      });
-      updates.riskScore = riskData.score;
-      updates.riskLevel = riskData.level;
+        // Recompute risk score on posture changes
+        const merged = { ...existing, ...updates };
+        const riskData = computeDeviceRiskScore({
+          isRooted: merged.isRooted as boolean,
+          isJailbroken: merged.isJailbroken as boolean,
+          isEncrypted: merged.isEncrypted as boolean,
+          hasScreenLock: merged.hasScreenLock as boolean,
+          hasMdm: merged.hasMdm as boolean,
+          isVpnActive: merged.isVpnActive as boolean,
+          hasFirewall: merged.hasFirewall as boolean,
+          sideloadedApps: merged.sideloadedApps,
+        });
+        updates.riskScore = riskData.score;
+        updates.riskLevel = riskData.level;
 
-      const [updated] = await db
-        .update(mobileDevices)
-        .set(updates as Record<string, unknown> as typeof mobileDevices.$inferInsert)
-        .where(and(eq(mobileDevices.id, String(req.params.id)), eq(mobileDevices.orgId, orgId)))
-        .returning();
-      res.json(updated);
-    } catch (err) {
-      log.error("Failed to update mobile device", { error: String(err) });
-      res.status(500).json({ message: "Failed to update mobile device" });
-    }
-  });
+        const [updated] = await db
+          .update(mobileDevices)
+          .set(updates as Record<string, unknown> as typeof mobileDevices.$inferInsert)
+          .where(and(eq(mobileDevices.id, String(req.params.id)), eq(mobileDevices.orgId, orgId)))
+          .returning();
+        res.json(updated);
+      } catch (err) {
+        log.error("Failed to update mobile device", { error: String(err) });
+        res.status(500).json({ message: "Failed to update mobile device" });
+      }
+    },
+  );
 
   /** Delete a mobile device */
   app.delete("/api/mobile/devices/:id", isAuthenticated, requireMinRole("admin"), async (req, res) => {
@@ -489,141 +503,148 @@ export function registerMobileSecurityRoutes(app: Express): void {
   // =========================================================================
 
   /** Run posture check on a device */
-  app.post("/api/mobile/devices/:id/posture-check", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [device] = await db
-        .select()
-        .from(mobileDevices)
-        .where(and(eq(mobileDevices.id, String(req.params.id)), eq(mobileDevices.orgId, orgId)));
-      if (!device) return res.status(404).json({ message: "Device not found" });
+  app.post(
+    "/api/mobile/devices/:id/posture-check",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [device] = await db
+          .select()
+          .from(mobileDevices)
+          .where(and(eq(mobileDevices.id, String(req.params.id)), eq(mobileDevices.orgId, orgId)));
+        if (!device) return res.status(404).json({ message: "Device not found" });
 
-      // Run posture checks based on device state
-      const checks: Array<{
-        checkType: string;
-        checkName: string;
-        passed: boolean;
-        details: string;
-        severity: string;
-        remediationHint: string;
-      }> = [];
+        // Run posture checks based on device state
+        const checks: Array<{
+          checkType: string;
+          checkName: string;
+          passed: boolean;
+          details: string;
+          severity: string;
+          remediationHint: string;
+        }> = [];
 
-      checks.push({
-        checkType: "encryption",
-        checkName: "Storage Encryption",
-        passed: device.isEncrypted === true,
-        details: device.isEncrypted ? "Device storage is encrypted" : "Device storage is NOT encrypted",
-        severity: "high",
-        remediationHint: "Enable full-disk encryption in device settings",
-      });
+        checks.push({
+          checkType: "encryption",
+          checkName: "Storage Encryption",
+          passed: device.isEncrypted === true,
+          details: device.isEncrypted ? "Device storage is encrypted" : "Device storage is NOT encrypted",
+          severity: "high",
+          remediationHint: "Enable full-disk encryption in device settings",
+        });
 
-      checks.push({
-        checkType: "root_jailbreak",
-        checkName: "Root/Jailbreak Detection",
-        passed: !device.isRooted && !device.isJailbroken,
-        details:
-          device.isRooted || device.isJailbroken ? "Device is rooted or jailbroken" : "No root/jailbreak detected",
-        severity: "critical",
-        remediationHint: "Remove root/jailbreak and restore device to factory settings",
-      });
+        checks.push({
+          checkType: "root_jailbreak",
+          checkName: "Root/Jailbreak Detection",
+          passed: !device.isRooted && !device.isJailbroken,
+          details:
+            device.isRooted || device.isJailbroken ? "Device is rooted or jailbroken" : "No root/jailbreak detected",
+          severity: "critical",
+          remediationHint: "Remove root/jailbreak and restore device to factory settings",
+        });
 
-      checks.push({
-        checkType: "screen_lock",
-        checkName: "Screen Lock",
-        passed: device.hasScreenLock === true,
-        details: device.hasScreenLock ? "Screen lock is enabled" : "No screen lock configured",
-        severity: "medium",
-        remediationHint: "Enable PIN, pattern, or biometric screen lock",
-      });
+        checks.push({
+          checkType: "screen_lock",
+          checkName: "Screen Lock",
+          passed: device.hasScreenLock === true,
+          details: device.hasScreenLock ? "Screen lock is enabled" : "No screen lock configured",
+          severity: "medium",
+          remediationHint: "Enable PIN, pattern, or biometric screen lock",
+        });
 
-      checks.push({
-        checkType: "mdm_enrollment",
-        checkName: "MDM Enrollment",
-        passed: device.hasMdm === true,
-        details: device.hasMdm ? `Enrolled in ${device.mdmProvider || "MDM"}` : "Not enrolled in any MDM solution",
-        severity: "high",
-        remediationHint: "Enroll device in corporate MDM (Jamf, Intune, or Workspace ONE)",
-      });
+        checks.push({
+          checkType: "mdm_enrollment",
+          checkName: "MDM Enrollment",
+          passed: device.hasMdm === true,
+          details: device.hasMdm ? `Enrolled in ${device.mdmProvider || "MDM"}` : "Not enrolled in any MDM solution",
+          severity: "high",
+          remediationHint: "Enroll device in corporate MDM (Jamf, Intune, or Workspace ONE)",
+        });
 
-      checks.push({
-        checkType: "vpn",
-        checkName: "VPN Connection",
-        passed: device.isVpnActive === true,
-        details: device.isVpnActive
-          ? `VPN active via ${device.vpnProvider || "unknown provider"}`
-          : "VPN not connected",
-        severity: "medium",
-        remediationHint: "Connect to corporate VPN before accessing resources",
-      });
+        checks.push({
+          checkType: "vpn",
+          checkName: "VPN Connection",
+          passed: device.isVpnActive === true,
+          details: device.isVpnActive
+            ? `VPN active via ${device.vpnProvider || "unknown provider"}`
+            : "VPN not connected",
+          severity: "medium",
+          remediationHint: "Connect to corporate VPN before accessing resources",
+        });
 
-      checks.push({
-        checkType: "firewall",
-        checkName: "Firewall Status",
-        passed: device.hasFirewall === true,
-        details: device.hasFirewall ? "Firewall is enabled" : "Firewall is disabled",
-        severity: "medium",
-        remediationHint: "Enable the device firewall in system settings",
-      });
+        checks.push({
+          checkType: "firewall",
+          checkName: "Firewall Status",
+          passed: device.hasFirewall === true,
+          details: device.hasFirewall ? "Firewall is enabled" : "Firewall is disabled",
+          severity: "medium",
+          remediationHint: "Enable the device firewall in system settings",
+        });
 
-      const sideloaded = device.sideloadedApps as unknown[];
-      checks.push({
-        checkType: "sideloaded_apps",
-        checkName: "Sideloaded App Detection",
-        passed: !Array.isArray(sideloaded) || sideloaded.length === 0,
-        details:
-          Array.isArray(sideloaded) && sideloaded.length > 0
-            ? `${sideloaded.length} sideloaded app(s) detected`
-            : "No sideloaded apps detected",
-        severity: "high",
-        remediationHint: "Remove sideloaded applications and only install from official app stores",
-      });
+        const sideloaded = device.sideloadedApps as unknown[];
+        checks.push({
+          checkType: "sideloaded_apps",
+          checkName: "Sideloaded App Detection",
+          passed: !Array.isArray(sideloaded) || sideloaded.length === 0,
+          details:
+            Array.isArray(sideloaded) && sideloaded.length > 0
+              ? `${sideloaded.length} sideloaded app(s) detected`
+              : "No sideloaded apps detected",
+          severity: "high",
+          remediationHint: "Remove sideloaded applications and only install from official app stores",
+        });
 
-      // Store all checks
-      const insertedChecks = [];
-      for (const check of checks) {
-        const [inserted] = await db
-          .insert(devicePostureChecks)
-          .values({
-            orgId,
-            deviceId: device.id,
-            checkType: check.checkType,
-            checkName: check.checkName,
-            passed: check.passed,
-            details: check.details,
-            severity: check.severity,
-            remediationHint: check.remediationHint,
-          })
-          .returning();
-        insertedChecks.push(inserted);
-      }
+        // Store all checks
+        const insertedChecks = [];
+        for (const check of checks) {
+          const [inserted] = await db
+            .insert(devicePostureChecks)
+            .values({
+              orgId,
+              deviceId: device.id,
+              checkType: check.checkType,
+              checkName: check.checkName,
+              passed: check.passed,
+              details: check.details,
+              severity: check.severity,
+              remediationHint: check.remediationHint,
+            })
+            .returning();
+          insertedChecks.push(inserted);
+        }
 
-      // Update device compliance based on check results
-      const allPassed = checks.every((c) => c.passed);
-      const hasCriticalFailure = checks.some((c) => !c.passed && c.severity === "critical");
-      const newCompliance = allPassed ? "compliant" : hasCriticalFailure ? "non-compliant" : "pending";
+        // Update device compliance based on check results
+        const allPassed = checks.every((c) => c.passed);
+        const hasCriticalFailure = checks.some((c) => !c.passed && c.severity === "critical");
+        const newCompliance = allPassed ? "compliant" : hasCriticalFailure ? "non-compliant" : "pending";
 
-      await db
-        .update(mobileDevices)
-        .set({
+        await db
+          .update(mobileDevices)
+          .set({
+            complianceStatus: newCompliance,
+            lastCheckIn: new Date(),
+            updatedAt: new Date(),
+          } as typeof mobileDevices.$inferInsert)
+          .where(eq(mobileDevices.id, device.id));
+
+        res.json({
+          deviceId: device.id,
           complianceStatus: newCompliance,
-          lastCheckIn: new Date(),
-          updatedAt: new Date(),
-        } as typeof mobileDevices.$inferInsert)
-        .where(eq(mobileDevices.id, device.id));
-
-      res.json({
-        deviceId: device.id,
-        complianceStatus: newCompliance,
-        checksRun: checks.length,
-        checksPassed: checks.filter((c) => c.passed).length,
-        checksFailed: checks.filter((c) => !c.passed).length,
-        checks: insertedChecks,
-      });
-    } catch (err) {
-      log.error("Failed to run posture check", { error: String(err) });
-      res.status(500).json({ message: "Failed to run posture check" });
-    }
-  });
+          checksRun: checks.length,
+          checksPassed: checks.filter((c) => c.passed).length,
+          checksFailed: checks.filter((c) => !c.passed).length,
+          checks: insertedChecks,
+        });
+      } catch (err) {
+        log.error("Failed to run posture check", { error: String(err) });
+        res.status(500).json({ message: "Failed to run posture check" });
+      }
+    },
+  );
 
   /** Get posture check history for a device */
   app.get("/api/mobile/devices/:id/posture-checks", isAuthenticated, async (req, res) => {
@@ -681,128 +702,142 @@ export function registerMobileSecurityRoutes(app: Express): void {
   });
 
   /** Report a mobile threat */
-  app.post("/api/mobile/threats", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const {
-        deviceId,
-        threatType,
-        severity,
-        title,
-        description,
-        appName,
-        appPackage,
-        networkSsid,
-        sourceIp,
-        mitreTactic,
-        mitreTechnique,
-        metadata,
-      } = req.body;
-
-      if (!title || typeof title !== "string") {
-        return res.status(400).json({ message: "Title is required" });
-      }
-      if (!threatType || !ALLOWED_THREAT_TYPES.includes(threatType)) {
-        return res.status(400).json({ message: `Invalid threat type. Allowed: ${ALLOWED_THREAT_TYPES.join(", ")}` });
-      }
-      if (!deviceId) {
-        return res.status(400).json({ message: "deviceId is required" });
-      }
-
-      // Verify device belongs to org
-      const [device] = await db
-        .select()
-        .from(mobileDevices)
-        .where(and(eq(mobileDevices.id, deviceId), eq(mobileDevices.orgId, orgId)));
-      if (!device) return res.status(400).json({ message: "Device not found in org" });
-
-      const effectiveSeverity = severity && ALLOWED_RISK_LEVELS.includes(severity) ? severity : "medium";
-
-      const [threat] = await db
-        .insert(mobileThreats)
-        .values({
-          orgId,
+  app.post(
+    "/api/mobile/threats",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const {
           deviceId,
           threatType,
-          severity: effectiveSeverity,
+          severity,
           title,
-          description: description || null,
-          appName: appName || null,
-          appPackage: appPackage || null,
-          networkSsid: networkSsid || null,
-          sourceIp: sourceIp || null,
-          mitreTactic: mitreTactic || null,
-          mitreTechnique: mitreTechnique || null,
-          status: "new",
-          metadata: (metadata || null) as Record<string, unknown> | null,
-        })
-        .returning();
+          description,
+          appName,
+          appPackage,
+          networkSsid,
+          sourceIp,
+          mitreTactic,
+          mitreTechnique,
+          metadata,
+        } = req.body;
 
-      // Auto-create alert for critical/high threats
-      if (effectiveSeverity === "critical" || effectiveSeverity === "high") {
-        const [alert] = await db
-          .insert(alerts)
+        if (!title || typeof title !== "string") {
+          return res.status(400).json({ message: "Title is required" });
+        }
+        if (!threatType || !ALLOWED_THREAT_TYPES.includes(threatType)) {
+          return res.status(400).json({ message: `Invalid threat type. Allowed: ${ALLOWED_THREAT_TYPES.join(", ")}` });
+        }
+        if (!deviceId) {
+          return res.status(400).json({ message: "deviceId is required" });
+        }
+
+        // Verify device belongs to org
+        const [device] = await db
+          .select()
+          .from(mobileDevices)
+          .where(and(eq(mobileDevices.id, deviceId), eq(mobileDevices.orgId, orgId)));
+        if (!device) return res.status(400).json({ message: "Device not found in org" });
+
+        const effectiveSeverity = severity && ALLOWED_RISK_LEVELS.includes(severity) ? severity : "medium";
+
+        const [threat] = await db
+          .insert(mobileThreats)
           .values({
             orgId,
-            source: "mobile_mtd",
-            category: "intrusion",
+            deviceId,
+            threatType,
             severity: effectiveSeverity,
-            title: `[Mobile] ${title}`,
-            description: description || `Mobile threat detected: ${threatType} on device ${device.deviceName}`,
+            title,
+            description: description || null,
+            appName: appName || null,
+            appPackage: appPackage || null,
+            networkSsid: networkSsid || null,
             sourceIp: sourceIp || null,
-            status: "new",
             mitreTactic: mitreTactic || null,
             mitreTechnique: mitreTechnique || null,
-            rawData: { mobileThreatId: threat.id, threatType, deviceId } as Record<string, unknown>,
-            detectedAt: new Date(),
+            status: "new",
+            metadata: (metadata || null) as Record<string, unknown> | null,
           })
           .returning();
 
-        await db.update(mobileThreats).set({ alertId: alert.id }).where(eq(mobileThreats.id, threat.id));
-      }
+        // Auto-create alert for critical/high threats
+        if (effectiveSeverity === "critical" || effectiveSeverity === "high") {
+          const [alert] = await db
+            .insert(alerts)
+            .values({
+              orgId,
+              source: "mobile_mtd",
+              category: "intrusion",
+              severity: effectiveSeverity,
+              title: `[Mobile] ${title}`,
+              description: description || `Mobile threat detected: ${threatType} on device ${device.deviceName}`,
+              sourceIp: sourceIp || null,
+              status: "new",
+              mitreTactic: mitreTactic || null,
+              mitreTechnique: mitreTechnique || null,
+              rawData: { mobileThreatId: threat.id, threatType, deviceId } as Record<string, unknown>,
+              detectedAt: new Date(),
+            })
+            .returning();
 
-      res.status(201).json(threat);
-    } catch (err) {
-      log.error("Failed to create mobile threat", { error: String(err) });
-      res.status(500).json({ message: "Failed to create mobile threat" });
-    }
-  });
+          await db.update(mobileThreats).set({ alertId: alert.id }).where(eq(mobileThreats.id, threat.id));
+        }
+
+        res.status(201).json(threat);
+      } catch (err) {
+        log.error("Failed to create mobile threat", { error: String(err) });
+        res.status(500).json({ message: "Failed to create mobile threat" });
+      }
+    },
+  );
 
   /** Update threat status */
-  app.patch("/api/mobile/threats/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(mobileThreats)
-        .where(and(eq(mobileThreats.id, String(req.params.id)), eq(mobileThreats.orgId, orgId)));
-      if (!existing) return res.status(404).json({ message: "Threat not found" });
+  app.patch(
+    "/api/mobile/threats/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(mobileThreats)
+          .where(and(eq(mobileThreats.id, String(req.params.id)), eq(mobileThreats.orgId, orgId)));
+        if (!existing) return res.status(404).json({ message: "Threat not found" });
 
-      const allowedFields = ["status", "resolvedBy", "metadata"];
-      const updates: Record<string, unknown> = {};
-      for (const field of allowedFields) {
-        if (req.body[field] !== undefined) {
-          updates[field] = req.body[field];
+        const allowedFields = ["status", "resolvedBy", "metadata"];
+        const updates: Record<string, unknown> = {};
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            updates[field] = req.body[field];
+          }
         }
-      }
 
-      if (updates.status === "resolved") {
-        const user = req.user as Record<string, unknown> | undefined;
-        updates.resolvedAt = new Date();
-        updates.resolvedBy = user?.id || null;
-      }
+        if (updates.status === "resolved") {
+          const user = req.user as Record<string, unknown> | undefined;
+          updates.resolvedAt = new Date();
+          updates.resolvedBy = user?.id || null;
+        }
 
-      const [updated] = await db
-        .update(mobileThreats)
-        .set(updates as Record<string, unknown> as typeof mobileThreats.$inferInsert)
-        .where(and(eq(mobileThreats.id, String(req.params.id)), eq(mobileThreats.orgId, orgId)))
-        .returning();
-      res.json(updated);
-    } catch (err) {
-      log.error("Failed to update mobile threat", { error: String(err) });
-      res.status(500).json({ message: "Failed to update mobile threat" });
-    }
-  });
+        const [updated] = await db
+          .update(mobileThreats)
+          .set(updates as Record<string, unknown> as typeof mobileThreats.$inferInsert)
+          .where(and(eq(mobileThreats.id, String(req.params.id)), eq(mobileThreats.orgId, orgId)))
+          .returning();
+        res.json(updated);
+      } catch (err) {
+        log.error("Failed to update mobile threat", { error: String(err) });
+        res.status(500).json({ message: "Failed to update mobile threat" });
+      }
+    },
+  );
 
   // =========================================================================
   // ZTNA POLICIES
@@ -965,127 +1000,134 @@ export function registerMobileSecurityRoutes(app: Express): void {
   });
 
   /** Evaluate ZTNA access for a device */
-  app.post("/api/mobile/ztna/evaluate", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { deviceId, country, ipAddress, isOffHours } = req.body;
+  app.post(
+    "/api/mobile/ztna/evaluate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { deviceId, country, ipAddress, isOffHours } = req.body;
 
-      if (!deviceId) {
-        return res.status(400).json({ message: "deviceId is required" });
+        if (!deviceId) {
+          return res.status(400).json({ message: "deviceId is required" });
+        }
+
+        const [device] = await db
+          .select()
+          .from(mobileDevices)
+          .where(and(eq(mobileDevices.id, deviceId), eq(mobileDevices.orgId, orgId)));
+        if (!device) return res.status(404).json({ message: "Device not found" });
+
+        // Load all enabled policies sorted by priority
+        const policies = await db
+          .select()
+          .from(ztnaPolicies)
+          .where(and(eq(ztnaPolicies.orgId, orgId), eq(ztnaPolicies.enabled, true)))
+          .orderBy(ztnaPolicies.priority);
+
+        let decision: string = "allow";
+        let matchedPolicy: string | null = null;
+        const violations: string[] = [];
+
+        for (const policy of policies) {
+          // Check platform
+          const allowedPlatforms = policy.allowedPlatforms as string[] | null;
+          if (allowedPlatforms && !allowedPlatforms.includes(device.platform)) {
+            decision = policy.action;
+            matchedPolicy = policy.id;
+            violations.push(`Platform ${device.platform} not in allowed list`);
+            break;
+          }
+
+          // Check rooted/jailbroken
+          if (policy.blockRooted && (device.isRooted || device.isJailbroken)) {
+            decision = "deny";
+            matchedPolicy = policy.id;
+            violations.push("Device is rooted/jailbroken");
+            break;
+          }
+
+          // Check encryption
+          if (policy.requireEncryption && !device.isEncrypted) {
+            decision = policy.action;
+            matchedPolicy = policy.id;
+            violations.push("Device not encrypted");
+            break;
+          }
+
+          // Check MDM
+          if (policy.requireMdm && !device.hasMdm) {
+            decision = policy.action;
+            matchedPolicy = policy.id;
+            violations.push("Device not enrolled in MDM");
+            break;
+          }
+
+          // Check screen lock
+          if (policy.requireScreenLock && !device.hasScreenLock) {
+            decision = policy.action;
+            matchedPolicy = policy.id;
+            violations.push("No screen lock configured");
+            break;
+          }
+
+          // Check risk score
+          if (policy.maxRiskScore != null && device.riskScore > policy.maxRiskScore) {
+            decision = policy.action;
+            matchedPolicy = policy.id;
+            violations.push(`Risk score ${device.riskScore} exceeds max ${policy.maxRiskScore}`);
+            break;
+          }
+
+          // Check blocked countries
+          const blockedCountries = policy.blockedCountries as string[] | null;
+          if (country && blockedCountries && blockedCountries.includes(country)) {
+            decision = "deny";
+            matchedPolicy = policy.id;
+            violations.push(`Country ${country} is blocked`);
+            break;
+          }
+
+          // Check allowed countries
+          const allowedCountries = policy.allowedCountries as string[] | null;
+          if (country && allowedCountries && !allowedCountries.includes(country)) {
+            decision = policy.action;
+            matchedPolicy = policy.id;
+            violations.push(`Country ${country} not in allowed list`);
+            break;
+          }
+
+          // Check MFA requirement
+          if (policy.requireMfa) {
+            violations.push("Step-up MFA required");
+            decision = "step-up-mfa";
+            matchedPolicy = policy.id;
+            break;
+          }
+        }
+
+        res.json({
+          decision,
+          matchedPolicyId: matchedPolicy,
+          violations,
+          device: {
+            id: device.id,
+            name: device.deviceName,
+            platform: device.platform,
+            complianceStatus: device.complianceStatus,
+            riskScore: device.riskScore,
+            riskLevel: device.riskLevel,
+          },
+        });
+      } catch (err) {
+        log.error("Failed to evaluate ZTNA access", { error: String(err) });
+        res.status(500).json({ message: "Failed to evaluate ZTNA" });
       }
-
-      const [device] = await db
-        .select()
-        .from(mobileDevices)
-        .where(and(eq(mobileDevices.id, deviceId), eq(mobileDevices.orgId, orgId)));
-      if (!device) return res.status(404).json({ message: "Device not found" });
-
-      // Load all enabled policies sorted by priority
-      const policies = await db
-        .select()
-        .from(ztnaPolicies)
-        .where(and(eq(ztnaPolicies.orgId, orgId), eq(ztnaPolicies.enabled, true)))
-        .orderBy(ztnaPolicies.priority);
-
-      let decision: string = "allow";
-      let matchedPolicy: string | null = null;
-      const violations: string[] = [];
-
-      for (const policy of policies) {
-        // Check platform
-        const allowedPlatforms = policy.allowedPlatforms as string[] | null;
-        if (allowedPlatforms && !allowedPlatforms.includes(device.platform)) {
-          decision = policy.action;
-          matchedPolicy = policy.id;
-          violations.push(`Platform ${device.platform} not in allowed list`);
-          break;
-        }
-
-        // Check rooted/jailbroken
-        if (policy.blockRooted && (device.isRooted || device.isJailbroken)) {
-          decision = "deny";
-          matchedPolicy = policy.id;
-          violations.push("Device is rooted/jailbroken");
-          break;
-        }
-
-        // Check encryption
-        if (policy.requireEncryption && !device.isEncrypted) {
-          decision = policy.action;
-          matchedPolicy = policy.id;
-          violations.push("Device not encrypted");
-          break;
-        }
-
-        // Check MDM
-        if (policy.requireMdm && !device.hasMdm) {
-          decision = policy.action;
-          matchedPolicy = policy.id;
-          violations.push("Device not enrolled in MDM");
-          break;
-        }
-
-        // Check screen lock
-        if (policy.requireScreenLock && !device.hasScreenLock) {
-          decision = policy.action;
-          matchedPolicy = policy.id;
-          violations.push("No screen lock configured");
-          break;
-        }
-
-        // Check risk score
-        if (policy.maxRiskScore != null && device.riskScore > policy.maxRiskScore) {
-          decision = policy.action;
-          matchedPolicy = policy.id;
-          violations.push(`Risk score ${device.riskScore} exceeds max ${policy.maxRiskScore}`);
-          break;
-        }
-
-        // Check blocked countries
-        const blockedCountries = policy.blockedCountries as string[] | null;
-        if (country && blockedCountries && blockedCountries.includes(country)) {
-          decision = "deny";
-          matchedPolicy = policy.id;
-          violations.push(`Country ${country} is blocked`);
-          break;
-        }
-
-        // Check allowed countries
-        const allowedCountries = policy.allowedCountries as string[] | null;
-        if (country && allowedCountries && !allowedCountries.includes(country)) {
-          decision = policy.action;
-          matchedPolicy = policy.id;
-          violations.push(`Country ${country} not in allowed list`);
-          break;
-        }
-
-        // Check MFA requirement
-        if (policy.requireMfa) {
-          violations.push("Step-up MFA required");
-          decision = "step-up-mfa";
-          matchedPolicy = policy.id;
-          break;
-        }
-      }
-
-      res.json({
-        decision,
-        matchedPolicyId: matchedPolicy,
-        violations,
-        device: {
-          id: device.id,
-          name: device.deviceName,
-          platform: device.platform,
-          complianceStatus: device.complianceStatus,
-          riskScore: device.riskScore,
-          riskLevel: device.riskLevel,
-        },
-      });
-    } catch (err) {
-      log.error("Failed to evaluate ZTNA access", { error: String(err) });
-      res.status(500).json({ message: "Failed to evaluate ZTNA" });
-    }
-  });
+    },
+  );
 
   // =========================================================================
   // REMOTE WORKER SESSIONS
@@ -1116,97 +1158,111 @@ export function registerMobileSecurityRoutes(app: Express): void {
   });
 
   /** Create/start a remote worker session */
-  app.post("/api/mobile/sessions", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { userId, deviceId, ipAddress, country, city, vpnConnected, vpnProvider, isOffHours, isNewLocation } =
-        req.body;
+  app.post(
+    "/api/mobile/sessions",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { userId, deviceId, ipAddress, country, city, vpnConnected, vpnProvider, isOffHours, isNewLocation } =
+          req.body;
 
-      if (!userId) {
-        return res.status(400).json({ message: "userId is required" });
-      }
+        if (!userId) {
+          return res.status(400).json({ message: "userId is required" });
+        }
 
-      // Verify device belongs to org if provided
-      if (deviceId) {
-        const [device] = await db
-          .select()
-          .from(mobileDevices)
-          .where(and(eq(mobileDevices.id, deviceId), eq(mobileDevices.orgId, orgId)));
-        if (!device) return res.status(400).json({ message: "Device not found in org" });
-      }
+        // Verify device belongs to org if provided
+        if (deviceId) {
+          const [device] = await db
+            .select()
+            .from(mobileDevices)
+            .where(and(eq(mobileDevices.id, deviceId), eq(mobileDevices.orgId, orgId)));
+          if (!device) return res.status(400).json({ message: "Device not found in org" });
+        }
 
-      const riskData = computeSessionRiskScore({
-        vpnConnected,
-        isOffHours,
-        isNewLocation,
-        country,
-      });
-
-      const [session] = await db
-        .insert(remoteWorkerSessions)
-        .values({
-          orgId,
-          userId,
-          deviceId: deviceId || null,
-          ipAddress: ipAddress || null,
-          country: country || null,
-          city: city || null,
-          vpnConnected: vpnConnected === true,
-          vpnProvider: vpnProvider || null,
-          isOffHours: isOffHours === true,
-          isNewLocation: isNewLocation === true,
-          riskScore: riskData.score,
-          riskFactors: riskData.factors as unknown as Record<string, unknown>,
-        })
-        .returning();
-
-      // Create alert for high-risk sessions
-      if (riskData.score >= 50) {
-        await db.insert(alerts).values({
-          orgId,
-          source: "mobile_mtd",
-          category: "anomaly",
-          severity: riskData.score >= 75 ? "high" : "medium",
-          title: `[Remote Worker] High-risk session detected`,
-          description: `Risk factors: ${riskData.factors.join(", ")}. User: ${userId}, IP: ${ipAddress || "unknown"}, Country: ${country || "unknown"}`,
-          sourceIp: ipAddress || null,
-          status: "new",
-          rawData: { sessionId: session.id, riskScore: riskData.score, riskFactors: riskData.factors } as Record<
-            string,
-            unknown
-          >,
-          detectedAt: new Date(),
+        const riskData = computeSessionRiskScore({
+          vpnConnected,
+          isOffHours,
+          isNewLocation,
+          country,
         });
-      }
 
-      res.status(201).json(session);
-    } catch (err) {
-      log.error("Failed to create remote session", { error: String(err) });
-      res.status(500).json({ message: "Failed to create remote session" });
-    }
-  });
+        const [session] = await db
+          .insert(remoteWorkerSessions)
+          .values({
+            orgId,
+            userId,
+            deviceId: deviceId || null,
+            ipAddress: ipAddress || null,
+            country: country || null,
+            city: city || null,
+            vpnConnected: vpnConnected === true,
+            vpnProvider: vpnProvider || null,
+            isOffHours: isOffHours === true,
+            isNewLocation: isNewLocation === true,
+            riskScore: riskData.score,
+            riskFactors: riskData.factors as unknown as Record<string, unknown>,
+          })
+          .returning();
+
+        // Create alert for high-risk sessions
+        if (riskData.score >= 50) {
+          await db.insert(alerts).values({
+            orgId,
+            source: "mobile_mtd",
+            category: "anomaly",
+            severity: riskData.score >= 75 ? "high" : "medium",
+            title: `[Remote Worker] High-risk session detected`,
+            description: `Risk factors: ${riskData.factors.join(", ")}. User: ${userId}, IP: ${ipAddress || "unknown"}, Country: ${country || "unknown"}`,
+            sourceIp: ipAddress || null,
+            status: "new",
+            rawData: { sessionId: session.id, riskScore: riskData.score, riskFactors: riskData.factors } as Record<
+              string,
+              unknown
+            >,
+            detectedAt: new Date(),
+          });
+        }
+
+        res.status(201).json(session);
+      } catch (err) {
+        log.error("Failed to create remote session", { error: String(err) });
+        res.status(500).json({ message: "Failed to create remote session" });
+      }
+    },
+  );
 
   /** End a remote worker session */
-  app.patch("/api/mobile/sessions/:id/end", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(remoteWorkerSessions)
-        .where(and(eq(remoteWorkerSessions.id, String(req.params.id)), eq(remoteWorkerSessions.orgId, orgId)));
-      if (!existing) return res.status(404).json({ message: "Session not found" });
+  app.patch(
+    "/api/mobile/sessions/:id/end",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(remoteWorkerSessions)
+          .where(and(eq(remoteWorkerSessions.id, String(req.params.id)), eq(remoteWorkerSessions.orgId, orgId)));
+        if (!existing) return res.status(404).json({ message: "Session not found" });
 
-      const [updated] = await db
-        .update(remoteWorkerSessions)
-        .set({ sessionEnd: new Date() } as typeof remoteWorkerSessions.$inferInsert)
-        .where(eq(remoteWorkerSessions.id, existing.id))
-        .returning();
-      res.json(updated);
-    } catch (err) {
-      log.error("Failed to end remote session", { error: String(err) });
-      res.status(500).json({ message: "Failed to end remote session" });
-    }
-  });
+        const [updated] = await db
+          .update(remoteWorkerSessions)
+          .set({ sessionEnd: new Date() } as typeof remoteWorkerSessions.$inferInsert)
+          .where(eq(remoteWorkerSessions.id, existing.id))
+          .returning();
+        res.json(updated);
+      } catch (err) {
+        log.error("Failed to end remote session", { error: String(err) });
+        res.status(500).json({ message: "Failed to end remote session" });
+      }
+    },
+  );
 
   // =========================================================================
   // MDM INTEGRATIONS CONFIG

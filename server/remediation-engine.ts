@@ -168,7 +168,8 @@ const REMEDIATION_FIXES: RemediationFix[] = [
       filePath: "server/routes/incidents.ts",
       lineStart: 45,
       lineEnd: 52,
-      snippet: 'app.post("/api/incidents", isAuthenticated, async (req, res) => {',
+      snippet:
+        'app.post("/api/incidents", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("analyst"), async (req, res) => {',
       message: "State-changing endpoint does not validate CSRF token",
     },
     codeChange: {
@@ -177,10 +178,12 @@ const REMEDIATION_FIXES: RemediationFix[] = [
       diff: `--- a/server/routes/incidents.ts
 +++ b/server/routes/incidents.ts
 @@ -45,1 +45,1 @@
--  app.post("/api/incidents", isAuthenticated, async (req, res) => {
-+  app.post("/api/incidents", isAuthenticated, csrfProtection, async (req, res) => {`,
-      beforeSnippet: 'app.post("/api/incidents", isAuthenticated, async (req, res) => {',
-      afterSnippet: 'app.post("/api/incidents", isAuthenticated, csrfProtection, async (req, res) => {',
+-  app.post("/api/incidents", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("analyst"), async (req, res) => {
++  app.post("/api/incidents", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("analyst"), csrfProtection, async (req, res) => {`,
+      beforeSnippet:
+        'app.post("/api/incidents", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("analyst"), async (req, res) => {',
+      afterSnippet:
+        'app.post("/api/incidents", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("analyst"), csrfProtection, async (req, res) => {',
       explanation:
         "Add csrfProtection middleware before the route handler to validate the CSRF token on all state-changing requests.",
     },
@@ -492,7 +495,8 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {`,
       filePath: "server/routes/files.ts",
       lineStart: 25,
       lineEnd: 30,
-      snippet: 'app.post("/api/files/upload", isAuthenticated, upload.single("file"), ...',
+      snippet:
+        'app.post("/api/files/upload", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("analyst"), upload.single("file"), ...',
       message: "File upload has no content type or size restrictions",
     },
     codeChange: {
@@ -510,15 +514,16 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {`,
 +      cb(null, ALLOWED_TYPES.includes(file.mimetype));
 +    },
 +  });
-+  app.post("/api/files/upload", isAuthenticated, restrictedUpload.single("file"), ...`,
-      beforeSnippet: 'app.post("/api/files/upload", isAuthenticated, upload.single("file"), ...',
++  app.post("/api/files/upload", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("analyst"), restrictedUpload.single("file"), ...`,
+      beforeSnippet:
+        'app.post("/api/files/upload", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("analyst"), upload.single("file"), ...',
       afterSnippet: `const ALLOWED_TYPES = ['application/pdf', 'text/plain', 'image/png', 'image/jpeg'];
 const MAX_SIZE = 10 * 1024 * 1024;
 const restrictedUpload = multer({
   limits: { fileSize: MAX_SIZE },
   fileFilter: (req, file, cb) => { cb(null, ALLOWED_TYPES.includes(file.mimetype)); },
 });
-app.post("/api/files/upload", isAuthenticated, restrictedUpload.single("file"), ...`,
+app.post("/api/files/upload", isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("analyst"), restrictedUpload.single("file"), ...`,
       explanation:
         "Restrict file uploads to allowed MIME types and enforce a 10MB size limit to prevent arbitrary file upload attacks.",
     },

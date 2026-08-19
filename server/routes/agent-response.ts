@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId } from "../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { requirePermission } from "../rbac";
 import { logger, getOrgId } from "./shared";
 import { db } from "../db";
@@ -1027,6 +1027,7 @@ export function registerAgentResponseRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -1922,6 +1923,7 @@ export function registerAgentResponseRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -1984,6 +1986,7 @@ export function registerAgentResponseRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -2139,6 +2142,7 @@ export function registerAgentResponseRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);

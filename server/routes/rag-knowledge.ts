@@ -1,8 +1,7 @@
 import type { Express } from "express";
 import { getOrgId, logger, strictLimiter, sendEnvelope } from "./shared";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext } from "../rbac";
-import { requireMinRole } from "../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import {
   initializeVectorSchema,
   vectorSearch,
@@ -35,62 +34,78 @@ export function registerRagKnowledgeRoutes(app: Express): void {
   });
 
   // ── Semantic Search ───────────────────────────────────────────────
-  app.post("/api/rag/search", isAuthenticated, resolveOrgContext, strictLimiter, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { query, category, limit = 5 } = req.body;
+  app.post(
+    "/api/rag/search",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    strictLimiter,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { query, category, limit = 5 } = req.body;
 
-      if (!query || typeof query !== "string" || query.trim().length === 0) {
-        return res.status(400).json({ message: "Query text is required" });
+        if (!query || typeof query !== "string" || query.trim().length === 0) {
+          return res.status(400).json({ message: "Query text is required" });
+        }
+
+        const validCategories = ["attack_techniques", "cve_advisories", "incidents", "all"];
+        const cat = validCategories.includes(category) ? category : "all";
+        const cappedLimit = Math.min(Math.max(parseInt(String(limit), 10) || 5, 1), 20);
+
+        if (cat === "incidents") {
+          const results = await searchSimilarIncidents(query.trim(), orgId, cappedLimit);
+          return sendEnvelope(res, { category: "incidents", results, count: results.length });
+        }
+
+        if (cat === "all") {
+          const [techniques, cves, incidents] = await Promise.all([
+            vectorSearch(query.trim(), "attack_techniques", cappedLimit, orgId),
+            vectorSearch(query.trim(), "cve_advisories", cappedLimit, orgId),
+            searchSimilarIncidents(query.trim(), orgId, cappedLimit),
+          ]);
+          return sendEnvelope(res, {
+            attackTechniques: { results: techniques, count: techniques.length },
+            cveAdvisories: { results: cves, count: cves.length },
+            incidents: { results: incidents, count: incidents.length },
+          });
+        }
+
+        const results = await vectorSearch(query.trim(), cat, cappedLimit, orgId);
+        sendEnvelope(res, { category: cat, results, count: results.length });
+      } catch (err) {
+        log.error("RAG search failed", { error: String(err) });
+        res.status(500).json({ message: "Semantic search failed" });
       }
-
-      const validCategories = ["attack_techniques", "cve_advisories", "incidents", "all"];
-      const cat = validCategories.includes(category) ? category : "all";
-      const cappedLimit = Math.min(Math.max(parseInt(String(limit), 10) || 5, 1), 20);
-
-      if (cat === "incidents") {
-        const results = await searchSimilarIncidents(query.trim(), orgId, cappedLimit);
-        return sendEnvelope(res, { category: "incidents", results, count: results.length });
-      }
-
-      if (cat === "all") {
-        const [techniques, cves, incidents] = await Promise.all([
-          vectorSearch(query.trim(), "attack_techniques", cappedLimit, orgId),
-          vectorSearch(query.trim(), "cve_advisories", cappedLimit, orgId),
-          searchSimilarIncidents(query.trim(), orgId, cappedLimit),
-        ]);
-        return sendEnvelope(res, {
-          attackTechniques: { results: techniques, count: techniques.length },
-          cveAdvisories: { results: cves, count: cves.length },
-          incidents: { results: incidents, count: incidents.length },
-        });
-      }
-
-      const results = await vectorSearch(query.trim(), cat, cappedLimit, orgId);
-      sendEnvelope(res, { category: cat, results, count: results.length });
-    } catch (err) {
-      log.error("RAG search failed", { error: String(err) });
-      res.status(500).json({ message: "Semantic search failed" });
-    }
-  });
+    },
+  );
 
   // ── RAG Context Preview (for debugging) ───────────────────────────
-  app.post("/api/rag/context-preview", isAuthenticated, resolveOrgContext, strictLimiter, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const alertData = req.body;
+  app.post(
+    "/api/rag/context-preview",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    strictLimiter,
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const alertData = req.body;
 
-      if (!alertData || typeof alertData !== "object") {
-        return res.status(400).json({ message: "Alert data object is required" });
+        if (!alertData || typeof alertData !== "object") {
+          return res.status(400).json({ message: "Alert data object is required" });
+        }
+
+        const ragCtx = await buildRAGContext(alertData, orgId);
+        sendEnvelope(res, ragCtx);
+      } catch (err) {
+        log.error("RAG context preview failed", { error: String(err) });
+        res.status(500).json({ message: "RAG context preview failed" });
       }
-
-      const ragCtx = await buildRAGContext(alertData, orgId);
-      sendEnvelope(res, ragCtx);
-    } catch (err) {
-      log.error("RAG context preview failed", { error: String(err) });
-      res.status(500).json({ message: "RAG context preview failed" });
-    }
-  });
+    },
+  );
 
   // ── Seed MITRE ATT&CK Knowledge ──────────────────────────────────
   app.post(
@@ -277,33 +292,40 @@ export function registerRagKnowledgeRoutes(app: Express): void {
   });
 
   // ── Index Incident for RAG ────────────────────────────────────────
-  app.post("/api/rag/index-incident/:incidentId", isAuthenticated, resolveOrgContext, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const incidentId = Array.isArray(req.params.incidentId) ? req.params.incidentId[0] : req.params.incidentId;
-      const { title, summary, severity, mitreTactics, mitreTechniques, iocs } = req.body;
+  app.post(
+    "/api/rag/index-incident/:incidentId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const incidentId = Array.isArray(req.params.incidentId) ? req.params.incidentId[0] : req.params.incidentId;
+        const { title, summary, severity, mitreTactics, mitreTechniques, iocs } = req.body;
 
-      if (!title || typeof title !== "string") {
-        return res.status(400).json({ message: "Incident title is required" });
+        if (!title || typeof title !== "string") {
+          return res.status(400).json({ message: "Incident title is required" });
+        }
+
+        await upsertIncidentEmbedding({
+          orgId,
+          incidentId,
+          title,
+          summary,
+          severity,
+          mitreTactics: Array.isArray(mitreTactics) ? mitreTactics : [],
+          mitreTechniques: Array.isArray(mitreTechniques) ? mitreTechniques : [],
+          iocs: Array.isArray(iocs) ? iocs : [],
+        });
+
+        sendEnvelope(res, { message: "Incident indexed for RAG", incidentId });
+      } catch (err) {
+        log.error("Failed to index incident", { error: String(err) });
+        res.status(500).json({ message: "Failed to index incident for RAG" });
       }
-
-      await upsertIncidentEmbedding({
-        orgId,
-        incidentId,
-        title,
-        summary,
-        severity,
-        mitreTactics: Array.isArray(mitreTactics) ? mitreTactics : [],
-        mitreTechniques: Array.isArray(mitreTechniques) ? mitreTechniques : [],
-        iocs: Array.isArray(iocs) ? iocs : [],
-      });
-
-      sendEnvelope(res, { message: "Incident indexed for RAG", incidentId });
-    } catch (err) {
-      log.error("Failed to index incident", { error: String(err) });
-      res.status(500).json({ message: "Failed to index incident for RAG" });
-    }
-  });
+    },
+  );
 
   // ── Re-initialize Vector Schema ───────────────────────────────────
   app.post("/api/rag/init", isAuthenticated, resolveOrgContext, requireMinRole("admin"), async (_req, res) => {

@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { eq, and, desc, sql, count, gte, isNull } from "drizzle-orm";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
+
 import { db } from "../db";
 import {
   otAssets,
@@ -69,162 +71,185 @@ export function registerOtSecurityRoutes(app: Express): void {
   });
 
   /** Create a new OT asset (manual registration) */
-  app.post("/api/ot/assets", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const {
-        name,
-        description,
-        assetType,
-        ipAddress,
-        macAddress,
-        hostname,
-        purdueLevel,
-        zone,
-        vendor,
-        model,
-        firmwareVersion,
-        serialNumber,
-        protocols,
-        facility,
-        area,
-        line,
-        isCritical,
-        isSafetySystem,
-        silRating,
-        tags,
-      } = req.body;
-
-      if (!name || typeof name !== "string" || name.trim().length === 0) {
-        return res.status(400).json({ message: "Name is required" });
-      }
-      if (!assetType || !ALLOWED_ASSET_TYPES.includes(assetType)) {
-        return res.status(400).json({ message: `Invalid asset type. Allowed: ${ALLOWED_ASSET_TYPES.join(", ")}` });
-      }
-      if (purdueLevel && !ALLOWED_PURDUE_LEVELS.includes(purdueLevel)) {
-        return res.status(400).json({ message: `Invalid Purdue level. Allowed: ${ALLOWED_PURDUE_LEVELS.join(", ")}` });
-      }
-
-      const effectivePurdueLevel = purdueLevel || classifyAssetPurdueLevel(assetType);
-
-      const [asset] = await db
-        .insert(otAssets)
-        .values({
-          orgId,
-          name: name.trim(),
-          description: description || null,
+  app.post(
+    "/api/ot/assets",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const {
+          name,
+          description,
           assetType,
-          ipAddress: ipAddress || null,
-          macAddress: macAddress || null,
-          hostname: hostname || null,
-          purdueLevel: effectivePurdueLevel,
-          zone: zone || null,
-          vendor: vendor || null,
-          model: model || null,
-          firmwareVersion: firmwareVersion || null,
-          serialNumber: serialNumber || null,
-          protocols: protocols || null,
-          facility: facility || null,
-          area: area || null,
-          line: line || null,
-          status: "online",
-          isCritical: isCritical === true,
-          isSafetySystem: isSafetySystem === true,
-          silRating: silRating || null,
-          tags: tags || null,
-          discoveredBy: "manual",
-          firstSeen: new Date(),
-          lastSeen: new Date(),
-        })
-        .returning();
+          ipAddress,
+          macAddress,
+          hostname,
+          purdueLevel,
+          zone,
+          vendor,
+          model,
+          firmwareVersion,
+          serialNumber,
+          protocols,
+          facility,
+          area,
+          line,
+          isCritical,
+          isSafetySystem,
+          silRating,
+          tags,
+        } = req.body;
 
-      log.info(`OT asset created: ${asset.name} (${asset.assetType}) in org ${orgId}`);
-      res.status(201).json(asset);
-    } catch (err) {
-      log.error("Failed to create OT asset", { error: String(err) });
-      res.status(500).json({ message: "Failed to create OT asset" });
-    }
-  });
+        if (!name || typeof name !== "string" || name.trim().length === 0) {
+          return res.status(400).json({ message: "Name is required" });
+        }
+        if (!assetType || !ALLOWED_ASSET_TYPES.includes(assetType)) {
+          return res.status(400).json({ message: `Invalid asset type. Allowed: ${ALLOWED_ASSET_TYPES.join(", ")}` });
+        }
+        if (purdueLevel && !ALLOWED_PURDUE_LEVELS.includes(purdueLevel)) {
+          return res
+            .status(400)
+            .json({ message: `Invalid Purdue level. Allowed: ${ALLOWED_PURDUE_LEVELS.join(", ")}` });
+        }
+
+        const effectivePurdueLevel = purdueLevel || classifyAssetPurdueLevel(assetType);
+
+        const [asset] = await db
+          .insert(otAssets)
+          .values({
+            orgId,
+            name: name.trim(),
+            description: description || null,
+            assetType,
+            ipAddress: ipAddress || null,
+            macAddress: macAddress || null,
+            hostname: hostname || null,
+            purdueLevel: effectivePurdueLevel,
+            zone: zone || null,
+            vendor: vendor || null,
+            model: model || null,
+            firmwareVersion: firmwareVersion || null,
+            serialNumber: serialNumber || null,
+            protocols: protocols || null,
+            facility: facility || null,
+            area: area || null,
+            line: line || null,
+            status: "online",
+            isCritical: isCritical === true,
+            isSafetySystem: isSafetySystem === true,
+            silRating: silRating || null,
+            tags: tags || null,
+            discoveredBy: "manual",
+            firstSeen: new Date(),
+            lastSeen: new Date(),
+          })
+          .returning();
+
+        log.info(`OT asset created: ${asset.name} (${asset.assetType}) in org ${orgId}`);
+        res.status(201).json(asset);
+      } catch (err) {
+        log.error("Failed to create OT asset", { error: String(err) });
+        res.status(500).json({ message: "Failed to create OT asset" });
+      }
+    },
+  );
 
   /** Update an OT asset */
-  app.patch("/api/ot/assets/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(otAssets)
-        .where(and(eq(otAssets.id, req.params.id as string), eq(otAssets.orgId, orgId)));
-      if (!existing) return res.status(404).json({ message: "OT asset not found" });
+  app.patch(
+    "/api/ot/assets/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(otAssets)
+          .where(and(eq(otAssets.id, req.params.id as string), eq(otAssets.orgId, orgId)));
+        if (!existing) return res.status(404).json({ message: "OT asset not found" });
 
-      const allowedFields = [
-        "name",
-        "description",
-        "assetType",
-        "ipAddress",
-        "macAddress",
-        "hostname",
-        "purdueLevel",
-        "zone",
-        "vendor",
-        "model",
-        "firmwareVersion",
-        "serialNumber",
-        "hardwareRevision",
-        "protocols",
-        "facility",
-        "area",
-        "line",
-        "status",
-        "isCritical",
-        "isSafetySystem",
-        "isManaged",
-        "silRating",
-        "tags",
-        "metadata",
-      ];
-      const updates: Record<string, unknown> = { updatedAt: new Date() };
-      for (const field of allowedFields) {
-        if (req.body[field] !== undefined) {
-          updates[field] = req.body[field];
+        const allowedFields = [
+          "name",
+          "description",
+          "assetType",
+          "ipAddress",
+          "macAddress",
+          "hostname",
+          "purdueLevel",
+          "zone",
+          "vendor",
+          "model",
+          "firmwareVersion",
+          "serialNumber",
+          "hardwareRevision",
+          "protocols",
+          "facility",
+          "area",
+          "line",
+          "status",
+          "isCritical",
+          "isSafetySystem",
+          "isManaged",
+          "silRating",
+          "tags",
+          "metadata",
+        ];
+        const updates: Record<string, unknown> = { updatedAt: new Date() };
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            updates[field] = req.body[field];
+          }
         }
-      }
 
-      if (updates.assetType && !ALLOWED_ASSET_TYPES.includes(updates.assetType as string)) {
-        return res.status(400).json({ message: "Invalid asset type" });
-      }
-      if (updates.purdueLevel && !ALLOWED_PURDUE_LEVELS.includes(updates.purdueLevel as string)) {
-        return res.status(400).json({ message: "Invalid Purdue level" });
-      }
+        if (updates.assetType && !ALLOWED_ASSET_TYPES.includes(updates.assetType as string)) {
+          return res.status(400).json({ message: "Invalid asset type" });
+        }
+        if (updates.purdueLevel && !ALLOWED_PURDUE_LEVELS.includes(updates.purdueLevel as string)) {
+          return res.status(400).json({ message: "Invalid Purdue level" });
+        }
 
-      const [updated] = await db
-        .update(otAssets)
-        .set(updates as Record<string, unknown> as typeof otAssets.$inferInsert)
-        .where(and(eq(otAssets.id, req.params.id as string), eq(otAssets.orgId, orgId)))
-        .returning();
-      res.json(updated);
-    } catch (err) {
-      log.error("Failed to update OT asset", { error: String(err) });
-      res.status(500).json({ message: "Failed to update OT asset" });
-    }
-  });
+        const [updated] = await db
+          .update(otAssets)
+          .set(updates as Record<string, unknown> as typeof otAssets.$inferInsert)
+          .where(and(eq(otAssets.id, req.params.id as string), eq(otAssets.orgId, orgId)))
+          .returning();
+        res.json(updated);
+      } catch (err) {
+        log.error("Failed to update OT asset", { error: String(err) });
+        res.status(500).json({ message: "Failed to update OT asset" });
+      }
+    },
+  );
 
   /** Delete an OT asset */
-  app.delete("/api/ot/assets/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(otAssets)
-        .where(and(eq(otAssets.id, req.params.id as string), eq(otAssets.orgId, orgId)));
-      if (!existing) return res.status(404).json({ message: "OT asset not found" });
+  app.delete(
+    "/api/ot/assets/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(otAssets)
+          .where(and(eq(otAssets.id, req.params.id as string), eq(otAssets.orgId, orgId)));
+        if (!existing) return res.status(404).json({ message: "OT asset not found" });
 
-      await db.delete(otAssets).where(and(eq(otAssets.id, req.params.id as string), eq(otAssets.orgId, orgId)));
-      res.json({ message: "OT asset deleted" });
-    } catch (err) {
-      log.error("Failed to delete OT asset", { error: String(err) });
-      res.status(500).json({ message: "Failed to delete OT asset" });
-    }
-  });
+        await db.delete(otAssets).where(and(eq(otAssets.id, req.params.id as string), eq(otAssets.orgId, orgId)));
+        res.json({ message: "OT asset deleted" });
+      } catch (err) {
+        log.error("Failed to delete OT asset", { error: String(err) });
+        res.status(500).json({ message: "Failed to delete OT asset" });
+      }
+    },
+  );
 
   // =========================================================================
   // OT CONNECTIONS
@@ -256,63 +281,70 @@ export function registerOtSecurityRoutes(app: Express): void {
   });
 
   /** Create/register an OT connection */
-  app.post("/api/ot/connections", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { sourceAssetId, destAssetId, sourceIp, destIp, sourcePort, destPort, protocol, isAllowed, ruleId } =
-        req.body;
+  app.post(
+    "/api/ot/connections",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { sourceAssetId, destAssetId, sourceIp, destIp, sourcePort, destPort, protocol, isAllowed, ruleId } =
+          req.body;
 
-      // Determine Purdue levels from assets
-      let sourcePurdueLevel: string | null = null;
-      let destPurdueLevel: string | null = null;
+        // Determine Purdue levels from assets
+        let sourcePurdueLevel: string | null = null;
+        let destPurdueLevel: string | null = null;
 
-      if (sourceAssetId) {
-        const [src] = await db
-          .select()
-          .from(otAssets)
-          .where(and(eq(otAssets.id, sourceAssetId), eq(otAssets.orgId, orgId)));
-        if (!src) return res.status(400).json({ message: "Source asset not found" });
-        sourcePurdueLevel = src.purdueLevel;
+        if (sourceAssetId) {
+          const [src] = await db
+            .select()
+            .from(otAssets)
+            .where(and(eq(otAssets.id, sourceAssetId), eq(otAssets.orgId, orgId)));
+          if (!src) return res.status(400).json({ message: "Source asset not found" });
+          sourcePurdueLevel = src.purdueLevel;
+        }
+
+        if (destAssetId) {
+          const [dst] = await db
+            .select()
+            .from(otAssets)
+            .where(and(eq(otAssets.id, destAssetId), eq(otAssets.orgId, orgId)));
+          if (!dst) return res.status(400).json({ message: "Destination asset not found" });
+          destPurdueLevel = dst.purdueLevel;
+        }
+
+        const isBoundaryCrossing =
+          sourcePurdueLevel && destPurdueLevel ? crossesBoundary(sourcePurdueLevel, destPurdueLevel) : false;
+
+        const [connection] = await db
+          .insert(otConnections)
+          .values({
+            orgId,
+            sourceAssetId: sourceAssetId || null,
+            destAssetId: destAssetId || null,
+            sourceIp: sourceIp || null,
+            destIp: destIp || null,
+            sourcePort: sourcePort ? parseInt(sourcePort, 10) : null,
+            destPort: destPort ? parseInt(destPort, 10) : null,
+            protocol: protocol || null,
+            sourcePurdueLevel,
+            destPurdueLevel,
+            crossesBoundary: isBoundaryCrossing,
+            isAllowed: isAllowed !== false,
+            ruleId: ruleId || null,
+            lastActivity: new Date(),
+          })
+          .returning();
+
+        res.status(201).json(connection);
+      } catch (err) {
+        log.error("Failed to create OT connection", { error: String(err) });
+        res.status(500).json({ message: "Failed to create OT connection" });
       }
-
-      if (destAssetId) {
-        const [dst] = await db
-          .select()
-          .from(otAssets)
-          .where(and(eq(otAssets.id, destAssetId), eq(otAssets.orgId, orgId)));
-        if (!dst) return res.status(400).json({ message: "Destination asset not found" });
-        destPurdueLevel = dst.purdueLevel;
-      }
-
-      const isBoundaryCrossing =
-        sourcePurdueLevel && destPurdueLevel ? crossesBoundary(sourcePurdueLevel, destPurdueLevel) : false;
-
-      const [connection] = await db
-        .insert(otConnections)
-        .values({
-          orgId,
-          sourceAssetId: sourceAssetId || null,
-          destAssetId: destAssetId || null,
-          sourceIp: sourceIp || null,
-          destIp: destIp || null,
-          sourcePort: sourcePort ? parseInt(sourcePort, 10) : null,
-          destPort: destPort ? parseInt(destPort, 10) : null,
-          protocol: protocol || null,
-          sourcePurdueLevel,
-          destPurdueLevel,
-          crossesBoundary: isBoundaryCrossing,
-          isAllowed: isAllowed !== false,
-          ruleId: ruleId || null,
-          lastActivity: new Date(),
-        })
-        .returning();
-
-      res.status(201).json(connection);
-    } catch (err) {
-      log.error("Failed to create OT connection", { error: String(err) });
-      res.status(500).json({ message: "Failed to create OT connection" });
-    }
-  });
+    },
+  );
 
   // =========================================================================
   // OT ANOMALIES
@@ -343,142 +375,156 @@ export function registerOtSecurityRoutes(app: Express): void {
   });
 
   /** Create an OT anomaly (from sensor or manual report) */
-  app.post("/api/ot/anomalies", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const {
-        assetId,
-        connectionId,
-        anomalyType,
-        severity,
-        title,
-        description,
-        protocol,
-        functionCode,
-        registerAddress,
-        previousValue,
-        newValue,
-        sourceIp,
-        destIp,
-        sourcePort,
-        destPort,
-        icsCertAdvisory,
-        mitreTactic,
-        mitreTechnique,
-        metadata,
-      } = req.body;
-
-      if (!title || typeof title !== "string") {
-        return res.status(400).json({ message: "Title is required" });
-      }
-      if (!anomalyType || !ALLOWED_ANOMALY_TYPES.includes(anomalyType)) {
-        return res.status(400).json({ message: "Invalid anomaly type" });
-      }
-      if (severity && !ALLOWED_ANOMALY_SEVERITIES.includes(severity)) {
-        return res.status(400).json({ message: "Invalid severity" });
-      }
-
-      // Verify asset belongs to org
-      if (assetId) {
-        const [asset] = await db
-          .select()
-          .from(otAssets)
-          .where(and(eq(otAssets.id, assetId), eq(otAssets.orgId, orgId)));
-        if (!asset) return res.status(400).json({ message: "Asset not found in org" });
-      }
-
-      // Create the anomaly
-      const [anomaly] = await db
-        .insert(otAnomalies)
-        .values({
-          orgId,
-          assetId: assetId || null,
-          connectionId: connectionId || null,
+  app.post(
+    "/api/ot/anomalies",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const {
+          assetId,
+          connectionId,
           anomalyType,
-          severity: severity || "high",
+          severity,
           title,
-          description: description || null,
-          protocol: protocol || null,
-          functionCode: functionCode != null ? parseInt(String(functionCode), 10) : null,
-          registerAddress: registerAddress != null ? parseInt(String(registerAddress), 10) : null,
-          previousValue: previousValue || null,
-          newValue: newValue || null,
-          sourceIp: sourceIp || null,
-          destIp: destIp || null,
-          sourcePort: sourcePort != null ? parseInt(String(sourcePort), 10) : null,
-          destPort: destPort != null ? parseInt(String(destPort), 10) : null,
-          icsCertAdvisory: icsCertAdvisory || null,
-          mitreTactic: mitreTactic || null,
-          mitreTechnique: mitreTechnique || null,
-          metadata: (metadata || null) as Record<string, unknown> | null,
-          status: "new",
-        })
-        .returning();
+          description,
+          protocol,
+          functionCode,
+          registerAddress,
+          previousValue,
+          newValue,
+          sourceIp,
+          destIp,
+          sourcePort,
+          destPort,
+          icsCertAdvisory,
+          mitreTactic,
+          mitreTechnique,
+          metadata,
+        } = req.body;
 
-      // Auto-create an alert for critical/high anomalies
-      if (anomaly.severity === "critical" || anomaly.severity === "high") {
-        const [alert] = await db
-          .insert(alerts)
+        if (!title || typeof title !== "string") {
+          return res.status(400).json({ message: "Title is required" });
+        }
+        if (!anomalyType || !ALLOWED_ANOMALY_TYPES.includes(anomalyType)) {
+          return res.status(400).json({ message: "Invalid anomaly type" });
+        }
+        if (severity && !ALLOWED_ANOMALY_SEVERITIES.includes(severity)) {
+          return res.status(400).json({ message: "Invalid severity" });
+        }
+
+        // Verify asset belongs to org
+        if (assetId) {
+          const [asset] = await db
+            .select()
+            .from(otAssets)
+            .where(and(eq(otAssets.id, assetId), eq(otAssets.orgId, orgId)));
+          if (!asset) return res.status(400).json({ message: "Asset not found in org" });
+        }
+
+        // Create the anomaly
+        const [anomaly] = await db
+          .insert(otAnomalies)
           .values({
             orgId,
-            source: "ot_ics",
-            category: "intrusion",
-            severity: anomaly.severity,
-            title: `[OT/ICS] ${anomaly.title}`,
-            description: anomaly.description || `OT anomaly detected: ${anomaly.anomalyType}`,
-            sourceIp: anomaly.sourceIp,
+            assetId: assetId || null,
+            connectionId: connectionId || null,
+            anomalyType,
+            severity: severity || "high",
+            title,
+            description: description || null,
+            protocol: protocol || null,
+            functionCode: functionCode != null ? parseInt(String(functionCode), 10) : null,
+            registerAddress: registerAddress != null ? parseInt(String(registerAddress), 10) : null,
+            previousValue: previousValue || null,
+            newValue: newValue || null,
+            sourceIp: sourceIp || null,
+            destIp: destIp || null,
+            sourcePort: sourcePort != null ? parseInt(String(sourcePort), 10) : null,
+            destPort: destPort != null ? parseInt(String(destPort), 10) : null,
+            icsCertAdvisory: icsCertAdvisory || null,
+            mitreTactic: mitreTactic || null,
+            mitreTechnique: mitreTechnique || null,
+            metadata: (metadata || null) as Record<string, unknown> | null,
             status: "new",
-            mitreTactic: anomaly.mitreTactic,
-            mitreTechnique: anomaly.mitreTechnique,
-            rawData: { otAnomalyId: anomaly.id, anomalyType: anomaly.anomalyType } as Record<string, unknown>,
-            detectedAt: new Date(),
           })
           .returning();
 
-        // Link alert back to anomaly
-        await db.update(otAnomalies).set({ alertId: alert.id }).where(eq(otAnomalies.id, anomaly.id));
-      }
+        // Auto-create an alert for critical/high anomalies
+        if (anomaly.severity === "critical" || anomaly.severity === "high") {
+          const [alert] = await db
+            .insert(alerts)
+            .values({
+              orgId,
+              source: "ot_ics",
+              category: "intrusion",
+              severity: anomaly.severity,
+              title: `[OT/ICS] ${anomaly.title}`,
+              description: anomaly.description || `OT anomaly detected: ${anomaly.anomalyType}`,
+              sourceIp: anomaly.sourceIp,
+              status: "new",
+              mitreTactic: anomaly.mitreTactic,
+              mitreTechnique: anomaly.mitreTechnique,
+              rawData: { otAnomalyId: anomaly.id, anomalyType: anomaly.anomalyType } as Record<string, unknown>,
+              detectedAt: new Date(),
+            })
+            .returning();
 
-      res.status(201).json(anomaly);
-    } catch (err) {
-      log.error("Failed to create OT anomaly", { error: String(err) });
-      res.status(500).json({ message: "Failed to create OT anomaly" });
-    }
-  });
+          // Link alert back to anomaly
+          await db.update(otAnomalies).set({ alertId: alert.id }).where(eq(otAnomalies.id, anomaly.id));
+        }
+
+        res.status(201).json(anomaly);
+      } catch (err) {
+        log.error("Failed to create OT anomaly", { error: String(err) });
+        res.status(500).json({ message: "Failed to create OT anomaly" });
+      }
+    },
+  );
 
   /** Update anomaly status (resolve, investigate, etc.) */
-  app.patch("/api/ot/anomalies/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(otAnomalies)
-        .where(and(eq(otAnomalies.id, req.params.id as string), eq(otAnomalies.orgId, orgId)));
-      if (!existing) return res.status(404).json({ message: "Anomaly not found" });
+  app.patch(
+    "/api/ot/anomalies/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(otAnomalies)
+          .where(and(eq(otAnomalies.id, req.params.id as string), eq(otAnomalies.orgId, orgId)));
+        if (!existing) return res.status(404).json({ message: "Anomaly not found" });
 
-      const allowedFields = ["status", "resolvedBy", "resolvedAt", "metadata"];
-      const updates: Record<string, unknown> = {};
-      for (const field of allowedFields) {
-        if (req.body[field] !== undefined) {
-          updates[field] = req.body[field];
+        const allowedFields = ["status", "resolvedBy", "resolvedAt", "metadata"];
+        const updates: Record<string, unknown> = {};
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            updates[field] = req.body[field];
+          }
         }
-      }
 
-      if (updates.status === "resolved") {
-        updates.resolvedAt = new Date();
-      }
+        if (updates.status === "resolved") {
+          updates.resolvedAt = new Date();
+        }
 
-      const [updated] = await db
-        .update(otAnomalies)
-        .set(updates as Record<string, unknown> as typeof otAnomalies.$inferInsert)
-        .where(and(eq(otAnomalies.id, req.params.id as string), eq(otAnomalies.orgId, orgId)))
-        .returning();
-      res.json(updated);
-    } catch (err) {
-      log.error("Failed to update OT anomaly", { error: String(err) });
-      res.status(500).json({ message: "Failed to update OT anomaly" });
-    }
-  });
+        const [updated] = await db
+          .update(otAnomalies)
+          .set(updates as Record<string, unknown> as typeof otAnomalies.$inferInsert)
+          .where(and(eq(otAnomalies.id, req.params.id as string), eq(otAnomalies.orgId, orgId)))
+          .returning();
+        res.json(updated);
+      } catch (err) {
+        log.error("Failed to update OT anomaly", { error: String(err) });
+        res.status(500).json({ message: "Failed to update OT anomaly" });
+      }
+    },
+  );
 
   // =========================================================================
   // PROTOCOL EVENTS
@@ -512,78 +558,85 @@ export function registerOtSecurityRoutes(app: Express): void {
   });
 
   /** Ingest protocol events from OT sensor */
-  app.post("/api/ot/protocol-events", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const events = Array.isArray(req.body) ? req.body : [req.body];
+  app.post(
+    "/api/ot/protocol-events",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const events = Array.isArray(req.body) ? req.body : [req.body];
 
-      if (events.length > 1000) {
-        return res.status(400).json({ message: "Maximum 1000 events per batch" });
-      }
-
-      const inserted = [];
-      for (const evt of events) {
-        const {
-          assetId,
-          protocol,
-          functionCode,
-          functionName,
-          sourceIp,
-          destIp,
-          sourcePort,
-          destPort,
-          registerAddress,
-          registerCount,
-          writeValue,
-          readValue,
-          unitId,
-          isWrite,
-          rawData,
-        } = evt;
-
-        if (!protocol || !ALLOWED_PROTOCOLS.includes(protocol)) continue;
-
-        // Verify asset belongs to org if provided
-        if (assetId) {
-          const [asset] = await db
-            .select()
-            .from(otAssets)
-            .where(and(eq(otAssets.id, assetId), eq(otAssets.orgId, orgId)));
-          if (!asset) continue;
+        if (events.length > 1000) {
+          return res.status(400).json({ message: "Maximum 1000 events per batch" });
         }
 
-        const [record] = await db
-          .insert(industrialProtocolEvents)
-          .values({
-            orgId,
-            assetId: assetId || null,
+        const inserted = [];
+        for (const evt of events) {
+          const {
+            assetId,
             protocol,
-            functionCode: functionCode != null ? parseInt(String(functionCode), 10) : null,
-            functionName: functionName || null,
-            sourceIp: sourceIp || null,
-            destIp: destIp || null,
-            sourcePort: sourcePort != null ? parseInt(String(sourcePort), 10) : null,
-            destPort: destPort != null ? parseInt(String(destPort), 10) : null,
-            registerAddress: registerAddress != null ? parseInt(String(registerAddress), 10) : null,
-            registerCount: registerCount != null ? parseInt(String(registerCount), 10) : null,
-            writeValue: writeValue || null,
-            readValue: readValue || null,
-            unitId: unitId != null ? parseInt(String(unitId), 10) : null,
-            isWrite: isWrite === true,
-            isAnomalous: false,
-            rawData: (rawData || null) as Record<string, unknown> | null,
-          })
-          .returning();
+            functionCode,
+            functionName,
+            sourceIp,
+            destIp,
+            sourcePort,
+            destPort,
+            registerAddress,
+            registerCount,
+            writeValue,
+            readValue,
+            unitId,
+            isWrite,
+            rawData,
+          } = evt;
 
-        inserted.push(record);
+          if (!protocol || !ALLOWED_PROTOCOLS.includes(protocol)) continue;
+
+          // Verify asset belongs to org if provided
+          if (assetId) {
+            const [asset] = await db
+              .select()
+              .from(otAssets)
+              .where(and(eq(otAssets.id, assetId), eq(otAssets.orgId, orgId)));
+            if (!asset) continue;
+          }
+
+          const [record] = await db
+            .insert(industrialProtocolEvents)
+            .values({
+              orgId,
+              assetId: assetId || null,
+              protocol,
+              functionCode: functionCode != null ? parseInt(String(functionCode), 10) : null,
+              functionName: functionName || null,
+              sourceIp: sourceIp || null,
+              destIp: destIp || null,
+              sourcePort: sourcePort != null ? parseInt(String(sourcePort), 10) : null,
+              destPort: destPort != null ? parseInt(String(destPort), 10) : null,
+              registerAddress: registerAddress != null ? parseInt(String(registerAddress), 10) : null,
+              registerCount: registerCount != null ? parseInt(String(registerCount), 10) : null,
+              writeValue: writeValue || null,
+              readValue: readValue || null,
+              unitId: unitId != null ? parseInt(String(unitId), 10) : null,
+              isWrite: isWrite === true,
+              isAnomalous: false,
+              rawData: (rawData || null) as Record<string, unknown> | null,
+            })
+            .returning();
+
+          inserted.push(record);
+        }
+
+        res.status(201).json({ inserted: inserted.length });
+      } catch (err) {
+        log.error("Failed to ingest protocol events", { error: String(err) });
+        res.status(500).json({ message: "Failed to ingest protocol events" });
       }
-
-      res.status(201).json({ inserted: inserted.length });
-    } catch (err) {
-      log.error("Failed to ingest protocol events", { error: String(err) });
-      res.status(500).json({ message: "Failed to ingest protocol events" });
-    }
-  });
+    },
+  );
 
   // =========================================================================
   // PURDUE MODEL / TOPOLOGY
