@@ -5,6 +5,7 @@ import { resolveOrgContext, requireOrgId, requireMinRole } from "../../rbac";
 import { generateIncidentNarrative, buildThreatIntelContext, streamNarrative, streamDeepInvestigation } from "../../ai";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
 import { withAiFallback } from "../../ai/fallback";
+import { AiUnavailableError } from "../../ai/fallback";
 import { persistAttackGraph } from "./helpers";
 
 const log = logger.child("routes-ai-narrative");
@@ -84,6 +85,7 @@ export function registerAiNarrativeRoutes(app: Express): void {
         }
         res.json(result);
       } catch (error: any) {
+        if (error instanceof AiUnavailableError) throw error;
         logger.child("ai").error("AI narrative error", { error: String(error) });
         res.status(500).json({ message: "AI narrative generation failed. Please try again." });
       }
@@ -197,7 +199,15 @@ export function registerAiNarrativeRoutes(app: Express): void {
           logger.child("ai").error("Streaming narrative error", { error: error.message });
           try {
             if (!res.writableEnded) {
-              res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
+              const unavailable = error instanceof AiUnavailableError;
+              res.write(
+                `data: ${JSON.stringify({
+                  type: "error",
+                  code: unavailable ? "AI_UNAVAILABLE" : "AI_STREAM_ERROR",
+                  operation: unavailable ? error.operation : "narrative",
+                  message: unavailable ? "AI analysis unavailable — Bedrock unreachable, try again" : error.message,
+                })}\n\n`,
+              );
               res.write("data: [DONE]\n\n");
               res.end();
             }
@@ -299,7 +309,15 @@ export function registerAiNarrativeRoutes(app: Express): void {
           logger.child("ai").error("Streaming deep investigation error", { error: error.message });
           try {
             if (!res.writableEnded) {
-              res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
+              const unavailable = error instanceof AiUnavailableError;
+              res.write(
+                `data: ${JSON.stringify({
+                  type: "error",
+                  code: unavailable ? "AI_UNAVAILABLE" : "AI_STREAM_ERROR",
+                  operation: unavailable ? error.operation : "deep investigation",
+                  message: unavailable ? "AI analysis unavailable — Bedrock unreachable, try again" : error.message,
+                })}\n\n`,
+              );
               res.write("data: [DONE]\n\n");
               res.end();
             }

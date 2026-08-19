@@ -28,8 +28,8 @@ import { getOrgUsageSummary, getAllOrgUsageSummaries, setOrgBudget } from "./ai/
 import { registerEnhancedPrompts } from "./ai/enhanced-prompts";
 import { buildRAGContext, formatRAGContextForPrompt, type RAGContext } from "./ai/vector-search";
 import { buildFewShotAugmentedPrompt, getSuppressedSourcesForContext } from "./ai/active-learning";
-import { buildBudgetedNarrativeMessage } from "./ai/narrative-budget";
 import { AiUnavailableError } from "./ai/fallback";
+import { buildBudgetedNarrativeMessage } from "./ai/narrative-budget";
 
 initializeDefaultPrompts().catch((err) => log.error("Failed to initialize default prompts", { error: String(err) }));
 registerEnhancedPrompts();
@@ -437,7 +437,7 @@ export async function invokeWithPromptStream(
 
         await callbacks.onComplete(fullText, metrics);
       },
-      onError: callbacks.onError,
+      onError: (error) => callbacks.onError(new AiUnavailableError(`${promptId} streaming`, error)),
     },
   );
 }
@@ -1758,6 +1758,7 @@ export interface DetectionRuleGenerationResult {
   rules: GeneratedDetectionRule[];
   analysisNotes: string;
   coverageGaps: string[];
+  modelId: string;
 }
 
 export async function generateDetectionRules(
@@ -1797,8 +1798,14 @@ Generate detection rules as JSON:
 }`;
 
   try {
-    const { text } = await invokeWithPrompt("detection-rule-generation", userMessage, "investigation", orgId, 8192);
-    return JSON.parse(extractJson(text));
+    const { text, metrics } = await invokeWithPrompt(
+      "detection-rule-generation",
+      userMessage,
+      "investigation",
+      orgId,
+      8192,
+    );
+    return { ...JSON.parse(extractJson(text)), modelId: metrics.model };
   } catch (error) {
     log.warn("Detection rule generation unavailable", { error: String(error) });
     throw new AiUnavailableError("detection rule generation", error);

@@ -3,6 +3,7 @@ import { getOrgId, logger, storage, strictLimiter } from "../shared";
 import { isAuthenticated } from "../../auth";
 import { resolveOrgContext, requireMinRole, requireOrgId } from "../../rbac";
 import { generateDetectionRules } from "../../ai";
+import { AiUnavailableError } from "../../ai/fallback";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
 
 const log = logger.child("routes-ai-detection-rules");
@@ -49,7 +50,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
             confidence: rule.confidence,
             mitreTactic: rule.mitreTactic,
             mitreTechnique: rule.mitreTechnique,
-            generatedBy: "amazon.nova-pro-v1:0",
+            generatedBy: result.modelId,
           });
           savedRules.push(saved);
         }
@@ -79,6 +80,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
           coverageGaps: result.coverageGaps,
         });
       } catch (error: any) {
+        if (error instanceof AiUnavailableError) throw error;
         logger.child("ai").error("Detection rule generation error", { error: String(error) });
         res.status(500).json({ message: "Detection rule generation failed. Please try again." });
       }

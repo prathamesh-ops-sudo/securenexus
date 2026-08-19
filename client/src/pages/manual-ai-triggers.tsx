@@ -57,6 +57,7 @@ export default function ManualAiTriggersPage() {
   const [selectedFeature, setSelectedFeature] = useState("");
   const [inputText, setInputText] = useState("");
   const [results, setResults] = useState<TriggerResult[]>([]);
+  const [aiUnavailable, setAiUnavailable] = useState(false);
 
   const triggerMutation = useMutation({
     mutationFn: async () => {
@@ -72,6 +73,7 @@ export default function ManualAiTriggersPage() {
         output: typeof data === "string" ? data : JSON.stringify(data, null, 2),
         timestamp: new Date().toISOString(),
       };
+      setAiUnavailable(false);
       setResults((prev) => [result, ...prev]);
       toast({ title: `${selectedFeature} completed successfully` });
     },
@@ -83,7 +85,12 @@ export default function ManualAiTriggersPage() {
         timestamp: new Date().toISOString(),
       };
       setResults((prev) => [result, ...prev]);
-      toast({ title: "AI trigger failed", description: err.message, variant: "destructive" });
+      if (err.message.includes("AI analysis unavailable")) {
+        setAiUnavailable(true);
+        toast({ title: "AI analysis unavailable", description: "Bedrock unreachable, try again" });
+      } else {
+        toast({ title: "AI trigger failed", description: err.message, variant: "destructive" });
+      }
     },
   });
 
@@ -147,6 +154,15 @@ export default function ManualAiTriggersPage() {
               )}
               Run Feature
             </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {aiUnavailable && (
+        <Card className="border-amber-500/30">
+          <CardContent className="py-4 text-center">
+            <AlertTriangle className="h-5 w-5 text-amber-500 mx-auto mb-2" />
+            <p className="text-sm font-medium">AI analysis unavailable — Bedrock unreachable, try again</p>
           </CardContent>
         </Card>
       )}

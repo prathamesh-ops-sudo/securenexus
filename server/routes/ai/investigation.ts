@@ -12,6 +12,7 @@ import {
 } from "../../ai";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
 import { withAiFallback } from "../../ai/fallback";
+import { AiUnavailableError } from "../../ai/fallback";
 import { persistAttackGraph } from "./helpers";
 import { pool } from "../../db";
 
@@ -72,6 +73,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
 
         res.json(result);
       } catch (error: any) {
+        if (error instanceof AiUnavailableError) throw error;
         logger.child("ai").error("Deep investigation error", { error: String(error) });
         res.status(500).json({ message: "Deep investigation failed. Please try again." });
       }
@@ -133,6 +135,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
 
         res.json(result);
       } catch (error: any) {
+        if (error instanceof AiUnavailableError) throw error;
         logger.child("ai").error("Threat hunting error", { error: String(error) });
         res.status(500).json({ message: "Threat hunting failed. Please try again." });
       }
@@ -191,6 +194,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
 
         res.json(result);
       } catch (error: any) {
+        if (error instanceof AiUnavailableError) throw error;
         logger.child("ai").error("Behavioral analysis error", { error: String(error) });
         res.status(500).json({ message: "Behavioral analysis failed. Please try again." });
       }
@@ -339,6 +343,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
 
         res.json(result);
       } catch (error: any) {
+        if (error instanceof AiUnavailableError) throw error;
         logger.child("ai").error("Attack path prediction error", { error: String(error) });
         res.status(500).json({ message: "Attack path prediction failed. Please try again." });
       }
@@ -425,6 +430,7 @@ export function registerAiInvestigationRoutes(app: Express): void {
           confidence: aiResponse.confidence,
         });
       } catch (error: any) {
+        if (error instanceof AiUnavailableError) throw error;
         logger.child("ai").error("Investigation chat error", { error: String(error) });
         res.status(500).json({ message: "Investigation chat failed. Please try again." });
       }

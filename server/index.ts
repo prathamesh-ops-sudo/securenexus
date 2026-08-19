@@ -34,6 +34,8 @@ import { startBudgetResetScheduler, stopBudgetResetScheduler } from "./ai/budget
 import { bootstrapSuperAdmin } from "./bootstrap-super-admin";
 import { errorTrackingMiddleware, trackError } from "./error-tracker";
 import { startConnectorHealthLoop, stopConnectorHealthLoop } from "./connector-health-loop";
+import { AiUnavailableError } from "./ai/fallback";
+import { replyError } from "./api-response";
 
 const startedAt = Date.now();
 
@@ -171,6 +173,16 @@ export function log(message: string, source = "express") {
 
     if (res.headersSent) {
       return next(err);
+    }
+
+    if (err instanceof AiUnavailableError) {
+      return replyError(res, 503, [
+        {
+          code: "AI_UNAVAILABLE",
+          message: "AI analysis unavailable — Bedrock unreachable, try again",
+          details: { operation: err.operation },
+        },
+      ]);
     }
 
     return replyInternal(

@@ -120,9 +120,14 @@ function ConfidenceBadge({
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="inline-flex items-center gap-1">
-            <Badge className={color} data-testid="badge-confidence">{pct}% confidence</Badge>
+            <Badge className={color} data-testid="badge-confidence">
+              {pct}% confidence
+            </Badge>
             {needsReview && (
-              <Badge className="bg-yellow-200 text-yellow-900 dark:bg-yellow-800 dark:text-yellow-100" data-testid="badge-needs-review">
+              <Badge
+                className="bg-yellow-200 text-yellow-900 dark:bg-yellow-800 dark:text-yellow-100"
+                data-testid="badge-needs-review"
+              >
                 Review
               </Badge>
             )}
@@ -178,6 +183,7 @@ export default function IncidentDetailPage() {
   const params = useParams<{ id: string }>();
   const [commentBody, setCommentBody] = useState("");
   const [narrativeResult, setNarrativeResult] = useState<NarrativeResult | null>(null);
+  const [aiUnavailable, setAiUnavailable] = useState(false);
   const [assigneeValue, setAssigneeValue] = useState<string | null>(null);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [showReasoningTrace, setShowReasoningTrace] = useState(false);
@@ -216,6 +222,7 @@ export default function IncidentDetailPage() {
     setStreamingText("");
     setStreamStatus("Connecting...");
     setNarrativeResult(null);
+    setAiUnavailable(false);
     setStreamElapsed(0);
     // Start elapsed timer
     if (streamTimerRef.current) clearInterval(streamTimerRef.current);
@@ -272,11 +279,15 @@ export default function IncidentDetailPage() {
               clearInterval(streamTimerRef.current);
               streamTimerRef.current = null;
             }
-            toast({
-              title: "AI Narrative Failed",
-              description: data.message || "Streaming failed",
-              variant: "destructive",
-            });
+            if (data.code === "AI_UNAVAILABLE") {
+              setAiUnavailable(true);
+            } else {
+              toast({
+                title: "AI Narrative Failed",
+                description: data.message || "Streaming failed",
+                variant: "destructive",
+              });
+            }
             break;
         }
       } catch {
@@ -293,11 +304,7 @@ export default function IncidentDetailPage() {
         clearInterval(streamTimerRef.current);
         streamTimerRef.current = null;
       }
-      toast({
-        title: "AI Stream Disconnected",
-        description: "Connection lost. Please try again.",
-        variant: "destructive",
-      });
+      setAiUnavailable(true);
     };
   }, [params.id, isStreaming, toast]);
 
@@ -438,6 +445,7 @@ export default function IncidentDetailPage() {
       return res.json();
     },
     onSuccess: (data: NarrativeResult) => {
+      setAiUnavailable(false);
       setNarrativeResult(data);
       queryClient.invalidateQueries({ queryKey: ["/api/incidents", params.id] });
       toast({
@@ -446,7 +454,11 @@ export default function IncidentDetailPage() {
       });
     },
     onError: (error: any) => {
-      toast({ title: "AI Narrative Failed", description: error.message, variant: "destructive" });
+      if (String(error.message).includes("AI analysis unavailable")) {
+        setAiUnavailable(true);
+      } else {
+        toast({ title: "AI Narrative Failed", description: error.message, variant: "destructive" });
+      }
     },
   });
 
@@ -1329,6 +1341,18 @@ export default function IncidentDetailPage() {
                   )}
                   <div ref={streamEndRef} />
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {aiUnavailable && !isStreaming && !narrativeResult && (
+            <Card className="border-amber-500/30">
+              <CardContent className="py-6 text-center">
+                <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto mb-2" />
+                <p className="text-sm font-medium">AI analysis unavailable — Bedrock unreachable, try again</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  No analysis was generated or saved. Retry when the model service is reachable.
+                </p>
               </CardContent>
             </Card>
           )}

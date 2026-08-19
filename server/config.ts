@@ -11,6 +11,7 @@ const configSchema = z.object({
   port: z.coerce.number().int().positive().default(5000),
 
   databaseUrl: z.string().min(1, "DATABASE_URL is required"),
+  databaseSslCaPath: z.string().optional(),
 
   session: z.object({
     secret: z.string().min(1, "SESSION_SECRET is required"),
@@ -84,6 +85,7 @@ function loadConfig(): AppConfig {
     nodeEnv: env.NODE_ENV,
     port: env.PORT,
     databaseUrl: env.DATABASE_URL,
+    databaseSslCaPath: env.DATABASE_SSL_CA_PATH || undefined,
     session: {
       secret: env.SESSION_SECRET,
       forceHttps: env.FORCE_HTTPS === "true",

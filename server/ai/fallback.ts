@@ -19,10 +19,12 @@ export interface AiFallbackResult<T> {
 
 export class AiUnavailableError extends Error {
   readonly code = "AI_UNAVAILABLE";
+  readonly operation: string;
 
   constructor(operation: string, cause?: unknown) {
     super(`AI unavailable for ${operation}${cause ? `: ${String(cause)}` : ""}`);
     this.name = "AiUnavailableError";
+    this.operation = operation;
   }
 }
 
