@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import passport from "passport";
 import { authStorage } from "./storage";
 import { isAuthenticated, hashPassword, invalidateDeserializeCache, type SessionUser } from "./session";
@@ -33,77 +33,6 @@ import {
 } from "../middleware/security-policy-enforcement";
 
 const log = logger.child("auth-routes");
-
-const CONSUMER_EMAIL_DOMAINS = new Set([
-  "gmail.com",
-  "googlemail.com",
-  "yahoo.com",
-  "yahoo.co.in",
-  "yahoo.co.uk",
-  "yahoo.co.jp",
-  "yahoo.fr",
-  "yahoo.de",
-  "ymail.com",
-  "hotmail.com",
-  "hotmail.co.uk",
-  "hotmail.fr",
-  "hotmail.de",
-  "outlook.com",
-  "outlook.co.uk",
-  "live.com",
-  "live.co.uk",
-  "msn.com",
-  "icloud.com",
-  "me.com",
-  "mac.com",
-  "aol.com",
-  "protonmail.com",
-  "proton.me",
-  "zoho.com",
-  "zohomail.com",
-  "mail.com",
-  "gmx.com",
-  "gmx.net",
-  "gmx.de",
-  "yandex.com",
-  "yandex.ru",
-  "mail.ru",
-  "inbox.com",
-  "fastmail.com",
-  "tutanota.com",
-  "tuta.io",
-  "hey.com",
-  "pm.me",
-  "163.com",
-  "qq.com",
-  "sina.com",
-  "rediffmail.com",
-  "cox.net",
-  "sbcglobal.net",
-  "att.net",
-  "comcast.net",
-  "verizon.net",
-  "charter.net",
-  "earthlink.net",
-  "optonline.net",
-  "rocketmail.com",
-]);
-
-function isConsumerEmailDomain(email: string): boolean {
-  const domain = email.split("@")[1]?.toLowerCase();
-  if (!domain) return false;
-  return CONSUMER_EMAIL_DOMAINS.has(domain);
-}
-
-async function hasActiveInvitation(email: string): Promise<boolean> {
-  try {
-    const invitations = await storage.getPendingInvitationsByEmail(email.toLowerCase());
-    const now = new Date();
-    return invitations.some((inv) => new Date(inv.expiresAt) > now);
-  } catch {
-    return false;
-  }
-}
 
 async function ensureOrgMembership(user: SessionUser): Promise<boolean> {
   try {
@@ -227,6 +156,24 @@ async function ensureOrgMembership(user: SessionUser): Promise<boolean> {
 }
 
 export function registerAuthRoutes(app: Express): void {
+  const oauthCallback =
+    (provider: "google" | "github", failureCode: string) =>
+    (req: Request, res: Response, next: NextFunction): void => {
+      passport.authenticate(provider, (err: Error | null, user: Express.User | false, info?: { message?: string }) => {
+        if (err) return next(err);
+        if (!user) {
+          const code = info?.message?.startsWith("Access is by invitation only")
+            ? "oauth_invitation_required"
+            : failureCode;
+          return res.redirect(`/?error=${code}`);
+        }
+        return req.logIn(user, (loginErr) => {
+          if (loginErr) return next(loginErr);
+          next();
+        });
+      })(req, res, next);
+    };
+
   app.get("/api/auth/user", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const reqUser = req.user as SessionUser;
@@ -362,29 +309,11 @@ export function registerAuthRoutes(app: Express): void {
 
   app.get(
     "/api/auth/google/callback",
-    (req, res, next) => {
-      passport.authenticate("google", { failureRedirect: "/?error=google_auth_failed" })(req, res, next);
-    },
+    oauthCallback("google", "google_auth_failed"),
     async (req: Request, res: Response) => {
       try {
         const reqUser = req.user as SessionUser | undefined;
         if (reqUser) {
-          if (reqUser.email && isConsumerEmailDomain(reqUser.email)) {
-            const invited = await hasActiveInvitation(reqUser.email);
-            const memberships = await storage.getUserMemberships(reqUser.id).catch(() => []);
-            if (!invited && memberships.length === 0) {
-              logger.child("auth").warn("OAuth login blocked: consumer email domain without invitation", {
-                email: reqUser.email,
-                provider: "google",
-              });
-              req.logout(() => {
-                req.session.destroy(() => {
-                  return res.redirect("/?error=consumer_email_blocked");
-                });
-              });
-              return;
-            }
-          }
           await ensureOrgMembership(reqUser);
 
           const oauthMemberships = await storage.getUserMemberships(reqUser.id).catch(() => []);
@@ -428,29 +357,11 @@ export function registerAuthRoutes(app: Express): void {
 
   app.get(
     "/api/auth/github/callback",
-    (req, res, next) => {
-      passport.authenticate("github", { failureRedirect: "/?error=github_auth_failed" })(req, res, next);
-    },
+    oauthCallback("github", "github_auth_failed"),
     async (req: Request, res: Response) => {
       try {
         const reqUser = req.user as SessionUser | undefined;
         if (reqUser) {
-          if (reqUser.email && isConsumerEmailDomain(reqUser.email)) {
-            const invited = await hasActiveInvitation(reqUser.email);
-            const memberships = await storage.getUserMemberships(reqUser.id).catch(() => []);
-            if (!invited && memberships.length === 0) {
-              logger.child("auth").warn("OAuth login blocked: consumer email domain without invitation", {
-                email: reqUser.email,
-                provider: "github",
-              });
-              req.logout(() => {
-                req.session.destroy(() => {
-                  return res.redirect("/?error=consumer_email_blocked");
-                });
-              });
-              return;
-            }
-          }
           await ensureOrgMembership(reqUser);
 
           const ghMemberships = await storage.getUserMemberships(reqUser.id).catch(() => []);

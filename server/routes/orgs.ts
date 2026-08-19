@@ -46,59 +46,50 @@ export function registerOrgsRoutes(app: Express): void {
   });
 
   // Auto-provision: ensure user has org membership on first access
-  app.post(
-    "/api/auth/ensure-org",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    requireMinRole("admin"),
-    async (req, res) => {
-      try {
-        const userId = (req as any).user?.id;
-        const userEmail = (req as any).user?.email;
-        if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  app.post("/api/auth/ensure-org", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      const userEmail = (req as any).user?.email;
+      if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
-        const memberships = await storage.getUserMemberships(userId);
-        if (memberships.length > 0) {
-          const activeMembership = memberships.find((m) => m.status === "active");
-          if (activeMembership) {
-            const org = await storage.getOrganization(activeMembership.orgId);
-            return res.json({ membership: activeMembership, organization: org });
-          }
+      const memberships = await storage.getUserMemberships(userId);
+      if (memberships.length > 0) {
+        const activeMembership = memberships.find((m) => m.status === "active");
+        if (activeMembership) {
+          const org = await storage.getOrganization(activeMembership.orgId);
+          return res.json({ membership: activeMembership, organization: org });
         }
-
-        // Check for pending invitations by email (direct query, no N+1)
-        if (userEmail) {
-          const pendingInvitations = await storage
-            .getPendingInvitationsByEmail(userEmail.toLowerCase())
-            .catch(() => []);
-          const now = new Date();
-          const validInvitations = pendingInvitations.filter((inv) => !inv.acceptedAt && new Date(inv.expiresAt) > now);
-          for (const validInvitation of validInvitations) {
-            const org = await storage.getOrganization(validInvitation.orgId);
-            if (org && !org.deletedAt) {
-              const membership = await storage.createOrgMembership({
-                orgId: validInvitation.orgId,
-                userId,
-                role: validInvitation.role,
-                status: "active",
-                joinedAt: new Date(),
-              });
-              await storage.updateOrgInvitation(validInvitation.id, { acceptedAt: new Date() });
-              invalidateDeserializeCache(userId);
-              return res.json({ membership, organization: org });
-            }
-          }
-        }
-
-        // No existing membership or invitation — redirect to onboarding wizard
-        return res.json({ needsOnboarding: true });
-      } catch (error) {
-        logger.child("routes").error("Error ensuring org", { error: String(error) });
-        res.status(500).json({ message: "Failed to ensure organization membership" });
       }
-    },
-  );
+
+      // Check for pending invitations by email (direct query, no N+1)
+      if (userEmail) {
+        const pendingInvitations = await storage.getPendingInvitationsByEmail(userEmail.toLowerCase()).catch(() => []);
+        const now = new Date();
+        const validInvitations = pendingInvitations.filter((inv) => !inv.acceptedAt && new Date(inv.expiresAt) > now);
+        for (const validInvitation of validInvitations) {
+          const org = await storage.getOrganization(validInvitation.orgId);
+          if (org && !org.deletedAt) {
+            const membership = await storage.createOrgMembership({
+              orgId: validInvitation.orgId,
+              userId,
+              role: validInvitation.role,
+              status: "active",
+              joinedAt: new Date(),
+            });
+            await storage.updateOrgInvitation(validInvitation.id, { acceptedAt: new Date() });
+            invalidateDeserializeCache(userId);
+            return res.json({ membership, organization: org });
+          }
+        }
+      }
+
+      // No existing membership or invitation — redirect to onboarding wizard
+      return res.json({ needsOnboarding: true });
+    } catch (error) {
+      logger.child("routes").error("Error ensuring org", { error: String(error) });
+      res.status(500).json({ message: "Failed to ensure organization membership" });
+    }
+  });
 
   // List org members
   app.get("/api/orgs/:orgId/members", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -558,55 +549,61 @@ export function registerOrgsRoutes(app: Express): void {
   );
 
   // Accept invitation by token
-  app.post(
-    "/api/invitations/accept",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    requireMinRole("analyst"),
-    async (req, res) => {
-      try {
-        const userId = (req as any).user?.id;
-        if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  app.post("/api/invitations/accept", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
-        const { token } = req.body;
-        if (!token) return res.status(400).json({ error: "Invitation token is required" });
+      const { token } = req.body;
+      if (!token) return res.status(400).json({ error: "Invitation token is required" });
 
-        const invitation = await storage.getOrgInvitationByToken(token);
-        if (!invitation) return res.status(404).json({ error: "Invalid or expired invitation" });
-        if (invitation.acceptedAt) return res.status(400).json({ error: "Invitation already accepted" });
-        if (new Date(invitation.expiresAt) < new Date())
-          return res.status(400).json({ error: "Invitation has expired" });
-
-        const existingMembership = await storage.getOrgMembership(invitation.orgId, userId);
-        if (existingMembership) return res.status(400).json({ error: "Already a member of this organization" });
-
-        const membership = await storage.createOrgMembership({
-          orgId: invitation.orgId,
-          userId,
-          role: invitation.role,
-          status: "active",
-          invitedEmail: invitation.email,
-          joinedAt: new Date(),
-        });
-        await storage.updateOrgInvitation(invitation.id, { acceptedAt: new Date() });
-        invalidateDeserializeCache(userId);
-
+      const invitation = await storage.getOrgInvitationByToken(token);
+      if (!invitation) return res.status(404).json({ error: "Invalid or expired invitation" });
+      if (invitation.acceptedAt) return res.status(400).json({ error: "Invitation already accepted" });
+      if (new Date(invitation.expiresAt) < new Date()) return res.status(400).json({ error: "Invitation has expired" });
+      const callerEmail = String((req as any).user?.email || "")
+        .trim()
+        .toLowerCase();
+      if (!callerEmail || callerEmail !== invitation.email.trim().toLowerCase()) {
         await storage.createAuditLog({
           userId,
-          action: "invitation_accepted",
-          resourceType: "membership",
-          resourceId: membership.id,
-          details: { orgId: invitation.orgId, role: invitation.role },
+          userName: callerEmail || "unknown",
+          action: "invitation_accept_denied",
+          resourceType: "invitation",
+          resourceId: invitation.id,
+          details: { reason: "email_mismatch", invitationEmail: invitation.email },
         });
-
-        const org = await storage.getOrganization(invitation.orgId);
-        res.json({ membership, organization: org });
-      } catch (error) {
-        res.status(500).json({ message: "Failed to accept invitation" });
+        return res.status(403).json({ error: "Invitation email does not match the authenticated account" });
       }
-    },
-  );
+
+      const existingMembership = await storage.getOrgMembership(invitation.orgId, userId);
+      if (existingMembership) return res.status(400).json({ error: "Already a member of this organization" });
+
+      const membership = await storage.createOrgMembership({
+        orgId: invitation.orgId,
+        userId,
+        role: invitation.role,
+        status: "active",
+        invitedEmail: invitation.email,
+        joinedAt: new Date(),
+      });
+      await storage.updateOrgInvitation(invitation.id, { acceptedAt: new Date() });
+      invalidateDeserializeCache(userId);
+
+      await storage.createAuditLog({
+        userId,
+        action: "invitation_accepted",
+        resourceType: "membership",
+        resourceId: membership.id,
+        details: { orgId: invitation.orgId, role: invitation.role },
+      });
+
+      const org = await storage.getOrganization(invitation.orgId);
+      res.json({ membership, organization: org });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to accept invitation" });
+    }
+  });
 
   // ─── Organization Settings Routes ─────────────────────────────────────────
 

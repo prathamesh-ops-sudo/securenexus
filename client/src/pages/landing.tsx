@@ -272,6 +272,7 @@ export default function LandingPage() {
         github_auth_failed: "GitHub sign-in failed. Please try again or use email login.",
         oauth_no_email: "No email returned from provider. Please use email login.",
         oauth_org_denied: "Your account is not associated with an organization. Contact your admin.",
+        oauth_invitation_required: "Access is by invitation only. Please contact your platform administrator.",
       };
       setOauthError(errorMessages[errorCode] || `Authentication failed (${errorCode}). Please try again.`);
       setAuthMode("login");

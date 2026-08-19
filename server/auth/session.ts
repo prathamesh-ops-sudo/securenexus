@@ -20,6 +20,44 @@ import { replyUnauthenticated } from "../api-response";
 import { logger } from "../logger";
 import { checkAndPromoteSuperAdmin } from "../bootstrap-super-admin";
 
+const INVITATION_ONLY_MESSAGE = "Access is by invitation only. Please contact your platform administrator.";
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function isPlatformSuperAdminEmail(email: string): boolean {
+  const normalizedEmail = normalizeEmail(email);
+  return (
+    normalizedEmail === normalizeEmail(process.env.SUPER_ADMIN_EMAIL || "") ||
+    normalizedEmail === "prathamesh@aricatech.com"
+  );
+}
+
+async function hasValidPendingInvitation(email: string): Promise<boolean> {
+  const invitations = await storage.getPendingInvitationsByEmail(normalizeEmail(email));
+  const now = Date.now();
+  return invitations.some((invitation) => !invitation.acceptedAt && new Date(invitation.expiresAt).getTime() > now);
+}
+
+async function auditRejectedOAuth(email: string, provider: string, reason: string): Promise<void> {
+  await storage.createAuditLog({
+    userId: undefined,
+    userName: email,
+    action: "oauth_login_rejected",
+    resourceType: "auth",
+    resourceId: email,
+    details: { provider, reason },
+  });
+}
+
+async function canAcceptOAuth(email: string, provider: string): Promise<boolean> {
+  if (isPlatformSuperAdminEmail(email)) return true;
+  if (await hasValidPendingInvitation(email)) return true;
+  await auditRejectedOAuth(email, provider, "invitation_required");
+  return false;
+}
+
 /**
  * Augmented user type that includes session-derived org membership fields.
  * These fields are added during deserialization (not on the DB schema User type).
@@ -161,10 +199,14 @@ export async function googleVerifyCallback(
   try {
     const email = profile.emails?.[0]?.value;
     if (!email) return done(null, false, { message: "No email from Google" });
-    let user = await authStorage.getUserByEmail(email);
+    const normalizedEmail = normalizeEmail(email);
+    let user = await authStorage.getUserByEmail(normalizedEmail);
     if (!user) {
+      if (!(await canAcceptOAuth(normalizedEmail, "google"))) {
+        return done(null, false, { message: INVITATION_ONLY_MESSAGE });
+      }
       user = await authStorage.upsertUser({
-        email,
+        email: normalizedEmail,
         firstName: profile.name?.givenName || null,
         lastName: profile.name?.familyName || null,
         profileImageUrl: profile.photos?.[0]?.value || null,
@@ -202,11 +244,14 @@ export async function githubVerifyCallback(
     if (!verified?.value) {
       return done(null, false, { message: "No verified primary email from GitHub" });
     }
-    const email = verified.value;
-    let user = await authStorage.getUserByEmail(email);
+    const normalizedEmail = normalizeEmail(verified.value);
+    let user = await authStorage.getUserByEmail(normalizedEmail);
     if (!user) {
+      if (!(await canAcceptOAuth(normalizedEmail, "github"))) {
+        return done(null, false, { message: INVITATION_ONLY_MESSAGE });
+      }
       user = await authStorage.upsertUser({
-        email,
+        email: normalizedEmail,
         firstName: profile.displayName?.split(" ")[0] || profile.username || null,
         lastName: profile.displayName?.split(" ").slice(1).join(" ") || null,
         profileImageUrl: profile.photos?.[0]?.value || null,

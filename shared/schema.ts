@@ -3563,7 +3563,7 @@ export const ragKnowledgeBase = pgTable(
     index("idx_rag_kb_source").on(table.sourceType, table.sourceId),
     index("idx_rag_kb_embedding").using("ivfflat", table.embedding.op("vector_cosine_ops")).with({ lists: 10 }),
     uniqueIndex("idx_rag_kb_source_unique")
-      .on(table.sourceType, table.sourceId)
+      .on(table.orgId, table.sourceType, table.sourceId)
       .where(sql`source_id IS NOT NULL`),
   ],
 );
@@ -3575,7 +3575,7 @@ export const ragIncidentEmbeddings = pgTable(
     orgId: varchar("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    incidentId: text("incident_id").notNull().unique(),
+    incidentId: text("incident_id").notNull(),
     title: text("title").notNull(),
     summary: text("summary"),
     severity: text("severity"),
@@ -3587,7 +3587,10 @@ export const ragIncidentEmbeddings = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
-  (table) => [index("idx_rag_incident_org").on(table.orgId)],
+  (table) => [
+    index("idx_rag_incident_org").on(table.orgId),
+    uniqueIndex("rag_incident_embeddings_org_incident_unique").on(table.orgId, table.incidentId),
+  ],
 );
 
 export const connectorHealthChecks = pgTable(

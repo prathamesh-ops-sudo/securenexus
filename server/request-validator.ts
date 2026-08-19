@@ -270,7 +270,7 @@ export const bodySchemas = {
 
   invitationCreate: z.object({
     email: z.string().email().max(MAX_NAME),
-    role: z.enum(["admin", "analyst", "read_only"]).optional(),
+    role: z.enum(["owner", "admin", "analyst", "read_only"]).optional(),
   }),
 
   memberRoleUpdate: z.object({

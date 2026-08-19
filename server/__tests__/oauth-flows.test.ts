@@ -14,6 +14,8 @@ vi.mock("../auth/storage", () => ({
 vi.mock("../storage", () => ({
   storage: {
     getUserMemberships: vi.fn().mockResolvedValue([]),
+    getPendingInvitationsByEmail: vi.fn(),
+    createAuditLog: vi.fn().mockResolvedValue({}),
   },
 }));
 
@@ -71,13 +73,9 @@ vi.mock("express-session", () => {
 });
 
 import { authStorage } from "../auth/storage";
+import { storage } from "../storage";
 import { checkAndPromoteSuperAdmin } from "../bootstrap-super-admin";
-import {
-  googleVerifyCallback,
-  githubVerifyCallback,
-  resolveCallbackUrl,
-  getSession,
-} from "../auth/session";
+import { googleVerifyCallback, githubVerifyCallback, resolveCallbackUrl, getSession } from "../auth/session";
 
 // Helper to create a mock passport profile
 function makeGoogleProfile(overrides: Partial<passport.Profile> = {}): passport.Profile {
@@ -121,6 +119,9 @@ function makeMockUser(overrides: Record<string, any> = {}) {
 describe("OAuth Flows", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (storage.getPendingInvitationsByEmail as any).mockImplementation(async (email: string) => [
+      { id: "invite-1", email, acceptedAt: null, expiresAt: new Date(Date.now() + 3600000) },
+    ]);
   });
 
   describe("Google verify callback", () => {
@@ -155,6 +156,44 @@ describe("OAuth Flows", () => {
 
       expect(authStorage.upsertUser).not.toHaveBeenCalled();
       expect(done).toHaveBeenCalledWith(null, existingUser);
+    });
+
+    it("rejects an uninvited new OAuth email and audits the attempt", async () => {
+      (authStorage.getUserByEmail as any).mockResolvedValue(undefined);
+      (storage.getPendingInvitationsByEmail as any).mockResolvedValue([]);
+      const done = vi.fn();
+
+      await googleVerifyCallback("token", "refresh", makeGoogleProfile(), done);
+
+      expect(authStorage.upsertUser).not.toHaveBeenCalled();
+      expect(done).toHaveBeenCalledWith(null, false, {
+        message: "Access is by invitation only. Please contact your platform administrator.",
+      });
+      expect(storage.createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "oauth_login_rejected",
+          details: expect.objectContaining({ provider: "google", reason: "invitation_required" }),
+        }),
+      );
+    });
+
+    it("bootstraps the configured platform super-admin with no users", async () => {
+      const superAdmin = makeMockUser({ email: "prathamesh@aricatech.com", isSuperAdmin: true });
+      (authStorage.getUserByEmail as any).mockResolvedValue(undefined);
+      (authStorage.upsertUser as any).mockResolvedValue(superAdmin);
+      const done = vi.fn();
+
+      await googleVerifyCallback(
+        "token",
+        "refresh",
+        makeGoogleProfile({ emails: [{ value: "PRATHAMESH@ARICATECH.COM" }] }),
+        done,
+      );
+
+      expect(authStorage.upsertUser).toHaveBeenCalledWith(
+        expect.objectContaining({ email: "prathamesh@aricatech.com" }),
+      );
+      expect(done).toHaveBeenCalledWith(null, superAdmin);
     });
 
     it("rejects when no email in profile (emails undefined)", async () => {
