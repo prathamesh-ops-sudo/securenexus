@@ -3,11 +3,13 @@ import type { Express, Request, Response } from "express";
 import { getOrgId, logger, reply, replyError, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { db } from "../db";
-import { and, desc, eq, lt } from "drizzle-orm";
-import { evidenceAccessRequests, evidenceItems, evidenceTags } from "@shared/schema";
+import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { dataLakeRetentionPolicies, evidenceAccessRequests, evidenceItems, evidenceTags } from "@shared/schema";
 import { z } from "zod";
+import { createPresignedPutUrl, verifyObject } from "../s3";
+import { isUnderLegalHold } from "../storage/tiering-manager";
 
 export function registerEvidenceCustodyRoutes(app: Express): void {
   const log = logger.child("evidence-custody");
@@ -529,6 +531,7 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
           .nonnegative()
           .max(1024 * 1024 * 1024),
         mimeType: z.string().trim().min(1).max(255),
+        checksumSha256: z.string().trim().min(1).max(128),
       });
       const parsed = uploadSchema.safeParse(req.body);
       if (!parsed.success)
@@ -537,28 +540,146 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
       if (!evidence || evidence.orgId !== orgId) {
         return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
       }
+      const safeFileName = parsed.data.fileName.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 200) || "upload";
+      const key = `evidence/${orgId}/${evidence.id}/${randomUUID()}-${safeFileName}`;
+      let uploadUrl: string;
+      try {
+        uploadUrl = await createPresignedPutUrl(key, parsed.data.mimeType, parsed.data.checksumSha256);
+      } catch (error) {
+        log.error("Failed to create evidence upload grant", { orgId, evidenceId: evidence.id, error });
+        return replyError(res, 503, [
+          { code: "OBJECT_STORAGE_UNAVAILABLE", message: "Object storage is unavailable; upload was not started." },
+        ]);
+      }
+      return reply(res, {
+        uploadUrl,
+        key,
+        expiresIn: 900,
+        requiredHeaders: {
+          "Content-Type": parsed.data.mimeType,
+          "x-amz-checksum-sha256": parsed.data.checksumSha256,
+        },
+      });
+    },
+  );
+
+  app.post(
+    "/api/evidence-custody/:id/upload/confirm",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const parsed = z
+        .object({
+          key: z.string().trim().min(1).max(1024),
+          fileName: z.string().trim().min(1).max(255),
+          fileSize: z
+            .number()
+            .int()
+            .nonnegative()
+            .max(1024 * 1024 * 1024),
+          mimeType: z.string().trim().min(1).max(255),
+          checksumSha256: z.string().trim().min(1).max(128),
+        })
+        .safeParse(req.body);
+      if (!parsed.success) {
+        return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "Upload key is required." }]);
+      }
+      const evidence = await storage.getEvidenceItem(String(req.params.id));
+      if (!evidence || evidence.orgId !== orgId) {
+        return replyError(res, 404, [{ code: "NOT_FOUND", message: "Evidence not found." }]);
+      }
+      const prefix = `evidence/${orgId}/${evidence.id}/`;
+      const suffix = parsed.data.key.startsWith(prefix) ? parsed.data.key.slice(prefix.length) : "";
+      if (!/^[0-9a-f-]{36}-[^/]+$/i.test(suffix)) {
+        return replyError(res, 400, [
+          { code: "INVALID_UPLOAD_KEY", message: "Upload key is not valid for this evidence." },
+        ]);
+      }
+
+      let verified;
+      try {
+        verified = await verifyObject(parsed.data.key);
+      } catch (error) {
+        log.error("Failed to verify uploaded evidence object", { orgId, evidenceId: evidence.id, error });
+        return replyError(res, 502, [
+          { code: "UPLOAD_VERIFICATION_FAILED", message: "Uploaded object could not be verified in object storage." },
+        ]);
+      }
+      if (
+        verified.size !== parsed.data.fileSize ||
+        verified.checksumSha256 !== parsed.data.checksumSha256 ||
+        verified.contentType !== parsed.data.mimeType
+      ) {
+        return replyError(res, 422, [
+          {
+            code: "UPLOAD_METADATA_MISMATCH",
+            message: "Uploaded object metadata does not match the requested upload.",
+          },
+        ]);
+      }
+
+      const user = (req as any).user;
       const [updated] = await db
         .update(evidenceItems)
         .set({
           title: parsed.data.fileName,
-          fileSize: parsed.data.fileSize,
-          mimeType: parsed.data.mimeType,
-          storageKey: `evidence/${orgId}/${evidence.id}/${parsed.data.fileName}`,
-          metadata: { ...(evidence.metadata as object), uploadStatus: "metadata-recorded" },
+          storageKey: parsed.data.key,
+          fileSize: verified.size,
+          mimeType: verified.contentType,
+          checksumSha256: verified.checksumSha256,
+          uploadStatus: "uploaded",
+          uploadedAt: new Date(),
+          metadata: {
+            uploadStatus: "uploaded",
+            etag: verified.etag,
+            checksumSha256: verified.checksumSha256,
+          },
         })
         .where(and(eq(evidenceItems.id, evidence.id), eq(evidenceItems.orgId, orgId)))
         .returning();
-      const user = (req as any).user;
       await storage.createAuditLog({
         orgId,
         userId: user?.id,
         userName: user?.username || "unknown",
-        action: "evidence_upload_registered",
+        action: "evidence_uploaded",
         resourceType: "evidence_item",
         resourceId: evidence.id,
-        details: parsed.data,
+        details: { key: parsed.data.key, ...verified },
       });
       return reply(res, updated);
+    },
+  );
+
+  app.get(
+    "/api/evidence-custody/retention-policies",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("owner"),
+    async (req, res) => {
+      const orgId = getOrgId(req);
+      const policies = await db
+        .select()
+        .from(dataLakeRetentionPolicies)
+        .where(
+          and(
+            eq(dataLakeRetentionPolicies.orgId, orgId),
+            eq(dataLakeRetentionPolicies.isActive, true),
+            sql`${dataLakeRetentionPolicies.dataType} IN ('evidence', 'evidence_items')`,
+          ),
+        );
+      return reply(
+        res,
+        policies.map((policy) => ({
+          evidenceType: policy.dataType,
+          retentionDays: policy.purgeAfterDays ?? policy.coldRetentionDays,
+          action: policy.purgeAfterDays === null ? "archive" : "delete",
+          autoApply: false,
+        })),
+      );
     },
   );
 
@@ -570,28 +691,47 @@ export function registerEvidenceCustodyRoutes(app: Express): void {
     requireMinRole("owner"),
     async (req, res) => {
       const orgId = getOrgId(req);
-      const user = (req as any).user;
-      const cutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+      const [policy] = await db
+        .select()
+        .from(dataLakeRetentionPolicies)
+        .where(
+          and(
+            eq(dataLakeRetentionPolicies.orgId, orgId),
+            eq(dataLakeRetentionPolicies.isActive, true),
+            sql`${dataLakeRetentionPolicies.dataType} IN ('evidence', 'evidence_items')`,
+          ),
+        )
+        .orderBy(desc(dataLakeRetentionPolicies.priority))
+        .limit(1);
+      if (!policy) {
+        return reply(res, {
+          mode: "preview",
+          message: "No evidence retention policy is configured; no records were changed.",
+          evaluated: 0,
+          wouldArchive: 0,
+          wouldDelete: 0,
+          blockedByHold: 0,
+        });
+      }
+      const held = await isUnderLegalHold(orgId, "evidence");
+      const cutoffDays = policy.purgeAfterDays ?? policy.coldRetentionDays;
+      const cutoff = new Date(Date.now() - cutoffDays * 24 * 60 * 60 * 1000);
       const expired = await db
         .select({ id: evidenceItems.id })
         .from(evidenceItems)
         .where(and(eq(evidenceItems.orgId, orgId), lt(evidenceItems.createdAt, cutoff)));
-      await storage.createAuditLog({
-        orgId,
-        userId: user?.id,
-        userName: user?.username || "unknown",
-        action: "evidence_retention_applied",
-        resourceType: "evidence",
-        resourceId: orgId,
-        details: {
-          cutoff: cutoff.toISOString(),
-          eligible: expired.length,
-          archived: 0,
-          deleted: 0,
-          skipped: expired.length,
-        },
+      const wouldDelete = held || policy.purgeAfterDays === null ? 0 : expired.length;
+      const wouldArchive = held || policy.purgeAfterDays !== null ? 0 : expired.length;
+      return reply(res, {
+        mode: "preview",
+        message: held
+          ? "A legal hold blocks all evidence retention actions; no records were changed."
+          : "Retention preview only; no evidence records were changed.",
+        evaluated: expired.length,
+        wouldArchive,
+        wouldDelete,
+        blockedByHold: held ? expired.length : 0,
       });
-      return reply(res, { archived: 0, deleted: 0, skipped: expired.length, evaluated: expired.length });
     },
   );
 

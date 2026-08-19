@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useRef, useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { usePageTitle } from "@/hooks/use-page-title";
@@ -57,6 +57,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "wouter";
+import { Progress } from "@/components/ui/progress";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -515,6 +516,8 @@ function EvidenceCustodyManager() {
     caseId: "",
   });
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: evidenceListData, isLoading: loadingList } = useQuery<EvidenceItem[]>({
     queryKey: ["/api/evidence-custody"],
@@ -573,25 +576,47 @@ function EvidenceCustodyManager() {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async ({
-      id,
-      fileName,
-      fileSize,
-      mimeType,
-    }: {
-      id: string;
-      fileName: string;
-      fileSize: number;
-      mimeType: string;
-    }) => {
-      const r = await apiRequest("POST", `/api/evidence-custody/${id}/upload`, { fileName, fileSize, mimeType });
-      return r.json();
+    mutationFn: async ({ id, file }: { id: string; file: File }) => {
+      const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+      const checksumSha256 = btoa(String.fromCharCode(...Array.from(new Uint8Array(digest))));
+      const presignResponse = await apiRequest("POST", `/api/evidence-custody/${id}/upload`, {
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type || "application/octet-stream",
+        checksumSha256,
+      });
+      const grant = await presignResponse.json();
+      await new Promise<void>((resolve, reject) => {
+        const request = new XMLHttpRequest();
+        request.open("PUT", grant.uploadUrl);
+        request.setRequestHeader("Content-Type", grant.requiredHeaders["Content-Type"]);
+        request.setRequestHeader("x-amz-checksum-sha256", grant.requiredHeaders["x-amz-checksum-sha256"]);
+        request.upload.onprogress = (event) => {
+          if (event.lengthComputable) setUploadProgress(Math.round((event.loaded / event.total) * 100));
+        };
+        request.onload = () =>
+          request.status >= 200 && request.status < 300 ? resolve() : reject(new Error("S3 upload failed"));
+        request.onerror = () => reject(new Error("S3 upload failed"));
+        request.send(file);
+      });
+      const confirmResponse = await apiRequest("POST", `/api/evidence-custody/${id}/upload/confirm`, {
+        key: grant.key,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type || "application/octet-stream",
+        checksumSha256,
+      });
+      return confirmResponse.json();
     },
     onSuccess: () => {
-      toast({ title: "File uploaded and hashed" });
+      setUploadProgress(100);
+      toast({ title: "File uploaded and verified" });
       queryClient.invalidateQueries({ queryKey: ["/api/evidence-custody", selectedEvidence] });
     },
-    onError: () => toast({ title: "Failed to upload", variant: "destructive" }),
+    onError: (error) => {
+      setUploadProgress(0);
+      toast({ title: error instanceof Error ? error.message : "Failed to upload", variant: "destructive" });
+    },
   });
 
   const evidenceList = evidenceListData || [];
@@ -803,20 +828,32 @@ function EvidenceCustodyManager() {
                         size="sm"
                         variant="outline"
                         className="h-7 text-xs"
-                        onClick={() =>
-                          uploadMutation.mutate({
-                            id: evidenceDetail.id,
-                            fileName: `evidence-${Date.now()}.bin`,
-                            fileSize: 1024,
-                            mimeType: "application/octet-stream",
-                          })
-                        }
+                        onClick={() => fileInputRef.current?.click()}
                         disabled={evidenceDetail.isSealed || uploadMutation.isPending}
                       >
                         <Upload className="h-3 w-3 mr-1" /> Upload File
                       </Button>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="hidden"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) uploadMutation.mutate({ id: evidenceDetail.id, file });
+                          event.target.value = "";
+                        }}
+                      />
                     </div>
                   </div>
+                  {uploadMutation.isPending && (
+                    <div className="mt-3 space-y-1">
+                      <div className="flex justify-between text-[10px] text-muted-foreground">
+                        <span>Uploading and verifying object</span>
+                        <span>{uploadProgress}%</span>
+                      </div>
+                      <Progress value={uploadProgress} className="h-1.5" />
+                    </div>
+                  )}
                   <div className="grid grid-cols-3 gap-3 text-xs">
                     <div>
                       <span className="text-muted-foreground">Type:</span>{" "}
@@ -944,11 +981,11 @@ function RetentionPoliciesPanel() {
     },
     onSuccess: (data: any) => {
       toast({
-        title: `Retention applied: ${data.archived} archived, ${data.deleted} deleted, ${data.skipped} skipped`,
+        title: `Retention preview: ${data.wouldArchive} would archive, ${data.wouldDelete} would delete`,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/evidence-custody"] });
     },
-    onError: () => toast({ title: "Failed to apply", variant: "destructive" }),
+    onError: () => toast({ title: "Failed to preview retention", variant: "destructive" }),
   });
 
   const policies = policiesData || [];
@@ -973,7 +1010,7 @@ function RetentionPoliciesPanel() {
             ) : (
               <Play className="h-3 w-3 mr-1" />
             )}
-            Apply Now
+            Preview Retention
           </Button>
         </div>
       </CardHeader>
