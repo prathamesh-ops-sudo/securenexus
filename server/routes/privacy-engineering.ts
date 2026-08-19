@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId, requirePermission } from "../rbac";
+import { resolveOrgContext, requireOrgId, requirePermission, requireMinRole } from "../rbac";
 import { logger, getOrgId } from "./shared";
 import { db } from "../db";
 import { sql, eq, and, desc, count, ilike, or } from "drizzle-orm";
@@ -435,6 +435,7 @@ export function registerPrivacyEngineeringRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req: Request, res: Response) => {
       try {
         const { assetName, fields, purpose } = req.body;
@@ -610,6 +611,7 @@ export function registerPrivacyEngineeringRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req: Request, res: Response) => {
       try {
         const { sourceJurisdiction, destinationJurisdiction, dataCategories } = req.body;

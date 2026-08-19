@@ -312,6 +312,7 @@ export function registerTrustCenterRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);

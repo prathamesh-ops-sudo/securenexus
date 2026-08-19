@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext } from "../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { runInvestigation, getSuggestedPrompts, getTemplates } from "../prompt-artifact-engine";
 import type { ArtifactType, GeneratedArtifact } from "../prompt-artifact-engine";
 import * as promptStorage from "../storage/prompt-artifact";
@@ -129,47 +129,54 @@ const runInvestigationSchema = z.object({
 export function registerPromptArtifactRoutes(app: Express): void {
   // ── Investigations (DB-backed) ───────────────────────────────────────────
 
-  app.post("/api/prompt-artifact/investigate", isAuthenticated, resolveOrgContext, async (req, res) => {
-    try {
-      const parsed = runInvestigationSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+  app.post(
+    "/api/prompt-artifact/investigate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const parsed = runInvestigationSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+        }
+        const { prompt } = parsed.data;
+        const orgId = getOrgId(req);
+
+        // Engine generates the investigation data
+        const generated = runInvestigation(prompt, orgId);
+
+        // Persist to DB
+        const saved = await promptStorage.createPromptInvestigation({
+          id: generated.id,
+          orgId,
+          prompt: generated.prompt,
+          intent: generated.intent,
+          status: generated.status,
+          summary: generated.summary,
+          steps: generated.steps as unknown as Record<string, unknown>,
+          artifacts: generated.artifacts as unknown as Record<string, unknown>,
+          citations: generated.citations as unknown as Record<string, unknown>,
+          completedAt: generated.completedAt ? new Date(generated.completedAt) : null,
+        });
+
+        // Also save to prompt history
+        const artifactType = generated.artifacts[0]?.type || "query";
+        await promptStorage.createPromptHistoryEntry({
+          orgId,
+          prompt: generated.prompt,
+          artifactType,
+          resultId: saved.id,
+        });
+
+        res.json(saved);
+      } catch (error) {
+        log.error("Prompt-to-artifact investigation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to run investigation" });
       }
-      const { prompt } = parsed.data;
-      const orgId = getOrgId(req);
-
-      // Engine generates the investigation data
-      const generated = runInvestigation(prompt, orgId);
-
-      // Persist to DB
-      const saved = await promptStorage.createPromptInvestigation({
-        id: generated.id,
-        orgId,
-        prompt: generated.prompt,
-        intent: generated.intent,
-        status: generated.status,
-        summary: generated.summary,
-        steps: generated.steps as unknown as Record<string, unknown>,
-        artifacts: generated.artifacts as unknown as Record<string, unknown>,
-        citations: generated.citations as unknown as Record<string, unknown>,
-        completedAt: generated.completedAt ? new Date(generated.completedAt) : null,
-      });
-
-      // Also save to prompt history
-      const artifactType = generated.artifacts[0]?.type || "query";
-      await promptStorage.createPromptHistoryEntry({
-        orgId,
-        prompt: generated.prompt,
-        artifactType,
-        resultId: saved.id,
-      });
-
-      res.json(saved);
-    } catch (error) {
-      log.error("Prompt-to-artifact investigation error", { error: String(error) });
-      res.status(500).json({ message: "Failed to run investigation" });
-    }
-  });
+    },
+  );
 
   app.get("/api/prompt-artifact/investigations", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
@@ -238,34 +245,41 @@ export function registerPromptArtifactRoutes(app: Express): void {
     notes: z.string().max(2000).default(""),
   });
 
-  app.post("/api/prompt-artifact/approvals/:id/review", isAuthenticated, resolveOrgContext, async (req, res) => {
-    try {
-      const parsed = reviewSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+  app.post(
+    "/api/prompt-artifact/approvals/:id/review",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const parsed = reviewSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+        }
+        const orgId = getOrgId(req);
+        const approvalId = String(req.params.id);
+        const { reviewerName, decision, notes } = parsed.data;
+
+        const approval = await promptStorage.getArtifactApproval(approvalId);
+        if (!approval || approval.orgId !== orgId) {
+          return res.status(404).json({ message: "Approval not found" });
+        }
+
+        const updated = await promptStorage.updateArtifactApproval(approvalId, {
+          status: decision,
+          reviewedBy: reviewerName,
+          reviewedAt: new Date(),
+          reviewNotes: notes,
+        });
+
+        res.json(updated);
+      } catch (error) {
+        log.error("Review approval error", { error: String(error) });
+        res.status(500).json({ message: "Failed to review approval" });
       }
-      const orgId = getOrgId(req);
-      const approvalId = String(req.params.id);
-      const { reviewerName, decision, notes } = parsed.data;
-
-      const approval = await promptStorage.getArtifactApproval(approvalId);
-      if (!approval || approval.orgId !== orgId) {
-        return res.status(404).json({ message: "Approval not found" });
-      }
-
-      const updated = await promptStorage.updateArtifactApproval(approvalId, {
-        status: decision,
-        reviewedBy: reviewerName,
-        reviewedAt: new Date(),
-        reviewNotes: notes,
-      });
-
-      res.json(updated);
-    } catch (error) {
-      log.error("Review approval error", { error: String(error) });
-      res.status(500).json({ message: "Failed to review approval" });
-    }
-  });
+    },
+  );
 
   // ── Update artifact logic (DB-backed) ────────────────────────────────────
 
@@ -276,39 +290,47 @@ export function registerPromptArtifactRoutes(app: Express): void {
     newCode: z.string().min(1).max(50000),
   });
 
-  app.post("/api/prompt-artifact/artifacts/update-logic", isAuthenticated, resolveOrgContext, async (req, res) => {
-    try {
-      const parsed = updateLogicSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+  app.post(
+    "/api/prompt-artifact/artifacts/update-logic",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const parsed = updateLogicSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+        }
+        const orgId = getOrgId(req);
+        const { investigationId, artifactId, blockId, newCode } = parsed.data;
+
+        const investigation = await promptStorage.getPromptInvestigation(investigationId);
+        if (!investigation || investigation.orgId !== orgId) {
+          return res.status(404).json({ message: "Investigation not found" });
+        }
+
+        const artifacts = (investigation.artifacts as unknown as GeneratedArtifact[]) || [];
+        const artifact = artifacts.find((a) => a.id === artifactId);
+        if (!artifact) return res.status(404).json({ message: "Artifact not found" });
+
+        const block = artifact.editableLogic?.find((b) => b.id === blockId);
+        if (!block || !block.editable)
+          return res.status(404).json({ message: "Logic block not found or not editable" });
+
+        block.code = newCode.slice(0, 50000);
+
+        await promptStorage.updatePromptInvestigation(investigationId, {
+          artifacts: artifacts as unknown as Record<string, unknown>,
+        });
+
+        res.json(artifact);
+      } catch (error) {
+        log.error("Update logic error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update artifact logic" });
       }
-      const orgId = getOrgId(req);
-      const { investigationId, artifactId, blockId, newCode } = parsed.data;
-
-      const investigation = await promptStorage.getPromptInvestigation(investigationId);
-      if (!investigation || investigation.orgId !== orgId) {
-        return res.status(404).json({ message: "Investigation not found" });
-      }
-
-      const artifacts = (investigation.artifacts as unknown as GeneratedArtifact[]) || [];
-      const artifact = artifacts.find((a) => a.id === artifactId);
-      if (!artifact) return res.status(404).json({ message: "Artifact not found" });
-
-      const block = artifact.editableLogic?.find((b) => b.id === blockId);
-      if (!block || !block.editable) return res.status(404).json({ message: "Logic block not found or not editable" });
-
-      block.code = newCode.slice(0, 50000);
-
-      await promptStorage.updatePromptInvestigation(investigationId, {
-        artifacts: artifacts as unknown as Record<string, unknown>,
-      });
-
-      res.json(artifact);
-    } catch (error) {
-      log.error("Update logic error", { error: String(error) });
-      res.status(500).json({ message: "Failed to update artifact logic" });
-    }
-  });
+    },
+  );
 
   // ── Prompt History (DB-backed) ───────────────────────────────────────────
 
@@ -332,47 +354,61 @@ export function registerPromptArtifactRoutes(app: Express): void {
 
   const toggleFavoriteSchema = z.object({ promptId: z.string().min(1) });
 
-  app.post("/api/prompt-artifact/history/toggle-favorite", isAuthenticated, resolveOrgContext, async (req, res) => {
-    try {
-      const parsed = toggleFavoriteSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+  app.post(
+    "/api/prompt-artifact/history/toggle-favorite",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const parsed = toggleFavoriteSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+        }
+        const orgId = getOrgId(req);
+
+        const entry = await promptStorage.getPromptHistoryEntry(parsed.data.promptId);
+        if (!entry || entry.orgId !== orgId) return res.status(404).json({ message: "Prompt not found" });
+
+        const updated = await promptStorage.updatePromptHistoryEntry(entry.id, { isFavorite: !entry.isFavorite });
+        res.json(updated);
+      } catch (error) {
+        log.error("Toggle favorite error", { error: String(error) });
+        res.status(500).json({ message: "Failed to toggle favorite" });
       }
-      const orgId = getOrgId(req);
-
-      const entry = await promptStorage.getPromptHistoryEntry(parsed.data.promptId);
-      if (!entry || entry.orgId !== orgId) return res.status(404).json({ message: "Prompt not found" });
-
-      const updated = await promptStorage.updatePromptHistoryEntry(entry.id, { isFavorite: !entry.isFavorite });
-      res.json(updated);
-    } catch (error) {
-      log.error("Toggle favorite error", { error: String(error) });
-      res.status(500).json({ message: "Failed to toggle favorite" });
-    }
-  });
+    },
+  );
 
   const sharePromptSchema = z.object({ promptId: z.string().min(1), shareWith: z.array(z.string().min(1)).max(50) });
 
-  app.post("/api/prompt-artifact/history/share", isAuthenticated, resolveOrgContext, async (req, res) => {
-    try {
-      const parsed = sharePromptSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+  app.post(
+    "/api/prompt-artifact/history/share",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const parsed = sharePromptSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+        }
+        const orgId = getOrgId(req);
+
+        const entry = await promptStorage.getPromptHistoryEntry(parsed.data.promptId);
+        if (!entry || entry.orgId !== orgId) return res.status(404).json({ message: "Prompt not found" });
+
+        const existingShared = (entry.sharedWith as string[]) || [];
+        const newShared = Array.from(new Set([...existingShared, ...parsed.data.shareWith]));
+        const updated = await promptStorage.updatePromptHistoryEntry(entry.id, { sharedWith: newShared });
+        res.json(updated);
+      } catch (error) {
+        log.error("Share prompt error", { error: String(error) });
+        res.status(500).json({ message: "Failed to share prompt" });
       }
-      const orgId = getOrgId(req);
-
-      const entry = await promptStorage.getPromptHistoryEntry(parsed.data.promptId);
-      if (!entry || entry.orgId !== orgId) return res.status(404).json({ message: "Prompt not found" });
-
-      const existingShared = (entry.sharedWith as string[]) || [];
-      const newShared = Array.from(new Set([...existingShared, ...parsed.data.shareWith]));
-      const updated = await promptStorage.updatePromptHistoryEntry(entry.id, { sharedWith: newShared });
-      res.json(updated);
-    } catch (error) {
-      log.error("Share prompt error", { error: String(error) });
-      res.status(500).json({ message: "Failed to share prompt" });
-    }
-  });
+    },
+  );
 
   // ── Artifact Validation ──────────────────────────────────────────────────
 
@@ -381,30 +417,37 @@ export function registerPromptArtifactRoutes(app: Express): void {
     artifactId: z.string().min(1),
   });
 
-  app.post("/api/prompt-artifact/artifacts/validate", isAuthenticated, resolveOrgContext, async (req, res) => {
-    try {
-      const parsed = validateArtifactSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+  app.post(
+    "/api/prompt-artifact/artifacts/validate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const parsed = validateArtifactSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+        }
+        const orgId = getOrgId(req);
+
+        const investigation = await promptStorage.getPromptInvestigation(parsed.data.investigationId);
+        if (!investigation || investigation.orgId !== orgId) {
+          return res.status(404).json({ message: "Investigation not found" });
+        }
+
+        const artifacts = (investigation.artifacts as unknown as GeneratedArtifact[]) || [];
+        const artifact = artifacts.find((a) => a.id === parsed.data.artifactId);
+        if (!artifact) return res.status(404).json({ message: "Artifact not found" });
+
+        const result = validateArtifact(artifact.type, artifact.content);
+        res.json(result);
+      } catch (error) {
+        log.error("Validate artifact error", { error: String(error) });
+        res.status(500).json({ message: "Failed to validate artifact" });
       }
-      const orgId = getOrgId(req);
-
-      const investigation = await promptStorage.getPromptInvestigation(parsed.data.investigationId);
-      if (!investigation || investigation.orgId !== orgId) {
-        return res.status(404).json({ message: "Investigation not found" });
-      }
-
-      const artifacts = (investigation.artifacts as unknown as GeneratedArtifact[]) || [];
-      const artifact = artifacts.find((a) => a.id === parsed.data.artifactId);
-      if (!artifact) return res.status(404).json({ message: "Artifact not found" });
-
-      const result = validateArtifact(artifact.type, artifact.content);
-      res.json(result);
-    } catch (error) {
-      log.error("Validate artifact error", { error: String(error) });
-      res.status(500).json({ message: "Failed to validate artifact" });
-    }
-  });
+    },
+  );
 
   // ── Artifact Deployment Pipeline (DB-backed) ─────────────────────────────
 
@@ -413,82 +456,96 @@ export function registerPromptArtifactRoutes(app: Express): void {
     artifactId: z.string().min(1),
   });
 
-  app.post("/api/prompt-artifact/artifacts/deploy", isAuthenticated, resolveOrgContext, async (req, res) => {
-    try {
-      const parsed = deployArtifactSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+  app.post(
+    "/api/prompt-artifact/artifacts/deploy",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const parsed = deployArtifactSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+        }
+        const orgId = getOrgId(req);
+
+        const investigation = await promptStorage.getPromptInvestigation(parsed.data.investigationId);
+        if (!investigation || investigation.orgId !== orgId) {
+          return res.status(404).json({ message: "Investigation not found" });
+        }
+
+        const artifacts = (investigation.artifacts as unknown as GeneratedArtifact[]) || [];
+        const artifact = artifacts.find((a) => a.id === parsed.data.artifactId);
+        if (!artifact) return res.status(404).json({ message: "Artifact not found" });
+
+        const validation = validateArtifact(artifact.type, artifact.content);
+        if (!validation.valid) {
+          return res.status(422).json({ message: "Artifact has validation errors", validation });
+        }
+
+        if (artifact.approvalGate && artifact.approvalGate.status !== "approved") {
+          return res.status(403).json({ message: "Artifact requires approval before deployment" });
+        }
+
+        const deployment = await promptStorage.createArtifactDeployment({
+          orgId,
+          artifactId: artifact.id,
+          investigationId: investigation.id,
+          artifactType: artifact.type,
+          targetPage: ARTIFACT_DEPLOY_TARGETS[artifact.type] || "Unknown",
+          status: "deployed",
+          deployedBy: "current-user",
+          snapshotContent: JSON.parse(JSON.stringify(artifact.content)),
+        });
+
+        log.info("Artifact deployed", {
+          deployId: deployment.id,
+          artifactType: artifact.type,
+          targetPage: deployment.targetPage,
+        });
+
+        res.json(deployment);
+      } catch (error) {
+        log.error("Deploy artifact error", { error: String(error) });
+        res.status(500).json({ message: "Failed to deploy artifact" });
       }
-      const orgId = getOrgId(req);
+    },
+  );
 
-      const investigation = await promptStorage.getPromptInvestigation(parsed.data.investigationId);
-      if (!investigation || investigation.orgId !== orgId) {
-        return res.status(404).json({ message: "Investigation not found" });
+  app.post(
+    "/api/prompt-artifact/deployments/:id/rollback",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const deployId = String(req.params.id);
+
+        const deployment = await promptStorage.getArtifactDeployment(deployId);
+        if (!deployment || deployment.orgId !== orgId) {
+          return res.status(404).json({ message: "Deployment not found" });
+        }
+
+        if (deployment.status === "rolled_back") {
+          return res.status(400).json({ message: "Deployment already rolled back" });
+        }
+
+        const updated = await promptStorage.updateArtifactDeployment(deployId, {
+          status: "rolled_back",
+          rolledBackAt: new Date(),
+        });
+
+        log.info("Deployment rolled back", { deployId });
+        res.json(updated);
+      } catch (error) {
+        log.error("Rollback deployment error", { error: String(error) });
+        res.status(500).json({ message: "Failed to rollback deployment" });
       }
-
-      const artifacts = (investigation.artifacts as unknown as GeneratedArtifact[]) || [];
-      const artifact = artifacts.find((a) => a.id === parsed.data.artifactId);
-      if (!artifact) return res.status(404).json({ message: "Artifact not found" });
-
-      const validation = validateArtifact(artifact.type, artifact.content);
-      if (!validation.valid) {
-        return res.status(422).json({ message: "Artifact has validation errors", validation });
-      }
-
-      if (artifact.approvalGate && artifact.approvalGate.status !== "approved") {
-        return res.status(403).json({ message: "Artifact requires approval before deployment" });
-      }
-
-      const deployment = await promptStorage.createArtifactDeployment({
-        orgId,
-        artifactId: artifact.id,
-        investigationId: investigation.id,
-        artifactType: artifact.type,
-        targetPage: ARTIFACT_DEPLOY_TARGETS[artifact.type] || "Unknown",
-        status: "deployed",
-        deployedBy: "current-user",
-        snapshotContent: JSON.parse(JSON.stringify(artifact.content)),
-      });
-
-      log.info("Artifact deployed", {
-        deployId: deployment.id,
-        artifactType: artifact.type,
-        targetPage: deployment.targetPage,
-      });
-
-      res.json(deployment);
-    } catch (error) {
-      log.error("Deploy artifact error", { error: String(error) });
-      res.status(500).json({ message: "Failed to deploy artifact" });
-    }
-  });
-
-  app.post("/api/prompt-artifact/deployments/:id/rollback", isAuthenticated, resolveOrgContext, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const deployId = String(req.params.id);
-
-      const deployment = await promptStorage.getArtifactDeployment(deployId);
-      if (!deployment || deployment.orgId !== orgId) {
-        return res.status(404).json({ message: "Deployment not found" });
-      }
-
-      if (deployment.status === "rolled_back") {
-        return res.status(400).json({ message: "Deployment already rolled back" });
-      }
-
-      const updated = await promptStorage.updateArtifactDeployment(deployId, {
-        status: "rolled_back",
-        rolledBackAt: new Date(),
-      });
-
-      log.info("Deployment rolled back", { deployId });
-      res.json(updated);
-    } catch (error) {
-      log.error("Rollback deployment error", { error: String(error) });
-      res.status(500).json({ message: "Failed to rollback deployment" });
-    }
-  });
+    },
+  );
 
   app.get("/api/prompt-artifact/deployments", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
@@ -611,34 +668,41 @@ export function registerPromptArtifactRoutes(app: Express): void {
     artifactType: z.enum(["alert_rule", "workflow", "report", "query", "dashboard", "investigation"]),
   });
 
-  app.post("/api/prompt-artifact/generate-typed", isAuthenticated, resolveOrgContext, async (req, res) => {
-    try {
-      const parsed = generateTypedSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+  app.post(
+    "/api/prompt-artifact/generate-typed",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const parsed = generateTypedSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
+        }
+        const orgId = getOrgId(req);
+
+        const typeHint = `[Generate ${parsed.data.artifactType.replace(/_/g, " ")}] `;
+        const generated = runInvestigation(typeHint + parsed.data.prompt, orgId);
+
+        const saved = await promptStorage.createPromptInvestigation({
+          id: generated.id,
+          orgId,
+          prompt: generated.prompt,
+          intent: generated.intent,
+          status: generated.status,
+          summary: generated.summary,
+          steps: generated.steps as unknown as Record<string, unknown>,
+          artifacts: generated.artifacts as unknown as Record<string, unknown>,
+          citations: generated.citations as unknown as Record<string, unknown>,
+          completedAt: generated.completedAt ? new Date(generated.completedAt) : null,
+        });
+
+        res.json(saved);
+      } catch (error) {
+        log.error("Typed generation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to generate typed artifact" });
       }
-      const orgId = getOrgId(req);
-
-      const typeHint = `[Generate ${parsed.data.artifactType.replace(/_/g, " ")}] `;
-      const generated = runInvestigation(typeHint + parsed.data.prompt, orgId);
-
-      const saved = await promptStorage.createPromptInvestigation({
-        id: generated.id,
-        orgId,
-        prompt: generated.prompt,
-        intent: generated.intent,
-        status: generated.status,
-        summary: generated.summary,
-        steps: generated.steps as unknown as Record<string, unknown>,
-        artifacts: generated.artifacts as unknown as Record<string, unknown>,
-        citations: generated.citations as unknown as Record<string, unknown>,
-        completedAt: generated.completedAt ? new Date(generated.completedAt) : null,
-      });
-
-      res.json(saved);
-    } catch (error) {
-      log.error("Typed generation error", { error: String(error) });
-      res.status(500).json({ message: "Failed to generate typed artifact" });
-    }
-  });
+    },
+  );
 }

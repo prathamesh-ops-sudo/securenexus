@@ -2,7 +2,7 @@
 import type { Express } from "express";
 import { randomBytes } from "crypto";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId } from "../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { storage, logger, getOrgId, sendEnvelope } from "./shared";
 import { db } from "../db";
 import { sql, eq, desc, and, ilike, or, count } from "drizzle-orm";
@@ -634,90 +634,104 @@ export function registerStandalonePlatformRoutes(app: Express): void {
   });
 
   // Create asset
-  app.post("/api/assets", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const body = req.body;
+  app.post(
+    "/api/assets",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const body = req.body;
 
-      const [asset] = await db
-        .insert(assetInventory)
-        .values({
-          orgId,
-          name: body.name,
-          assetType: body.assetType || "other",
-          criticality: body.criticality || "medium",
-          lifecycleStatus: body.lifecycleStatus || "active",
-          environment: body.environment || "production",
-          ipAddress: body.ipAddress,
-          macAddress: body.macAddress,
-          hostname: body.hostname,
-          fqdn: body.fqdn,
-          owner: body.owner,
-          department: body.department,
-          location: body.location,
-          operatingSystem: body.operatingSystem,
-          osVersion: body.osVersion,
-          manufacturer: body.manufacturer,
-          model: body.model,
-          serialNumber: body.serialNumber,
-          installedSoftware: body.installedSoftware || [],
-          tags: body.tags || [],
-          notes: body.notes,
-        })
-        .returning();
+        const [asset] = await db
+          .insert(assetInventory)
+          .values({
+            orgId,
+            name: body.name,
+            assetType: body.assetType || "other",
+            criticality: body.criticality || "medium",
+            lifecycleStatus: body.lifecycleStatus || "active",
+            environment: body.environment || "production",
+            ipAddress: body.ipAddress,
+            macAddress: body.macAddress,
+            hostname: body.hostname,
+            fqdn: body.fqdn,
+            owner: body.owner,
+            department: body.department,
+            location: body.location,
+            operatingSystem: body.operatingSystem,
+            osVersion: body.osVersion,
+            manufacturer: body.manufacturer,
+            model: body.model,
+            serialNumber: body.serialNumber,
+            installedSoftware: body.installedSoftware || [],
+            tags: body.tags || [],
+            notes: body.notes,
+          })
+          .returning();
 
-      res.status(201).json(asset);
-    } catch (error) {
-      log.error("Failed to create asset", { error: String(error) });
-      res.status(500).json({ message: "Failed to create asset" });
-    }
-  });
+        res.status(201).json(asset);
+      } catch (error) {
+        log.error("Failed to create asset", { error: String(error) });
+        res.status(500).json({ message: "Failed to create asset" });
+      }
+    },
+  );
 
   // Bulk import assets (registered BEFORE /:id to avoid route shadowing)
-  app.post("/api/assets/bulk-import", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { assets: importAssets } = req.body;
+  app.post(
+    "/api/assets/bulk-import",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { assets: importAssets } = req.body;
 
-      if (!Array.isArray(importAssets) || importAssets.length === 0) {
-        return res.status(400).json({ message: "No assets provided" });
+        if (!Array.isArray(importAssets) || importAssets.length === 0) {
+          return res.status(400).json({ message: "No assets provided" });
+        }
+
+        if (importAssets.length > 500) {
+          return res.status(400).json({ message: "Maximum 500 assets per import" });
+        }
+
+        const values = importAssets.map((a: any) => ({
+          orgId,
+          name: a.name || "Unknown Asset",
+          assetType: a.assetType || "other",
+          criticality: a.criticality || "medium",
+          lifecycleStatus: a.lifecycleStatus || "active",
+          environment: a.environment || "production",
+          ipAddress: a.ipAddress,
+          macAddress: a.macAddress,
+          hostname: a.hostname,
+          fqdn: a.fqdn,
+          owner: a.owner,
+          department: a.department,
+          location: a.location,
+          operatingSystem: a.operatingSystem,
+          osVersion: a.osVersion,
+          manufacturer: a.manufacturer,
+          model: a.model,
+          serialNumber: a.serialNumber,
+          tags: a.tags || [],
+          notes: a.notes,
+          discoveredBy: "csv_import",
+        }));
+
+        const inserted = await db.insert(assetInventory).values(values).returning();
+        res.status(201).json({ imported: inserted.length, assets: inserted });
+      } catch (error) {
+        log.error("Failed to bulk import assets", { error: String(error) });
+        res.status(500).json({ message: "Failed to import assets" });
       }
-
-      if (importAssets.length > 500) {
-        return res.status(400).json({ message: "Maximum 500 assets per import" });
-      }
-
-      const values = importAssets.map((a: any) => ({
-        orgId,
-        name: a.name || "Unknown Asset",
-        assetType: a.assetType || "other",
-        criticality: a.criticality || "medium",
-        lifecycleStatus: a.lifecycleStatus || "active",
-        environment: a.environment || "production",
-        ipAddress: a.ipAddress,
-        macAddress: a.macAddress,
-        hostname: a.hostname,
-        fqdn: a.fqdn,
-        owner: a.owner,
-        department: a.department,
-        location: a.location,
-        operatingSystem: a.operatingSystem,
-        osVersion: a.osVersion,
-        manufacturer: a.manufacturer,
-        model: a.model,
-        serialNumber: a.serialNumber,
-        tags: a.tags || [],
-        notes: a.notes,
-        discoveredBy: "csv_import",
-      }));
-
-      const inserted = await db.insert(assetInventory).values(values).returning();
-      res.status(201).json({ imported: inserted.length, assets: inserted });
-    } catch (error) {
-      log.error("Failed to bulk import assets", { error: String(error) });
-      res.status(500).json({ message: "Failed to import assets" });
-    }
-  });
+    },
+  );
 
   // Asset type distribution (registered BEFORE /:id to avoid route shadowing)
   app.get("/api/assets/stats/distribution", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -782,80 +796,94 @@ export function registerStandalonePlatformRoutes(app: Express): void {
   });
 
   // Update asset (explicit field picking to prevent mass assignment)
-  app.patch("/api/assets/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(assetInventory)
-        .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
+  app.patch(
+    "/api/assets/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(assetInventory)
+          .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
 
-      if (!existing) return res.status(404).json({ message: "Asset not found" });
+        if (!existing) return res.status(404).json({ message: "Asset not found" });
 
-      const body = req.body;
-      const [updated] = await db
-        .update(assetInventory)
-        .set({
-          name: body.name,
-          assetType: body.assetType,
-          criticality: body.criticality,
-          lifecycleStatus: body.lifecycleStatus,
-          environment: body.environment,
-          ipAddress: body.ipAddress,
-          macAddress: body.macAddress,
-          hostname: body.hostname,
-          fqdn: body.fqdn,
-          owner: body.owner,
-          department: body.department,
-          location: body.location,
-          operatingSystem: body.operatingSystem,
-          osVersion: body.osVersion,
-          manufacturer: body.manufacturer,
-          model: body.model,
-          serialNumber: body.serialNumber,
-          installedSoftware: body.installedSoftware,
-          lastPatchDate: body.lastPatchDate,
-          openFindings: body.openFindings,
-          complianceTags: body.complianceTags,
-          tags: body.tags,
-          notes: body.notes,
-          purchaseDate: body.purchaseDate,
-          warrantyExpiry: body.warrantyExpiry,
-          endOfLife: body.endOfLife,
-          riskScore: body.riskScore,
-          vulnerabilityCount: body.vulnerabilityCount,
-          lastSeenAt: body.lastSeenAt,
-          discoveredBy: body.discoveredBy,
-          updatedAt: new Date(),
-        })
-        .where(eq(assetInventory.id, String(req.params.id)))
-        .returning();
+        const body = req.body;
+        const [updated] = await db
+          .update(assetInventory)
+          .set({
+            name: body.name,
+            assetType: body.assetType,
+            criticality: body.criticality,
+            lifecycleStatus: body.lifecycleStatus,
+            environment: body.environment,
+            ipAddress: body.ipAddress,
+            macAddress: body.macAddress,
+            hostname: body.hostname,
+            fqdn: body.fqdn,
+            owner: body.owner,
+            department: body.department,
+            location: body.location,
+            operatingSystem: body.operatingSystem,
+            osVersion: body.osVersion,
+            manufacturer: body.manufacturer,
+            model: body.model,
+            serialNumber: body.serialNumber,
+            installedSoftware: body.installedSoftware,
+            lastPatchDate: body.lastPatchDate,
+            openFindings: body.openFindings,
+            complianceTags: body.complianceTags,
+            tags: body.tags,
+            notes: body.notes,
+            purchaseDate: body.purchaseDate,
+            warrantyExpiry: body.warrantyExpiry,
+            endOfLife: body.endOfLife,
+            riskScore: body.riskScore,
+            vulnerabilityCount: body.vulnerabilityCount,
+            lastSeenAt: body.lastSeenAt,
+            discoveredBy: body.discoveredBy,
+            updatedAt: new Date(),
+          })
+          .where(eq(assetInventory.id, String(req.params.id)))
+          .returning();
 
-      res.json(updated);
-    } catch (error) {
-      log.error("Failed to update asset", { error: String(error) });
-      res.status(500).json({ message: "Failed to update asset" });
-    }
-  });
+        res.json(updated);
+      } catch (error) {
+        log.error("Failed to update asset", { error: String(error) });
+        res.status(500).json({ message: "Failed to update asset" });
+      }
+    },
+  );
 
   // Delete asset
-  app.delete("/api/assets/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(assetInventory)
-        .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
+  app.delete(
+    "/api/assets/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(assetInventory)
+          .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
 
-      if (!existing) return res.status(404).json({ message: "Asset not found" });
+        if (!existing) return res.status(404).json({ message: "Asset not found" });
 
-      await db.delete(assetInventory).where(eq(assetInventory.id, String(req.params.id)));
-      res.json({ deleted: true });
-    } catch (error) {
-      log.error("Failed to delete asset", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete asset" });
-    }
-  });
+        await db.delete(assetInventory).where(eq(assetInventory.id, String(req.params.id)));
+        res.json({ deleted: true });
+      } catch (error) {
+        log.error("Failed to delete asset", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete asset" });
+      }
+    },
+  );
 
   // 45.1 — Asset detail with full context
   app.get("/api/assets/:id/full-context", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -930,29 +958,36 @@ export function registerStandalonePlatformRoutes(app: Express): void {
   });
 
   // 45.2 — Asset classification and criticality update
-  app.patch("/api/assets/:id/classification", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { criticality, classification } = req.body as { criticality?: string; classification?: string };
-      const validCriticalities = ["critical", "high", "medium", "low"];
-      if (criticality && !validCriticalities.includes(criticality)) {
-        return res.status(400).json({ message: "Invalid criticality level" });
+  app.patch(
+    "/api/assets/:id/classification",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { criticality, classification } = req.body as { criticality?: string; classification?: string };
+        const validCriticalities = ["critical", "high", "medium", "low"];
+        if (criticality && !validCriticalities.includes(criticality)) {
+          return res.status(400).json({ message: "Invalid criticality level" });
+        }
+        const [updated] = await db
+          .update(assetInventory)
+          .set({
+            criticality: criticality || undefined,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)))
+          .returning();
+        if (!updated) return res.status(404).json({ message: "Asset not found" });
+        res.json(updated);
+      } catch (error) {
+        log.error("Failed to update classification", { error: String(error) });
+        res.status(500).json({ message: "Failed to update asset classification" });
       }
-      const [updated] = await db
-        .update(assetInventory)
-        .set({
-          criticality: criticality || undefined,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)))
-        .returning();
-      if (!updated) return res.status(404).json({ message: "Asset not found" });
-      res.json(updated);
-    } catch (error) {
-      log.error("Failed to update classification", { error: String(error) });
-      res.status(500).json({ message: "Failed to update asset classification" });
-    }
-  });
+    },
+  );
 
   // 45.3 — Asset topology data
   app.get("/api/assets/topology", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -1407,48 +1442,57 @@ export function registerStandalonePlatformRoutes(app: Express): void {
   });
 
   // Create risk
-  app.post("/api/risks", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const user = (req as any).user;
-      const body = req.body;
+  app.post(
+    "/api/risks",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const user = (req as any).user;
+        const body = req.body;
 
-      const likelihood = Math.max(1, Math.min(5, body.likelihood || 3));
-      const impact = Math.max(1, Math.min(5, body.impact || 3));
-      const inherentRiskScore = likelihood * impact;
+        const likelihood = Math.max(1, Math.min(5, body.likelihood || 3));
+        const impact = Math.max(1, Math.min(5, body.impact || 3));
+        const inherentRiskScore = likelihood * impact;
 
-      const [risk] = await db
-        .insert(riskRegister)
-        .values({
-          orgId,
-          title: body.title,
-          description: body.description,
-          category: body.category || "operational",
-          likelihood,
-          impact,
-          inherentRiskScore,
-          residualLikelihood: body.residualLikelihood,
-          residualImpact: body.residualImpact,
-          residualRiskScore:
-            body.residualLikelihood && body.residualImpact ? body.residualLikelihood * body.residualImpact : undefined,
-          treatment: body.treatment || "mitigate",
-          treatmentPlan: body.treatmentPlan,
-          controls: body.controls || [],
-          riskOwner: body.riskOwner,
-          status: body.status || "identified",
-          relatedAssets: body.relatedAssets || [],
-          relatedFrameworks: body.relatedFrameworks || [],
-          tags: body.tags || [],
-          createdBy: user?.id,
-        })
-        .returning();
+        const [risk] = await db
+          .insert(riskRegister)
+          .values({
+            orgId,
+            title: body.title,
+            description: body.description,
+            category: body.category || "operational",
+            likelihood,
+            impact,
+            inherentRiskScore,
+            residualLikelihood: body.residualLikelihood,
+            residualImpact: body.residualImpact,
+            residualRiskScore:
+              body.residualLikelihood && body.residualImpact
+                ? body.residualLikelihood * body.residualImpact
+                : undefined,
+            treatment: body.treatment || "mitigate",
+            treatmentPlan: body.treatmentPlan,
+            controls: body.controls || [],
+            riskOwner: body.riskOwner,
+            status: body.status || "identified",
+            relatedAssets: body.relatedAssets || [],
+            relatedFrameworks: body.relatedFrameworks || [],
+            tags: body.tags || [],
+            createdBy: user?.id,
+          })
+          .returning();
 
-      res.status(201).json(risk);
-    } catch (error) {
-      log.error("Failed to create risk", { error: String(error) });
-      res.status(500).json({ message: "Failed to create risk" });
-    }
-  });
+        res.status(201).json(risk);
+      } catch (error) {
+        log.error("Failed to create risk", { error: String(error) });
+        res.status(500).json({ message: "Failed to create risk" });
+      }
+    },
+  );
 
   // Get single risk
   app.get("/api/risks/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -1468,85 +1512,99 @@ export function registerStandalonePlatformRoutes(app: Express): void {
   });
 
   // Update risk
-  app.patch("/api/risks/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(riskRegister)
-        .where(and(eq(riskRegister.id, String(req.params.id)), eq(riskRegister.orgId, orgId)));
+  app.patch(
+    "/api/risks/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(riskRegister)
+          .where(and(eq(riskRegister.id, String(req.params.id)), eq(riskRegister.orgId, orgId)));
 
-      if (!existing) return res.status(404).json({ message: "Risk not found" });
+        if (!existing) return res.status(404).json({ message: "Risk not found" });
 
-      const body = req.body;
-      const likelihood = body.likelihood !== undefined ? Math.max(1, Math.min(5, body.likelihood)) : undefined;
-      const impact = body.impact !== undefined ? Math.max(1, Math.min(5, body.impact)) : undefined;
+        const body = req.body;
+        const likelihood = body.likelihood !== undefined ? Math.max(1, Math.min(5, body.likelihood)) : undefined;
+        const impact = body.impact !== undefined ? Math.max(1, Math.min(5, body.impact)) : undefined;
 
-      // Explicit field picking to prevent mass assignment (forbid orgId, id, createdAt)
-      const updateData: Record<string, any> = {
-        title: body.title,
-        description: body.description,
-        category: body.category,
-        status: body.status,
-        likelihood: likelihood ?? body.likelihood,
-        impact: impact ?? body.impact,
-        riskOwner: body.riskOwner,
-        treatment: body.treatment,
-        treatmentPlan: body.treatmentPlan,
-        controls: body.controls,
-        residualLikelihood: body.residualLikelihood,
-        residualImpact: body.residualImpact,
-        relatedAssets: body.relatedAssets,
-        relatedFrameworks: body.relatedFrameworks,
-        lastReviewDate: body.lastReviewDate,
-        nextReviewDate: body.nextReviewDate,
-        tags: body.tags,
-        updatedAt: new Date(),
-      };
+        // Explicit field picking to prevent mass assignment (forbid orgId, id, createdAt)
+        const updateData: Record<string, any> = {
+          title: body.title,
+          description: body.description,
+          category: body.category,
+          status: body.status,
+          likelihood: likelihood ?? body.likelihood,
+          impact: impact ?? body.impact,
+          riskOwner: body.riskOwner,
+          treatment: body.treatment,
+          treatmentPlan: body.treatmentPlan,
+          controls: body.controls,
+          residualLikelihood: body.residualLikelihood,
+          residualImpact: body.residualImpact,
+          relatedAssets: body.relatedAssets,
+          relatedFrameworks: body.relatedFrameworks,
+          lastReviewDate: body.lastReviewDate,
+          nextReviewDate: body.nextReviewDate,
+          tags: body.tags,
+          updatedAt: new Date(),
+        };
 
-      if (likelihood !== undefined && impact !== undefined) {
-        updateData.inherentRiskScore = likelihood * impact;
-      } else if (likelihood !== undefined) {
-        updateData.inherentRiskScore = likelihood * existing.impact;
-      } else if (impact !== undefined) {
-        updateData.inherentRiskScore = existing.likelihood * impact;
+        if (likelihood !== undefined && impact !== undefined) {
+          updateData.inherentRiskScore = likelihood * impact;
+        } else if (likelihood !== undefined) {
+          updateData.inherentRiskScore = likelihood * existing.impact;
+        } else if (impact !== undefined) {
+          updateData.inherentRiskScore = existing.likelihood * impact;
+        }
+
+        if (body.residualLikelihood !== undefined && body.residualImpact !== undefined) {
+          updateData.residualRiskScore = body.residualLikelihood * body.residualImpact;
+        }
+
+        const [updated] = await db
+          .update(riskRegister)
+          .set(updateData)
+          .where(eq(riskRegister.id, String(req.params.id)))
+          .returning();
+
+        res.json(updated);
+      } catch (error) {
+        log.error("Failed to update risk", { error: String(error) });
+        res.status(500).json({ message: "Failed to update risk" });
       }
-
-      if (body.residualLikelihood !== undefined && body.residualImpact !== undefined) {
-        updateData.residualRiskScore = body.residualLikelihood * body.residualImpact;
-      }
-
-      const [updated] = await db
-        .update(riskRegister)
-        .set(updateData)
-        .where(eq(riskRegister.id, String(req.params.id)))
-        .returning();
-
-      res.json(updated);
-    } catch (error) {
-      log.error("Failed to update risk", { error: String(error) });
-      res.status(500).json({ message: "Failed to update risk" });
-    }
-  });
+    },
+  );
 
   // Delete risk
-  app.delete("/api/risks/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(riskRegister)
-        .where(and(eq(riskRegister.id, String(req.params.id)), eq(riskRegister.orgId, orgId)));
+  app.delete(
+    "/api/risks/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(riskRegister)
+          .where(and(eq(riskRegister.id, String(req.params.id)), eq(riskRegister.orgId, orgId)));
 
-      if (!existing) return res.status(404).json({ message: "Risk not found" });
+        if (!existing) return res.status(404).json({ message: "Risk not found" });
 
-      await db.delete(riskRegister).where(eq(riskRegister.id, String(req.params.id)));
-      res.json({ deleted: true });
-    } catch (error) {
-      log.error("Failed to delete risk", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete risk" });
-    }
-  });
+        await db.delete(riskRegister).where(eq(riskRegister.id, String(req.params.id)));
+        res.json({ deleted: true });
+      } catch (error) {
+        log.error("Failed to delete risk", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete risk" });
+      }
+    },
+  );
 
   // ==========================================================================
   // 3. SECURITY ASSESSMENTS
@@ -1586,52 +1644,59 @@ export function registerStandalonePlatformRoutes(app: Express): void {
   });
 
   // Create assessment (starts a new assessment from a framework)
-  app.post("/api/assessments", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const user = (req as any).user;
-      const { framework, title, description } = req.body;
+  app.post(
+    "/api/assessments",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const user = (req as any).user;
+        const { framework, title, description } = req.body;
 
-      const frameworkDef = FRAMEWORK_CONTROLS[framework];
-      if (!frameworkDef) {
-        return res.status(400).json({ message: "Invalid framework" });
-      }
+        const frameworkDef = FRAMEWORK_CONTROLS[framework];
+        if (!frameworkDef) {
+          return res.status(400).json({ message: "Invalid framework" });
+        }
 
-      // Create the assessment
-      const [assessment] = await db
-        .insert(securityAssessments)
-        .values({
+        // Create the assessment
+        const [assessment] = await db
+          .insert(securityAssessments)
+          .values({
+            orgId,
+            framework,
+            title: title || `${frameworkDef.name} Assessment`,
+            description: description || frameworkDef.description,
+            status: "in_progress",
+            totalControls: frameworkDef.controls.length,
+            assessor: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : user?.email,
+            startedAt: new Date(),
+          })
+          .returning();
+
+        // Create response entries for each control
+        const responseValues = frameworkDef.controls.map((ctrl) => ({
+          assessmentId: assessment.id,
           orgId,
-          framework,
-          title: title || `${frameworkDef.name} Assessment`,
-          description: description || frameworkDef.description,
-          status: "in_progress",
-          totalControls: frameworkDef.controls.length,
-          assessor: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : user?.email,
-          startedAt: new Date(),
-        })
-        .returning();
+          controlId: ctrl.controlId,
+          controlTitle: ctrl.title,
+          controlDescription: ctrl.description,
+          category: ctrl.category,
+          status: "not_assessed" as const,
+          weight: ctrl.weight,
+        }));
 
-      // Create response entries for each control
-      const responseValues = frameworkDef.controls.map((ctrl) => ({
-        assessmentId: assessment.id,
-        orgId,
-        controlId: ctrl.controlId,
-        controlTitle: ctrl.title,
-        controlDescription: ctrl.description,
-        category: ctrl.category,
-        status: "not_assessed" as const,
-        weight: ctrl.weight,
-      }));
+        await db.insert(assessmentResponses).values(responseValues);
 
-      await db.insert(assessmentResponses).values(responseValues);
-
-      res.status(201).json(assessment);
-    } catch (error) {
-      log.error("Failed to create assessment", { error: String(error) });
-      res.status(500).json({ message: "Failed to create assessment" });
-    }
-  });
+        res.status(201).json(assessment);
+      } catch (error) {
+        log.error("Failed to create assessment", { error: String(error) });
+        res.status(500).json({ message: "Failed to create assessment" });
+      }
+    },
+  );
 
   // Get assessment with responses
   app.get("/api/assessments/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -1664,6 +1729,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -1756,54 +1822,68 @@ export function registerStandalonePlatformRoutes(app: Express): void {
   );
 
   // Complete assessment
-  app.post("/api/assessments/:id/complete", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
+  app.post(
+    "/api/assessments/:id/complete",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
 
-      const [assessment] = await db
-        .select()
-        .from(securityAssessments)
-        .where(and(eq(securityAssessments.id, String(req.params.id)), eq(securityAssessments.orgId, orgId)));
+        const [assessment] = await db
+          .select()
+          .from(securityAssessments)
+          .where(and(eq(securityAssessments.id, String(req.params.id)), eq(securityAssessments.orgId, orgId)));
 
-      if (!assessment) return res.status(404).json({ message: "Assessment not found" });
+        if (!assessment) return res.status(404).json({ message: "Assessment not found" });
 
-      const [updated] = await db
-        .update(securityAssessments)
-        .set({
-          status: "completed",
-          completedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(securityAssessments.id, String(req.params.id)))
-        .returning();
+        const [updated] = await db
+          .update(securityAssessments)
+          .set({
+            status: "completed",
+            completedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(securityAssessments.id, String(req.params.id)))
+          .returning();
 
-      res.json(updated);
-    } catch (error) {
-      log.error("Failed to complete assessment", { error: String(error) });
-      res.status(500).json({ message: "Failed to complete assessment" });
-    }
-  });
+        res.json(updated);
+      } catch (error) {
+        log.error("Failed to complete assessment", { error: String(error) });
+        res.status(500).json({ message: "Failed to complete assessment" });
+      }
+    },
+  );
 
   // Delete assessment
-  app.delete("/api/assessments/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
+  app.delete(
+    "/api/assessments/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
 
-      const [existing] = await db
-        .select()
-        .from(securityAssessments)
-        .where(and(eq(securityAssessments.id, String(req.params.id)), eq(securityAssessments.orgId, orgId)));
+        const [existing] = await db
+          .select()
+          .from(securityAssessments)
+          .where(and(eq(securityAssessments.id, String(req.params.id)), eq(securityAssessments.orgId, orgId)));
 
-      if (!existing) return res.status(404).json({ message: "Assessment not found" });
+        if (!existing) return res.status(404).json({ message: "Assessment not found" });
 
-      // Cascade will delete responses
-      await db.delete(securityAssessments).where(eq(securityAssessments.id, String(req.params.id)));
-      res.json({ deleted: true });
-    } catch (error) {
-      log.error("Failed to delete assessment", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete assessment" });
-    }
-  });
+        // Cascade will delete responses
+        await db.delete(securityAssessments).where(eq(securityAssessments.id, String(req.params.id)));
+        res.json({ deleted: true });
+      } catch (error) {
+        log.error("Failed to delete assessment", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete assessment" });
+      }
+    },
+  );
 
   // ==========================================================================
   // 4. THREAT REPORTS (Employee Portal)
@@ -1856,65 +1936,72 @@ export function registerStandalonePlatformRoutes(app: Express): void {
   });
 
   // Create threat report
-  app.post("/api/threat-reports", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const user = (req as any).user;
-      const body = req.body;
+  app.post(
+    "/api/threat-reports",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const user = (req as any).user;
+        const body = req.body;
 
-      const [report] = await db
-        .insert(threatReports)
-        .values({
-          orgId,
-          reporterUserId: body.isAnonymous ? null : user?.id,
-          reporterName: body.isAnonymous
-            ? null
-            : body.reporterName || `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
-          reporterEmail: body.isAnonymous ? null : body.reporterEmail || user?.email,
-          isAnonymous: body.isAnonymous || false,
-          category: body.category,
-          severity: body.severity || "medium",
-          title: body.title,
-          description: body.description,
-          dateOccurred: body.dateOccurred ? new Date(body.dateOccurred) : null,
-          locationDescription: body.locationDescription,
-          affectedSystems: body.affectedSystems,
-          suspectInfo: body.suspectInfo,
-          attachments: body.attachments || [],
-        })
-        .returning();
+        const [report] = await db
+          .insert(threatReports)
+          .values({
+            orgId,
+            reporterUserId: body.isAnonymous ? null : user?.id,
+            reporterName: body.isAnonymous
+              ? null
+              : body.reporterName || `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
+            reporterEmail: body.isAnonymous ? null : body.reporterEmail || user?.email,
+            isAnonymous: body.isAnonymous || false,
+            category: body.category,
+            severity: body.severity || "medium",
+            title: body.title,
+            description: body.description,
+            dateOccurred: body.dateOccurred ? new Date(body.dateOccurred) : null,
+            locationDescription: body.locationDescription,
+            affectedSystems: body.affectedSystems,
+            suspectInfo: body.suspectInfo,
+            attachments: body.attachments || [],
+          })
+          .returning();
 
-      // Auto-create an alert from the threat report if severity is high or critical
-      if (body.severity === "critical" || body.severity === "high") {
-        try {
-          const [alert] = await db
-            .insert(alerts)
-            .values({
-              orgId,
-              source: "Employee Report",
-              category: body.category === "phishing" ? "phishing" : body.category === "malware" ? "malware" : "other",
-              severity: body.severity,
-              title: `[Threat Report] ${body.title}`,
-              description: body.description,
-              status: "new",
-            })
-            .returning();
+        // Auto-create an alert from the threat report if severity is high or critical
+        if (body.severity === "critical" || body.severity === "high") {
+          try {
+            const [alert] = await db
+              .insert(alerts)
+              .values({
+                orgId,
+                source: "Employee Report",
+                category: body.category === "phishing" ? "phishing" : body.category === "malware" ? "malware" : "other",
+                severity: body.severity,
+                title: `[Threat Report] ${body.title}`,
+                description: body.description,
+                status: "new",
+              })
+              .returning();
 
-          // Link the alert back to the threat report
-          await db.update(threatReports).set({ linkedAlertId: alert.id }).where(eq(threatReports.id, report.id));
+            // Link the alert back to the threat report
+            await db.update(threatReports).set({ linkedAlertId: alert.id }).where(eq(threatReports.id, report.id));
 
-          report.linkedAlertId = alert.id;
-        } catch (alertErr) {
-          log.warn("Failed to auto-create alert from threat report", { error: String(alertErr) });
+            report.linkedAlertId = alert.id;
+          } catch (alertErr) {
+            log.warn("Failed to auto-create alert from threat report", { error: String(alertErr) });
+          }
         }
-      }
 
-      res.status(201).json(report);
-    } catch (error) {
-      log.error("Failed to create threat report", { error: String(error) });
-      res.status(500).json({ message: "Failed to create threat report" });
-    }
-  });
+        res.status(201).json(report);
+      } catch (error) {
+        log.error("Failed to create threat report", { error: String(error) });
+        res.status(500).json({ message: "Failed to create threat report" });
+      }
+    },
+  );
 
   // Get single threat report
   app.get("/api/threat-reports/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -1934,81 +2021,95 @@ export function registerStandalonePlatformRoutes(app: Express): void {
   });
 
   // Update threat report (status, assignment, resolution)
-  app.patch("/api/threat-reports/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [existing] = await db
-        .select()
-        .from(threatReports)
-        .where(and(eq(threatReports.id, String(req.params.id)), eq(threatReports.orgId, orgId)));
+  app.patch(
+    "/api/threat-reports/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [existing] = await db
+          .select()
+          .from(threatReports)
+          .where(and(eq(threatReports.id, String(req.params.id)), eq(threatReports.orgId, orgId)));
 
-      if (!existing) return res.status(404).json({ message: "Report not found" });
+        if (!existing) return res.status(404).json({ message: "Report not found" });
 
-      const body = req.body;
-      const updateData: Record<string, any> = { updatedAt: new Date() };
+        const body = req.body;
+        const updateData: Record<string, any> = { updatedAt: new Date() };
 
-      if (body.status) updateData.status = body.status;
-      if (body.assignedTo) updateData.assignedTo = body.assignedTo;
-      if (body.severity) updateData.severity = body.severity;
-      if (body.resolution) {
-        updateData.resolution = body.resolution;
-        updateData.resolvedAt = new Date();
-        updateData.resolvedBy = (req as any).user?.id;
+        if (body.status) updateData.status = body.status;
+        if (body.assignedTo) updateData.assignedTo = body.assignedTo;
+        if (body.severity) updateData.severity = body.severity;
+        if (body.resolution) {
+          updateData.resolution = body.resolution;
+          updateData.resolvedAt = new Date();
+          updateData.resolvedBy = (req as any).user?.id;
+        }
+
+        const [updated] = await db
+          .update(threatReports)
+          .set(updateData)
+          .where(eq(threatReports.id, String(req.params.id)))
+          .returning();
+
+        res.json(updated);
+      } catch (error) {
+        log.error("Failed to update threat report", { error: String(error) });
+        res.status(500).json({ message: "Failed to update threat report" });
       }
-
-      const [updated] = await db
-        .update(threatReports)
-        .set(updateData)
-        .where(eq(threatReports.id, String(req.params.id)))
-        .returning();
-
-      res.json(updated);
-    } catch (error) {
-      log.error("Failed to update threat report", { error: String(error) });
-      res.status(500).json({ message: "Failed to update threat report" });
-    }
-  });
+    },
+  );
 
   // Escalate threat report to incident
-  app.post("/api/threat-reports/:id/escalate", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const [report] = await db
-        .select()
-        .from(threatReports)
-        .where(and(eq(threatReports.id, String(req.params.id)), eq(threatReports.orgId, orgId)));
+  app.post(
+    "/api/threat-reports/:id/escalate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [report] = await db
+          .select()
+          .from(threatReports)
+          .where(and(eq(threatReports.id, String(req.params.id)), eq(threatReports.orgId, orgId)));
 
-      if (!report) return res.status(404).json({ message: "Report not found" });
+        if (!report) return res.status(404).json({ message: "Report not found" });
 
-      if (report.linkedIncidentId) {
-        return res.status(400).json({ message: "Report already escalated to an incident" });
+        if (report.linkedIncidentId) {
+          return res.status(400).json({ message: "Report already escalated to an incident" });
+        }
+
+        // Create incident from threat report
+        const incident = await storage.createIncident({
+          orgId,
+          title: `[Escalated] ${report.title}`,
+          summary: report.description,
+          severity: report.severity === "informational" ? "low" : report.severity,
+          status: "open",
+        });
+
+        // Link back
+        await db
+          .update(threatReports)
+          .set({
+            linkedIncidentId: incident.id,
+            status: "investigating",
+            updatedAt: new Date(),
+          })
+          .where(eq(threatReports.id, report.id));
+
+        res.json({ incident, report: { ...report, linkedIncidentId: incident.id, status: "investigating" } });
+      } catch (error) {
+        log.error("Failed to escalate threat report", { error: String(error) });
+        res.status(500).json({ message: "Failed to escalate threat report" });
       }
-
-      // Create incident from threat report
-      const incident = await storage.createIncident({
-        orgId,
-        title: `[Escalated] ${report.title}`,
-        summary: report.description,
-        severity: report.severity === "informational" ? "low" : report.severity,
-        status: "open",
-      });
-
-      // Link back
-      await db
-        .update(threatReports)
-        .set({
-          linkedIncidentId: incident.id,
-          status: "investigating",
-          updatedAt: new Date(),
-        })
-        .where(eq(threatReports.id, report.id));
-
-      res.json({ incident, report: { ...report, linkedIncidentId: incident.id, status: "investigating" } });
-    } catch (error) {
-      log.error("Failed to escalate threat report", { error: String(error) });
-      res.status(500).json({ message: "Failed to escalate threat report" });
-    }
-  });
+    },
+  );
   // ─── 27.1 Vulnerability Prioritization Matrix ─────────────────────────────
 
   app.get("/api/vulnerabilities/prioritized", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
@@ -2410,28 +2511,35 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/vulnerabilities/scan", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { scannerId, targets } = req.body;
-      if (!scannerId) return res.status(400).json({ message: "scannerId is required" });
+  app.post(
+    "/api/vulnerabilities/scan",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { scannerId, targets } = req.body;
+        if (!scannerId) return res.status(400).json({ message: "scannerId is required" });
 
-      // Simulate scan execution
-      const scanId = `scan-${Date.now()}-${randomBytes(4).toString("hex")}`;
-      logger.child("vuln-scan").info("Vulnerability scan initiated", { orgId, scannerId, scanId });
+        // Simulate scan execution
+        const scanId = `scan-${Date.now()}-${randomBytes(4).toString("hex")}`;
+        logger.child("vuln-scan").info("Vulnerability scan initiated", { orgId, scannerId, scanId });
 
-      res.status(202).json({
-        scanId,
-        scannerId,
-        status: "running",
-        targets: targets || ["all"],
-        startedAt: new Date().toISOString(),
-        estimatedDuration: "5-15 minutes",
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to initiate scan" });
-    }
-  });
+        res.status(202).json({
+          scanId,
+          scannerId,
+          status: "running",
+          targets: targets || ["all"],
+          startedAt: new Date().toISOString(),
+          estimatedDuration: "5-15 minutes",
+        });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to initiate scan" });
+      }
+    },
+  );
 
   // ─── 27.6 Patch Verification ───────────────────────────────────────────────
 
@@ -2440,6 +2548,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
@@ -2676,83 +2785,90 @@ export function registerStandalonePlatformRoutes(app: Express): void {
   );
 
   // 46.5: Risk auto-population from security data
-  app.post("/api/risks/auto-populate", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const created: Array<{ title: string; category: string; source: string }> = [];
+  app.post(
+    "/api/risks/auto-populate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const created: Array<{ title: string; category: string; source: string }> = [];
 
-      // Auto-create from critical vulnerabilities
-      const critVulns = await db
-        .select()
-        .from(alerts)
-        .where(and(eq(alerts.orgId, orgId), eq(alerts.severity, "critical"), eq(alerts.status, "open")))
-        .limit(20);
+        // Auto-create from critical vulnerabilities
+        const critVulns = await db
+          .select()
+          .from(alerts)
+          .where(and(eq(alerts.orgId, orgId), eq(alerts.severity, "critical"), eq(alerts.status, "open")))
+          .limit(20);
 
-      for (const vuln of critVulns) {
-        const title = `Critical alert: ${vuln.title || "Unnamed alert"}`;
-        const existing = await db
-          .select({ id: riskRegister.id })
-          .from(riskRegister)
-          .where(and(eq(riskRegister.orgId, orgId), eq(riskRegister.title, title)))
-          .limit(1);
-        if (existing.length === 0) {
-          await db.insert(riskRegister).values({
-            orgId,
-            title,
-            description: `Auto-created from critical alert (ID: ${vuln.id})`,
-            category: "technical",
-            likelihood: 4,
-            impact: 5,
-            inherentRiskScore: 20,
-            treatment: "mitigate",
-            status: "identified",
-            tags: ["auto-populated", "critical-alert"],
-          });
-          created.push({ title, category: "technical", source: "critical_alert" });
+        for (const vuln of critVulns) {
+          const title = `Critical alert: ${vuln.title || "Unnamed alert"}`;
+          const existing = await db
+            .select({ id: riskRegister.id })
+            .from(riskRegister)
+            .where(and(eq(riskRegister.orgId, orgId), eq(riskRegister.title, title)))
+            .limit(1);
+          if (existing.length === 0) {
+            await db.insert(riskRegister).values({
+              orgId,
+              title,
+              description: `Auto-created from critical alert (ID: ${vuln.id})`,
+              category: "technical",
+              likelihood: 4,
+              impact: 5,
+              inherentRiskScore: 20,
+              treatment: "mitigate",
+              status: "identified",
+              tags: ["auto-populated", "critical-alert"],
+            });
+            created.push({ title, category: "technical", source: "critical_alert" });
+          }
         }
-      }
 
-      // Auto-create from CSPM misconfigurations (high severity)
-      const cspmFindings = await db
-        .select()
-        .from(alerts)
-        .where(and(eq(alerts.orgId, orgId), eq(alerts.severity, "high"), eq(alerts.status, "open")))
-        .limit(10);
+        // Auto-create from CSPM misconfigurations (high severity)
+        const cspmFindings = await db
+          .select()
+          .from(alerts)
+          .where(and(eq(alerts.orgId, orgId), eq(alerts.severity, "high"), eq(alerts.status, "open")))
+          .limit(10);
 
-      for (const finding of cspmFindings) {
-        const title = `CSPM finding: ${finding.title || "Misconfiguration"}`;
-        const existing = await db
-          .select({ id: riskRegister.id })
-          .from(riskRegister)
-          .where(and(eq(riskRegister.orgId, orgId), eq(riskRegister.title, title)))
-          .limit(1);
-        if (existing.length === 0) {
-          await db.insert(riskRegister).values({
-            orgId,
-            title,
-            description: `Auto-created from high-severity CSPM finding (ID: ${finding.id})`,
-            category: "compliance",
-            likelihood: 3,
-            impact: 4,
-            inherentRiskScore: 12,
-            treatment: "mitigate",
-            status: "identified",
-            tags: ["auto-populated", "cspm"],
-          });
-          created.push({ title, category: "compliance", source: "cspm" });
+        for (const finding of cspmFindings) {
+          const title = `CSPM finding: ${finding.title || "Misconfiguration"}`;
+          const existing = await db
+            .select({ id: riskRegister.id })
+            .from(riskRegister)
+            .where(and(eq(riskRegister.orgId, orgId), eq(riskRegister.title, title)))
+            .limit(1);
+          if (existing.length === 0) {
+            await db.insert(riskRegister).values({
+              orgId,
+              title,
+              description: `Auto-created from high-severity CSPM finding (ID: ${finding.id})`,
+              category: "compliance",
+              likelihood: 3,
+              impact: 4,
+              inherentRiskScore: 12,
+              treatment: "mitigate",
+              status: "identified",
+              tags: ["auto-populated", "cspm"],
+            });
+            created.push({ title, category: "compliance", source: "cspm" });
+          }
         }
-      }
 
-      sendEnvelope(res, {
-        created: created.length,
-        risks: created,
-        message: `Auto-populated ${created.length} new risks from security data`,
-      });
-    } catch (error) {
-      log.error("Risk auto-populate error", { error: String(error) });
-      res.status(500).json({ message: "Failed to auto-populate risks" });
-    }
-  });
+        sendEnvelope(res, {
+          created: created.length,
+          risks: created,
+          message: `Auto-populated ${created.length} new risks from security data`,
+        });
+      } catch (error) {
+        log.error("Risk auto-populate error", { error: String(error) });
+        res.status(500).json({ message: "Failed to auto-populate risks" });
+      }
+    },
+  );
 
   // 46.6: Risk quantification (FAIR model)
   app.get("/api/risks/:id/quantify", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {

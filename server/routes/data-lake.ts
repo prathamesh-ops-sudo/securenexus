@@ -2,7 +2,7 @@
 import type { Express } from "express";
 import { getOrgId, logger, replyError, reply } from "./shared";
 import { isAuthenticated } from "../auth";
-import { requireMinRole, resolveOrgContext } from "../rbac";
+import { requireMinRole, resolveOrgContext, requireOrgId } from "../rbac";
 import { db } from "../db";
 import { eq, and, desc, sql } from "drizzle-orm";
 import {
@@ -475,42 +475,49 @@ export function registerDataLakeRoutes(app: Express): void {
   // ─── Federated Query ──────────────────────────────────────────────────────
 
   // Execute federated query across hot + cold data
-  app.post("/api/data-lake/query", isAuthenticated, resolveOrgContext, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const user = (req as any).user;
-      const { queryText, dataTypes, dateRangeStart, dateRangeEnd, limit, includeCold } = req.body;
+  app.post(
+    "/api/data-lake/query",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const user = (req as any).user;
+        const { queryText, dataTypes, dateRangeStart, dateRangeEnd, limit, includeCold } = req.body;
 
-      if (!queryText || typeof queryText !== "string") {
-        return replyError(res, 400, [{ code: "INVALID_QUERY", message: "queryText is required" }]);
+        if (!queryText || typeof queryText !== "string") {
+          return replyError(res, 400, [{ code: "INVALID_QUERY", message: "queryText is required" }]);
+        }
+
+        if (!Array.isArray(dataTypes) || dataTypes.length === 0) {
+          return replyError(res, 400, [{ code: "INVALID_DATA_TYPES", message: "dataTypes array is required" }]);
+        }
+
+        const validTypes = dataTypes.filter((dt: unknown) => typeof dt === "string" && VALID_DATA_TYPES.has(dt));
+        if (validTypes.length === 0) {
+          return replyError(res, 400, [{ code: "INVALID_DATA_TYPES", message: "No valid data types specified" }]);
+        }
+
+        const result = await executeFederatedQuery({
+          orgId,
+          queryText: String(queryText).substring(0, 10000),
+          dataTypes: validTypes,
+          dateRangeStart: dateRangeStart ? new Date(dateRangeStart) : undefined,
+          dateRangeEnd: dateRangeEnd ? new Date(dateRangeEnd) : undefined,
+          limit: typeof limit === "number" ? limit : 100,
+          includeCold: includeCold !== false,
+          executedBy: user?.id || null,
+        });
+
+        return reply(res, result);
+      } catch (err) {
+        log.error("Federated query failed", { error: String(err) });
+        return replyError(res, 500, [{ code: "INTERNAL", message: "Federated query failed" }]);
       }
-
-      if (!Array.isArray(dataTypes) || dataTypes.length === 0) {
-        return replyError(res, 400, [{ code: "INVALID_DATA_TYPES", message: "dataTypes array is required" }]);
-      }
-
-      const validTypes = dataTypes.filter((dt: unknown) => typeof dt === "string" && VALID_DATA_TYPES.has(dt));
-      if (validTypes.length === 0) {
-        return replyError(res, 400, [{ code: "INVALID_DATA_TYPES", message: "No valid data types specified" }]);
-      }
-
-      const result = await executeFederatedQuery({
-        orgId,
-        queryText: String(queryText).substring(0, 10000),
-        dataTypes: validTypes,
-        dateRangeStart: dateRangeStart ? new Date(dateRangeStart) : undefined,
-        dateRangeEnd: dateRangeEnd ? new Date(dateRangeEnd) : undefined,
-        limit: typeof limit === "number" ? limit : 100,
-        includeCold: includeCold !== false,
-        executedBy: user?.id || null,
-      });
-
-      return reply(res, result);
-    } catch (err) {
-      log.error("Federated query failed", { error: String(err) });
-      return replyError(res, 500, [{ code: "INTERNAL", message: "Federated query failed" }]);
-    }
-  });
+    },
+  );
 
   // Get query history
   app.get("/api/data-lake/query-history", isAuthenticated, resolveOrgContext, async (req, res) => {
@@ -794,38 +801,45 @@ export function registerDataLakeRoutes(app: Express): void {
   });
 
   // 44.2 — Query cost estimation
-  app.post("/api/data-lake/estimate-query", isAuthenticated, resolveOrgContext, async (req, res) => {
-    try {
-      const { query, dataTypes, dateRange } = req.body as {
-        query?: string;
-        dataTypes?: string[];
-        dateRange?: { start: string; end: string };
-      };
-      // Estimate scan size based on data types and date range
-      const typeCount = dataTypes?.length || 1;
-      const estimatedScanGb = Math.round((typeCount * 8 + 5) * 100) / 100;
-      const estimatedTimeMs = Math.round(estimatedScanGb * 800 + 1000);
-      const estimatedCost = Math.round(estimatedScanGb * 0.005 * 100) / 100;
-      const tiersQueried = ["hot"];
-      if (estimatedScanGb > 10) tiersQueried.push("warm");
-      if (estimatedScanGb > 30) tiersQueried.push("cold");
-      return reply(res, {
-        estimatedScanGb,
-        estimatedTimeMs,
-        estimatedCostUsd: estimatedCost,
-        tiersQueried,
-        warning:
-          estimatedCost > 1.0
-            ? "This query may scan a large amount of data. Consider narrowing the date range or data types."
-            : null,
-        dataTypes: dataTypes || ["all"],
-        dateRange: dateRange || null,
-      });
-    } catch (err) {
-      log.error("Failed to estimate query cost", { error: String(err) });
-      return replyError(res, 500, [{ code: "INTERNAL", message: "Failed to estimate query cost" }]);
-    }
-  });
+  app.post(
+    "/api/data-lake/estimate-query",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const { query, dataTypes, dateRange } = req.body as {
+          query?: string;
+          dataTypes?: string[];
+          dateRange?: { start: string; end: string };
+        };
+        // Estimate scan size based on data types and date range
+        const typeCount = dataTypes?.length || 1;
+        const estimatedScanGb = Math.round((typeCount * 8 + 5) * 100) / 100;
+        const estimatedTimeMs = Math.round(estimatedScanGb * 800 + 1000);
+        const estimatedCost = Math.round(estimatedScanGb * 0.005 * 100) / 100;
+        const tiersQueried = ["hot"];
+        if (estimatedScanGb > 10) tiersQueried.push("warm");
+        if (estimatedScanGb > 30) tiersQueried.push("cold");
+        return reply(res, {
+          estimatedScanGb,
+          estimatedTimeMs,
+          estimatedCostUsd: estimatedCost,
+          tiersQueried,
+          warning:
+            estimatedCost > 1.0
+              ? "This query may scan a large amount of data. Consider narrowing the date range or data types."
+              : null,
+          dataTypes: dataTypes || ["all"],
+          dateRange: dateRange || null,
+        });
+      } catch (err) {
+        log.error("Failed to estimate query cost", { error: String(err) });
+        return replyError(res, 500, [{ code: "INTERNAL", message: "Failed to estimate query cost" }]);
+      }
+    },
+  );
 
   // 44.3 — Data catalog / schema browser
   app.get("/api/data-lake/catalog", isAuthenticated, resolveOrgContext, async (req, res) => {

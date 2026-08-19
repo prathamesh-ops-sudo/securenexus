@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { isAuthenticated } from "../auth";
-import { resolveOrgContext, requireOrgId } from "../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { requirePermission } from "../rbac";
 import { logger, getOrgId } from "./shared";
 import { db } from "../db";
@@ -982,83 +982,90 @@ export function registerPostureTrustRoutes(app: Express): void {
   // 60.5 — CONTINUOUS POSTURE RECALCULATION (webhook trigger)
   // ==========================================================================
 
-  app.post("/api/posture-trust/recalculate", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { trigger } = req.body as { trigger?: string };
+  app.post(
+    "/api/posture-trust/recalculate",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { trigger } = req.body as { trigger?: string };
 
-      // Re-generate domain scores based on current state
-      const domainScores = generateDomainScores(orgId);
-      const overallScore = computeOverallScore(domainScores);
+        // Re-generate domain scores based on current state
+        const domainScores = generateDomainScores(orgId);
+        const overallScore = computeOverallScore(domainScores);
 
-      // Fetch previous score for comparison
-      const [prevScore] = await db
-        .select()
-        .from(postureScores)
-        .where(eq(postureScores.orgId, orgId))
-        .orderBy(desc(postureScores.generatedAt))
-        .limit(1);
+        // Fetch previous score for comparison
+        const [prevScore] = await db
+          .select()
+          .from(postureScores)
+          .where(eq(postureScores.orgId, orgId))
+          .orderBy(desc(postureScores.generatedAt))
+          .limit(1);
 
-      const previousOverall = prevScore?.overallScore || 0;
-      const scoreDelta = overallScore - previousOverall;
+        const previousOverall = prevScore?.overallScore || 0;
+        const scoreDelta = overallScore - previousOverall;
 
-      // Store new score
-      const [newScore] = await db
-        .insert(postureScores)
-        .values({
-          orgId,
+        // Store new score
+        const [newScore] = await db
+          .insert(postureScores)
+          .values({
+            orgId,
+            overallScore,
+            cspmScore: domainScores.find((d) => d.domain === "cloud")?.score || 0,
+            endpointScore: domainScores.find((d) => d.domain === "endpoint")?.score || 0,
+            incidentScore: domainScores.find((d) => d.domain === "network")?.score || 0,
+            complianceScore: domainScores.find((d) => d.domain === "data")?.score || 0,
+            breakdown: {
+              domainScores: domainScores.map((d) => ({
+                domain: d.domain,
+                score: d.score,
+                weight: d.weight,
+                controlsEvaluated: d.controlsEvaluated,
+                controlsPassed: d.controlsPassed,
+                controlsFailed: d.controlsFailed,
+              })),
+              trigger: trigger || "manual_recalculation",
+            },
+          })
+          .returning();
+
+        // Store sub-scores
+        for (const ds of domainScores) {
+          await db.insert(postureSubScores).values({
+            orgId,
+            postureScoreId: newScore.id,
+            domain: ds.domain,
+            score: ds.score,
+            weight: ds.weight,
+            controlsEvaluated: ds.controlsEvaluated,
+            controlsPassed: ds.controlsPassed,
+            controlsFailed: ds.controlsFailed,
+            findings: ds.findings || [],
+            recommendations: ds.recommendations || [],
+          });
+        }
+
+        res.json({
           overallScore,
-          cspmScore: domainScores.find((d) => d.domain === "cloud")?.score || 0,
-          endpointScore: domainScores.find((d) => d.domain === "endpoint")?.score || 0,
-          incidentScore: domainScores.find((d) => d.domain === "network")?.score || 0,
-          complianceScore: domainScores.find((d) => d.domain === "data")?.score || 0,
-          breakdown: {
-            domainScores: domainScores.map((d) => ({
-              domain: d.domain,
-              score: d.score,
-              weight: d.weight,
-              controlsEvaluated: d.controlsEvaluated,
-              controlsPassed: d.controlsPassed,
-              controlsFailed: d.controlsFailed,
-            })),
-            trigger: trigger || "manual_recalculation",
-          },
-        })
-        .returning();
-
-      // Store sub-scores
-      for (const ds of domainScores) {
-        await db.insert(postureSubScores).values({
-          orgId,
-          postureScoreId: newScore.id,
-          domain: ds.domain,
-          score: ds.score,
-          weight: ds.weight,
-          controlsEvaluated: ds.controlsEvaluated,
-          controlsPassed: ds.controlsPassed,
-          controlsFailed: ds.controlsFailed,
-          findings: ds.findings || [],
-          recommendations: ds.recommendations || [],
+          previousScore: previousOverall,
+          delta: scoreDelta,
+          trigger: trigger || "manual_recalculation",
+          recalculatedAt: newScore.generatedAt,
+          domainScores: domainScores.map((d) => ({
+            domain: d.domain,
+            score: d.score,
+            weight: d.weight,
+          })),
         });
+      } catch (error) {
+        log.error("Failed to recalculate posture score", { error: String(error) });
+        res.status(500).json({ message: "Failed to recalculate" });
       }
-
-      res.json({
-        overallScore,
-        previousScore: previousOverall,
-        delta: scoreDelta,
-        trigger: trigger || "manual_recalculation",
-        recalculatedAt: newScore.generatedAt,
-        domainScores: domainScores.map((d) => ({
-          domain: d.domain,
-          score: d.score,
-          weight: d.weight,
-        })),
-      });
-    } catch (error) {
-      log.error("Failed to recalculate posture score", { error: String(error) });
-      res.status(500).json({ message: "Failed to recalculate" });
-    }
-  });
+    },
+  );
 
   // ==========================================================================
   // 60.6 — QUESTIONNAIRE RESPONSE AUTO-POPULATION
@@ -1069,6 +1076,7 @@ export function registerPostureTrustRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
