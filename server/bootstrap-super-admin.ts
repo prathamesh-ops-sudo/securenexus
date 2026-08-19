@@ -2,8 +2,79 @@ import { db } from "./db";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger";
+import { authStorage } from "./auth/storage";
+import { createAuditLog } from "./storage/audit";
+import { hashPassword } from "./auth/password";
 
 const log = logger.child("bootstrap-super-admin");
+export const DEFAULT_SUPER_ADMIN_EMAIL = "prathamesh@aricatech.com";
+
+export interface BootstrapSuperAdminDependencies {
+  getUserByEmail: typeof authStorage.getUserByEmail;
+  upsertUser: typeof authStorage.upsertUser;
+  createAuditLog: typeof createAuditLog;
+}
+
+export interface BootstrapSuperAdminInput {
+  email: string;
+  password: string;
+  passwordHash?: string;
+}
+
+export function validateBootstrapPassword(password: string): string[] {
+  if (!password) return ["SUPER_ADMIN_PASSWORD is required"];
+  if (password.length < 8) return ["Password must be at least 8 characters"];
+  return [];
+}
+
+export async function provisionPlatformSuperAdmin(
+  input: BootstrapSuperAdminInput,
+  dependencies: BootstrapSuperAdminDependencies = {
+    getUserByEmail: authStorage.getUserByEmail.bind(authStorage),
+    upsertUser: authStorage.upsertUser.bind(authStorage),
+    createAuditLog,
+  },
+): Promise<{ action: "created" | "repaired"; user: Awaited<ReturnType<typeof authStorage.upsertUser>> }> {
+  const email = input.email.trim().toLowerCase();
+  if (email !== DEFAULT_SUPER_ADMIN_EMAIL) {
+    throw new Error(`Bootstrap is restricted to ${DEFAULT_SUPER_ADMIN_EMAIL}`);
+  }
+
+  const passwordErrors = validateBootstrapPassword(input.password);
+  if (passwordErrors.length > 0) {
+    throw new Error(passwordErrors.join("; "));
+  }
+
+  const existingUser = await dependencies.getUserByEmail(email);
+  const passwordHash = input.passwordHash ?? (await hashPassword(input.password));
+  const user = await dependencies.upsertUser({
+    ...(existingUser ?? {}),
+    ...(existingUser?.id ? { id: existingUser.id } : {}),
+    email,
+    passwordHash,
+    isSuperAdmin: true,
+    disabledAt: null,
+    passwordChangeRequired: true,
+    passwordChangedAt: null,
+    lockedUntil: null,
+    failedLoginCount: 0,
+    updatedAt: new Date(),
+  });
+
+  await dependencies.createAuditLog({
+    userId: user.id,
+    userName: email,
+    action: "platform_super_admin_bootstrap",
+    resourceType: "user",
+    resourceId: user.id,
+    details: {
+      action: existingUser ? "repaired" : "created",
+      passwordChangeRequired: true,
+    },
+  });
+
+  return { action: existingUser ? "repaired" : "created", user };
+}
 
 /**
  * Returns the set of emails that should always be super-admin.
@@ -14,7 +85,7 @@ function getSuperAdminEmails(): Set<string> {
   const envEmail = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
   if (envEmail) emails.add(envEmail);
   // Platform owner — always super-admin regardless of env var
-  emails.add("prathamesh@aricatech.com");
+  emails.add(DEFAULT_SUPER_ADMIN_EMAIL);
   return emails;
 }
 

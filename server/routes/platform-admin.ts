@@ -640,7 +640,10 @@ export function registerPlatformAdminRoutes(app: Express): void {
           });
         }
 
-        await db.update(users).set({ passwordHash: null, updatedAt: new Date() }).where(eq(users.id, userId));
+        await db
+          .update(users)
+          .set({ passwordHash: null, passwordChangeRequired: true, updatedAt: new Date() })
+          .where(eq(users.id, userId));
 
         await storage.createAuditLog({
           userId: getReqUser(req).id,

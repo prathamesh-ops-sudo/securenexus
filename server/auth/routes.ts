@@ -1,7 +1,13 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import passport from "passport";
 import { authStorage } from "./storage";
-import { isAuthenticated, hashPassword, invalidateDeserializeCache, type SessionUser } from "./session";
+import {
+  isAuthenticated,
+  comparePasswords,
+  hashPassword,
+  invalidateDeserializeCache,
+  type SessionUser,
+} from "./session";
 import { checkAndPromoteSuperAdmin } from "../bootstrap-super-admin";
 import { storage } from "../storage";
 import { config } from "../config";
@@ -282,6 +288,57 @@ export function registerAuthRoutes(app: Express): void {
         });
       },
     )(req, res, next);
+  });
+
+  app.post("/api/auth/change-password", isAuthenticated, async (req, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body ?? {};
+      if (typeof currentPassword !== "string" || typeof newPassword !== "string") {
+        return replyValidation(res, [
+          { field: "currentPassword", message: "Current password is required" },
+          { field: "newPassword", message: "New password is required" },
+        ]);
+      }
+
+      const sessionUser = req.user as SessionUser;
+      const user = await authStorage.getUser(sessionUser.id);
+      if (!user?.passwordHash || !(await comparePasswords(currentPassword, user.passwordHash))) {
+        return replyUnauthenticated(res, "Current password is incorrect");
+      }
+
+      const memberships = await storage.getUserMemberships(user.id).catch(() => []);
+      const orgId = memberships.length > 0 ? memberships[0].orgId : null;
+      const complexity = await validatePasswordComplexity(newPassword, orgId);
+      if (!complexity.valid) {
+        return replyValidation(
+          res,
+          complexity.errors.map((message) => ({ field: "newPassword", message })),
+        );
+      }
+
+      const updatedUser = await authStorage.upsertUser({
+        ...user,
+        passwordHash: await hashPassword(newPassword),
+        passwordChangedAt: new Date(),
+        passwordChangeRequired: false,
+      });
+      Object.assign(sessionUser, updatedUser, { passwordChangeRequired: false });
+      invalidateDeserializeCache(user.id);
+
+      await storage.createAuditLog({
+        userId: user.id,
+        userName: user.email || "unknown",
+        action: "password_changed",
+        resourceType: "user",
+        resourceId: user.id,
+        details: { forced: user.passwordChangeRequired === true },
+      });
+
+      return reply(res, { message: "Password changed successfully" });
+    } catch (error) {
+      log.error("Failed to change password", { error: String(error) });
+      return replyInternal(res, "Failed to change password");
+    }
   });
 
   app.post("/api/logout", (req, res) => {

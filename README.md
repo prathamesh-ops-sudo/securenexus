@@ -231,6 +231,24 @@ Security: GitGuardian secret scanning, CodeQL static analysis, Devin Review
 Observability: Prometheus + Grafana (monitoring namespace)
 ```
 
+### First Login / Platform Owner Bootstrap
+
+On a new deployment, the platform owner can create or repair the local-password
+account without OAuth or customer DNS by running the bootstrap CLI from the
+application image:
+
+```bash
+SUPER_ADMIN_PASSWORD='use-a-strong-one-time-password' npm run bootstrap:super-admin
+```
+
+The command targets `SUPER_ADMIN_EMAIL`, defaulting to
+`prathamesh@aricatech.com`. It never prints the password, creates an
+organization, or creates a membership. The first successful login must change
+the bootstrap password at `/api/auth/change-password` before normal platform
+use is permitted. The CLI is idempotent and can repair an existing owner
+account; operators should remove the password from their shell history and
+rotate it immediately after first login.
+
 ### Infrastructure
 
 ```

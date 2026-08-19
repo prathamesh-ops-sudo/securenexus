@@ -342,6 +342,11 @@ describe("write-route authorization coverage", () => {
       ["POST", "server/auth/routes.ts", "/api/login"],
       ["POST", "server/auth/routes.ts", "/api/logout"],
     ] as const;
+    const knownGoodAuthenticatedWithoutRole = [
+      ["POST", "server/auth/routes.ts", "/api/auth/change-password"],
+      ["POST", "server/routes/orgs.ts", "/api/auth/ensure-org"],
+      ["POST", "server/routes/orgs.ts", "/api/invitations/accept"],
+    ] as const;
     const failures: string[] = [];
 
     function walk(directory: string): string[] {
@@ -381,7 +386,10 @@ describe("write-route authorization coverage", () => {
         if (!authnPattern.test(middleware) && !isKnownGoodUnauthenticated) {
           failures.push(`${key}: missing explicit allow-list entry`);
         }
-        if (authnPattern.test(middleware) && !authzPattern.test(middleware)) {
+        const isKnownGoodAuthenticatedWithoutRole = knownGoodAuthenticatedWithoutRole.some(
+          ([allowedVerb, allowedFile, allowedRoute]) => key === `${allowedVerb} ${allowedFile} ${allowedRoute}`,
+        );
+        if (authnPattern.test(middleware) && !authzPattern.test(middleware) && !isKnownGoodAuthenticatedWithoutRole) {
           failures.push(`${key}: authenticated route has no authorization middleware`);
         }
       }

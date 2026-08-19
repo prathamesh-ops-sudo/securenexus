@@ -43,6 +43,13 @@
       "when": 1787144367077,
       "tag": "0005_solid_madripoor",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787146956440,
+      "tag": "0006_force_super_admin_password_change",
+      "breakpoints": true
     }
   ]
 }

@@ -130,6 +130,7 @@ export function registerPasswordResetRoutes(app: Express): void {
         ...user,
         passwordHash: hashedPassword,
         passwordChangedAt: new Date(),
+        passwordChangeRequired: false,
       });
 
       await storage.invalidateAllUserPasswordResetTokens(user.id);

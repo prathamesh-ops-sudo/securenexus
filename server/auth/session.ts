@@ -14,11 +14,12 @@ import type { User } from "@shared/models/auth";
 import { organizationMemberships } from "@shared/schema";
 import { config } from "../config";
 import { pool } from "../db";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
-import { promisify } from "util";
 import { replyUnauthenticated } from "../api-response";
 import { logger } from "../logger";
 import { checkAndPromoteSuperAdmin } from "../bootstrap-super-admin";
+import { comparePasswords, hashPassword } from "./password";
+
+export { comparePasswords, hashPassword } from "./password";
 
 const INVITATION_ONLY_MESSAGE = "Access is by invitation only. Please contact your platform administrator.";
 
@@ -66,8 +67,6 @@ export interface SessionUser extends User {
   orgId?: string | null;
   orgRole?: string | null;
 }
-
-const scryptAsync = promisify(scrypt);
 
 const DESERIALIZE_CACHE_TTL_MS = 30_000;
 const DESERIALIZE_CACHE_MAX = 500;
@@ -126,18 +125,6 @@ export async function invalidateUserSessions(userId: string): Promise<number> {
     });
     return 0;
   }
-}
-
-export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString("hex");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${buf.toString("hex")}.${salt}`;
-}
-
-export async function comparePasswords(supplied: string, stored: string): Promise<boolean> {
-  const [hashedPassword, salt] = stored.split(".");
-  const buf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-  return timingSafeEqual(Buffer.from(hashedPassword, "hex"), buf);
 }
 
 export function getSession() {

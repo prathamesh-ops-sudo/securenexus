@@ -21,6 +21,7 @@
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
+    "bootstrap:super-admin": "tsx scripts/bootstrap-super-admin.ts",
     "db:migrate:dry-run": "tsx scripts/migrate.ts --dry-run",
     "db:migrate:rollback": "tsx scripts/migration-rollback.ts",
     "db:migrate:status": "tsx scripts/migrate.ts --dry-run",
