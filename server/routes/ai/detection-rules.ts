@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, storage, strictLimiter } from "../shared";
 import { isAuthenticated } from "../../auth";
-import { resolveOrgContext, requireMinRole } from "../../rbac";
+import { resolveOrgContext, requireMinRole, requireOrgId } from "../../rbac";
 import { generateDetectionRules } from "../../ai";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
 
@@ -13,6 +13,8 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
     "/api/ai/investigation/:incidentId/generate-rules",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     enforcePlanLimit("ai_analyses"),
     strictLimiter,
     async (req: Request, res: Response) => {
@@ -67,7 +69,9 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json({
           rules: savedRules,

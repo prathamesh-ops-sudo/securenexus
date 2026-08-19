@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { getOrgId, logger, p, storage, strictLimiter } from "../shared";
 import { isAuthenticated } from "../../auth";
-import { resolveOrgContext } from "../../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../../rbac";
 import { correlateAlerts, buildThreatIntelContext } from "../../ai";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
 import { withAiFallback } from "../../ai/fallback";
@@ -46,6 +46,8 @@ export function registerAiTriageRoutes(app: Express): void {
     "/api/ai/triage/:alertId",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     enforcePlanLimit("ai_analyses"),
     strictLimiter,
     async (req, res) => {
@@ -104,43 +106,40 @@ export function registerAiTriageRoutes(app: Express): void {
   );
 
   // GET /api/ai/triage/jobs/:jobId - Poll triage job status
-  app.get(
-    "/api/ai/triage/jobs/:jobId",
-    isAuthenticated,
-    resolveOrgContext,
-    async (req, res) => {
-      try {
-        const jobId = p(req.params.jobId);
-        const job = await storage.getJob(jobId);
-        if (!job) {
-          return res.status(404).json({ message: "Job not found" });
-        }
-
-        // Verify org access
-        const orgId = (req as any).orgId || (req as any).user?.orgId;
-        if (job.orgId && orgId && job.orgId !== orgId) {
-          return res.status(404).json({ message: "Job not found" });
-        }
-
-        if (job.status === "completed") {
-          return res.json({ status: "completed", result: job.result });
-        }
-        if (job.status === "failed" || job.status === "dead_letter") {
-          return res.json({ status: "failed", error: job.lastError || "Unknown error" });
-        }
-        res.json({ status: job.status }); // pending, running
-      } catch (error: any) {
-        logger.child("ai").error("Job poll error", { error: String(error) });
-        res.status(500).json({ message: "Failed to check job status" });
+  app.get("/api/ai/triage/jobs/:jobId", isAuthenticated, resolveOrgContext, async (req, res) => {
+    try {
+      const jobId = p(req.params.jobId);
+      const job = await storage.getJob(jobId);
+      if (!job) {
+        return res.status(404).json({ message: "Job not found" });
       }
-    },
-  );
+
+      // Verify org access
+      const orgId = (req as any).orgId || (req as any).user?.orgId;
+      if (job.orgId && orgId && job.orgId !== orgId) {
+        return res.status(404).json({ message: "Job not found" });
+      }
+
+      if (job.status === "completed") {
+        return res.json({ status: "completed", result: job.result });
+      }
+      if (job.status === "failed" || job.status === "dead_letter") {
+        return res.json({ status: "failed", error: job.lastError || "Unknown error" });
+      }
+      res.json({ status: job.status }); // pending, running
+    } catch (error: any) {
+      logger.child("ai").error("Job poll error", { error: String(error) });
+      res.status(500).json({ message: "Failed to check job status" });
+    }
+  });
 
   // POST /api/ai/correlate
   app.post(
     "/api/ai/correlate",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     enforcePlanLimit("ai_analyses"),
     strictLimiter,
     async (req, res) => {
@@ -160,7 +159,10 @@ export function registerAiTriageRoutes(app: Express): void {
           return res.status(400).json({ message: "No alerts to correlate" });
         }
         const threatIntelCtx = await buildThreatIntelContext(alertsToCorrelate);
-        const correlationCacheKey = `correlate:${orgId}:${alertsToCorrelate.map((a) => a.id).sort().join(",")}`;
+        const correlationCacheKey = `correlate:${orgId}:${alertsToCorrelate
+          .map((a) => a.id)
+          .sort()
+          .join(",")}`;
         const fallbackResult = await withAiFallback(correlationCacheKey, () =>
           correlateAlerts(alertsToCorrelate, threatIntelCtx, orgId),
         );
@@ -202,56 +204,63 @@ export function registerAiTriageRoutes(app: Express): void {
   );
 
   // POST /api/ai/correlate/apply
-  app.post("/api/ai/correlate/apply", isAuthenticated, async (req, res) => {
-    try {
-      const { group } = req.body;
-      if (!group || !Array.isArray(group.alertIds) || group.alertIds.length === 0 || !group.suggestedIncidentTitle) {
-        return res.status(400).json({ message: "Invalid correlation group data" });
-      }
-      const validAlertIds: string[] = [];
-      for (const alertId of group.alertIds) {
-        if (typeof alertId === "string") {
-          const alert = await storage.getAlert(alertId);
-          if (alert) validAlertIds.push(alertId);
+  app.post(
+    "/api/ai/correlate/apply",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const { group } = req.body;
+        if (!group || !Array.isArray(group.alertIds) || group.alertIds.length === 0 || !group.suggestedIncidentTitle) {
+          return res.status(400).json({ message: "Invalid correlation group data" });
         }
+        const validAlertIds: string[] = [];
+        for (const alertId of group.alertIds) {
+          if (typeof alertId === "string") {
+            const alert = await storage.getAlert(alertId);
+            if (alert) validAlertIds.push(alertId);
+          }
+        }
+        if (validAlertIds.length === 0) {
+          return res.status(400).json({ message: "No valid alerts found in correlation group" });
+        }
+        const validSeverities = ["critical", "high", "medium", "low"];
+        const severity = validSeverities.includes(group.severity) ? group.severity : "medium";
+        const incident = await storage.createIncident({
+          title: String(group.suggestedIncidentTitle).slice(0, 500),
+          summary: String(group.reasoning || "").slice(0, 2000),
+          severity,
+          status: "investigating",
+          priority: severity === "critical" ? 1 : severity === "high" ? 2 : 3,
+          confidence: typeof group.confidence === "number" ? Math.min(Math.max(group.confidence, 0), 1) : 0.5,
+          mitreTactics: Array.isArray(group.mitreTactics)
+            ? group.mitreTactics.filter((t: any) => typeof t === "string")
+            : [],
+          mitreTechniques: Array.isArray(group.mitreTechniques)
+            ? group.mitreTechniques.filter((t: any) => typeof t === "string")
+            : [],
+          alertCount: validAlertIds.length,
+        });
+        for (const alertId of validAlertIds) {
+          await storage.updateAlertStatus(alertId, "correlated", incident.id);
+        }
+        await storage.createAuditLog({
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "ai_correlation_applied",
+          resourceType: "incident",
+          resourceId: incident.id,
+          details: { alertCount: group.alertIds.length, title: incident.title },
+        });
+        res.json(incident);
+      } catch (error: any) {
+        logger.child("routes").error("Apply correlation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to apply correlation. Please try again." });
       }
-      if (validAlertIds.length === 0) {
-        return res.status(400).json({ message: "No valid alerts found in correlation group" });
-      }
-      const validSeverities = ["critical", "high", "medium", "low"];
-      const severity = validSeverities.includes(group.severity) ? group.severity : "medium";
-      const incident = await storage.createIncident({
-        title: String(group.suggestedIncidentTitle).slice(0, 500),
-        summary: String(group.reasoning || "").slice(0, 2000),
-        severity,
-        status: "investigating",
-        priority: severity === "critical" ? 1 : severity === "high" ? 2 : 3,
-        confidence: typeof group.confidence === "number" ? Math.min(Math.max(group.confidence, 0), 1) : 0.5,
-        mitreTactics: Array.isArray(group.mitreTactics)
-          ? group.mitreTactics.filter((t: any) => typeof t === "string")
-          : [],
-        mitreTechniques: Array.isArray(group.mitreTechniques)
-          ? group.mitreTechniques.filter((t: any) => typeof t === "string")
-          : [],
-        alertCount: validAlertIds.length,
-      });
-      for (const alertId of validAlertIds) {
-        await storage.updateAlertStatus(alertId, "correlated", incident.id);
-      }
-      await storage.createAuditLog({
-        userId: (req as any).user?.id,
-        userName: (req as any).user?.firstName
-          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
-          : "Analyst",
-        action: "ai_correlation_applied",
-        resourceType: "incident",
-        resourceId: incident.id,
-        details: { alertCount: group.alertIds.length, title: incident.title },
-      });
-      res.json(incident);
-    } catch (error: any) {
-      logger.child("routes").error("Apply correlation error", { error: String(error) });
-      res.status(500).json({ message: "Failed to apply correlation. Please try again." });
-    }
-  });
+    },
+  );
 }

@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { logger, p, storage } from "../shared";
 import { isAuthenticated } from "../../auth";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../../rbac";
+
 import { bodySchemas, querySchemas, validateBody, validatePathId, validateQuery } from "../../request-validator";
 import { dispatchAction, type ActionContext } from "../../action-dispatcher";
 
@@ -18,6 +20,9 @@ export function registerPlaybooksApprovalsRoutes(app: Express): void {
   app.post(
     "/api/playbook-approvals/:id/decide",
     isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     validatePathId("id"),
     validateBody(bodySchemas.approvalDecision),
     async (req, res) => {

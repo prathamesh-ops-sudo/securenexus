@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, storage, strictLimiter } from "../shared";
 import { isAuthenticated } from "../../auth";
-import { resolveOrgContext, requireMinRole } from "../../rbac";
+import { resolveOrgContext, requireMinRole, requireOrgId } from "../../rbac";
 import {
   conductDeepInvestigation,
   conductThreatHunt,
@@ -23,6 +23,8 @@ export function registerAiInvestigationRoutes(app: Express): void {
     "/api/ai/deep-investigation/:incidentId",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     enforcePlanLimit("ai_analyses"),
     strictLimiter,
     async (req, res) => {
@@ -64,7 +66,9 @@ export function registerAiInvestigationRoutes(app: Express): void {
           details: { alertCount: incidentAlerts.length, confidence: result.investigationConfidence },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json(result);
       } catch (error: any) {
@@ -79,6 +83,8 @@ export function registerAiInvestigationRoutes(app: Express): void {
     "/api/ai/threat-hunt",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     enforcePlanLimit("ai_analyses"),
     strictLimiter,
     async (req, res) => {
@@ -121,7 +127,9 @@ export function registerAiInvestigationRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json(result);
       } catch (error: any) {
@@ -136,6 +144,8 @@ export function registerAiInvestigationRoutes(app: Express): void {
     "/api/ai/behavioral-analysis",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     enforcePlanLimit("ai_analyses"),
     strictLimiter,
     async (req, res) => {
@@ -175,7 +185,9 @@ export function registerAiInvestigationRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json(result);
       } catch (error: any) {
@@ -282,6 +294,8 @@ export function registerAiInvestigationRoutes(app: Express): void {
     "/api/ai/predict-attack-paths",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     enforcePlanLimit("ai_analyses"),
     strictLimiter,
     async (req, res) => {
@@ -319,7 +333,9 @@ export function registerAiInvestigationRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json(result);
       } catch (error: any) {
@@ -334,6 +350,8 @@ export function registerAiInvestigationRoutes(app: Express): void {
     "/api/ai/investigation/:incidentId/chat",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     enforcePlanLimit("ai_analyses"),
     strictLimiter,
     async (req: Request, res: Response) => {
@@ -395,7 +413,9 @@ export function registerAiInvestigationRoutes(app: Express): void {
           },
         });
 
-        storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+        storage
+          .incrementUsage(orgId, "ai_analyses")
+          .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
 
         res.json({
           threadId: activeThreadId,

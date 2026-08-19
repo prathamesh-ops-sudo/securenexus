@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { dispatchWebhookEvent, getOrgId, logger, p, publishOutboxEvent, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
-import { requireOrgId, requirePermission, resolveOrgContext } from "../rbac";
+import { requireOrgId, requirePermission, resolveOrgContext, requireMinRole } from "../rbac";
 import { bodySchemas, querySchemas, validateBody, validatePathId, validateQuery } from "../request-validator";
 import {
   insertCommentSchema,
@@ -432,31 +432,47 @@ export function registerIncidentsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/incidents/:id/comments", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const parsed = insertCommentSchema.safeParse({
-        ...req.body,
-        incidentId: p(req.params.id),
-      });
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid comment data", errors: parsed.error.flatten() });
+  app.post(
+    "/api/incidents/:id/comments",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const parsed = insertCommentSchema.safeParse({
+          ...req.body,
+          incidentId: p(req.params.id),
+        });
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid comment data", errors: parsed.error.flatten() });
+        }
+        const comment = await storage.createComment(parsed.data);
+        res.status(201).json(comment);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to create comment" });
       }
-      const comment = await storage.createComment(parsed.data);
-      res.status(201).json(comment);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create comment" });
-    }
-  });
+    },
+  );
 
-  app.delete("/api/comments/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const deleted = await storage.deleteComment(p(req.params.id));
-      if (!deleted) return res.status(404).json({ message: "Comment not found" });
-      res.json({ message: "Comment deleted" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete comment" });
-    }
-  });
+  app.delete(
+    "/api/comments/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const deleted = await storage.deleteComment(p(req.params.id));
+        if (!deleted) return res.status(404).json({ message: "Comment not found" });
+        res.json({ message: "Comment deleted" });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete comment" });
+      }
+    },
+  );
 
   // Incident tags
   app.get("/api/incidents/:id/tags", isAuthenticated, validatePathId("id"), async (req, res) => {
@@ -471,6 +487,9 @@ export function registerIncidentsRoutes(app: Express): void {
   app.post(
     "/api/incidents/:id/tags",
     isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     validatePathId("id"),
     validateBody(bodySchemas.incidentTagAdd),
     async (req, res) => {
@@ -488,6 +507,9 @@ export function registerIncidentsRoutes(app: Express): void {
   app.delete(
     "/api/incidents/:incidentId/tags/:tagId",
     isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     validatePathId("incidentId"),
     validatePathId("tagId"),
     async (req, res) => {
@@ -510,18 +532,25 @@ export function registerIncidentsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/tags", isAuthenticated, async (req, res) => {
-    try {
-      const parsed = insertTagSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid tag data", errors: parsed.error.flatten() });
+  app.post(
+    "/api/tags",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const parsed = insertTagSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid tag data", errors: parsed.error.flatten() });
+        }
+        const tag = await storage.createTag(parsed.data);
+        res.status(201).json(tag);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to create tag" });
       }
-      const tag = await storage.createTag(parsed.data);
-      res.status(201).json(tag);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create tag" });
-    }
-  });
+    },
+  );
 
   app.get("/api/incidents/:id/entities", isAuthenticated, async (req, res) => {
     try {
@@ -532,79 +561,94 @@ export function registerIncidentsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/incidents/:id/push", isAuthenticated, async (req, res) => {
-    try {
-      const incident = await storage.getIncident(p(req.params.id));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
-      const { platform, project, priority } = req.body;
-      if (!platform) return res.status(400).json({ message: "Missing required field: platform (jira or servicenow)" });
-      const user = (req as any).user;
-      const context: ActionContext = {
-        orgId: user?.orgId || incident.orgId || undefined,
-        incidentId: incident.id,
-        userId: user?.id,
-        userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst",
-        storage,
-      };
-      const actionType = platform === "servicenow" ? "create_servicenow_ticket" : "create_jira_ticket";
-      const result = await dispatchAction(
-        actionType,
-        {
-          summary: `[SecureNexus] ${incident.title}`,
-          description: incident.aiSummary || incident.summary || incident.title,
-          priority:
-            priority ||
-            (incident.severity === "critical" ? "highest" : incident.severity === "high" ? "high" : "medium"),
-          project: project || "SEC",
-        },
-        context,
-      );
-      await storage.createAuditLog({
-        orgId: context.orgId,
-        userId: user?.id,
-        userName: context.userName,
-        action: "incident_pushed_to_ticketing",
-        resourceType: "incident",
-        resourceId: incident.id,
-        details: { platform, ticketId: result.details?.ticketId },
-      });
-      res.json(result);
-    } catch (error) {
-      logger.child("routes").error("Push to ticketing error", { error: String(error) });
-      res.status(500).json({ message: "Failed to push incident to ticketing system" });
-    }
-  });
+  app.post(
+    "/api/incidents/:id/push",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const incident = await storage.getIncident(p(req.params.id));
+        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        const { platform, project, priority } = req.body;
+        if (!platform)
+          return res.status(400).json({ message: "Missing required field: platform (jira or servicenow)" });
+        const user = (req as any).user;
+        const context: ActionContext = {
+          orgId: user?.orgId || incident.orgId || undefined,
+          incidentId: incident.id,
+          userId: user?.id,
+          userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst",
+          storage,
+        };
+        const actionType = platform === "servicenow" ? "create_servicenow_ticket" : "create_jira_ticket";
+        const result = await dispatchAction(
+          actionType,
+          {
+            summary: `[SecureNexus] ${incident.title}`,
+            description: incident.aiSummary || incident.summary || incident.title,
+            priority:
+              priority ||
+              (incident.severity === "critical" ? "highest" : incident.severity === "high" ? "high" : "medium"),
+            project: project || "SEC",
+          },
+          context,
+        );
+        await storage.createAuditLog({
+          orgId: context.orgId,
+          userId: user?.id,
+          userName: context.userName,
+          action: "incident_pushed_to_ticketing",
+          resourceType: "incident",
+          resourceId: incident.id,
+          details: { platform, ticketId: result.details?.ticketId },
+        });
+        res.json(result);
+      } catch (error) {
+        logger.child("routes").error("Push to ticketing error", { error: String(error) });
+        res.status(500).json({ message: "Failed to push incident to ticketing system" });
+      }
+    },
+  );
 
-  app.post("/api/incidents/:id/notify", isAuthenticated, async (req, res) => {
-    try {
-      const incident = await storage.getIncident(p(req.params.id));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
-      const { channelType, message: customMessage } = req.body;
-      const user = (req as any).user;
-      const context: ActionContext = {
-        orgId: user?.orgId || incident.orgId || undefined,
-        incidentId: incident.id,
-        userId: user?.id,
-        userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst",
-        storage,
-      };
-      const notifyType = `notify_${channelType || "slack"}`;
-      const result = await dispatchAction(
-        notifyType,
-        {
-          message:
-            customMessage ||
-            `Security Incident: ${incident.title} [Severity: ${incident.severity}] - Status: ${incident.status}`,
-          channel: "#security-alerts",
-        },
-        context,
-      );
-      res.json(result);
-    } catch (error) {
-      logger.child("routes").error("Notification error", { error: String(error) });
-      res.status(500).json({ message: "Failed to send notification" });
-    }
-  });
+  app.post(
+    "/api/incidents/:id/notify",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const incident = await storage.getIncident(p(req.params.id));
+        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        const { channelType, message: customMessage } = req.body;
+        const user = (req as any).user;
+        const context: ActionContext = {
+          orgId: user?.orgId || incident.orgId || undefined,
+          incidentId: incident.id,
+          userId: user?.id,
+          userName: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst",
+          storage,
+        };
+        const notifyType = `notify_${channelType || "slack"}`;
+        const result = await dispatchAction(
+          notifyType,
+          {
+            message:
+              customMessage ||
+              `Security Incident: ${incident.title} [Severity: ${incident.severity}] - Status: ${incident.status}`,
+            channel: "#security-alerts",
+          },
+          context,
+        );
+        res.json(result);
+      } catch (error) {
+        logger.child("routes").error("Notification error", { error: String(error) });
+        res.status(500).json({ message: "Failed to send notification" });
+      }
+    },
+  );
 
   app.get("/api/incidents/:id/root-cause-summary", isAuthenticated, async (req, res) => {
     try {
@@ -648,50 +692,64 @@ export function registerIncidentsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/incidents/:incidentId/evidence", isAuthenticated, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const incident = await storage.getIncident(p(req.params.incidentId));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
-      if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
-      const orgId = getOrgId(req);
-      const parsed = insertEvidenceItemSchema.safeParse({
-        ...req.body,
-        incidentId: p(req.params.incidentId),
-        orgId,
-        createdBy: user?.id || null,
-        createdByName: userName,
-      });
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid evidence data", errors: parsed.error.flatten() });
+  app.post(
+    "/api/incidents/:incidentId/evidence",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const incident = await storage.getIncident(p(req.params.incidentId));
+        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
+          return res.status(403).json({ message: "Access denied" });
+        const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+        const orgId = getOrgId(req);
+        const parsed = insertEvidenceItemSchema.safeParse({
+          ...req.body,
+          incidentId: p(req.params.incidentId),
+          orgId,
+          createdBy: user?.id || null,
+          createdByName: userName,
+        });
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid evidence data", errors: parsed.error.flatten() });
+        }
+        const item = await storage.createEvidenceItem(parsed.data);
+        res.status(201).json(item);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to create evidence item" });
       }
-      const item = await storage.createEvidenceItem(parsed.data);
-      res.status(201).json(item);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create evidence item" });
-    }
-  });
+    },
+  );
 
-  app.delete("/api/incidents/:incidentId/evidence/:evidenceId", isAuthenticated, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const incident = await storage.getIncident(p(req.params.incidentId));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
-      if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const existing = await storage.getEvidenceItem(p(req.params.evidenceId));
-      if (!existing) return res.status(404).json({ message: "Evidence item not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const deleted = await storage.deleteEvidenceItem(p(req.params.evidenceId));
-      if (!deleted) return res.status(404).json({ message: "Evidence item not found" });
-      res.json({ message: "Evidence item deleted" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete evidence item" });
-    }
-  });
+  app.delete(
+    "/api/incidents/:incidentId/evidence/:evidenceId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const incident = await storage.getIncident(p(req.params.incidentId));
+        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
+          return res.status(403).json({ message: "Access denied" });
+        const existing = await storage.getEvidenceItem(p(req.params.evidenceId));
+        if (!existing) return res.status(404).json({ message: "Evidence item not found" });
+        if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+          return res.status(403).json({ message: "Access denied" });
+        const deleted = await storage.deleteEvidenceItem(p(req.params.evidenceId));
+        if (!deleted) return res.status(404).json({ message: "Evidence item not found" });
+        res.json({ message: "Evidence item deleted" });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete evidence item" });
+      }
+    },
+  );
 
   // ==========================================
   // Investigation Hypotheses (for an incident)
@@ -710,75 +768,96 @@ export function registerIncidentsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/incidents/:incidentId/hypotheses", isAuthenticated, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const incident = await storage.getIncident(p(req.params.incidentId));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
-      if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
-      const orgId = getOrgId(req);
-      const parsed = insertInvestigationHypothesisSchema.safeParse({
-        ...req.body,
-        incidentId: p(req.params.incidentId),
-        orgId,
-        createdBy: user?.id || null,
-        createdByName: userName,
-      });
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid hypothesis data", errors: parsed.error.flatten() });
+  app.post(
+    "/api/incidents/:incidentId/hypotheses",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const incident = await storage.getIncident(p(req.params.incidentId));
+        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
+          return res.status(403).json({ message: "Access denied" });
+        const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+        const orgId = getOrgId(req);
+        const parsed = insertInvestigationHypothesisSchema.safeParse({
+          ...req.body,
+          incidentId: p(req.params.incidentId),
+          orgId,
+          createdBy: user?.id || null,
+          createdByName: userName,
+        });
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid hypothesis data", errors: parsed.error.flatten() });
+        }
+        const hypothesis = await storage.createHypothesis(parsed.data);
+        res.status(201).json(hypothesis);
+      } catch (error: any) {
+        if (error.message === "ORG_CONTEXT_MISSING")
+          return res.status(403).json({ message: "Organization context required" });
+        res.status(500).json({ message: "Failed to create hypothesis" });
       }
-      const hypothesis = await storage.createHypothesis(parsed.data);
-      res.status(201).json(hypothesis);
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
-        return res.status(403).json({ message: "Organization context required" });
-      res.status(500).json({ message: "Failed to create hypothesis" });
-    }
-  });
+    },
+  );
 
-  app.patch("/api/incidents/:incidentId/hypotheses/:hypothesisId", isAuthenticated, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const incident = await storage.getIncident(p(req.params.incidentId));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
-      if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const existing = await storage.getHypothesis(p(req.params.hypothesisId));
-      if (!existing) return res.status(404).json({ message: "Hypothesis not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const { orgId: _ignoreOrgId, incidentId: _ignoreIncidentId, ...updateData } = req.body;
-      if (updateData.status === "validated" || updateData.status === "confirmed") {
-        updateData.validatedAt = new Date();
+  app.patch(
+    "/api/incidents/:incidentId/hypotheses/:hypothesisId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const incident = await storage.getIncident(p(req.params.incidentId));
+        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
+          return res.status(403).json({ message: "Access denied" });
+        const existing = await storage.getHypothesis(p(req.params.hypothesisId));
+        if (!existing) return res.status(404).json({ message: "Hypothesis not found" });
+        if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+          return res.status(403).json({ message: "Access denied" });
+        const { orgId: _ignoreOrgId, incidentId: _ignoreIncidentId, ...updateData } = req.body;
+        if (updateData.status === "validated" || updateData.status === "confirmed") {
+          updateData.validatedAt = new Date();
+        }
+        const hypothesis = await storage.updateHypothesis(p(req.params.hypothesisId), updateData);
+        if (!hypothesis) return res.status(404).json({ message: "Hypothesis not found" });
+        res.json(hypothesis);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update hypothesis" });
       }
-      const hypothesis = await storage.updateHypothesis(p(req.params.hypothesisId), updateData);
-      if (!hypothesis) return res.status(404).json({ message: "Hypothesis not found" });
-      res.json(hypothesis);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update hypothesis" });
-    }
-  });
+    },
+  );
 
-  app.delete("/api/incidents/:incidentId/hypotheses/:hypothesisId", isAuthenticated, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const incident = await storage.getIncident(p(req.params.incidentId));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
-      if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const existing = await storage.getHypothesis(p(req.params.hypothesisId));
-      if (!existing) return res.status(404).json({ message: "Hypothesis not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const deleted = await storage.deleteHypothesis(p(req.params.hypothesisId));
-      if (!deleted) return res.status(404).json({ message: "Hypothesis not found" });
-      res.json({ message: "Hypothesis deleted" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete hypothesis" });
-    }
-  });
+  app.delete(
+    "/api/incidents/:incidentId/hypotheses/:hypothesisId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const incident = await storage.getIncident(p(req.params.incidentId));
+        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
+          return res.status(403).json({ message: "Access denied" });
+        const existing = await storage.getHypothesis(p(req.params.hypothesisId));
+        if (!existing) return res.status(404).json({ message: "Hypothesis not found" });
+        if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+          return res.status(403).json({ message: "Access denied" });
+        const deleted = await storage.deleteHypothesis(p(req.params.hypothesisId));
+        if (!deleted) return res.status(404).json({ message: "Hypothesis not found" });
+        res.json({ message: "Hypothesis deleted" });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete hypothesis" });
+      }
+    },
+  );
 
   // ==========================================
   // Investigation Tasks (for an incident)
@@ -797,79 +876,100 @@ export function registerIncidentsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/incidents/:incidentId/tasks", isAuthenticated, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const incident = await storage.getIncident(p(req.params.incidentId));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
-      if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
-      const orgId = getOrgId(req);
-      const parsed = insertInvestigationTaskSchema.safeParse({
-        ...req.body,
-        incidentId: p(req.params.incidentId),
-        orgId,
-        createdBy: user?.id || null,
-        createdByName: userName,
-      });
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid task data", errors: parsed.error.flatten() });
+  app.post(
+    "/api/incidents/:incidentId/tasks",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const incident = await storage.getIncident(p(req.params.incidentId));
+        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
+          return res.status(403).json({ message: "Access denied" });
+        const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+        const orgId = getOrgId(req);
+        const parsed = insertInvestigationTaskSchema.safeParse({
+          ...req.body,
+          incidentId: p(req.params.incidentId),
+          orgId,
+          createdBy: user?.id || null,
+          createdByName: userName,
+        });
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid task data", errors: parsed.error.flatten() });
+        }
+        const task = await storage.createInvestigationTask(parsed.data);
+        res.status(201).json(task);
+      } catch (error: any) {
+        if (error.message === "ORG_CONTEXT_MISSING")
+          return res.status(403).json({ message: "Organization context required" });
+        res.status(500).json({ message: "Failed to create task" });
       }
-      const task = await storage.createInvestigationTask(parsed.data);
-      res.status(201).json(task);
-    } catch (error: any) {
-      if (error.message === "ORG_CONTEXT_MISSING")
-        return res.status(403).json({ message: "Organization context required" });
-      res.status(500).json({ message: "Failed to create task" });
-    }
-  });
+    },
+  );
 
-  app.patch("/api/incidents/:incidentId/tasks/:taskId", isAuthenticated, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const incident = await storage.getIncident(p(req.params.incidentId));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
-      if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const existing = await storage.getInvestigationTask(p(req.params.taskId));
-      if (!existing) return res.status(404).json({ message: "Task not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const { orgId: _ignoreOrgId, incidentId: _ignoreIncidentId, ...updateData } = req.body;
-      if (
-        (updateData.status === "done" || updateData.status === "completed") &&
-        existing.status !== "done" &&
-        existing.status !== "completed"
-      ) {
-        updateData.completedAt = new Date();
+  app.patch(
+    "/api/incidents/:incidentId/tasks/:taskId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const incident = await storage.getIncident(p(req.params.incidentId));
+        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
+          return res.status(403).json({ message: "Access denied" });
+        const existing = await storage.getInvestigationTask(p(req.params.taskId));
+        if (!existing) return res.status(404).json({ message: "Task not found" });
+        if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+          return res.status(403).json({ message: "Access denied" });
+        const { orgId: _ignoreOrgId, incidentId: _ignoreIncidentId, ...updateData } = req.body;
+        if (
+          (updateData.status === "done" || updateData.status === "completed") &&
+          existing.status !== "done" &&
+          existing.status !== "completed"
+        ) {
+          updateData.completedAt = new Date();
+        }
+        const task = await storage.updateInvestigationTask(p(req.params.taskId), updateData);
+        if (!task) return res.status(404).json({ message: "Task not found" });
+        res.json(task);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update task" });
       }
-      const task = await storage.updateInvestigationTask(p(req.params.taskId), updateData);
-      if (!task) return res.status(404).json({ message: "Task not found" });
-      res.json(task);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update task" });
-    }
-  });
+    },
+  );
 
-  app.delete("/api/incidents/:incidentId/tasks/:taskId", isAuthenticated, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const incident = await storage.getIncident(p(req.params.incidentId));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
-      if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const existing = await storage.getInvestigationTask(p(req.params.taskId));
-      if (!existing) return res.status(404).json({ message: "Task not found" });
-      if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
-        return res.status(403).json({ message: "Access denied" });
-      const deleted = await storage.deleteInvestigationTask(p(req.params.taskId));
-      if (!deleted) return res.status(404).json({ message: "Task not found" });
-      res.json({ message: "Task deleted" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete task" });
-    }
-  });
+  app.delete(
+    "/api/incidents/:incidentId/tasks/:taskId",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const incident = await storage.getIncident(p(req.params.incidentId));
+        if (!incident) return res.status(404).json({ message: "Incident not found" });
+        if (incident.orgId && user?.orgId && incident.orgId !== user.orgId)
+          return res.status(403).json({ message: "Access denied" });
+        const existing = await storage.getInvestigationTask(p(req.params.taskId));
+        if (!existing) return res.status(404).json({ message: "Task not found" });
+        if (existing.orgId && user?.orgId && existing.orgId !== user.orgId)
+          return res.status(403).json({ message: "Access denied" });
+        const deleted = await storage.deleteInvestigationTask(p(req.params.taskId));
+        if (!deleted) return res.status(404).json({ message: "Task not found" });
+        res.json({ message: "Task deleted" });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete task" });
+      }
+    },
+  );
 
   // ==========================================
   // Evidence Export
@@ -905,43 +1005,57 @@ export function registerIncidentsRoutes(app: Express): void {
   });
 
   // SLA Application
-  app.post("/api/incidents/:id/apply-sla", isAuthenticated, async (req, res) => {
-    try {
-      const incident = await storage.getIncident(p(req.params.id));
-      if (!incident) return res.status(404).json({ message: "Incident not found" });
+  app.post(
+    "/api/incidents/:id/apply-sla",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const incident = await storage.getIncident(p(req.params.id));
+        if (!incident) return res.status(404).json({ message: "Incident not found" });
 
-      if (incident.ackDueAt || incident.containDueAt || incident.resolveDueAt) {
-        return res.status(400).json({ message: "SLA timers already set for this incident" });
+        if (incident.ackDueAt || incident.containDueAt || incident.resolveDueAt) {
+          return res.status(400).json({ message: "SLA timers already set for this incident" });
+        }
+
+        const orgId = (req as any).user?.orgId;
+        const policies = await storage.getIncidentSlaPolicies(orgId);
+        const policy = policies.find((p) => p.severity === incident.severity && p.enabled === true);
+        if (!policy)
+          return res.status(404).json({ message: "No enabled SLA policy found for severity: " + incident.severity });
+
+        const createdAt = incident.createdAt ? new Date(incident.createdAt).getTime() : Date.now();
+        const ackDueAt = new Date(createdAt + policy.ackMinutes * 60 * 1000);
+        const containDueAt = new Date(createdAt + policy.containMinutes * 60 * 1000);
+        const resolveDueAt = new Date(createdAt + policy.resolveMinutes * 60 * 1000);
+
+        const updated = await storage.updateIncident(p(req.params.id), { ackDueAt, containDueAt, resolveDueAt });
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to apply SLA policy" });
       }
-
-      const orgId = (req as any).user?.orgId;
-      const policies = await storage.getIncidentSlaPolicies(orgId);
-      const policy = policies.find((p) => p.severity === incident.severity && p.enabled === true);
-      if (!policy)
-        return res.status(404).json({ message: "No enabled SLA policy found for severity: " + incident.severity });
-
-      const createdAt = incident.createdAt ? new Date(incident.createdAt).getTime() : Date.now();
-      const ackDueAt = new Date(createdAt + policy.ackMinutes * 60 * 1000);
-      const containDueAt = new Date(createdAt + policy.containMinutes * 60 * 1000);
-      const resolveDueAt = new Date(createdAt + policy.resolveMinutes * 60 * 1000);
-
-      const updated = await storage.updateIncident(p(req.params.id), { ackDueAt, containDueAt, resolveDueAt });
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to apply SLA policy" });
-    }
-  });
+    },
+  );
 
   // Incident Acknowledge
-  app.post("/api/incidents/:id/acknowledge", isAuthenticated, async (req, res) => {
-    try {
-      const updated = await storage.updateIncident(p(req.params.id), { ackAt: new Date() });
-      if (!updated) return res.status(404).json({ message: "Incident not found" });
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to acknowledge incident" });
-    }
-  });
+  app.post(
+    "/api/incidents/:id/acknowledge",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const updated = await storage.updateIncident(p(req.params.id), { ackAt: new Date() });
+        if (!updated) return res.status(404).json({ message: "Incident not found" });
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to acknowledge incident" });
+      }
+    },
+  );
 
   // Post-Incident Reviews
   app.get("/api/incidents/:incidentId/pir", isAuthenticated, async (req, res) => {
@@ -954,52 +1068,75 @@ export function registerIncidentsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/incidents/:incidentId/pir", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = (req as any).user?.orgId;
-      const userId = (req as any).user?.id;
-      const userName = (req as any).user?.firstName
-        ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
-        : "Unknown";
-      const parsed = insertPostIncidentReviewSchema.safeParse({
-        ...req.body,
-        orgId,
-        incidentId: p(req.params.incidentId),
-        createdBy: userId,
-        createdByName: userName,
-      });
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid PIR data", errors: parsed.error.flatten() });
+  app.post(
+    "/api/incidents/:incidentId/pir",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).user?.orgId;
+        const userId = (req as any).user?.id;
+        const userName = (req as any).user?.firstName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+          : "Unknown";
+        const parsed = insertPostIncidentReviewSchema.safeParse({
+          ...req.body,
+          orgId,
+          incidentId: p(req.params.incidentId),
+          createdBy: userId,
+          createdByName: userName,
+        });
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid PIR data", errors: parsed.error.flatten() });
+        }
+        const review = await storage.createPostIncidentReview(parsed.data);
+        res.status(201).json(review);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to create post-incident review" });
       }
-      const review = await storage.createPostIncidentReview(parsed.data);
-      res.status(201).json(review);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create post-incident review" });
-    }
-  });
+    },
+  );
 
-  app.patch("/api/pir/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const updated = await storage.updatePostIncidentReview(p(req.params.id), {
-        ...req.body,
-        updatedAt: new Date(),
-      });
-      if (!updated) return res.status(404).json({ message: "PIR not found" });
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update post-incident review" });
-    }
-  });
+  app.patch(
+    "/api/pir/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const updated = await storage.updatePostIncidentReview(p(req.params.id), {
+          ...req.body,
+          updatedAt: new Date(),
+        });
+        if (!updated) return res.status(404).json({ message: "PIR not found" });
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update post-incident review" });
+      }
+    },
+  );
 
-  app.delete("/api/pir/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const deleted = await storage.deletePostIncidentReview(p(req.params.id));
-      if (!deleted) return res.status(404).json({ message: "PIR not found" });
-      res.json({ message: "Post-incident review deleted" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete post-incident review" });
-    }
-  });
+  app.delete(
+    "/api/pir/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const deleted = await storage.deletePostIncidentReview(p(req.params.id));
+        if (!deleted) return res.status(404).json({ message: "PIR not found" });
+        res.json({ message: "Post-incident review deleted" });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete post-incident review" });
+      }
+    },
+  );
 
   // ==========================================
   // 8.2 — Evidence Chain (Immutable Audit Trail)
@@ -1242,6 +1379,7 @@ export function registerIncidentsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     validatePathId("id"),
     async (req, res) => {
       try {
@@ -1336,6 +1474,7 @@ export function registerIncidentsRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("analyst"),
     validatePathId("reviewId"),
     async (req, res) => {
       try {
@@ -1360,153 +1499,192 @@ export function registerIncidentsRoutes(app: Express): void {
     },
   );
 
-  app.patch("/api/pir-action-items/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const updated = await storage.updatePirActionItem(p(req.params.id), req.body);
-      if (!updated) return res.status(404).json({ message: "Action item not found" });
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update PIR action item" });
-    }
-  });
+  app.patch(
+    "/api/pir-action-items/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const updated = await storage.updatePirActionItem(p(req.params.id), req.body);
+        if (!updated) return res.status(404).json({ message: "Action item not found" });
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update PIR action item" });
+      }
+    },
+  );
 
-  app.delete("/api/pir-action-items/:id", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const deleted = await storage.deletePirActionItem(p(req.params.id));
-      if (!deleted) return res.status(404).json({ message: "Action item not found" });
-      res.json({ message: "Action item deleted" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete PIR action item" });
-    }
-  });
+  app.delete(
+    "/api/pir-action-items/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const deleted = await storage.deletePirActionItem(p(req.params.id));
+        if (!deleted) return res.status(404).json({ message: "Action item not found" });
+        res.json({ message: "Action item deleted" });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete PIR action item" });
+      }
+    },
+  );
 
   // POST /api/incidents/:id/rollback-actions — batch rollback completed actions (RESP-02)
-  app.post("/api/incidents/:id/rollback-actions", isAuthenticated, validatePathId("id"), async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const incidentId = p(req.params.id);
-      const userId = (req as any).user?.id || "unknown";
-      const userName = (req as any).user?.username || (req as any).user?.firstName || "unknown";
-      const { dryRun = false, actionIds } = req.body || {};
+  app.post(
+    "/api/incidents/:id/rollback-actions",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    validatePathId("id"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const incidentId = p(req.params.id);
+        const userId = (req as any).user?.id || "unknown";
+        const userName = (req as any).user?.username || (req as any).user?.firstName || "unknown";
+        const { dryRun = false, actionIds } = req.body || {};
 
-      // Verify incident exists and belongs to this org
-      const incident = await storage.getIncident(incidentId);
-      if (!incident || incident.orgId !== orgId) {
-        return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "Incident not found" }] });
-      }
-
-      // Get all response actions for this incident
-      const actions = await getResponseActions(orgId, incidentId);
-
-      // Filter to rollback-eligible: completed status, has a reverse action, not itself a rollback
-      const ROLLBACK_TYPES = ["unisolate_host", "unblock_ip", "unblock_domain", "restore_file", "enable_user", "restart_process"];
-      let eligible = actions.filter(
-        (a) =>
-          a.status === "completed" &&
-          canRollback(a.actionType) &&
-          !ROLLBACK_TYPES.includes(a.actionType),
-      );
-
-      // Optional filter by specific action IDs
-      if (Array.isArray(actionIds) && actionIds.length > 0) {
-        eligible = eligible.filter((a) => actionIds.includes(a.id));
-      }
-
-      if (eligible.length === 0) {
-        return sendEnvelope(res, { message: "No rollback-eligible actions found", rollbacks: [], count: 0 });
-      }
-
-      // Dry-run mode: preview what would be rolled back without executing
-      if (dryRun) {
-        const reverseMap: Record<string, string> = {
-          isolate: "unisolate",
-          block: "unblock",
-          quarantine: "restore",
-          disable: "enable",
-          kill: "restart",
-        };
-        const preview = eligible.map((a) => ({
-          originalActionId: a.id,
-          originalActionType: a.actionType,
-          rollbackActionType: a.actionType.replace(/^(isolate|block|quarantine|disable|kill)/, (m: string) => {
-            return reverseMap[m] || m;
-          }),
-          target: a.targetValue || "unknown",
-          status: "preview",
-        }));
-
-        try {
-          await createAuditLog({
-            orgId,
-            userId,
-            userName,
-            action: "response_action_rollback_preview",
-            resourceType: "incident",
-            resourceId: incidentId,
-            details: { dryRun: true, eligibleCount: eligible.length, preview },
+        // Verify incident exists and belongs to this org
+        const incident = await storage.getIncident(incidentId);
+        if (!incident || incident.orgId !== orgId) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "Incident not found" }],
           });
-        } catch (_auditErr) {
-          log.warn("Failed to create audit log for rollback preview", { incidentId });
         }
 
-        return sendEnvelope(res, { message: "Dry-run rollback preview", rollbacks: preview, count: preview.length, dryRun: true });
-      }
+        // Get all response actions for this incident
+        const actions = await getResponseActions(orgId, incidentId);
 
-      // Execute rollbacks sequentially (avoid conflicts on same target)
-      const results = [];
-      for (const action of eligible) {
-        try {
-          const rollbackRecord = await createRollbackRecord(
-            orgId,
-            action.id,
-            action.actionType,
-            action.targetValue || "unknown",
-          );
-          const executed = await executeRollback(rollbackRecord.id, userId);
-          results.push({
-            originalActionId: action.id,
-            originalActionType: action.actionType,
-            rollbackId: rollbackRecord.id,
-            status: executed?.status || "failed",
-            target: action.targetValue || "unknown",
-          });
+        // Filter to rollback-eligible: completed status, has a reverse action, not itself a rollback
+        const ROLLBACK_TYPES = [
+          "unisolate_host",
+          "unblock_ip",
+          "unblock_domain",
+          "restore_file",
+          "enable_user",
+          "restart_process",
+        ];
+        let eligible = actions.filter(
+          (a) => a.status === "completed" && canRollback(a.actionType) && !ROLLBACK_TYPES.includes(a.actionType),
+        );
 
-          // Audit each rollback
+        // Optional filter by specific action IDs
+        if (Array.isArray(actionIds) && actionIds.length > 0) {
+          eligible = eligible.filter((a) => actionIds.includes(a.id));
+        }
+
+        if (eligible.length === 0) {
+          return sendEnvelope(res, { message: "No rollback-eligible actions found", rollbacks: [], count: 0 });
+        }
+
+        // Dry-run mode: preview what would be rolled back without executing
+        if (dryRun) {
+          const reverseMap: Record<string, string> = {
+            isolate: "unisolate",
+            block: "unblock",
+            quarantine: "restore",
+            disable: "enable",
+            kill: "restart",
+          };
+          const preview = eligible.map((a) => ({
+            originalActionId: a.id,
+            originalActionType: a.actionType,
+            rollbackActionType: a.actionType.replace(/^(isolate|block|quarantine|disable|kill)/, (m: string) => {
+              return reverseMap[m] || m;
+            }),
+            target: a.targetValue || "unknown",
+            status: "preview",
+          }));
+
           try {
             await createAuditLog({
               orgId,
               userId,
               userName,
-              action: "response_action_rolled_back",
-              resourceType: "response_action",
-              resourceId: action.id,
-              details: {
-                originalAction: action.actionType,
-                rollbackId: rollbackRecord.id,
-                status: executed?.status || "failed",
-                target: action.targetValue,
-                incidentId,
-              },
+              action: "response_action_rollback_preview",
+              resourceType: "incident",
+              resourceId: incidentId,
+              details: { dryRun: true, eligibleCount: eligible.length, preview },
             });
           } catch (_auditErr) {
-            log.warn("Failed to create audit log for rollback", { actionId: action.id, incidentId });
+            log.warn("Failed to create audit log for rollback preview", { incidentId });
           }
-        } catch (err) {
-          results.push({
-            originalActionId: action.id,
-            originalActionType: action.actionType,
-            rollbackId: null,
-            status: "failed",
-            error: String(err),
-            target: action.targetValue || "unknown",
+
+          return sendEnvelope(res, {
+            message: "Dry-run rollback preview",
+            rollbacks: preview,
+            count: preview.length,
+            dryRun: true,
           });
         }
-      }
 
-      return sendEnvelope(res, { rollbacks: results, count: results.length });
-    } catch (error: unknown) {
-      log.error("Failed to rollback incident actions", { incidentId: req.params.id, error: String(error) });
-      return sendEnvelope(res, null, { status: 500, errors: [{ code: "INTERNAL_ERROR", message: "Rollback failed" }] });
-    }
-  });
+        // Execute rollbacks sequentially (avoid conflicts on same target)
+        const results = [];
+        for (const action of eligible) {
+          try {
+            const rollbackRecord = await createRollbackRecord(
+              orgId,
+              action.id,
+              action.actionType,
+              action.targetValue || "unknown",
+            );
+            const executed = await executeRollback(rollbackRecord.id, userId);
+            results.push({
+              originalActionId: action.id,
+              originalActionType: action.actionType,
+              rollbackId: rollbackRecord.id,
+              status: executed?.status || "failed",
+              target: action.targetValue || "unknown",
+            });
+
+            // Audit each rollback
+            try {
+              await createAuditLog({
+                orgId,
+                userId,
+                userName,
+                action: "response_action_rolled_back",
+                resourceType: "response_action",
+                resourceId: action.id,
+                details: {
+                  originalAction: action.actionType,
+                  rollbackId: rollbackRecord.id,
+                  status: executed?.status || "failed",
+                  target: action.targetValue,
+                  incidentId,
+                },
+              });
+            } catch (_auditErr) {
+              log.warn("Failed to create audit log for rollback", { actionId: action.id, incidentId });
+            }
+          } catch (err) {
+            results.push({
+              originalActionId: action.id,
+              originalActionType: action.actionType,
+              rollbackId: null,
+              status: "failed",
+              error: String(err),
+              target: action.targetValue || "unknown",
+            });
+          }
+        }
+
+        return sendEnvelope(res, { rollbacks: results, count: results.length });
+      } catch (error: unknown) {
+        log.error("Failed to rollback incident actions", { incidentId: req.params.id, error: String(error) });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "INTERNAL_ERROR", message: "Rollback failed" }],
+        });
+      }
+    },
+  );
 }

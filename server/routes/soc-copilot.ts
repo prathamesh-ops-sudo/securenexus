@@ -3,6 +3,8 @@ import { randomBytes } from "crypto";
 import type { Express } from "express";
 import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
+
 import * as storage from "../storage/soc-copilot";
 
 const VALID_VERDICTS = ["true_positive", "false_positive", "needs_investigation", "benign"];
@@ -118,53 +120,67 @@ export function registerSocCopilotRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/soc-copilot/triages", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { alertId, alertTitle, severity } = req.body as {
-        alertId?: string;
-        alertTitle?: string;
-        severity?: string;
-      };
-      if (!alertId || typeof alertId !== "string") return res.status(400).json({ message: "alertId is required" });
-      if (!alertTitle || typeof alertTitle !== "string")
-        return res.status(400).json({ message: "alertTitle is required" });
-      if (!severity || !VALID_SEVERITIES.includes(severity))
-        return res.status(400).json({ message: `severity must be one of: ${VALID_SEVERITIES.join(", ")}` });
-      const triage = await storage.createCopilotTriage({
-        orgId,
-        alertId,
-        alertTitle,
-        severity,
-        verdict: "needs_investigation",
-        confidence: 0,
-        reasoning: "Pending AI analysis",
-        suggestedActions: [],
-        relatedAlerts: [],
-      });
-      res.status(201).json(triage);
-    } catch (error) {
-      logger.child("routes").error("Generate triage error", { error: String(error) });
-      res.status(500).json({ message: "Failed to generate triage" });
-    }
-  });
+  app.post(
+    "/api/soc-copilot/triages",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { alertId, alertTitle, severity } = req.body as {
+          alertId?: string;
+          alertTitle?: string;
+          severity?: string;
+        };
+        if (!alertId || typeof alertId !== "string") return res.status(400).json({ message: "alertId is required" });
+        if (!alertTitle || typeof alertTitle !== "string")
+          return res.status(400).json({ message: "alertTitle is required" });
+        if (!severity || !VALID_SEVERITIES.includes(severity))
+          return res.status(400).json({ message: `severity must be one of: ${VALID_SEVERITIES.join(", ")}` });
+        const triage = await storage.createCopilotTriage({
+          orgId,
+          alertId,
+          alertTitle,
+          severity,
+          verdict: "needs_investigation",
+          confidence: 0,
+          reasoning: "Pending AI analysis",
+          suggestedActions: [],
+          relatedAlerts: [],
+        });
+        res.status(201).json(triage);
+      } catch (error) {
+        logger.child("routes").error("Generate triage error", { error: String(error) });
+        res.status(500).json({ message: "Failed to generate triage" });
+      }
+    },
+  );
 
-  app.patch("/api/soc-copilot/triages/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const { analystNotes } = req.body as { analystNotes?: string };
-      if (analystNotes === undefined || typeof analystNotes !== "string")
-        return res.status(400).json({ message: "analystNotes must be a string" });
-      const existing = await storage.getCopilotTriage(id);
-      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Triage not found" });
-      const updated = await storage.updateCopilotTriage(id, { analystNotes });
-      res.json(updated);
-    } catch (error) {
-      logger.child("routes").error("Update triage error", { error: String(error) });
-      res.status(500).json({ message: "Failed to update triage" });
-    }
-  });
+  app.patch(
+    "/api/soc-copilot/triages/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const { analystNotes } = req.body as { analystNotes?: string };
+        if (analystNotes === undefined || typeof analystNotes !== "string")
+          return res.status(400).json({ message: "analystNotes must be a string" });
+        const existing = await storage.getCopilotTriage(id);
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Triage not found" });
+        const updated = await storage.updateCopilotTriage(id, { analystNotes });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Update triage error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update triage" });
+      }
+    },
+  );
 
   app.get("/api/soc-copilot/hypotheses", isAuthenticated, async (req, res) => {
     try {
@@ -183,29 +199,36 @@ export function registerSocCopilotRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/soc-copilot/hypotheses/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const body = req.body;
-      if (body.status !== undefined && !VALID_HYPOTHESIS_STATUSES.includes(body.status)) {
-        return res.status(400).json({ message: `status must be one of: ${VALID_HYPOTHESIS_STATUSES.join(", ")}` });
+  app.patch(
+    "/api/soc-copilot/hypotheses/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const body = req.body;
+        if (body.status !== undefined && !VALID_HYPOTHESIS_STATUSES.includes(body.status)) {
+          return res.status(400).json({ message: `status must be one of: ${VALID_HYPOTHESIS_STATUSES.join(", ")}` });
+        }
+        if (body.status === undefined) {
+          return res.status(400).json({ message: "status is required" });
+        }
+        const existing = await storage.getCopilotHypothesis(id);
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Hypothesis not found" });
+        const updated = await storage.updateCopilotHypothesis(id, {
+          status: body.status,
+          analystVerdict: typeof body.analystFeedback === "string" ? body.analystFeedback : existing.analystVerdict,
+        });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Update hypothesis error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update hypothesis" });
       }
-      if (body.status === undefined) {
-        return res.status(400).json({ message: "status is required" });
-      }
-      const existing = await storage.getCopilotHypothesis(id);
-      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Hypothesis not found" });
-      const updated = await storage.updateCopilotHypothesis(id, {
-        status: body.status,
-        analystVerdict: typeof body.analystFeedback === "string" ? body.analystFeedback : existing.analystVerdict,
-      });
-      res.json(updated);
-    } catch (error) {
-      logger.child("routes").error("Update hypothesis error", { error: String(error) });
-      res.status(500).json({ message: "Failed to update hypothesis" });
-    }
-  });
+    },
+  );
 
   app.get("/api/soc-copilot/actions", isAuthenticated, async (req, res) => {
     try {
@@ -222,60 +245,81 @@ export function registerSocCopilotRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/soc-copilot/actions/:id/approve", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const { analystId } = req.body as { analystId?: string };
-      if (!analystId || typeof analystId !== "string")
-        return res.status(400).json({ message: "analystId is required" });
-      const action = await storage.getCopilotAction(id);
-      if (!action || action.orgId !== orgId || action.status !== "pending_approval")
-        return res.status(404).json({ message: "Action not found or not pending approval" });
-      const updated = await storage.updateCopilotAction(id, {
-        status: "approved",
-        approvedBy: analystId,
-        approvedAt: new Date(),
-      });
-      res.json(updated);
-    } catch (error) {
-      logger.child("routes").error("Approve action error", { error: String(error) });
-      res.status(500).json({ message: "Failed to approve action" });
-    }
-  });
+  app.post(
+    "/api/soc-copilot/actions/:id/approve",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const { analystId } = req.body as { analystId?: string };
+        if (!analystId || typeof analystId !== "string")
+          return res.status(400).json({ message: "analystId is required" });
+        const action = await storage.getCopilotAction(id);
+        if (!action || action.orgId !== orgId || action.status !== "pending_approval")
+          return res.status(404).json({ message: "Action not found or not pending approval" });
+        const updated = await storage.updateCopilotAction(id, {
+          status: "approved",
+          approvedBy: analystId,
+          approvedAt: new Date(),
+        });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Approve action error", { error: String(error) });
+        res.status(500).json({ message: "Failed to approve action" });
+      }
+    },
+  );
 
-  app.post("/api/soc-copilot/actions/:id/reject", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const { analystId } = req.body as { analystId?: string };
-      if (!analystId || typeof analystId !== "string")
-        return res.status(400).json({ message: "analystId is required" });
-      const action = await storage.getCopilotAction(id);
-      if (!action || action.orgId !== orgId || action.status !== "pending_approval")
-        return res.status(404).json({ message: "Action not found or not pending approval" });
-      const updated = await storage.updateCopilotAction(id, { status: "rejected" });
-      res.json(updated);
-    } catch (error) {
-      logger.child("routes").error("Reject action error", { error: String(error) });
-      res.status(500).json({ message: "Failed to reject action" });
-    }
-  });
+  app.post(
+    "/api/soc-copilot/actions/:id/reject",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const { analystId } = req.body as { analystId?: string };
+        if (!analystId || typeof analystId !== "string")
+          return res.status(400).json({ message: "analystId is required" });
+        const action = await storage.getCopilotAction(id);
+        if (!action || action.orgId !== orgId || action.status !== "pending_approval")
+          return res.status(404).json({ message: "Action not found or not pending approval" });
+        const updated = await storage.updateCopilotAction(id, { status: "rejected" });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Reject action error", { error: String(error) });
+        res.status(500).json({ message: "Failed to reject action" });
+      }
+    },
+  );
 
-  app.post("/api/soc-copilot/actions/:id/rollback", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const action = await storage.getCopilotAction(id);
-      if (!action || action.orgId !== orgId || !["executed", "auto_executed"].includes(action.status))
-        return res.status(404).json({ message: "Action not found or not eligible for rollback" });
-      const updated = await storage.updateCopilotAction(id, { status: "rolled_back" });
-      res.json(updated);
-    } catch (error) {
-      logger.child("routes").error("Rollback action error", { error: String(error) });
-      res.status(500).json({ message: "Failed to rollback action" });
-    }
-  });
+  app.post(
+    "/api/soc-copilot/actions/:id/rollback",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const action = await storage.getCopilotAction(id);
+        if (!action || action.orgId !== orgId || !["executed", "auto_executed"].includes(action.status))
+          return res.status(404).json({ message: "Action not found or not eligible for rollback" });
+        const updated = await storage.updateCopilotAction(id, { status: "rolled_back" });
+        res.json(updated);
+      } catch (error) {
+        logger.child("routes").error("Rollback action error", { error: String(error) });
+        res.status(500).json({ message: "Failed to rollback action" });
+      }
+    },
+  );
 
   app.get("/api/soc-copilot/feedback", isAuthenticated, async (req, res) => {
     try {
@@ -292,40 +336,47 @@ export function registerSocCopilotRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/soc-copilot/feedback", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const body = req.body;
-      if (!body.actionId || typeof body.actionId !== "string")
-        return res.status(400).json({ message: "actionId is required" });
-      if (!body.actionType || !VALID_COPILOT_DOMAINS.includes(body.actionType))
-        return res.status(400).json({ message: `actionType must be one of: ${VALID_COPILOT_DOMAINS.join(", ")}` });
-      if (!body.outcome || !VALID_FEEDBACK_OUTCOMES.includes(body.outcome))
-        return res.status(400).json({ message: `outcome must be one of: ${VALID_FEEDBACK_OUTCOMES.join(", ")}` });
-      if (!body.analystId || typeof body.analystId !== "string")
-        return res.status(400).json({ message: "analystId is required" });
-      if (!body.reason || typeof body.reason !== "string")
-        return res.status(400).json({ message: "reason is required" });
+  app.post(
+    "/api/soc-copilot/feedback",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const body = req.body;
+        if (!body.actionId || typeof body.actionId !== "string")
+          return res.status(400).json({ message: "actionId is required" });
+        if (!body.actionType || !VALID_COPILOT_DOMAINS.includes(body.actionType))
+          return res.status(400).json({ message: `actionType must be one of: ${VALID_COPILOT_DOMAINS.join(", ")}` });
+        if (!body.outcome || !VALID_FEEDBACK_OUTCOMES.includes(body.outcome))
+          return res.status(400).json({ message: `outcome must be one of: ${VALID_FEEDBACK_OUTCOMES.join(", ")}` });
+        if (!body.analystId || typeof body.analystId !== "string")
+          return res.status(400).json({ message: "analystId is required" });
+        if (!body.reason || typeof body.reason !== "string")
+          return res.status(400).json({ message: "reason is required" });
 
-      const record = await storage.createCopilotFeedbackEntry({
-        orgId,
-        domain: body.actionType,
-        referenceId: body.actionId,
-        outcome: body.outcome,
-        analystId: body.analystId,
-        comment: body.reason,
-        metadata: {
-          originalSuggestion: body.originalSuggestion || "",
-          analystOverride: typeof body.analystOverride === "string" ? body.analystOverride : null,
-          impactOnPolicy: typeof body.impactOnPolicy === "string" ? body.impactOnPolicy : null,
-        },
-      });
-      res.status(201).json(record);
-    } catch (error) {
-      logger.child("routes").error("Submit feedback error", { error: String(error) });
-      res.status(500).json({ message: "Failed to submit feedback" });
-    }
-  });
+        const record = await storage.createCopilotFeedbackEntry({
+          orgId,
+          domain: body.actionType,
+          referenceId: body.actionId,
+          outcome: body.outcome,
+          analystId: body.analystId,
+          comment: body.reason,
+          metadata: {
+            originalSuggestion: body.originalSuggestion || "",
+            analystOverride: typeof body.analystOverride === "string" ? body.analystOverride : null,
+            impactOnPolicy: typeof body.impactOnPolicy === "string" ? body.impactOnPolicy : null,
+          },
+        });
+        res.status(201).json(record);
+      } catch (error) {
+        logger.child("routes").error("Submit feedback error", { error: String(error) });
+        res.status(500).json({ message: "Failed to submit feedback" });
+      }
+    },
+  );
 
   // ══════════════════════════════════════════════════════════════════════════════
   // 31.4 Conversation Memory Across Sessions
@@ -342,54 +393,68 @@ export function registerSocCopilotRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/soc-copilot/conversations", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const userId = (req as any).user?.id || "anonymous";
-      const { title, context, messages = [] } = req.body;
-      if (!title || typeof title !== "string") {
-        return res.status(400).json({ message: "title is required" });
+  app.post(
+    "/api/soc-copilot/conversations",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const userId = (req as any).user?.id || "anonymous";
+        const { title, context, messages = [] } = req.body;
+        if (!title || typeof title !== "string") {
+          return res.status(400).json({ message: "title is required" });
+        }
+        const conversation = {
+          id: `conv_${Date.now()}_${randomBytes(4).toString("hex")}`,
+          orgId,
+          userId,
+          title: title.slice(0, 200),
+          context: context || null,
+          messages: Array.isArray(messages) ? messages : [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        res.status(201).json(conversation);
+      } catch (error) {
+        logger.child("routes").error("Create conversation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create conversation" });
       }
-      const conversation = {
-        id: `conv_${Date.now()}_${randomBytes(4).toString("hex")}`,
-        orgId,
-        userId,
-        title: title.slice(0, 200),
-        context: context || null,
-        messages: Array.isArray(messages) ? messages : [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      res.status(201).json(conversation);
-    } catch (error) {
-      logger.child("routes").error("Create conversation error", { error: String(error) });
-      res.status(500).json({ message: "Failed to create conversation" });
-    }
-  });
+    },
+  );
 
-  app.post("/api/soc-copilot/conversations/:id/messages", isAuthenticated, async (req, res) => {
-    try {
-      const conversationId = String(req.params.id);
-      const { role, content } = req.body;
-      if (!role || !["user", "assistant"].includes(role)) {
-        return res.status(400).json({ message: "role must be 'user' or 'assistant'" });
+  app.post(
+    "/api/soc-copilot/conversations/:id/messages",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const conversationId = String(req.params.id);
+        const { role, content } = req.body;
+        if (!role || !["user", "assistant"].includes(role)) {
+          return res.status(400).json({ message: "role must be 'user' or 'assistant'" });
+        }
+        if (!content || typeof content !== "string") {
+          return res.status(400).json({ message: "content is required" });
+        }
+        const message = {
+          id: `msg_${Date.now()}_${randomBytes(4).toString("hex")}`,
+          conversationId,
+          role,
+          content: content.slice(0, 10000),
+          timestamp: new Date().toISOString(),
+        };
+        res.status(201).json(message);
+      } catch (error) {
+        logger.child("routes").error("Add message error", { error: String(error) });
+        res.status(500).json({ message: "Failed to add message" });
       }
-      if (!content || typeof content !== "string") {
-        return res.status(400).json({ message: "content is required" });
-      }
-      const message = {
-        id: `msg_${Date.now()}_${randomBytes(4).toString("hex")}`,
-        conversationId,
-        role,
-        content: content.slice(0, 10000),
-        timestamp: new Date().toISOString(),
-      };
-      res.status(201).json(message);
-    } catch (error) {
-      logger.child("routes").error("Add message error", { error: String(error) });
-      res.status(500).json({ message: "Failed to add message" });
-    }
-  });
+    },
+  );
 
   // ══════════════════════════════════════════════════════════════════════════════
   // 31.5 Skill-Based Routing to Specialized Prompts
@@ -477,41 +542,48 @@ export function registerSocCopilotRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/soc-copilot/skills/route", isAuthenticated, async (req, res) => {
-    try {
-      const { query } = req.body;
-      if (!query || typeof query !== "string") {
-        return res.status(400).json({ message: "query is required" });
+  app.post(
+    "/api/soc-copilot/skills/route",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const { query } = req.body;
+        if (!query || typeof query !== "string") {
+          return res.status(400).json({ message: "query is required" });
+        }
+        const skillKeywords: Record<string, string[]> = {
+          threat_intel: ["ioc", "threat", "actor", "campaign", "ttp", "malware", "apt"],
+          compliance: ["compliance", "audit", "regulation", "soc2", "gdpr", "hipaa"],
+          remediation: ["fix", "remediate", "patch", "mitigate", "resolve"],
+          forensics: ["forensic", "artifact", "memory", "disk", "pcap", "evidence"],
+          hunting: ["hunt", "hypothesis", "detect", "proactive", "sigma"],
+          incident_response: ["incident", "response", "playbook", "contain", "eradicate"],
+          vulnerability_mgmt: ["cve", "vulnerability", "patch", "risk", "exploit"],
+          cloud_security: ["cloud", "aws", "azure", "gcp", "iam", "cspm"],
+        };
+        const queryLower = query.toLowerCase();
+        const scores: { skillId: string; score: number }[] = [];
+        for (const [skillId, keywords] of Object.entries(skillKeywords)) {
+          const matchCount = keywords.filter((kw) => queryLower.includes(kw)).length;
+          if (matchCount > 0) scores.push({ skillId, score: matchCount / keywords.length });
+        }
+        scores.sort((a, b) => b.score - a.score);
+        const bestMatch = scores[0] || { skillId: "threat_intel", score: 0 };
+        res.json({
+          query,
+          routedSkill: bestMatch.skillId,
+          confidence: Math.round(bestMatch.score * 100) / 100,
+          alternativeSkills: scores.slice(1, 3).map((s) => s.skillId),
+        });
+      } catch (error) {
+        logger.child("routes").error("Skill routing error", { error: String(error) });
+        res.status(500).json({ message: "Failed to route query to skill" });
       }
-      const skillKeywords: Record<string, string[]> = {
-        threat_intel: ["ioc", "threat", "actor", "campaign", "ttp", "malware", "apt"],
-        compliance: ["compliance", "audit", "regulation", "soc2", "gdpr", "hipaa"],
-        remediation: ["fix", "remediate", "patch", "mitigate", "resolve"],
-        forensics: ["forensic", "artifact", "memory", "disk", "pcap", "evidence"],
-        hunting: ["hunt", "hypothesis", "detect", "proactive", "sigma"],
-        incident_response: ["incident", "response", "playbook", "contain", "eradicate"],
-        vulnerability_mgmt: ["cve", "vulnerability", "patch", "risk", "exploit"],
-        cloud_security: ["cloud", "aws", "azure", "gcp", "iam", "cspm"],
-      };
-      const queryLower = query.toLowerCase();
-      const scores: { skillId: string; score: number }[] = [];
-      for (const [skillId, keywords] of Object.entries(skillKeywords)) {
-        const matchCount = keywords.filter((kw) => queryLower.includes(kw)).length;
-        if (matchCount > 0) scores.push({ skillId, score: matchCount / keywords.length });
-      }
-      scores.sort((a, b) => b.score - a.score);
-      const bestMatch = scores[0] || { skillId: "threat_intel", score: 0 };
-      res.json({
-        query,
-        routedSkill: bestMatch.skillId,
-        confidence: Math.round(bestMatch.score * 100) / 100,
-        alternativeSkills: scores.slice(1, 3).map((s) => s.skillId),
-      });
-    } catch (error) {
-      logger.child("routes").error("Skill routing error", { error: String(error) });
-      res.status(500).json({ message: "Failed to route query to skill" });
-    }
-  });
+    },
+  );
 
   app.get("/api/soc-copilot/calibrations", isAuthenticated, async (req, res) => {
     try {

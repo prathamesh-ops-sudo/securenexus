@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, storage, strictLimiter } from "../shared";
 import { isAuthenticated } from "../../auth";
-import { resolveOrgContext } from "../../rbac";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../../rbac";
 import { generateIncidentNarrative, buildThreatIntelContext, streamNarrative, streamDeepInvestigation } from "../../ai";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
 import { withAiFallback } from "../../ai/fallback";
@@ -15,6 +15,8 @@ export function registerAiNarrativeRoutes(app: Express): void {
     "/api/ai/narrative/:incidentId",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     enforcePlanLimit("ai_analyses"),
     strictLimiter,
     async (req, res) => {
@@ -174,7 +176,9 @@ export function registerAiNarrativeRoutes(app: Express): void {
               details: { streamed: true, latencyMs: metrics.latencyMs, riskScore: parsed?.riskScore },
             });
 
-            storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+            storage
+              .incrementUsage(orgId, "ai_analyses")
+              .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
           } catch (e) {
             logger.child("ai").warn("Post-stream processing error", { error: String(e) });
           }
@@ -274,7 +278,9 @@ export function registerAiNarrativeRoutes(app: Express): void {
               resourceId: incident.id,
               details: { alertCount: incidentAlerts.length, streamed: true, latencyMs: metrics.latencyMs },
             });
-            storage.incrementUsage(orgId, "ai_analyses").catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
+            storage
+              .incrementUsage(orgId, "ai_analyses")
+              .catch((err) => log.warn("Failed to increment AI usage", { error: String(err), orgId }));
           } catch (e) {
             logger.child("ai").warn("Post-stream processing error", { error: String(e) });
           }

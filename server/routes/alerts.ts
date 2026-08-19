@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, p, publishOutboxEvent, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
-import { requireOrgId, requirePermission, resolveOrgContext } from "../rbac";
+import { requireOrgId, requirePermission, resolveOrgContext, requireMinRole } from "../rbac";
 import { bodySchemas, querySchemas, validateBody, validatePathId, validateQuery } from "../request-validator";
 import { insertAlertSchema } from "@shared/schema";
 import { parsePaginationParams } from "../db-performance";
@@ -270,6 +270,9 @@ export function registerAlertsRoutes(app: Express): void {
   app.post(
     "/api/alerts/:id/tags",
     isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     validatePathId("id"),
     validateBody(bodySchemas.incidentTagAdd),
     async (req, res) => {
@@ -286,6 +289,9 @@ export function registerAlertsRoutes(app: Express): void {
   app.delete(
     "/api/alerts/:alertId/tags/:tagId",
     isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     validatePathId("alertId"),
     validatePathId("tagId"),
     async (req, res) => {
@@ -326,57 +332,82 @@ export function registerAlertsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/alerts/:id/suppress", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = (req as any).user?.orgId;
-      const userId = (req as any).user?.id;
-      const existing = await storage.getAlert(p(req.params.id));
-      if (!existing || !orgId || existing.orgId !== orgId) {
-        return res.status(404).json({ message: "Alert not found" });
+  app.post(
+    "/api/alerts/:id/suppress",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).user?.orgId;
+        const userId = (req as any).user?.id;
+        const existing = await storage.getAlert(p(req.params.id));
+        if (!existing || !orgId || existing.orgId !== orgId) {
+          return res.status(404).json({ message: "Alert not found" });
+        }
+        const alert = await storage.updateAlert(p(req.params.id), { suppressed: true, suppressedBy: userId });
+        if (!alert) return res.status(404).json({ message: "Alert not found" });
+        res.json(alert);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to suppress alert" });
       }
-      const alert = await storage.updateAlert(p(req.params.id), { suppressed: true, suppressedBy: userId });
-      if (!alert) return res.status(404).json({ message: "Alert not found" });
-      res.json(alert);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to suppress alert" });
-    }
-  });
+    },
+  );
 
-  app.post("/api/alerts/:id/unsuppress", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = (req as any).user?.orgId;
-      const existing = await storage.getAlert(p(req.params.id));
-      if (!existing || !orgId || existing.orgId !== orgId) {
-        return res.status(404).json({ message: "Alert not found" });
+  app.post(
+    "/api/alerts/:id/unsuppress",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).user?.orgId;
+        const existing = await storage.getAlert(p(req.params.id));
+        if (!existing || !orgId || existing.orgId !== orgId) {
+          return res.status(404).json({ message: "Alert not found" });
+        }
+        const alert = await storage.updateAlert(p(req.params.id), { suppressed: false, suppressedBy: null });
+        if (!alert) return res.status(404).json({ message: "Alert not found" });
+        res.json(alert);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to unsuppress alert" });
       }
-      const alert = await storage.updateAlert(p(req.params.id), { suppressed: false, suppressedBy: null });
-      if (!alert) return res.status(404).json({ message: "Alert not found" });
-      res.json(alert);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to unsuppress alert" });
-    }
-  });
+    },
+  );
 
   // Alert Confidence Calibration
-  app.patch("/api/alerts/:id/confidence", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = (req as any).user?.orgId;
-      const existing = await storage.getAlert(p(req.params.id));
-      if (!existing || !orgId || existing.orgId !== orgId) {
-        return res.status(404).json({ message: "Alert not found" });
+  app.patch(
+    "/api/alerts/:id/confidence",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).user?.orgId;
+        const existing = await storage.getAlert(p(req.params.id));
+        if (!existing || !orgId || existing.orgId !== orgId) {
+          return res.status(404).json({ message: "Alert not found" });
+        }
+        const { confidenceScore, confidenceSource, confidenceNotes } = req.body;
+        const lengthCheck = validateAlertFieldLengths({ confidenceNotes });
+        if (!lengthCheck.valid) {
+          return res.status(400).json({ message: "Field length exceeded", errors: lengthCheck.errors });
+        }
+        const alert = await storage.updateAlert(p(req.params.id), {
+          confidenceScore,
+          confidenceSource,
+          confidenceNotes,
+        });
+        if (!alert) return res.status(404).json({ message: "Alert not found" });
+        res.json(alert);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to update alert confidence" });
       }
-      const { confidenceScore, confidenceSource, confidenceNotes } = req.body;
-      const lengthCheck = validateAlertFieldLengths({ confidenceNotes });
-      if (!lengthCheck.valid) {
-        return res.status(400).json({ message: "Field length exceeded", errors: lengthCheck.errors });
-      }
-      const alert = await storage.updateAlert(p(req.params.id), { confidenceScore, confidenceSource, confidenceNotes });
-      if (!alert) return res.status(404).json({ message: "Alert not found" });
-      res.json(alert);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update alert confidence" });
-    }
-  });
+    },
+  );
 
   // === Alert Archive (Cold Storage) ===
   app.get("/api/alerts/archive", isAuthenticated, async (req, res) => {
@@ -394,44 +425,65 @@ export function registerAlertsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/alerts/archive", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const { alertIds, reason } = req.body;
-      if (!alertIds || !Array.isArray(alertIds) || alertIds.length === 0) {
-        return res.status(400).json({ message: "alertIds array required" });
+  app.post(
+    "/api/alerts/archive",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const { alertIds, reason } = req.body;
+        if (!alertIds || !Array.isArray(alertIds) || alertIds.length === 0) {
+          return res.status(400).json({ message: "alertIds array required" });
+        }
+        const count = await storage.archiveAlerts(orgId, alertIds, reason || "manual");
+        res.json({ archived: count });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to archive alerts" });
       }
-      const count = await storage.archiveAlerts(orgId, alertIds, reason || "manual");
-      res.json({ archived: count });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to archive alerts" });
-    }
-  });
+    },
+  );
 
-  app.post("/api/alerts/archive/restore", isAuthenticated, async (req, res) => {
-    try {
-      const { ids } = req.body;
-      if (!ids || !Array.isArray(ids) || ids.length === 0) {
-        return res.status(400).json({ message: "ids array required" });
+  app.post(
+    "/api/alerts/archive/restore",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const { ids } = req.body;
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+          return res.status(400).json({ message: "ids array required" });
+        }
+        const count = await storage.restoreArchivedAlerts(ids);
+        res.json({ restored: count });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to restore archived alerts" });
       }
-      const count = await storage.restoreArchivedAlerts(ids);
-      res.json({ restored: count });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to restore archived alerts" });
-    }
-  });
+    },
+  );
 
-  app.delete("/api/alerts/archive", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const beforeDate = req.query.beforeDate as string;
-      if (!beforeDate) {
-        return res.status(400).json({ message: "beforeDate query param required" });
+  app.delete(
+    "/api/alerts/archive",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const beforeDate = req.query.beforeDate as string;
+        if (!beforeDate) {
+          return res.status(400).json({ message: "beforeDate query param required" });
+        }
+        const count = await storage.deleteArchivedAlerts(orgId, new Date(beforeDate));
+        res.json({ deleted: count });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to delete archived alerts" });
       }
-      const count = await storage.deleteArchivedAlerts(orgId, new Date(beforeDate));
-      res.json({ deleted: count });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete archived alerts" });
-    }
-  });
+    },
+  );
 }

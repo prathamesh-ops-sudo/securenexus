@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { getOrgId, logger } from "./shared";
 import { isAuthenticated } from "../auth";
+import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
+
 import * as remediationStorage from "../storage/remediation";
 
 const log = logger.child("remediation");
@@ -34,68 +36,89 @@ export function registerRemediationRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/remediation/fixes", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const body = req.body;
-      if (!body.title || typeof body.title !== "string") {
-        return res.status(400).json({ message: "title is required" });
+  app.post(
+    "/api/remediation/fixes",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const body = req.body;
+        if (!body.title || typeof body.title !== "string") {
+          return res.status(400).json({ message: "title is required" });
+        }
+        if (!body.type || typeof body.type !== "string") {
+          return res.status(400).json({ message: "type is required" });
+        }
+
+        const fix = await remediationStorage.createRemediationFix({
+          orgId,
+          type: body.type,
+          title: body.title,
+          description: body.description || "",
+          priority: body.priority || "medium",
+          status: body.status || "suggested",
+          finding: body.finding || {},
+          codeChange: body.codeChange || null,
+          ownerId: body.ownerId || null,
+          estimatedEffort: body.estimatedEffort || null,
+          mitreTactics: body.mitreTactics || [],
+          cweIds: body.cweIds || [],
+        });
+
+        res.status(201).json(fix);
+      } catch (error) {
+        log.error("Create remediation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to create remediation" });
       }
-      if (!body.type || typeof body.type !== "string") {
-        return res.status(400).json({ message: "type is required" });
+    },
+  );
+
+  app.patch(
+    "/api/remediation/fixes/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const existing = await remediationStorage.getRemediationFix(id);
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Remediation not found" });
+
+        const updated = await remediationStorage.updateRemediationFix(id, req.body);
+        res.json(updated);
+      } catch (error) {
+        log.error("Update remediation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to update remediation" });
       }
+    },
+  );
 
-      const fix = await remediationStorage.createRemediationFix({
-        orgId,
-        type: body.type,
-        title: body.title,
-        description: body.description || "",
-        priority: body.priority || "medium",
-        status: body.status || "suggested",
-        finding: body.finding || {},
-        codeChange: body.codeChange || null,
-        ownerId: body.ownerId || null,
-        estimatedEffort: body.estimatedEffort || null,
-        mitreTactics: body.mitreTactics || [],
-        cweIds: body.cweIds || [],
-      });
+  app.delete(
+    "/api/remediation/fixes/:id",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const id = String(req.params.id);
+        const existing = await remediationStorage.getRemediationFix(id);
+        if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Remediation not found" });
 
-      res.status(201).json(fix);
-    } catch (error) {
-      log.error("Create remediation error", { error: String(error) });
-      res.status(500).json({ message: "Failed to create remediation" });
-    }
-  });
-
-  app.patch("/api/remediation/fixes/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const existing = await remediationStorage.getRemediationFix(id);
-      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Remediation not found" });
-
-      const updated = await remediationStorage.updateRemediationFix(id, req.body);
-      res.json(updated);
-    } catch (error) {
-      log.error("Update remediation error", { error: String(error) });
-      res.status(500).json({ message: "Failed to update remediation" });
-    }
-  });
-
-  app.delete("/api/remediation/fixes/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const id = String(req.params.id);
-      const existing = await remediationStorage.getRemediationFix(id);
-      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Remediation not found" });
-
-      await remediationStorage.deleteRemediationFix(id);
-      res.json({ success: true });
-    } catch (error) {
-      log.error("Delete remediation error", { error: String(error) });
-      res.status(500).json({ message: "Failed to delete remediation" });
-    }
-  });
+        await remediationStorage.deleteRemediationFix(id);
+        res.json({ success: true });
+      } catch (error) {
+        log.error("Delete remediation error", { error: String(error) });
+        res.status(500).json({ message: "Failed to delete remediation" });
+      }
+    },
+  );
 
   app.get("/api/remediation/owners", isAuthenticated, async (req, res) => {
     try {

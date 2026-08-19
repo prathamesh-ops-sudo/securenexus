@@ -3,7 +3,7 @@ import { randomBytes } from "crypto";
 import type { Express, Request, Response } from "express";
 import { getOrgId, logger, storage, strictLimiter } from "../shared";
 import { isAuthenticated } from "../../auth";
-import { resolveOrgContext, requireMinRole } from "../../rbac";
+import { resolveOrgContext, requireMinRole, requireOrgId } from "../../rbac";
 import { getModelConfig } from "../../ai";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
 import { pool } from "../../db";
@@ -226,6 +226,8 @@ export function registerAiModelsRoutes(app: Express): void {
     "/api/ai/response-actions/propose",
     isAuthenticated,
     resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
     enforcePlanLimit("ai_analyses"),
     async (req: Request, res: Response) => {
       try {
