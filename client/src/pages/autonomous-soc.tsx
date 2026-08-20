@@ -92,6 +92,7 @@ interface Decision {
   relatedAlertIds: string[] | null;
   timeToDecisionMs: number | null;
   status: string;
+  safetyVetoes: string[] | null;
   humanOverride: boolean | null;
   humanOverrideBy: string | null;
   humanOverrideReason: string | null;
@@ -922,6 +923,17 @@ function TriageTab() {
                     </p>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {result.safetyVetoes?.length > 0 && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                <p className="text-xs font-medium text-amber-500 mb-2">Safety vetoes</p>
+                <ul className="list-disc pl-5 text-sm">
+                  {result.safetyVetoes.map((reason: string) => (
+                    <li key={reason}>{reason.replaceAll("_", " ")}</li>
+                  ))}
+                </ul>
               </div>
             )}
 

@@ -83,7 +83,7 @@ interface InferenceLogEntry {
   inputTokens: number;
   outputTokens: number;
   latencyMs: number;
-  costEstimateUsd: number;
+  costEstimateUsd: number | null;
   cached: boolean;
   success: boolean;
   errorMessage: string | null;
@@ -602,7 +602,7 @@ export default function AiModelHealthPage() {
                           <TableCell className="text-right tabular-nums text-xs">{entry.inputTokens}</TableCell>
                           <TableCell className="text-right tabular-nums text-xs">{entry.outputTokens}</TableCell>
                           <TableCell className="text-right tabular-nums text-xs">
-                            ${entry.costEstimateUsd.toFixed(6)}
+                            {entry.costEstimateUsd === null ? "Not published" : `$${entry.costEstimateUsd.toFixed(6)}`}
                           </TableCell>
                           <TableCell>
                             {entry.success ? (

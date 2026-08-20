@@ -121,6 +121,7 @@ interface AggregateUsage {
   totalInvocations: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  unknownCostInvocations: number;
   orgCount: number;
 }
 
@@ -144,9 +145,9 @@ interface ModelComparison {
   p95LatencyMs: number;
   p99LatencyMs: number;
   cacheHits: number;
-  costPerInputToken: number;
-  costPerOutputToken: number;
-  estimatedCostPerRequest: number;
+  costPerInputToken: number | null;
+  costPerOutputToken: number | null;
+  estimatedCostPerRequest: number | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -184,8 +185,8 @@ interface CostForecast {
   byModel: {
     modelId: string;
     requests: number;
-    estimatedCostPerRequest: number;
-    projectedMonthlyCost: number;
+    estimatedCostPerRequest: number | null;
+    projectedMonthlyCost: number | null;
   }[];
   budgetStatus: {
     budgetUsd: number | null;
@@ -300,7 +301,8 @@ function formatTimestamp(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-function formatCost(usd: number): string {
+function formatCost(usd: number | null): string {
+  if (usd === null) return "Not published";
   if (usd < 0.01) return `$${usd.toFixed(6)}`;
   if (usd < 1) return `$${usd.toFixed(4)}`;
   return `$${usd.toFixed(2)}`;
@@ -790,7 +792,10 @@ function CostForecastPanel({ forecast }: { forecast: CostForecast }) {
                 <span className="text-xs font-mono">{m.modelId.split(".").pop()}</span>
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] text-muted-foreground">{m.requests} reqs</span>
-                  <span className="text-xs font-bold">{formatCost(m.projectedMonthlyCost)}/mo</span>
+                  <span className="text-xs font-bold">
+                    {formatCost(m.projectedMonthlyCost)}
+                    {m.projectedMonthlyCost === null ? "" : "/mo"}
+                  </span>
                 </div>
               </div>
             ))}
@@ -1194,7 +1199,7 @@ export default function ModelGatewayPage() {
           title="Total Cost"
           value={formatCost(aggregateUsage.totalCostUsd)}
           icon={TrendingUp}
-          subtitle={`${aggregateUsage.orgCount} org(s)`}
+          subtitle={`${aggregateUsage.orgCount} org(s), ${aggregateUsage.unknownCostInvocations} not published`}
         />
         <StatCard
           title="Total Tokens"

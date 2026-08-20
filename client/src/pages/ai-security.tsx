@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldCheck, AlertTriangle, Loader2 } from "lucide-react";
+import { ShieldCheck, AlertTriangle, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -8,6 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { apiRequest } from "@/lib/queryClient";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 interface SecuritySettings {
   injectionMode: "off" | "flag_and_gate" | "block";
@@ -24,6 +26,7 @@ type SecuritySettingsUpdate = Pick<SecuritySettings, "injectionMode" | "piiMaski
 
 interface GuardEvent {
   id: string;
+  invocation_id: string;
   created_at: string;
   feature: string;
   model_id: string;
@@ -38,11 +41,18 @@ function redactionTotal(events: GuardEvent[]): number {
   return events.reduce((total, event) => total + event.redaction_counts.reduce((sum, item) => sum + item.count, 0), 0);
 }
 
-async function fetchEnvelope<T>(url: string): Promise<T> {
+interface PageMeta {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+async function fetchEnvelope<T>(url: string): Promise<{ data: T; meta?: PageMeta }> {
   const response = await fetch(url);
-  const body = (await response.json()) as { data: T | null; errors?: Array<{ message: string }> };
+  const body = (await response.json()) as { data: T | null; meta?: PageMeta; errors?: Array<{ message: string }> };
   if (!response.ok || body.data === null) throw new Error(body.errors?.[0]?.message || "Request failed");
-  return body.data;
+  return { data: body.data, meta: body.meta };
 }
 
 export default function AiSecurityPage() {
@@ -50,14 +60,25 @@ export default function AiSecurityPage() {
   const queryClient = useQueryClient();
   const [selectedEvent, setSelectedEvent] = useState<GuardEvent | null>(null);
   const [severity, setSeverity] = useState<"" | "suspected" | "likely">("");
+  const [feature, setFeature] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [page, setPage] = useState(1);
   const settingsQuery = useQuery<SecuritySettings>({
     queryKey: ["/api/ai/security-settings"],
-    queryFn: () => fetchEnvelope<SecuritySettings>("/api/ai/security-settings"),
+    queryFn: async () => (await fetchEnvelope<SecuritySettings>("/api/ai/security-settings")).data,
   });
-  const eventsQuery = useQuery<GuardEvent[]>({
-    queryKey: ["/api/ai/guard-events", severity],
-    queryFn: () =>
-      fetchEnvelope<GuardEvent[]>(`/api/ai/guard-events?pageSize=50${severity ? `&severity=${severity}` : ""}`),
+  const eventsQuery = useQuery<{ events: GuardEvent[]; meta?: PageMeta }>({
+    queryKey: ["/api/ai/guard-events", severity, feature, from, to, page],
+    queryFn: async () => {
+      const params = new URLSearchParams({ page: String(page), pageSize: "25" });
+      if (severity) params.set("severity", severity);
+      if (feature) params.set("feature", feature);
+      if (from) params.set("from", `${from}T00:00:00.000Z`);
+      if (to) params.set("to", `${to}T23:59:59.999Z`);
+      const result = await fetchEnvelope<GuardEvent[]>(`/api/ai/guard-events?${params.toString()}`);
+      return { events: result.data, meta: result.meta };
+    },
   });
   const settingsMutation = useMutation({
     mutationFn: async (settings: SecuritySettingsUpdate) => {
@@ -95,7 +116,8 @@ export default function AiSecurityPage() {
       aiEnabled: settings.aiEnabled,
       ...change,
     });
-  const events = eventsQuery.data ?? [];
+  const events = eventsQuery.data?.events ?? [];
+  const pageMeta = eventsQuery.data?.meta;
 
   return (
     <div className="space-y-6 p-6">
@@ -183,12 +205,26 @@ export default function AiSecurityPage() {
           <CardTitle>Guard events</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="mb-4 max-w-xs">
+          <div className="mb-4 grid gap-3 md:grid-cols-4">
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Feature</span>
+              <Input
+                value={feature}
+                onChange={(event) => {
+                  setFeature(event.target.value);
+                  setPage(1);
+                }}
+                placeholder="triage, narrative…"
+              />
+            </label>
             <label className="space-y-2 text-sm">
               <span className="font-medium">Severity filter</span>
               <Select
                 value={severity || "all"}
-                onValueChange={(value) => setSeverity(value === "all" ? "" : (value as "suspected" | "likely"))}
+                onValueChange={(value) => {
+                  setSeverity(value === "all" ? "" : (value as "suspected" | "likely"));
+                  setPage(1);
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -199,6 +235,28 @@ export default function AiSecurityPage() {
                   <SelectItem value="likely">Likely</SelectItem>
                 </SelectContent>
               </Select>
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">From</span>
+              <Input
+                type="date"
+                value={from}
+                onChange={(event) => {
+                  setFrom(event.target.value);
+                  setPage(1);
+                }}
+              />
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">To</span>
+              <Input
+                type="date"
+                value={to}
+                onChange={(event) => {
+                  setTo(event.target.value);
+                  setPage(1);
+                }}
+              />
             </label>
           </div>
           {events.length === 0 ? (
@@ -220,7 +278,7 @@ export default function AiSecurityPage() {
                     <span className="ml-auto">score {event.injection_score}</span>
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    {new Date(event.created_at).toLocaleString()} · {event.model_id}
+                    {new Date(event.created_at).toLocaleString()} · {event.model_id} · invocation {event.invocation_id}
                   </div>
                 </button>
               ))}
@@ -254,10 +312,31 @@ export default function AiSecurityPage() {
                   This analysis is gated and requires human review before autonomous action.
                 </p>
               )}
+              <p className="text-xs text-muted-foreground">Invocation ID: {selectedEvent.invocation_id}</p>
             </div>
           )}
         </SheetContent>
       </Sheet>
+      {pageMeta && pageMeta.totalPages > 1 && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            Page {pageMeta.page} of {pageMeta.totalPages} ({pageMeta.total} events)
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>
+              <ChevronLeft className="h-4 w-4" /> Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= pageMeta.totalPages}
+              onClick={() => setPage((value) => value + 1)}
+            >
+              Next <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
       {settingsMutation.isPending && (
         <div className="fixed bottom-4 right-4 flex items-center gap-2 rounded bg-background p-2 text-xs shadow">
           <Loader2 className="h-3 w-3 animate-spin" />
