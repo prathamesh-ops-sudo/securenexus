@@ -55,12 +55,15 @@ export function detectInjection(content: string): InjectionDetection {
     "role_injection",
     hasRule(normalized, /(?:^|\s)(?:system:|assistant:|user:|<\|im_start\|>|\[INST\]|###\s*(?:system|instruction))\b/i),
   );
-  add("fence_forgery", hasRule(normalized, /UNTRUSTED_EVIDENCE|<\s*<\s*\/|<<\s*\/?/i));
+  add(
+    "fence_forgery",
+    hasRule(normalized, /<<\/?UNTRUSTED_EVIDENCE\b|<<\/UNTRUSTED_EVIDENCE\b[^>]*\bid="[0-9a-f]{16}"/i),
+  );
   add(
     "verdict_steering",
     hasRule(
       normalized,
-      /\b(?:mark|classify|treat|consider|label|set)\b.{0,80}\b(?:benign|false\s*positive|informational|resolved|close|lower\s+severity|authorized\s+testing|bypass)\b/i,
+      /\b(?:ignore|disregard|override|you\s+must|mark\s+(?:this\s+)?(?:alert|event|finding)|classify\s+(?:this\s+)?(?:alert|event|finding)|set\s+the\s+verdict|declare\s+(?:this\s+)?(?:alert|event|finding))\b.{0,80}\b(?:benign|false\s*positive|informational|resolved|close|lower\s+severity|authorized\s+testing|bypass)\b/i,
     ),
   );
   add(
@@ -88,7 +91,7 @@ export function detectInjection(content: string): InjectionDetection {
     "prompt_leak_bait",
     hasRule(
       normalized,
-      /\b(?:print|output|show|list|identify)\b.{0,80}\b(?:configuration|tools?|the\s+model|rules?)\b/i,
+      /\b(?:print|output|show|list|identify)\b.{0,80}\b(?:your\s+configuration|system\s+prompt|developer\s+message|internal\s+instructions?|available\s+tools?|model\s+configuration)\b/i,
     ),
   );
 

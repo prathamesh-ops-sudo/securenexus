@@ -53,7 +53,7 @@ export async function initializeAiPrompts(): Promise<void> {
 
 type InferenceTier = "triage" | "narrative" | "correlation" | "investigation";
 
-interface InferenceMetrics {
+export interface InferenceMetrics {
   tier: InferenceTier;
   model: string;
   inputTokensEstimate: number;
@@ -266,7 +266,12 @@ async function invokeWithPrompt(
   maxTokensOverride?: number,
   untrustedContent: { label: string; content: string }[] = [],
   schema?: z.ZodType,
-): Promise<{ text: string; metrics: InferenceMetrics; aiGuard?: ModelInvokeResult["aiGuard"] }> {
+): Promise<{
+  text: string;
+  metrics: InferenceMetrics;
+  aiGuard?: ModelInvokeResult["aiGuard"];
+  schemaRetryUsed: boolean;
+}> {
   const prompt = await getPrompt(promptId);
   if (!prompt) {
     throw new Error(`Prompt "${promptId}" not found in registry`);
@@ -329,8 +334,11 @@ async function invokeWithPrompt(
   });
 
   if (result.withheld) {
-    throw new Error("AI analysis was withheld because the evidence requires a human review.");
+    const error = new Error("AI analysis was withheld because the evidence requires a human review.");
+    Object.assign(error, { aiGuard: result.aiGuard });
+    throw error;
   }
+  let schemaRetryUsed = false;
   if (schema) {
     if (!validateModelJson(result.text, schema)) {
       const retry = await gatewayInvoke({
@@ -349,11 +357,16 @@ async function invokeWithPrompt(
         skipCache: true,
         untrustedContent: evidence,
       });
-      if (retry.withheld) throw new Error("AI analysis was withheld because the evidence requires a human review.");
+      if (retry.withheld) {
+        const error = new Error("AI analysis was withheld because the evidence requires a human review.");
+        Object.assign(error, { aiGuard: retry.aiGuard });
+        throw error;
+      }
       if (!validateModelJson(retry.text, schema)) {
         throw new Error("AI returned output that did not match the required schema after one retry.");
       }
       result.text = retry.text;
+      schemaRetryUsed = true;
     }
   }
 
@@ -382,7 +395,12 @@ async function invokeWithPrompt(
     log.warn("Failed to persist inference entry", { error: String(err), orgId }),
   );
 
-  return { text: result.text, metrics, aiGuard: result.aiGuard };
+  return {
+    text: result.text,
+    metrics,
+    aiGuard: result.aiGuard ? { ...result.aiGuard, schemaRetryUsed } : undefined,
+    schemaRetryUsed,
+  };
 }
 
 /**
@@ -638,6 +656,7 @@ export interface NarrativeResult {
   iocs: { type: string; value: string; context: string }[];
   riskScore: number;
   nistPhase: string;
+  aiGuard?: ModelInvokeResult["aiGuard"];
 }
 
 export interface TriageResult {
@@ -657,6 +676,7 @@ export interface TriageResult {
   containmentAdvice: string;
   threatIntelSources?: string[];
   humanReviewRequired?: boolean;
+  aiGuard?: ModelInvokeResult["aiGuard"];
 }
 
 // ─── Relevance Scoring ────────────────────────────────────────────────────────
@@ -1123,7 +1143,7 @@ export async function generateIncidentNarrative(
 
   const finalUserMessage = budgeted.message;
 
-  const { text } = await invokeWithPrompt(
+  const { text, aiGuard } = await invokeWithPrompt(
     "narrative",
     "Generate the requested incident narrative using the supplied evidence.",
     "narrative",
@@ -1155,6 +1175,12 @@ export async function generateIncidentNarrative(
   parsed.unverifiedCitations = parsed.narrative
     .split(/\n{2,}/)
     .some((paragraph) => paragraph.trim().length > 0 && !/\[Alert [^\]]+\]/.test(paragraph));
+  parsed.aiGuard = aiGuard
+    ? {
+        ...aiGuard,
+        unverifiedCitations: parsed.unverifiedCitations,
+      }
+    : undefined;
   return parsed;
 }
 
@@ -1224,6 +1250,7 @@ export async function triageAlert(
   return {
     ...parseValidatedModelJson(text, triageOutputSchema),
     humanReviewRequired: aiGuard?.humanReviewRequired ?? false,
+    aiGuard,
   };
 }
 
@@ -1341,7 +1368,7 @@ export async function getInferenceMetrics(): Promise<{
       inputTokensEstimate: r.input_tokens as number,
       outputTokensEstimate: r.output_tokens as number,
       latencyMs: r.latency_ms as number,
-      costEstimateUsd: Number(r.cost_estimate_usd) || 0,
+      costEstimateUsd: r.cost_estimate_usd === null ? null : Number(r.cost_estimate_usd),
       cached: r.cached as boolean,
       promptId: (r.prompt_id as string) || undefined,
       promptVersion: (r.prompt_version as number) || undefined,

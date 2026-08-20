@@ -29,11 +29,13 @@ export function registerModelGatewayRoutes(app: Express): void {
       let totalInvocations = 0;
       let totalInputTokens = 0;
       let totalOutputTokens = 0;
+      let unknownCostInvocations = 0;
       for (const summary of allUsage) {
         totalCostUsd += summary.totalCostUsd;
         totalInvocations += summary.invocationCount;
         totalInputTokens += summary.totalInputTokens;
         totalOutputTokens += summary.totalOutputTokens;
+        unknownCostInvocations += summary.unknownCostCount;
       }
 
       res.json({
@@ -44,6 +46,7 @@ export function registerModelGatewayRoutes(app: Express): void {
           totalInvocations,
           totalInputTokens,
           totalOutputTokens,
+          unknownCostInvocations,
           orgCount: allUsage.length,
         },
       });
@@ -507,6 +510,7 @@ export function registerModelGatewayRoutes(app: Express): void {
           totalInvocations: usage?.invocationCount || 0,
           totalInputTokens: usage?.totalInputTokens || 0,
           totalOutputTokens: usage?.totalOutputTokens || 0,
+          unknownCostInvocations: usage?.unknownCostCount || 0,
           daysElapsed: Math.round(uptimeDays * 10) / 10,
         },
         projections: {
@@ -519,18 +523,22 @@ export function registerModelGatewayRoutes(app: Express): void {
           const modelCostTable = dashboard.config.costTable[modelId] || dashboard.config.costTable["default"];
           const estimatedCostPerReq = modelCostTable
             ? modelCostTable.input * 500 + modelCostTable.output * 200 // Estimated avg tokens
-            : 0;
+            : null;
           return {
             modelId,
             requests: stats.requests,
-            estimatedCostPerRequest: Math.round(estimatedCostPerReq * 1000000) / 1000000,
+            estimatedCostPerRequest:
+              estimatedCostPerReq === null ? null : Math.round(estimatedCostPerReq * 1000000) / 1000000,
             projectedMonthlyCost:
-              uptimeDays > 0 ? Math.round((stats.requests / uptimeDays) * 30 * estimatedCostPerReq * 100) / 100 : 0,
+              estimatedCostPerReq !== null && uptimeDays > 0
+                ? Math.round((stats.requests / uptimeDays) * 30 * estimatedCostPerReq * 100) / 100
+                : null,
           };
         }),
         budgetStatus: {
           budgetUsd: usage?.budgetLimitUsd || null,
           usedUsd: usage?.totalCostUsd || 0,
+          unknownCostInvocations: usage?.unknownCostCount || 0,
           remainingUsd: usage?.budgetLimitUsd ? usage.budgetLimitUsd - (usage?.totalCostUsd || 0) : null,
           percentUsed: usage?.budgetLimitUsd
             ? Math.round(((usage?.totalCostUsd || 0) / usage.budgetLimitUsd) * 100)
@@ -671,9 +679,9 @@ export function registerModelGatewayRoutes(app: Express): void {
           p95LatencyMs: latencies.length > 0 ? latencies[Math.floor(latencies.length * 0.95)] : 0,
           p99LatencyMs: latencies.length > 0 ? latencies[Math.floor(latencies.length * 0.99)] : 0,
           cacheHits: stats.cacheHits,
-          costPerInputToken: costInfo?.input || 0,
-          costPerOutputToken: costInfo?.output || 0,
-          estimatedCostPerRequest: costInfo ? costInfo.input * 500 + costInfo.output * 200 : 0,
+          costPerInputToken: costInfo?.input ?? null,
+          costPerOutputToken: costInfo?.output ?? null,
+          estimatedCostPerRequest: costInfo ? costInfo.input * 500 + costInfo.output * 200 : null,
         };
       });
       res.json(comparison);

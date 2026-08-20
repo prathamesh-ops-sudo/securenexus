@@ -16,6 +16,7 @@ import { computeConfidence, quickConfidence, estimateFpRate, type ConfidenceResu
 import { runAutonomousInvestigation, type InvestigationResult } from "./investigation-runner";
 import { dispatchAction, type ActionContext, type ActionResult } from "../action-dispatcher";
 import { getAiSecuritySettings } from "./security-store";
+import { triageAlert as runAiTriage } from "../ai";
 
 const log = logger.child("autonomous-analyst");
 
@@ -41,6 +42,15 @@ export interface TriageResult {
   timeToDecisionMs: number;
   humanApprovalRequired: boolean;
   safetyVetoes?: string[];
+  guardMetadata?: {
+    invocationId: string;
+    injectionScore: number;
+    actionTaken: string;
+    schemaRetryUsed?: boolean;
+    unverifiedCitations?: boolean;
+    redactionRemovedContent?: boolean;
+    withheld?: boolean;
+  }[];
 }
 
 export interface RecommendedAction {
@@ -74,7 +84,7 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
   const securitySettings = await getAiSecuritySettings(orgId);
   const safetyVetoes: string[] = [];
   if (!securitySettings.aiEnabled) safetyVetoes.push("organization_ai_kill_switch");
-  if (securitySettings.injectionMode === "flag_and_gate") safetyVetoes.push("injection_gate_requires_human_review");
+  const guardMetadata: NonNullable<TriageResult["guardMetadata"]> = [];
 
   log.info("Starting autonomous triage", { alertId, orgId });
 
@@ -82,6 +92,33 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
   const alert = await storage.getAlert(alertId);
   if (!alert) throw new Error(`Alert ${alertId} not found`);
   if (alert.orgId !== orgId) throw new Error("Alert does not belong to this organization");
+
+  if (securitySettings.aiEnabled) {
+    try {
+      const aiTriage = await runAiTriage(alert, undefined, orgId);
+      if (aiTriage.aiGuard) {
+        const guard = aiTriage.aiGuard;
+        guardMetadata.push(guard);
+        if (guard.injectionScore > 0) safetyVetoes.push("injection_detected");
+        if (guard.withheld) safetyVetoes.push("analysis_withheld");
+        if (guard.schemaRetryUsed) safetyVetoes.push("schema_retry_used");
+        if (guard.unverifiedCitations) safetyVetoes.push("unverified_citations");
+        if (guard.redactionRemovedContent) safetyVetoes.push("redaction_removed_content");
+      }
+    } catch (error) {
+      const guard = (error as { aiGuard?: NonNullable<TriageResult["guardMetadata"]>[number] }).aiGuard;
+      if (guard) {
+        guardMetadata.push(guard);
+        if (guard.injectionScore > 0) safetyVetoes.push("injection_detected");
+        if (guard.withheld) safetyVetoes.push("analysis_withheld");
+      } else {
+        safetyVetoes.push("ai_triage_guard_unavailable");
+      }
+      log.warn("AI triage guard unavailable; requiring human review", { alertId, error: String(error) });
+    }
+  } else {
+    log.info("AI triage skipped because the organization kill switch is active", { alertId, orgId });
+  }
 
   // 2. Log start
   await writeAutonomyLog({
@@ -226,11 +263,12 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
       relatedAlertIds: investigation?.correlations.relatedAlerts.map((r) => r.id) ?? null,
       timeToDecisionMs,
       status: tier === "tier1_autonomous" && safetyVetoes.length === 0 ? "completed" : "pending_review",
+      safetyVetoes,
     })
     .returning();
 
   // 9. If Tier 1 auto-resolved, update alert status
-  if (tier === "tier1_autonomous" && confidence.shouldAutoAct) {
+  if (tier === "tier1_autonomous" && confidence.shouldAutoAct && safetyVetoes.length === 0) {
     try {
       if (outcome === "false_positive") {
         await storage.updateAlert(alertId, { status: "resolved" });
@@ -284,6 +322,7 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
     timeToDecisionMs,
     humanApprovalRequired: tier !== "tier1_autonomous" || safetyVetoes.length > 0,
     safetyVetoes,
+    guardMetadata,
   };
 }
 

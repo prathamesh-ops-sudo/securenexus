@@ -44,6 +44,7 @@ export interface ModelInvokeOptions {
 }
 
 export interface AiGuardMetadata {
+  invocationId: string;
   injectionScore: number;
   injectionSeverity: InjectionDetection["severity"];
   signals: InjectionDetection["signals"];
@@ -51,6 +52,10 @@ export interface AiGuardMetadata {
   humanReviewRequired: boolean;
   actionTaken: string;
   redactions: RedactionCount[];
+  withheld?: boolean;
+  schemaRetryUsed?: boolean;
+  unverifiedCitations?: boolean;
+  redactionRemovedContent?: boolean;
 }
 
 export interface ModelInvokeResult {
@@ -71,8 +76,7 @@ const COST_TABLE: Record<string, { input: number; output: number } | null> = {
   "us.amazon.nova-pro-v1:0": { input: 0.0008, output: 0.0032 },
   "amazon.nova-lite-v1:0": { input: 0.00006, output: 0.00024 },
   "amazon.nova-2-lite-v1:0": { input: 0.00033, output: 0.00275 },
-  "us.amazon.nova-2-lite-v1:0": { input: 0.00033, output: 0.00275 },
-  "us.amazon.nova-2-lite-v1:0:cross-region": { input: 0.0003, output: 0.0025 },
+  "us.amazon.nova-2-lite-v1:0": { input: 0.0003, output: 0.0025 },
   "anthropic.claude-3-sonnet-20240229-v1:0": { input: 0.003, output: 0.015 },
   "anthropic.claude-3-haiku-20240307-v1:0": { input: 0.00025, output: 0.00125 },
   "anthropic.claude-sonnet-4-20250514-v1:0": { input: 0.003, output: 0.015 },
@@ -341,6 +345,7 @@ async function prepareInvocation(opts: ModelInvokeOptions): Promise<PreparedInvo
   const humanReviewRequired = settings.injectionMode === "flag_and_gate" && detection.detected;
   const withheld = settings.injectionMode === "block" && detection.severity === "likely";
   const guard: AiGuardMetadata = {
+    invocationId,
     injectionScore: detection.score,
     injectionSeverity: detection.severity,
     signals,
@@ -348,6 +353,8 @@ async function prepareInvocation(opts: ModelInvokeOptions): Promise<PreparedInvo
     humanReviewRequired,
     actionTaken: withheld ? "withheld_analysis" : detection.detected ? "flagged_for_human_review" : "allowed",
     redactions: evidence.redactions,
+    redactionRemovedContent: evidence.redactions.length > 0,
+    withheld,
   };
   if (opts.orgId && (detection.detected || evidence.redactions.length > 0)) {
     await recordAiGuardEvent({
@@ -491,6 +498,7 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
   const prepared = await prepareInvocation(opts);
   const invocationOpts = prepared.options;
   const aiGuard: AiGuardMetadata = {
+    invocationId: prepared.invocationId,
     injectionScore: prepared.detection.score,
     injectionSeverity: prepared.detection.severity,
     signals: prepared.detection.signals,
@@ -502,6 +510,8 @@ export async function invokeModel(opts: ModelInvokeOptions): Promise<ModelInvoke
         ? "flagged_for_human_review"
         : "allowed",
     redactions: prepared.redactions,
+    redactionRemovedContent: prepared.redactions.length > 0,
+    withheld: prepared.withheld,
   };
   if (prepared.withheld) {
     return {

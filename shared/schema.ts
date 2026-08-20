@@ -10520,6 +10520,7 @@ export const aiAnalystDecisions = pgTable(
     humanOverrideReason: text("human_override_reason"),
     humanOverrideAt: timestamp("human_override_at"),
     status: text("status").notNull().default("pending"),
+    safetyVetoes: jsonb("safety_vetoes"),
     reviewedBy: text("reviewed_by"),
     reviewedAt: timestamp("reviewed_at"),
     createdAt: timestamp("created_at").defaultNow(),

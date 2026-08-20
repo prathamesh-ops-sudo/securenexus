@@ -160,6 +160,7 @@ export interface OrgUsageSummary {
   invocationCap: number;
   budgetUsedPercent: number;
   invocationUsedPercent: number;
+  unknownCostCount: number;
   recentRecords: UsageRecord[];
   byModel: Record<string, { count: number; costUsd: number; avgLatencyMs: number }>;
   byPrompt: Record<string, { count: number; costUsd: number; avgLatencyMs: number }>;
@@ -181,6 +182,7 @@ function rowToSummary(row: BudgetRow): OrgUsageSummary {
     invocationCap,
     budgetUsedPercent: budgetUsd > 0 ? Math.round((row.daily_spend_usd / budgetUsd) * 10000) / 100 : 0,
     invocationUsedPercent: invocationCap > 0 ? Math.round((row.daily_invocations / invocationCap) * 10000) / 100 : 0,
+    unknownCostCount: 0,
     recentRecords: [],
     byModel: {},
     byPrompt: {},
@@ -189,12 +191,28 @@ function rowToSummary(row: BudgetRow): OrgUsageSummary {
 
 export async function getOrgUsageSummary(orgId: string): Promise<OrgUsageSummary> {
   const row = await getRow(orgId);
-  return rowToSummary(row);
+  const summary = rowToSummary(row);
+  const result = await pool.query(
+    `SELECT COUNT(*)::int AS count
+     FROM ai_inference_log
+     WHERE org_id = $1 AND created_at >= $2 AND cost_estimate_usd IS NULL`,
+    [orgId, summary.windowStart],
+  );
+  return { ...summary, unknownCostCount: Number((result.rows[0] as { count: number }).count) };
 }
 
 export async function getAllOrgUsageSummaries(): Promise<OrgUsageSummary[]> {
   const result = await pool.query(`SELECT * FROM org_ai_budgets ORDER BY org_id`);
-  return (result.rows as BudgetRow[]).map(rowToSummary);
+  const summaries = (result.rows as BudgetRow[]).map((row) => ({ ...rowToSummary(row), unknownCostCount: 0 }));
+  for (const summary of summaries) {
+    const unknown = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM ai_inference_log
+       WHERE org_id = $1 AND created_at >= $2 AND cost_estimate_usd IS NULL`,
+      [summary.orgId, summary.windowStart],
+    );
+    summary.unknownCostCount = Number((unknown.rows[0] as { count: number }).count);
+  }
+  return summaries;
 }
 
 export async function resetDailyBudgets(): Promise<number> {
