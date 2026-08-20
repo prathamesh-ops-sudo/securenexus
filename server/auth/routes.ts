@@ -199,6 +199,7 @@ export function registerAuthRoutes(app: Express): void {
       const { passwordHash, ...safeUser } = user;
       return reply(res, {
         ...safeUser,
+        hasLocalPassword: Boolean(passwordHash),
         orgId: reqUser.orgId ?? null,
         role: reqUser.orgRole ?? null,
       });
@@ -282,6 +283,7 @@ export function registerAuthRoutes(app: Express): void {
           const { passwordHash, ...safeUser } = user;
           return reply(res, {
             ...safeUser,
+            hasLocalPassword: Boolean(passwordHash),
             mfaRequired: policyResult.mfaRequired || false,
             passwordExpired: policyResult.passwordExpired || false,
           });

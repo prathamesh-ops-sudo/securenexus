@@ -146,7 +146,7 @@ describe("OAuth Flows", () => {
     });
 
     it("returns existing user when email matches", async () => {
-      const existingUser = makeMockUser();
+      const existingUser = makeMockUser({ passwordHash: "existing-local-password-hash" });
       (authStorage.getUserByEmail as any).mockResolvedValue(existingUser);
 
       const done = vi.fn();

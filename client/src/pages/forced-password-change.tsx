@@ -5,14 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/hooks/use-auth";
+import { buildChangePasswordInput, type ChangePasswordInput } from "@/lib/forced-password-change";
 import { apiRequest } from "@/lib/queryClient";
 
-type ChangePasswordInput = {
-  currentPassword: string;
-  newPassword: string;
-};
-
 export default function ForcedPasswordChangePage() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -45,10 +43,17 @@ export default function ForcedPasswordChangePage() {
       return;
     }
 
-    changePasswordMutation.mutate({ currentPassword, newPassword });
+    changePasswordMutation.mutate(
+      buildChangePasswordInput({
+        currentPassword,
+        newPassword,
+        hasLocalPassword: user?.hasLocalPassword === true,
+      }),
+    );
   }
 
   const errorMessage = validationError ?? changePasswordMutation.error?.message ?? null;
+  const hasLocalPassword = user?.hasLocalPassword;
 
   return (
     <div
@@ -66,7 +71,9 @@ export default function ForcedPasswordChangePage() {
           <CardDescription className="text-[#64748b] dark:text-[#94a3b8]">
             {success
               ? "Your account is ready. SecureNexus is loading your workspace."
-              : "For your security, change the temporary password before using SecureNexus."}
+              : hasLocalPassword === false
+                ? "Your account does not have a local password. Set one now to complete the required security step before using SecureNexus."
+                : "For your security, change the temporary password before using SecureNexus."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -89,20 +96,19 @@ export default function ForcedPasswordChangePage() {
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="current-password">Current password</Label>
-                <Input
-                  id="current-password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={currentPassword}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
-                  disabled={changePasswordMutation.isPending}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Leave blank if your account does not have a local password.
-                </p>
-              </div>
+              {hasLocalPassword === true && (
+                <div className="space-y-2">
+                  <Label htmlFor="current-password">Current password</Label>
+                  <Input
+                    id="current-password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    disabled={changePasswordMutation.isPending}
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="new-password">New password</Label>

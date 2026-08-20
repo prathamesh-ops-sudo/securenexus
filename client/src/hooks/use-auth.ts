@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { User } from "@shared/models/auth";
+import type { AuthenticatedUser } from "@shared/models/auth";
 import { extractApiError, clearCsrfTokenCache } from "../lib/queryClient";
 
-async function fetchUser(): Promise<User | null> {
+async function fetchUser(): Promise<AuthenticatedUser | null> {
   const response = await fetch("/api/auth/user", {
     credentials: "include",
   });
@@ -19,7 +19,7 @@ async function fetchUser(): Promise<User | null> {
   return body.data ?? null;
 }
 
-async function loginFn(data: { email: string; password: string }): Promise<User> {
+async function loginFn(data: { email: string; password: string }): Promise<AuthenticatedUser> {
   const response = await fetch("/api/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -39,7 +39,7 @@ async function registerFn(data: {
   password: string;
   firstName?: string;
   lastName?: string;
-}): Promise<User> {
+}): Promise<AuthenticatedUser> {
   const response = await fetch("/api/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -61,7 +61,7 @@ async function logoutFn(): Promise<void> {
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  const { data: user, isLoading } = useQuery<User | null>({
+  const { data: user, isLoading } = useQuery<AuthenticatedUser | null>({
     queryKey: ["/api/auth/user"],
     queryFn: fetchUser,
     retry: false,
