@@ -55,7 +55,10 @@ async function registerFn(data: {
 }
 
 async function logoutFn(): Promise<void> {
-  await fetch("/api/logout", { method: "POST", credentials: "include" });
+  const response = await fetch("/api/logout", { method: "POST", credentials: "include" });
+  if (!response.ok) {
+    throw new Error("Unable to sign out. Please try again.");
+  }
   clearCsrfTokenCache();
 }
 
@@ -109,6 +112,7 @@ export function useAuth() {
     registerError: registerMutation.error,
     isRegistering: registerMutation.isPending,
     logout: logoutMutation.mutate,
+    logoutAsync: logoutMutation.mutateAsync,
     isLoggingOut: logoutMutation.isPending,
   };
 }

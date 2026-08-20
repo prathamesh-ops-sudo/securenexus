@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Loader2, LockKeyhole } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, LockKeyhole, LogOut } from "lucide-react";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,12 +16,14 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 
 export default function ForcedPasswordChangePage() {
-  const { user, isLoading, isError, isFetching, refetch } = useAuth();
+  const { user, isLoading, isError, isFetching, refetch, logoutAsync, isLoggingOut } = useAuth();
+  const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
   const changePasswordMutation = useMutation({
@@ -59,6 +62,16 @@ export default function ForcedPasswordChangePage() {
         hasLocalPassword,
       }),
     );
+  }
+
+  async function handleLogout(): Promise<void> {
+    setLogoutError(null);
+    try {
+      await logoutAsync();
+      setLocation("/login");
+    } catch (error) {
+      setLogoutError(error instanceof Error ? error.message : "Unable to sign out. Please try again.");
+    }
   }
 
   const errorMessage = validationError ?? changePasswordMutation.error?.message ?? null;
@@ -189,6 +202,24 @@ export default function ForcedPasswordChangePage() {
               </Button>
             </form>
           )}
+          <div className="mt-6 space-y-2 border-t border-slate-200 pt-4 dark:border-slate-700">
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => void handleLogout()}
+              disabled={isLoggingOut}
+            >
+              {isLoggingOut && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {!isLoggingOut && <LogOut className="h-4 w-4 mr-2" />}
+              {isLoggingOut ? "Signing out" : "Sign out"}
+            </Button>
+            {logoutError && (
+              <p className="text-sm text-center text-red-600 dark:text-red-400" role="alert">
+                {logoutError}
+              </p>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
