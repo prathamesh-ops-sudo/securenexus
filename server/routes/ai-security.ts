@@ -11,6 +11,7 @@ import {
   type InjectionMode,
 } from "../ai/security-store";
 import type { PiiMaskingMode } from "../ai/egress-redaction";
+import { getModelPricing } from "../ai/model-gateway";
 import { logger } from "../logger";
 import { config as appConfig } from "../config";
 
@@ -35,6 +36,7 @@ export function registerAiSecurityRoutes(app: Express): void {
           triage: appConfig.ai.triage.modelId,
           investigation: appConfig.ai.investigation.modelId,
         },
+        modelPricing: getModelPricing(),
       });
     } catch (error) {
       log.error("Failed to read AI security settings", { error: String(error) });
@@ -74,6 +76,7 @@ export function registerAiSecurityRoutes(app: Express): void {
           triage: appConfig.ai.triage.modelId,
           investigation: appConfig.ai.investigation.modelId,
         },
+        modelPricing: getModelPricing(),
       });
     } catch (error) {
       log.error("Failed to update AI security settings", { error: String(error) });
@@ -96,6 +99,8 @@ export function registerAiSecurityRoutes(app: Express): void {
         page,
         pageSize,
         feature: typeof req.query.feature === "string" ? req.query.feature : undefined,
+        alertId: typeof req.query.alertId === "string" ? req.query.alertId : undefined,
+        incidentId: typeof req.query.incidentId === "string" ? req.query.incidentId : undefined,
         severity,
         from: from && !Number.isNaN(from.getTime()) ? from : undefined,
         to: to && !Number.isNaN(to.getTime()) ? to : undefined,

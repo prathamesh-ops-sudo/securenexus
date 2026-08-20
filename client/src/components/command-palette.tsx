@@ -42,6 +42,7 @@ import {
   Search,
 } from "lucide-react";
 import { SeverityBadge } from "@/components/security-badges";
+import { UntrustedText } from "@/components/untrusted-text";
 import type { Alert, Incident } from "@shared/schema";
 
 const RECENT_RECORDS_KEY = "securenexus.recentRecords.v1";
@@ -271,7 +272,7 @@ export function CommandPalette() {
                   data-testid={`command-alert-${alert.id}`}
                 >
                   <AlertTriangle className="mr-2" />
-                  <span className="flex-1 truncate">{alert.title}</span>
+                  <UntrustedText value={alert.title} compact className="flex-1 truncate" />
                   <SeverityBadge severity={alert.severity} />
                 </CommandItem>
               ))}
@@ -300,7 +301,7 @@ export function CommandPalette() {
                   data-testid={`command-incident-${incident.id}`}
                 >
                   <FileWarning className="mr-2" />
-                  <span className="flex-1 truncate">{incident.title}</span>
+                  <UntrustedText value={incident.title} compact className="flex-1 truncate" />
                   <SeverityBadge severity={incident.severity} />
                 </CommandItem>
               ))}

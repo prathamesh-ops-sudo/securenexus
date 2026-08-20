@@ -66,6 +66,7 @@ import { SeverityBadge, AlertStatusBadge } from "@/components/security-badges";
 import type { Alert, SuppressionRule, SavedView } from "@shared/schema";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
+import { UntrustedText } from "@/components/untrusted-text";
 
 function MiniTimeline({ alert }: { alert: Alert }) {
   const events: { label: string; actor?: string }[] = [];
@@ -2254,14 +2255,16 @@ export default function AlertsPage() {
                                 aria-hidden="true"
                               />
                               <div>
-                                <div
+                                <UntrustedText
+                                  value={alert.title}
+                                  compact
                                   className={`text-sm font-medium ${alert.suppressed ? "line-through text-muted-foreground" : ""}`}
-                                >
-                                  {alert.title}
-                                </div>
-                                <div className="text-xs text-muted-foreground truncate max-w-[300px]">
-                                  {alert.description}
-                                </div>
+                                />
+                                <UntrustedText
+                                  value={alert.description ?? ""}
+                                  compact
+                                  className="max-w-[300px] truncate text-xs text-muted-foreground"
+                                />
                                 <MiniTimeline alert={alert} />
                               </div>
                             </div>

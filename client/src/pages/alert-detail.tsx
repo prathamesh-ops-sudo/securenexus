@@ -39,6 +39,8 @@ import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { SeverityBadge, AlertStatusBadge, formatTimestamp } from "@/components/security-badges";
+import { AiGuardBanner } from "@/components/ai-guard-banner";
+import { UntrustedText } from "@/components/untrusted-text";
 import type { Alert, Tag as TagType } from "@shared/schema";
 
 const ALERT_STATUSES = [
@@ -238,21 +240,27 @@ export default function AlertDetailPage() {
           </Link>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold tracking-tight" data-testid="text-alert-title">
-                {alert.title}
-              </h1>
+              <UntrustedText
+                value={alert.title}
+                className="text-xl font-bold tracking-tight"
+                testId="text-alert-title"
+              />
               <SeverityBadge severity={alert.severity} />
               <AlertStatusBadge status={alert.status} />
             </div>
             {alert.description && (
-              <p className="text-sm text-muted-foreground mt-1" data-testid="text-alert-description">
-                {alert.description}
-              </p>
+              <UntrustedText
+                value={alert.description}
+                className="mt-1 text-sm text-muted-foreground"
+                testId="text-alert-description"
+              />
             )}
             <div className="gradient-accent-line w-24 mt-2" />
           </div>
         </div>
       </div>
+
+      <AiGuardBanner alertId={alert.id} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">

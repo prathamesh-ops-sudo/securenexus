@@ -266,6 +266,7 @@ async function invokeWithPrompt(
   maxTokensOverride?: number,
   untrustedContent: { label: string; content: string }[] = [],
   schema?: z.ZodType,
+  relationship?: { alertId?: string; incidentId?: string },
 ): Promise<{
   text: string;
   metrics: InferenceMetrics;
@@ -331,6 +332,7 @@ async function invokeWithPrompt(
     promptVersion: prompt.version,
     tier,
     untrustedContent: evidence,
+    ...relationship,
   });
 
   if (result.withheld) {
@@ -356,6 +358,7 @@ async function invokeWithPrompt(
         tier,
         skipCache: true,
         untrustedContent: evidence,
+        ...relationship,
       });
       if (retry.withheld) {
         const error = new Error("AI analysis was withheld because the evidence requires a human review.");
@@ -1151,6 +1154,7 @@ export async function generateIncidentNarrative(
     6144,
     [{ label: "incident_alert_and_threat_intelligence_evidence", content: finalUserMessage }],
     narrativeOutputSchema,
+    { incidentId: incident.id },
   );
   const parsed = parseValidatedModelJson<NarrativeResult>(text, narrativeOutputSchema);
   const validAlertIds = new Set(alerts.map((alert) => alert.id));
@@ -1246,6 +1250,7 @@ export async function triageAlert(
     undefined,
     [{ label: "alert_and_threat_intelligence_evidence", content: finalUserMessage }],
     triageOutputSchema,
+    { alertId: alertData.id },
   );
   return {
     ...parseValidatedModelJson(text, triageOutputSchema),
@@ -1756,6 +1761,7 @@ ${threatIntelBlock}`;
       8192,
       [{ label: "incident_investigation_evidence", content: userMessage }],
       investigationOutputSchema,
+      { incidentId: incident.id },
     );
     return parseValidatedModelJson<DeepInvestigationResult>(text, investigationOutputSchema);
   } catch (error) {

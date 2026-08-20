@@ -43,6 +43,7 @@ import { useToast } from "@/hooks/use-toast";
 import { CardHeader, CardTitle } from "@/components/ui/card";
 import { useOrgContext } from "@/hooks/use-org-context";
 import type { Incident, IncidentSlaPolicy, SavedView } from "@shared/schema";
+import { UntrustedText } from "@/components/untrusted-text";
 
 function IncidentMiniTimeline({ incident }: { incident: Incident }) {
   const events: { label: string; actor?: string }[] = [];
@@ -1114,10 +1115,12 @@ export default function IncidentsPage() {
                                   aria-hidden="true"
                                 />
                                 <div>
-                                  <div className="text-sm font-medium">{incident.title}</div>
-                                  <div className="text-xs text-muted-foreground truncate max-w-[300px]">
-                                    {incident.summary}
-                                  </div>
+                                  <UntrustedText value={incident.title} compact className="text-sm font-medium" />
+                                  <UntrustedText
+                                    value={incident.summary ?? ""}
+                                    compact
+                                    className="max-w-[300px] truncate text-xs text-muted-foreground"
+                                  />
                                   <IncidentMiniTimeline incident={incident} />
                                 </div>
                               </div>

@@ -92,6 +92,10 @@ const COST_TABLE_PER_1K_TOKENS: Record<string, CostRatesPerThousandTokens | null
   "global.xai.grok-4.6": null,
 };
 
+export function getModelPricing(): Record<string, CostRatesPerThousandTokens | null> {
+  return { ...COST_TABLE_PER_1K_TOKENS };
+}
+
 function estimateCost(modelId: string, inputTokens: number, outputTokens: number): number | null {
   const rates = COST_TABLE_PER_1K_TOKENS[modelId];
   if (!rates) return null;

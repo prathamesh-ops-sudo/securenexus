@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { UntrustedText } from "@/components/untrusted-text";
 
 interface Alert {
   id: string;
@@ -299,9 +300,11 @@ export default function SuppressedAlertsPage() {
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <span>{alert.title}</span>
+                                <UntrustedText value={alert.title} compact />
                               </TooltipTrigger>
-                              <TooltipContent className="text-xs max-w-[400px]">{alert.title}</TooltipContent>
+                              <TooltipContent className="text-xs max-w-[400px]">
+                                <UntrustedText value={alert.title} compact />
+                              </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
                         </TableCell>

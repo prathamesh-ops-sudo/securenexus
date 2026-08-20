@@ -20,6 +20,7 @@ interface SecuritySettings {
     triage: string;
     investigation: string;
   };
+  modelPricing: Record<string, { input: number; output: number } | null>;
 }
 
 type SecuritySettingsUpdate = Pick<SecuritySettings, "injectionMode" | "piiMasking" | "aiEnabled">;
@@ -144,9 +145,13 @@ export default function AiSecurityPage() {
               <code className="text-xs text-muted-foreground">{model}</code>
             </div>
           ))}
-          <p className="text-xs text-muted-foreground">
-            GPT-5.6 cost is not published; invocations still count toward limits and are shown as not published.
-          </p>
+          {Array.from(new Set(Object.values(settingsQuery.data.models)))
+            .filter((model) => settingsQuery.data.modelPricing?.[model] == null)
+            .map((model) => (
+              <p key={model} className="text-xs text-muted-foreground">
+                {model} cost is not published; invocations still count toward limits and are shown as not published.
+              </p>
+            ))}
           <div className="text-sm font-medium">Redactions recorded: {redactionTotal(events)}</div>
           <p className="text-xs text-muted-foreground">
             Redactions protect provider egress and are recorded per event; redaction alone does not gate autonomous

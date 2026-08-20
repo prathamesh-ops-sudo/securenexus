@@ -114,6 +114,8 @@ export async function listAiGuardEvents(params: {
   page: number;
   pageSize: number;
   feature?: string;
+  alertId?: string;
+  incidentId?: string;
   severity?: "suspected" | "likely";
   from?: Date;
   to?: Date;
@@ -125,6 +127,8 @@ export async function listAiGuardEvents(params: {
     conditions.push(`${sql} = $${values.length}`);
   };
   if (params.feature) add("feature", params.feature);
+  if (params.alertId) add("alert_id", params.alertId);
+  if (params.incidentId) add("incident_id", params.incidentId);
   if (params.severity) {
     values.push(params.severity === "likely" ? 3 : 1);
     conditions.push(`injection_score ${params.severity === "likely" ? ">=" : "BETWEEN"} $${values.length}`);

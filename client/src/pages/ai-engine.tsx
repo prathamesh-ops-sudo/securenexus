@@ -55,6 +55,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { SeverityBadge } from "@/components/security-badges";
+import { UntrustedText } from "@/components/untrusted-text";
 import type { Alert } from "@shared/schema";
 
 interface FeedbackMetric {
@@ -1399,7 +1400,7 @@ export default function AIEnginePage() {
                       />
                       <div className="flex items-center gap-2 flex-1 min-w-0">
                         <AlertTriangle className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                        <span className="text-sm truncate">{alert.title}</span>
+                        <UntrustedText value={alert.title} compact className="text-sm truncate" />
                         <SeverityBadge severity={alert.severity} />
                       </div>
                     </label>
@@ -1703,9 +1704,11 @@ export default function AIEnginePage() {
                 <Button variant="outline" className="w-full max-w-md justify-between" data-testid="select-triage-alert">
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <Search className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                    <span className={`truncate ${!selectedAlert ? "text-muted-foreground" : ""}`}>
-                      {selectedAlert ? selectedAlert.title : "Search alerts..."}
-                    </span>
+                    {selectedAlert ? (
+                      <UntrustedText value={selectedAlert.title} compact className="truncate" />
+                    ) : (
+                      <span className="truncate text-muted-foreground">Search alerts...</span>
+                    )}
                   </div>
                   <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 ml-2" />
                 </Button>
@@ -1729,7 +1732,7 @@ export default function AIEnginePage() {
                         >
                           <div className="flex items-center gap-2 min-w-0 flex-1">
                             <AlertTriangle className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                            <span className="truncate text-sm">{alert.title}</span>
+                            <UntrustedText value={alert.title} compact className="truncate text-sm" />
                             <SeverityBadge severity={alert.severity} />
                           </div>
                           {triageAlertId === alert.id && (

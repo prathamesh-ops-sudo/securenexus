@@ -115,77 +115,85 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ## Out of Scope
 
-| Feature | Reason |
-|---------|--------|
-| New connector types | Existing 8 connectors need reliability first |
-| New AI models / model switching | Current Bedrock/Mistral stack sufficient, focus on reliability |
-| UI redesign or new pages | 28 pages exist, fix backend data quality |
-| Multi-region deployment | Infrastructure concern, separate ops milestone |
-| Real-time collaboration | SSE exists, collaboration is separate feature milestone |
-| Custom detection rule DSL | Scope creep — existing rule-based correlation works |
-| Mobile app | SOC analysts use large monitors, web-first |
-| GraphQL API | REST + envelope established, migration during hardening is high-risk |
-| Kubernetes/EKS config changes | Infrastructure milestone, not code quality |
+| Feature                         | Reason                                                               |
+| ------------------------------- | -------------------------------------------------------------------- |
+| New connector types             | Existing 8 connectors need reliability first                         |
+| New AI models / model switching | Current Bedrock/Mistral stack sufficient, focus on reliability       |
+| UI redesign or new pages        | 28 pages exist, fix backend data quality                             |
+| Multi-region deployment         | Infrastructure concern, separate ops milestone                       |
+| Real-time collaboration         | SSE exists, collaboration is separate feature milestone              |
+| Custom detection rule DSL       | Scope creep — existing rule-based correlation works                  |
+| Mobile app                      | SOC analysts use large monitors, web-first                           |
+| GraphQL API                     | REST + envelope established, migration during hardening is high-risk |
+| Kubernetes/EKS config changes   | Infrastructure milestone, not code quality                           |
 
 ## Traceability
 
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| QUAL-01 | Phase 1 | Complete |
-| QUAL-04 | Phase 1 | Pending |
-| SEC-01 | Phase 2 | Pending |
-| SEC-02 | Phase 2 | Pending |
-| SEC-03 | Phase 2 | Pending |
-| SEC-04 | Phase 2 | Pending |
-| SEC-05 | Phase 2 | Pending |
-| SPLIT-01 | Phase 3 | Pending |
-| SPLIT-02 | Phase 3 | Pending |
-| SPLIT-03 | Phase 3 | Complete |
-| QUAL-02 | Phase 4 | Pending |
-| OBS-01 | Phase 4 | Pending |
-| OBS-02 | Phase 4 | Pending |
-| OBS-03 | Phase 4 | Pending |
-| CORR-01 | Phase 5 | Complete |
-| CORR-02 | Phase 5 | Complete |
-| CORR-03 | Phase 5 | Complete |
-| CORR-04 | Phase 5 | Complete |
-| CORR-05 | Phase 5 | Complete |
-| CORR-06 | Phase 5 | Complete |
-| DEDUP-01 | Phase 6 | Complete |
-| DEDUP-02 | Phase 6 | Complete |
-| DEDUP-03 | Phase 6 | Complete |
-| STUB-01 | Phase 6 | Complete |
-| STUB-02 | Phase 6 | Complete |
-| STUB-03 | Phase 6 | Complete |
-| RESP-01 | Phase 7 | Pending |
-| RESP-02 | Phase 7 | Pending |
-| RESP-03 | Phase 7 | Pending |
-| RESP-04 | Phase 7 | Pending |
-| RESP-05 | Phase 7 | Pending |
-| CONN-01 | Phase 8 | Pending |
-| CONN-02 | Phase 8 | Pending |
-| CONN-03 | Phase 8 | Pending |
-| CONN-04 | Phase 8 | Pending |
-| TEST-02 | Phase 8 | Pending |
-| API-01 | Phase 9 | Pending |
-| API-02 | Phase 9 | Pending |
-| API-03 | Phase 10 | Pending |
-| API-04 | Phase 9 | Pending |
-| PERF-01 | Phase 9 | Pending |
-| PERF-02 | Phase 9 | Pending |
-| PERF-03 | Phase 9 | Pending |
-| PERF-04 | Phase 9 | Pending |
-| PERF-05 | Phase 9 | Pending |
-| TEST-01 | Phase 10 | Pending |
-| TEST-03 | Phase 10 | Pending |
-| TEST-04 | Phase 10 | Pending |
-| QUAL-03 | Phase 10 | Pending |
+| Requirement | Phase    | Status   |
+| ----------- | -------- | -------- |
+| QUAL-01     | Phase 1  | Complete |
+| QUAL-04     | Phase 1  | Pending  |
+| SEC-01      | Phase 2  | Pending  |
+| SEC-02      | Phase 2  | Pending  |
+| SEC-03      | Phase 2  | Pending  |
+| SEC-04      | Phase 2  | Pending  |
+| SEC-05      | Phase 2  | Pending  |
+| SPLIT-01    | Phase 3  | Pending  |
+| SPLIT-02    | Phase 3  | Pending  |
+| SPLIT-03    | Phase 3  | Complete |
+| QUAL-02     | Phase 4  | Pending  |
+| OBS-01      | Phase 4  | Pending  |
+| OBS-02      | Phase 4  | Pending  |
+| OBS-03      | Phase 4  | Pending  |
+| CORR-01     | Phase 5  | Complete |
+| CORR-02     | Phase 5  | Complete |
+| CORR-03     | Phase 5  | Complete |
+| CORR-04     | Phase 5  | Complete |
+| CORR-05     | Phase 5  | Complete |
+| CORR-06     | Phase 5  | Complete |
+| DEDUP-01    | Phase 6  | Complete |
+| DEDUP-02    | Phase 6  | Complete |
+| DEDUP-03    | Phase 6  | Complete |
+| STUB-01     | Phase 6  | Complete |
+| STUB-02     | Phase 6  | Complete |
+| STUB-03     | Phase 6  | Complete |
+| RESP-01     | Phase 7  | Pending  |
+| RESP-02     | Phase 7  | Pending  |
+| RESP-03     | Phase 7  | Pending  |
+| RESP-04     | Phase 7  | Pending  |
+| RESP-05     | Phase 7  | Pending  |
+| CONN-01     | Phase 8  | Pending  |
+| CONN-02     | Phase 8  | Pending  |
+| CONN-03     | Phase 8  | Pending  |
+| CONN-04     | Phase 8  | Pending  |
+| TEST-02     | Phase 8  | Pending  |
+| API-01      | Phase 9  | Pending  |
+| API-02      | Phase 9  | Pending  |
+| API-03      | Phase 10 | Pending  |
+| API-04      | Phase 9  | Pending  |
+| PERF-01     | Phase 9  | Pending  |
+| PERF-02     | Phase 9  | Pending  |
+| PERF-03     | Phase 9  | Pending  |
+| PERF-04     | Phase 9  | Pending  |
+| PERF-05     | Phase 9  | Pending  |
+| TEST-01     | Phase 10 | Pending  |
+| TEST-03     | Phase 10 | Pending  |
+| TEST-04     | Phase 10 | Pending  |
+| QUAL-03     | Phase 10 | Pending  |
 
 **Coverage:**
+
 - v1 requirements: 49 total
 - Mapped to phases: 49
 - Unmapped: 0
 
 ---
-*Requirements defined: 2026-03-25*
-*Last updated: 2026-03-25 after roadmap creation -- traceability populated*
+
+_Requirements defined: 2026-03-25_
+_Last updated: 2026-03-25 after roadmap creation -- traceability populated_
+
+## Current hardening acceptance criteria
+
+- Persisted, organization-scoped AI guard state is visible on alert and incident detail pages.
+- Ingested alert and incident text is explicitly marked untrusted, masks secret-shaped values by default, and permits deliberate raw reveal only for privileged users while preserving Raw Data.
+- AI Security unknown-cost notices are derived from the active model IDs and published pricing metadata.

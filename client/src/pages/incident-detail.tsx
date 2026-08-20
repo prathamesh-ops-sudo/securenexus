@@ -68,6 +68,8 @@ import {
   formatTimestamp,
   formatRelativeTime,
 } from "@/components/security-badges";
+import { AiGuardBanner } from "@/components/ai-guard-banner";
+import { UntrustedText } from "@/components/untrusted-text";
 import type {
   Incident,
   Alert,
@@ -978,9 +980,11 @@ export default function IncidentDetailPage() {
           </Link>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold tracking-tight" data-testid="text-incident-title">
-                {incident.title}
-              </h1>
+              <UntrustedText
+                value={incident.title}
+                className="text-xl font-bold tracking-tight"
+                testId="text-incident-title"
+              />
               <SeverityBadge severity={incident.severity} />
               <ConfidenceBadge
                 confidence={incident.confidence}
@@ -995,7 +999,9 @@ export default function IncidentDetailPage() {
                 </span>
               )}
             </div>
-            <p className="text-sm text-muted-foreground mt-1">{incident.summary}</p>
+            {incident.summary && (
+              <UntrustedText value={incident.summary} className="mt-1 text-sm text-muted-foreground" />
+            )}
             <div className="gradient-accent-line w-24 mt-2" />
             {incidentTags && incidentTags.length > 0 && (
               <div className="flex items-center gap-1.5 mt-2 flex-wrap">
@@ -1093,6 +1099,8 @@ export default function IncidentDetailPage() {
           </Button>
         </div>
       </div>
+
+      <AiGuardBanner incidentId={incident.id} />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1856,7 +1864,14 @@ export default function IncidentDetailPage() {
                     >
                       <AlertTriangle className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium">{alert.title}</div>
+                        <UntrustedText value={alert.title} compact className="text-xs font-medium" />
+                        {alert.description && (
+                          <UntrustedText
+                            value={alert.description}
+                            compact
+                            className="text-[10px] text-muted-foreground"
+                          />
+                        )}
                         <div className="text-[10px] text-muted-foreground flex items-center gap-2 flex-wrap">
                           <span>{alert.source}</span>
                           <SeverityBadge severity={alert.severity} />
