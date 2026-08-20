@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { buildChangePasswordInput } from "@/lib/forced-password-change";
+import type { AuthenticatedUser } from "@shared/models/auth";
+import { buildChangePasswordInput, resolveLocalPasswordState } from "@/lib/forced-password-change";
+
+const user = (hasLocalPassword: boolean): AuthenticatedUser => ({ hasLocalPassword }) as AuthenticatedUser;
+
+describe("forced password-change account state", () => {
+  it("keeps loading state unknown", () => {
+    expect(resolveLocalPasswordState({ user: undefined, isLoading: true, isError: false })).toBeUndefined();
+  });
+
+  it("keeps errored state unknown even when stale user data exists", () => {
+    expect(resolveLocalPasswordState({ user: user(true), isLoading: false, isError: true })).toBeUndefined();
+  });
+
+  it("resolves the server-provided local-password state", () => {
+    expect(resolveLocalPasswordState({ user: user(false), isLoading: false, isError: false })).toBe(false);
+    expect(resolveLocalPasswordState({ user: user(true), isLoading: false, isError: false })).toBe(true);
+  });
+});
 
 describe("forced password-change request payload", () => {
   it("omits current password for an account without a local password", () => {

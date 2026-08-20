@@ -61,7 +61,11 @@ async function logoutFn(): Promise<void> {
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  const { data: user, isLoading } = useQuery<AuthenticatedUser | null>({
+  const {
+    data: user,
+    isLoading,
+    isError,
+  } = useQuery<AuthenticatedUser | null>({
     queryKey: ["/api/auth/user"],
     queryFn: fetchUser,
     retry: false,
@@ -92,6 +96,7 @@ export function useAuth() {
   return {
     user,
     isLoading,
+    isError,
     isAuthenticated: !!user,
     login: loginMutation.mutateAsync,
     loginError: loginMutation.error,

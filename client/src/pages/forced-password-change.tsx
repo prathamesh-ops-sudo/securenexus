@@ -6,11 +6,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
-import { buildChangePasswordInput, type ChangePasswordInput } from "@/lib/forced-password-change";
+import {
+  buildChangePasswordInput,
+  resolveLocalPasswordState,
+  type ChangePasswordInput,
+} from "@/lib/forced-password-change";
 import { apiRequest } from "@/lib/queryClient";
 
 export default function ForcedPasswordChangePage() {
-  const { user } = useAuth();
+  const { user, isLoading, isError } = useAuth();
   const queryClient = useQueryClient();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -34,6 +38,10 @@ export default function ForcedPasswordChangePage() {
     event.preventDefault();
     setValidationError(null);
 
+    if (hasLocalPassword === undefined) {
+      setValidationError("We are still checking your account. Please wait before changing your password.");
+      return;
+    }
     if (newPassword.length < 8) {
       setValidationError("Password must be at least 8 characters.");
       return;
@@ -47,13 +55,13 @@ export default function ForcedPasswordChangePage() {
       buildChangePasswordInput({
         currentPassword,
         newPassword,
-        hasLocalPassword: user?.hasLocalPassword === true,
+        hasLocalPassword,
       }),
     );
   }
 
   const errorMessage = validationError ?? changePasswordMutation.error?.message ?? null;
-  const hasLocalPassword = user?.hasLocalPassword;
+  const hasLocalPassword = resolveLocalPasswordState({ user, isLoading, isError });
 
   return (
     <div
@@ -71,9 +79,11 @@ export default function ForcedPasswordChangePage() {
           <CardDescription className="text-[#64748b] dark:text-[#94a3b8]">
             {success
               ? "Your account is ready. SecureNexus is loading your workspace."
-              : hasLocalPassword === false
-                ? "Your account does not have a local password. Set one now to complete the required security step before using SecureNexus."
-                : "For your security, change the temporary password before using SecureNexus."}
+              : hasLocalPassword === undefined
+                ? "SecureNexus is checking your account's password state before allowing this security step."
+                : hasLocalPassword === false
+                  ? "Your account does not have a local password. Set one now to complete the required security step before using SecureNexus."
+                  : "For your security, change the temporary password before using SecureNexus."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -82,6 +92,17 @@ export default function ForcedPasswordChangePage() {
               <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
               <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                 Password updated successfully.
+              </p>
+            </div>
+          ) : hasLocalPassword === undefined ? (
+            <div
+              className="flex items-center gap-3 p-4 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2 className="h-5 w-5 animate-spin text-slate-500 dark:text-slate-400" />
+              <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                Checking your account before enabling password changes.
               </p>
             </div>
           ) : (
