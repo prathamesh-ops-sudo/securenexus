@@ -8,13 +8,14 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import {
   buildChangePasswordInput,
+  resolveForcedPasswordChangeAccountState,
   resolveLocalPasswordState,
   type ChangePasswordInput,
 } from "@/lib/forced-password-change";
 import { apiRequest } from "@/lib/queryClient";
 
 export default function ForcedPasswordChangePage() {
-  const { user, isLoading, isError } = useAuth();
+  const { user, isLoading, isError, isFetching, refetch } = useAuth();
   const queryClient = useQueryClient();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -61,6 +62,7 @@ export default function ForcedPasswordChangePage() {
   }
 
   const errorMessage = validationError ?? changePasswordMutation.error?.message ?? null;
+  const accountState = resolveForcedPasswordChangeAccountState({ user, isLoading, isError });
   const hasLocalPassword = resolveLocalPasswordState({ user, isLoading, isError });
 
   return (
@@ -79,11 +81,13 @@ export default function ForcedPasswordChangePage() {
           <CardDescription className="text-[#64748b] dark:text-[#94a3b8]">
             {success
               ? "Your account is ready. SecureNexus is loading your workspace."
-              : hasLocalPassword === undefined
-                ? "SecureNexus is checking your account's password state before allowing this security step."
-                : hasLocalPassword === false
-                  ? "Your account does not have a local password. Set one now to complete the required security step before using SecureNexus."
-                  : "For your security, change the temporary password before using SecureNexus."}
+              : accountState === "error"
+                ? "SecureNexus could not verify your account's password state. Retry the check before changing your password."
+                : hasLocalPassword === undefined
+                  ? "SecureNexus is checking your account's password state before allowing this security step."
+                  : hasLocalPassword === false
+                    ? "Your account does not have a local password. Set one now to complete the required security step before using SecureNexus."
+                    : "For your security, change the temporary password before using SecureNexus."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -93,6 +97,26 @@ export default function ForcedPasswordChangePage() {
               <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                 Password updated successfully.
               </p>
+            </div>
+          ) : accountState === "error" ? (
+            <div
+              className="space-y-3 p-4 rounded-xl border-2 border-red-300 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10"
+              role="alert"
+              aria-live="polite"
+            >
+              <div className="flex items-start gap-2 text-red-700 dark:text-red-300">
+                <AlertTriangle className="h-5 w-5 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold">We could not check your account.</p>
+                  <p className="text-sm">
+                    Your password state is unavailable right now. Retry the check before changing your password.
+                  </p>
+                </div>
+              </div>
+              <Button type="button" variant="outline" onClick={() => void refetch()} disabled={isFetching}>
+                {isFetching && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {isFetching ? "Retrying account check" : "Retry account check"}
+              </Button>
             </div>
           ) : hasLocalPassword === undefined ? (
             <div

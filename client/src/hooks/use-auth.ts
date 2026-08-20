@@ -65,6 +65,8 @@ export function useAuth() {
     data: user,
     isLoading,
     isError,
+    isFetching,
+    refetch,
   } = useQuery<AuthenticatedUser | null>({
     queryKey: ["/api/auth/user"],
     queryFn: fetchUser,
@@ -97,6 +99,8 @@ export function useAuth() {
     user,
     isLoading,
     isError,
+    isFetching,
+    refetch,
     isAuthenticated: !!user,
     login: loginMutation.mutateAsync,
     loginError: loginMutation.error,

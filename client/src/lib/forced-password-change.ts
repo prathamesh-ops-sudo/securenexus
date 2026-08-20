@@ -5,6 +5,23 @@ export type ChangePasswordInput = {
   newPassword: string;
 };
 
+export type ForcedPasswordChangeAccountState = "loading" | "error" | "unknown" | "ready";
+
+export function resolveForcedPasswordChangeAccountState({
+  user,
+  isLoading,
+  isError,
+}: {
+  user: AuthenticatedUser | null | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}): ForcedPasswordChangeAccountState {
+  if (isLoading) return "loading";
+  if (isError) return "error";
+  if (!user || typeof user.hasLocalPassword !== "boolean") return "unknown";
+  return "ready";
+}
+
 export function resolveLocalPasswordState({
   user,
   isLoading,

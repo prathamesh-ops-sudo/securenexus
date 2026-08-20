@@ -1,10 +1,31 @@
 import { describe, expect, it } from "vitest";
 import type { AuthenticatedUser } from "@shared/models/auth";
-import { buildChangePasswordInput, resolveLocalPasswordState } from "@/lib/forced-password-change";
+import {
+  buildChangePasswordInput,
+  resolveForcedPasswordChangeAccountState,
+  resolveLocalPasswordState,
+} from "@/lib/forced-password-change";
 
 const user = (hasLocalPassword: boolean): AuthenticatedUser => ({ hasLocalPassword }) as AuthenticatedUser;
 
 describe("forced password-change account state", () => {
+  it("distinguishes a failed account-state lookup from loading", () => {
+    expect(
+      resolveForcedPasswordChangeAccountState({
+        user: undefined,
+        isLoading: true,
+        isError: false,
+      }),
+    ).toBe("loading");
+    expect(
+      resolveForcedPasswordChangeAccountState({
+        user: undefined,
+        isLoading: false,
+        isError: true,
+      }),
+    ).toBe("error");
+  });
+
   it("keeps loading state unknown", () => {
     expect(resolveLocalPasswordState({ user: undefined, isLoading: true, isError: false })).toBeUndefined();
   });
