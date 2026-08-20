@@ -27,10 +27,8 @@ const configSchema = z.object({
 
   ai: z.object({
     backend: aiBackendSchema,
-    modelId: z.string().default("us.openai.gpt-5.6-terra"),
-    fallbackModelIds: z
-      .array(z.string())
-      .default(["us.openai.gpt-5.6-terra", "amazon.nova-pro-v1:0", "us.amazon.nova-2-lite-v1:0"]),
+    modelId: z.string().default("amazon.nova-pro-v1:0"),
+    fallbackModelIds: z.array(z.string()).default(["us.amazon.nova-2-lite-v1:0", "amazon.nova-lite-v1:0"]),
     sagemakerEndpoint: z.string().optional(),
     maxTokens: z.coerce.number().int().positive().default(4096),
     temperature: z.coerce.number().min(0).max(2).default(0.1),
@@ -42,7 +40,7 @@ const configSchema = z.object({
       temperature: z.coerce.number().min(0).max(2).default(0.05),
     }),
     investigation: z.object({
-      modelId: z.string().default("us.openai.gpt-5.6-terra"),
+      modelId: z.string().default("amazon.nova-pro-v1:0"),
       maxTokens: z.coerce.number().int().positive().default(8192),
       temperature: z.coerce.number().min(0).max(2).default(0.15),
     }),

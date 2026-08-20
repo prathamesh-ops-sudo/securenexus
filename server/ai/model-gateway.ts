@@ -407,8 +407,14 @@ async function invokeBedrockRaw(opts: ModelInvokeOptions): Promise<BedrockResult
     if (!outputContent || outputContent.length === 0) {
       throw new Error("Empty response from Bedrock model");
     }
+    const textBlock = outputContent.find(
+      (block: { text?: string }) => typeof block.text === "string" && block.text.trim().length > 0,
+    );
+    if (!textBlock?.text) {
+      throw new Error("Empty response from Bedrock model");
+    }
     return {
-      text: outputContent[0].text || "",
+      text: textBlock.text,
       inputTokens: response.usage?.inputTokens ?? null,
       outputTokens: response.usage?.outputTokens ?? null,
     };
@@ -423,8 +429,12 @@ async function invokeBedrockRaw(opts: ModelInvokeOptions): Promise<BedrockResult
       const fbResp = await bedrockClient.send(fallback);
       const fbContent = fbResp.output?.message?.content;
       if (!fbContent || fbContent.length === 0) throw new Error("Empty response from Bedrock model (fallback)");
+      const fallbackTextBlock = fbContent.find(
+        (block: { text?: string }) => typeof block.text === "string" && block.text.trim().length > 0,
+      );
+      if (!fallbackTextBlock?.text) throw new Error("Empty response from Bedrock model (fallback)");
       return {
-        text: fbContent[0].text || "",
+        text: fallbackTextBlock.text,
         inputTokens: fbResp.usage?.inputTokens ?? null,
         outputTokens: fbResp.usage?.outputTokens ?? null,
       };

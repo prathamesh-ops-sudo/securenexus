@@ -62,9 +62,10 @@ describe("Bedrock model gateway", () => {
   };
 
   it("uses reachable Nova defaults for each AI tier", () => {
-    expect(config.ai.modelId).toBe("us.openai.gpt-5.6-terra");
+    expect(config.ai.modelId).toBe("amazon.nova-pro-v1:0");
     expect(config.ai.triage.modelId).toBe("us.amazon.nova-2-lite-v1:0");
-    expect(config.ai.investigation.modelId).toBe("us.openai.gpt-5.6-terra");
+    expect(config.ai.investigation.modelId).toBe("amazon.nova-pro-v1:0");
+    expect(config.ai.fallbackModelIds).toEqual(["us.amazon.nova-2-lite-v1:0", "amazon.nova-lite-v1:0"]);
   });
 
   it("returns the Nova response and usage metadata on success", async () => {
@@ -80,6 +81,21 @@ describe("Bedrock model gateway", () => {
     expect(result.inputTokensEstimate).toBe(12);
     expect(result.outputTokensEstimate).toBe(7);
     expect(bedrockSend).toHaveBeenCalledOnce();
+  });
+
+  it("uses the first Converse content block that contains text", async () => {
+    bedrockSend.mockResolvedValue({
+      output: {
+        message: {
+          content: [{ reasoningContent: { reasoningText: { text: "internal reasoning" } } }, { text: "answer" }],
+        },
+      },
+      usage: { inputTokens: 12, outputTokens: 7 },
+    });
+
+    const result = await invokeModel(options);
+
+    expect(result.text).toBe("answer");
   });
 
   it("requires organization scope and isolates cache keys by organization", () => {

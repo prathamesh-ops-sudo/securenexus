@@ -1421,8 +1421,9 @@ export {
   getPromptVersion,
 };
 
-function extractJson(text: string): string {
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
+export function extractJson(text: string): string {
+  const fencedText = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? text;
+  const jsonMatch = fencedText.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("AI returned an unexpected response format. Please try again.");
   try {
     JSON.parse(jsonMatch[0]);
