@@ -70,7 +70,8 @@ export function getPoolHealth(): PoolHealthMetrics {
   const idle = pool.idleCount;
   const waiting = pool.waitingCount;
   const max = isProd ? 20 : 5;
-  const utilization = max > 0 ? Math.round((total / max) * 100) : 0;
+  const inUse = Math.max(total - idle, 0);
+  const utilization = max > 0 ? Math.round((inUse / max) * 100) : 0;
 
   return {
     totalConnections: total,
@@ -78,7 +79,7 @@ export function getPoolHealth(): PoolHealthMetrics {
     waitingRequests: waiting,
     maxConnections: max,
     utilizationPercent: utilization,
-    healthy: waiting === 0 && total <= max,
+    healthy: waiting === 0 && inUse <= max,
   };
 }
 
@@ -102,6 +103,8 @@ export function startPoolHealthMonitor(intervalMs = 60_000): void {
     if (health.utilizationPercent > 80) {
       log.warn("Connection pool utilization above 80%", {
         utilization: `${health.utilizationPercent}%`,
+        inUse: health.totalConnections - health.idleConnections,
+        idle: health.idleConnections,
         total: health.totalConnections,
         max: health.maxConnections,
       });

@@ -76,9 +76,49 @@ describe("poolCircuitBreakerMiddleware", () => {
     expect(res.status).toHaveBeenCalledWith(503);
     expect(res.set).toHaveBeenCalledWith("Retry-After", "5");
     expect(res.json).toHaveBeenCalledWith({
-      error: "Service temporarily unavailable",
-      retryAfter: 5,
+      data: null,
+      meta: {},
+      errors: [
+        {
+          code: "SERVICE_UNAVAILABLE",
+          message: "Database capacity is temporarily saturated. Please retry shortly.",
+        },
+      ],
     });
+  });
+
+  it("does not shed a warm idle pool", () => {
+    mockedGetPoolHealth.mockReturnValue({
+      totalConnections: 5,
+      idleConnections: 5,
+      waitingRequests: 0,
+      maxConnections: 5,
+      utilizationPercent: 0,
+      healthy: true,
+    });
+
+    const { req, res, next } = createMocks();
+    poolCircuitBreakerMiddleware(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("serves HTML paths even when the database is saturated", () => {
+    mockedGetPoolHealth.mockReturnValue({
+      totalConnections: 20,
+      idleConnections: 0,
+      waitingRequests: 3,
+      maxConnections: 20,
+      utilizationPercent: 100,
+      healthy: false,
+    });
+
+    const { req, res, next } = createMocks("/login");
+    poolCircuitBreakerMiddleware(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
   });
 
   it("exempts /api/health path and always calls next()", () => {
