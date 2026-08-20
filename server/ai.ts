@@ -30,6 +30,19 @@ import { buildRAGContext, formatRAGContextForPrompt, type RAGContext } from "./a
 import { buildFewShotAugmentedPrompt, getSuppressedSourcesForContext } from "./ai/active-learning";
 import { AiUnavailableError } from "./ai/fallback";
 import { buildBudgetedNarrativeMessage } from "./ai/narrative-budget";
+import { z } from "zod";
+import {
+  attackPathOutputSchema,
+  behavioralOutputSchema,
+  correlationOutputSchema,
+  detectionRuleOutputSchema,
+  investigationChatOutputSchema,
+  investigationOutputSchema,
+  narrativeOutputSchema,
+  sanitizeModelOutput,
+  threatHuntingOutputSchema,
+  triageOutputSchema,
+} from "./ai/schemas";
 
 const log = logger.child("ai");
 
@@ -46,7 +59,7 @@ interface InferenceMetrics {
   inputTokensEstimate: number;
   outputTokensEstimate: number;
   latencyMs: number;
-  costEstimateUsd: number;
+  costEstimateUsd: number | null;
   cached: boolean;
   promptId?: string;
   promptVersion?: number;
@@ -104,7 +117,7 @@ export async function getInferenceHistory(options: {
     inputTokens: number;
     outputTokens: number;
     latencyMs: number;
-    costEstimateUsd: number;
+    costEstimateUsd: number | null;
     cached: boolean;
     success: boolean;
     errorMessage: string | null;
@@ -251,7 +264,9 @@ async function invokeWithPrompt(
   tier: InferenceTier,
   orgId?: string,
   maxTokensOverride?: number,
-): Promise<{ text: string; metrics: InferenceMetrics }> {
+  untrustedContent: { label: string; content: string }[] = [],
+  schema?: z.ZodType,
+): Promise<{ text: string; metrics: InferenceMetrics; aiGuard?: ModelInvokeResult["aiGuard"] }> {
   const prompt = await getPrompt(promptId);
   if (!prompt) {
     throw new Error(`Prompt "${promptId}" not found in registry`);
@@ -286,11 +301,12 @@ async function invokeWithPrompt(
   // Inject few-shot examples from active learning if available
   // Use the inference tier (triage/correlation/narrative) as the domain key,
   // not the promptId — few-shot examples are stored by domain
-  let augmentedSystemPrompt = prompt.systemPrompt;
+  const augmentedSystemPrompt = prompt.systemPrompt;
+  const evidence = [...untrustedContent];
   try {
-    const fewShotBlock = await buildFewShotAugmentedPrompt(tier, orgId);
+    const fewShotBlock = orgId ? await buildFewShotAugmentedPrompt(tier, orgId) : null;
     if (fewShotBlock) {
-      augmentedSystemPrompt = `${prompt.systemPrompt}\n\n${fewShotBlock}`;
+      evidence.push({ label: "tenant_feedback_example", content: fewShotBlock });
     }
   } catch (err) {
     log.warn("Failed to build few-shot augmented prompt", { promptId, tier, error: String(err) });
@@ -309,7 +325,37 @@ async function invokeWithPrompt(
     promptId: prompt.id,
     promptVersion: prompt.version,
     tier,
+    untrustedContent: evidence,
   });
+
+  if (result.withheld) {
+    throw new Error("AI analysis was withheld because the evidence requires a human review.");
+  }
+  if (schema) {
+    if (!validateModelJson(result.text, schema)) {
+      const retry = await gatewayInvoke({
+        modelId: modelConfig.modelId,
+        backend: appConfig.ai.backend,
+        systemPrompt: augmentedSystemPrompt,
+        userMessage: `${userMessage}\n\nReturn only valid JSON matching the schema.`,
+        maxTokens: modelConfig.maxTokens,
+        temperature: modelConfig.temperature,
+        topP: appConfig.ai.topP,
+        sagemakerEndpoint: modelConfig.sagemakerEndpoint,
+        orgId,
+        promptId: prompt.id,
+        promptVersion: prompt.version,
+        tier,
+        skipCache: true,
+        untrustedContent: evidence,
+      });
+      if (retry.withheld) throw new Error("AI analysis was withheld because the evidence requires a human review.");
+      if (!validateModelJson(retry.text, schema)) {
+        throw new Error("AI returned output that did not match the required schema after one retry.");
+      }
+      result.text = retry.text;
+    }
+  }
 
   await recordPromptInvocation(prompt.id, prompt.version, {
     tier,
@@ -336,7 +382,7 @@ async function invokeWithPrompt(
     log.warn("Failed to persist inference entry", { error: String(err), orgId }),
   );
 
-  return { text: result.text, metrics };
+  return { text: result.text, metrics, aiGuard: result.aiGuard };
 }
 
 /**
@@ -350,6 +396,7 @@ export async function invokeWithPromptStream(
   callbacks: StreamCallbacks,
   orgId?: string,
   maxTokensOverride?: number,
+  untrustedContent: { label: string; content: string }[] = [],
 ): Promise<void> {
   const prompt = await getPrompt(promptId);
   if (!prompt) {
@@ -384,11 +431,12 @@ export async function invokeWithPromptStream(
           };
 
   // Inject few-shot examples from active learning (same as non-streaming path)
-  let augmentedSystemPrompt = prompt.systemPrompt;
+  const augmentedSystemPrompt = prompt.systemPrompt;
+  const evidence = [...untrustedContent];
   try {
-    const fewShotBlock = await buildFewShotAugmentedPrompt(tier, orgId);
+    const fewShotBlock = orgId ? await buildFewShotAugmentedPrompt(tier, orgId) : null;
     if (fewShotBlock) {
-      augmentedSystemPrompt = `${prompt.systemPrompt}\n\n${fewShotBlock}`;
+      evidence.push({ label: "tenant_feedback_example", content: fewShotBlock });
     }
   } catch (err) {
     log.warn("Failed to build few-shot augmented prompt (streaming)", { promptId, tier, error: String(err) });
@@ -409,6 +457,7 @@ export async function invokeWithPromptStream(
       promptVersion: prompt.version,
       tier,
       skipCache: true, // streaming should always skip cache
+      untrustedContent: evidence,
     },
     {
       onChunk: callbacks.onChunk,
@@ -427,7 +476,7 @@ export async function invokeWithPromptStream(
           inputTokensEstimate: metrics.inputTokens,
           outputTokensEstimate: metrics.outputTokens,
           latencyMs: metrics.latencyMs,
-          costEstimateUsd: 0,
+          costEstimateUsd: null,
           cached: false,
           promptId: prompt.id,
           promptVersion: prompt.version,
@@ -458,7 +507,15 @@ export async function streamNarrative(
   const userMessage = buildNarrativeUserMessage(incident, alerts);
   const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
   const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
-  await invokeWithPromptStream("narrative", finalUserMessage, "narrative", callbacks, orgId, 6144);
+  await invokeWithPromptStream(
+    "narrative",
+    "Generate the requested incident narrative using the supplied evidence.",
+    "narrative",
+    callbacks,
+    orgId,
+    6144,
+    [{ label: "incident_alert_and_threat_intelligence_evidence", content: finalUserMessage }],
+  );
 }
 
 /**
@@ -520,7 +577,15 @@ ${alertTelemetry}
 THREAT INTELLIGENCE:
 ${threatIntelBlock}`;
 
-  await invokeWithPromptStream("deep-investigation", userMessage, "investigation", callbacks, orgId, 8192);
+  await invokeWithPromptStream(
+    "deep-investigation",
+    "Conduct a deep forensic investigation using the supplied evidence.",
+    "investigation",
+    callbacks,
+    orgId,
+    8192,
+    [{ label: "incident_investigation_evidence", content: userMessage }],
+  );
 }
 
 export interface CorrelationResult {
@@ -549,6 +614,7 @@ export interface CorrelationResult {
 export interface NarrativeResult {
   narrative: string;
   citedAlertIds?: string[];
+  unverifiedCitations?: boolean;
   summary: string;
   attackTimeline: { timestamp: string; description: string; alertId?: string; mitreTechnique?: string }[];
   attackerProfile: {
@@ -590,6 +656,7 @@ export interface TriageResult {
   escalationRequired: boolean;
   containmentAdvice: string;
   threatIntelSources?: string[];
+  humanReviewRequired?: boolean;
 }
 
 // ─── Relevance Scoring ────────────────────────────────────────────────────────
@@ -992,8 +1059,16 @@ export async function correlateAlerts(
   const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
   const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
 
-  const { text } = await invokeWithPrompt("correlation", finalUserMessage, "correlation", orgId);
-  return JSON.parse(extractJson(text));
+  const { text } = await invokeWithPrompt(
+    "correlation",
+    "Correlate the supplied security-alert evidence and return the requested JSON.",
+    "correlation",
+    orgId,
+    undefined,
+    [{ label: "alert_and_threat_intelligence_evidence", content: finalUserMessage }],
+    correlationOutputSchema,
+  );
+  return parseValidatedModelJson(text, correlationOutputSchema);
 }
 
 function buildCorrelationUserMessage(alertsData: Alert[]): string {
@@ -1048,17 +1123,38 @@ export async function generateIncidentNarrative(
 
   const finalUserMessage = budgeted.message;
 
-  const { text } = await invokeWithPrompt("narrative", finalUserMessage, "narrative", orgId, 6144);
-  const parsed = JSON.parse(extractJson(text));
-  if (!parsed.citedAlertIds || !Array.isArray(parsed.citedAlertIds) || parsed.citedAlertIds.length === 0) {
+  const { text } = await invokeWithPrompt(
+    "narrative",
+    "Generate the requested incident narrative using the supplied evidence.",
+    "narrative",
+    orgId,
+    6144,
+    [{ label: "incident_alert_and_threat_intelligence_evidence", content: finalUserMessage }],
+    narrativeOutputSchema,
+  );
+  const parsed = parseValidatedModelJson<NarrativeResult>(text, narrativeOutputSchema);
+  const validAlertIds = new Set(alerts.map((alert) => alert.id));
+  const validCitations = (parsed.citedAlertIds ?? []).filter((id) => validAlertIds.has(id));
+  const droppedCitations = (parsed.citedAlertIds ?? []).filter((id) => !validAlertIds.has(id));
+  parsed.citedAlertIds = validCitations;
+  parsed.attackTimeline = parsed.attackTimeline.map((entry) =>
+    entry.alertId && !validAlertIds.has(entry.alertId) ? { ...entry, alertId: undefined } : entry,
+  );
+  if (droppedCitations.length > 0) {
+    log.warn("Dropped unknown narrative citations", { orgId, incidentId: incident.id, count: droppedCitations.length });
+  }
+  if (parsed.citedAlertIds.length === 0) {
     const citationRegex = /\[Alert ([^\]]+)\]/g;
     const extracted: string[] = [];
     let m;
     while ((m = citationRegex.exec(parsed.narrative || "")) !== null) {
-      if (!extracted.includes(m[1])) extracted.push(m[1]);
+      if (validAlertIds.has(m[1]) && !extracted.includes(m[1])) extracted.push(m[1]);
     }
     parsed.citedAlertIds = extracted;
   }
+  parsed.unverifiedCitations = parsed.narrative
+    .split(/\n{2,}/)
+    .some((paragraph) => paragraph.trim().length > 0 && !/\[Alert [^\]]+\]/.test(paragraph));
   return parsed;
 }
 
@@ -1116,8 +1212,19 @@ export async function triageAlert(
   const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
   const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
 
-  const { text } = await invokeWithPrompt("triage", finalUserMessage, "triage", orgId);
-  return JSON.parse(extractJson(text));
+  const { text, aiGuard } = await invokeWithPrompt(
+    "triage",
+    "Triage the supplied security-alert evidence and return the requested JSON.",
+    "triage",
+    orgId,
+    undefined,
+    [{ label: "alert_and_threat_intelligence_evidence", content: finalUserMessage }],
+    triageOutputSchema,
+  );
+  return {
+    ...parseValidatedModelJson(text, triageOutputSchema),
+    humanReviewRequired: aiGuard?.humanReviewRequired ?? false,
+  };
 }
 
 function buildTriageUserMessage(alertData: Alert): string {
@@ -1305,6 +1412,22 @@ function extractJson(text: string): string {
       throw new Error("AI response could not be parsed as valid JSON. Please try again.");
     }
   }
+}
+
+function validateModelJson<T>(text: string, schema: z.ZodType): T | null {
+  try {
+    const parsed: unknown = JSON.parse(extractJson(text));
+    const result = schema.safeParse(sanitizeModelOutput(parsed));
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseValidatedModelJson<T>(text: string, schema: z.ZodType): T {
+  const value = validateModelJson(text, schema);
+  if (value === null) throw new Error("AI output did not match the required schema.");
+  return sanitizeModelOutput(JSON.parse(extractJson(text))) as T;
 }
 
 // =============================
@@ -1597,8 +1720,16 @@ THREAT INTELLIGENCE:
 ${threatIntelBlock}`;
 
   try {
-    const { text } = await invokeWithPrompt("deep-investigation", userMessage, "investigation", orgId, 8192);
-    return JSON.parse(extractJson(text));
+    const { text } = await invokeWithPrompt(
+      "deep-investigation",
+      "Conduct a deep forensic investigation using the supplied incident evidence.",
+      "investigation",
+      orgId,
+      8192,
+      [{ label: "incident_investigation_evidence", content: userMessage }],
+      investigationOutputSchema,
+    );
+    return parseValidatedModelJson<DeepInvestigationResult>(text, investigationOutputSchema);
   } catch (error) {
     log.warn("AI deep investigation unavailable", { error: String(error) });
     throw new AiUnavailableError("deep investigation", error);
@@ -1630,8 +1761,16 @@ KNOWN THREAT INTELLIGENCE:
 ${threatIntelBlock}`;
 
   try {
-    const { text } = await invokeWithPrompt("threat-hunting", userMessage, "correlation", orgId, 6144);
-    return JSON.parse(extractJson(text));
+    const { text } = await invokeWithPrompt(
+      "threat-hunting",
+      "Conduct the requested threat hunt using the supplied evidence.",
+      "correlation",
+      orgId,
+      6144,
+      [{ label: "threat_hunting_evidence", content: userMessage }],
+      threatHuntingOutputSchema,
+    );
+    return parseValidatedModelJson<ThreatHuntingResult>(text, threatHuntingOutputSchema);
   } catch (error) {
     log.warn("AI threat hunt unavailable", { error: String(error) });
     throw new AiUnavailableError("threat hunting", error);
@@ -1659,8 +1798,16 @@ BASELINE BEHAVIOR:
 ${JSON.stringify(baselineData, null, 2)}`;
 
   try {
-    const { text } = await invokeWithPrompt("behavioral-analysis", userMessage, "correlation", orgId, 4096);
-    return JSON.parse(extractJson(text));
+    const { text } = await invokeWithPrompt(
+      "behavioral-analysis",
+      "Analyze the supplied behavioral evidence and return the requested JSON.",
+      "correlation",
+      orgId,
+      4096,
+      [{ label: "behavioral_evidence", content: userMessage }],
+      behavioralOutputSchema,
+    );
+    return parseValidatedModelJson<BehavioralAnalysisResult>(text, behavioralOutputSchema);
   } catch (error) {
     log.warn("AI behavioral analysis unavailable", { error: String(error) });
     throw new AiUnavailableError("behavioral analysis", error);
@@ -1692,8 +1839,16 @@ SECURITY CONTROLS:
 ${JSON.stringify(securityControls, null, 2)}`;
 
   try {
-    const { text } = await invokeWithPrompt("attack-path-prediction", userMessage, "investigation", orgId, 6144);
-    return JSON.parse(extractJson(text));
+    const { text } = await invokeWithPrompt(
+      "attack-path-prediction",
+      "Predict attack paths from the supplied security evidence and return the requested JSON.",
+      "investigation",
+      orgId,
+      6144,
+      [{ label: "attack_path_evidence", content: userMessage }],
+      attackPathOutputSchema,
+    );
+    return parseValidatedModelJson<AttackPathPredictionResult>(text, attackPathOutputSchema);
   } catch (error) {
     log.warn("AI attack path prediction unavailable", { error: String(error) });
     throw new AiUnavailableError("attack path prediction", error);
@@ -1735,8 +1890,16 @@ Respond as a JSON object with these fields:
 - confidence: Number 0-1 indicating your confidence in the analysis`;
 
   try {
-    const { text } = await invokeWithPrompt("multi-turn-investigation", prompt, "investigation", orgId, 8192);
-    return JSON.parse(extractJson(text));
+    const { text } = await invokeWithPrompt(
+      "multi-turn-investigation",
+      "Answer the analyst's question using the supplied investigation context.",
+      "investigation",
+      orgId,
+      8192,
+      [{ label: "investigation_conversation_evidence", content: prompt }],
+      investigationChatOutputSchema,
+    );
+    return parseValidatedModelJson(text, investigationChatOutputSchema);
   } catch (error) {
     log.warn("Multi-turn investigation unavailable", { error: String(error) });
     throw new AiUnavailableError("multi-turn investigation", error);
@@ -1802,12 +1965,14 @@ Generate detection rules as JSON:
   try {
     const { text, metrics } = await invokeWithPrompt(
       "detection-rule-generation",
-      userMessage,
+      "Generate the requested detection rules from the supplied attack evidence.",
       "investigation",
       orgId,
       8192,
+      [{ label: "detection_rule_evidence", content: userMessage }],
+      detectionRuleOutputSchema,
     );
-    return { ...JSON.parse(extractJson(text)), modelId: metrics.model };
+    return { ...parseValidatedModelJson(text, detectionRuleOutputSchema), modelId: metrics.model };
   } catch (error) {
     log.warn("Detection rule generation unavailable", { error: String(error) });
     throw new AiUnavailableError("detection rule generation", error);

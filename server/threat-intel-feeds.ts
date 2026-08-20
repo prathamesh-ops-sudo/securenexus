@@ -4,8 +4,17 @@ import { logger as rootLogger } from "./logger";
 import { invokeModel } from "./ai/model-gateway";
 import { config as appConfig } from "./config";
 import { AiUnavailableError } from "./ai/fallback";
+import { z } from "zod";
 
 const logger = rootLogger.child("threat-intel-feeds");
+
+const relevanceScoreSchema = z.array(
+  z.object({
+    idx: z.number().int().min(0),
+    score: z.number().min(1).max(10),
+    reason: z.string().max(200),
+  }),
+);
 
 export interface ThreatIntelArticle {
   id: string;
@@ -165,7 +174,6 @@ function extractSource(url: string): string {
 }
 
 const FETCH_TIMEOUT_MS = 12_000;
-const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 const MAX_ITEMS_PER_FEED = 200;
 const CONCURRENCY = 15;
 const PER_HOST_INTERVAL_MS = 500;
@@ -1728,15 +1736,9 @@ async function scoreArticleBatch(
     })
     .join("\n");
 
-  const systemPrompt = `You are a cybersecurity threat intelligence analyst. Score each article for relevance to the target organization on a scale of 1-10.
+  const systemPrompt = `You are a cybersecurity threat intelligence analyst. Score each supplied article for relevance to the supplied organization on a scale of 1-10.
 
-Organization Context:
-- Name: ${orgCtx.orgName}
-- Industry: ${orgCtx.industry || "Technology"}
-- Size: ${orgCtx.size || "Mid-market"}
-- Threat Profile: ${orgCtx.threatProfile || "Standard enterprise"}
-
-Scoring Criteria:
+Scoring criteria:
 - 9-10: Directly affects this org's industry, tech stack, or active threat actors targeting them
 - 7-8: Highly relevant vulnerability, attack technique, or threat actor in their sector
 - 5-6: Generally relevant cybersecurity news or research
@@ -1746,7 +1748,13 @@ Scoring Criteria:
 Respond ONLY with valid JSON array. No markdown, no explanation outside the JSON.
 Format: [{"idx": 0, "score": 7, "reason": "brief reason"}]`;
 
-  const userMessage = `Score these ${articles.length} articles for relevance to ${orgCtx.orgName}:\n\n${articleSummaries}`;
+  const userMessage = `Score the supplied ${articles.length} articles against the supplied organization context.`;
+  const organizationContext = JSON.stringify({
+    name: orgCtx.orgName,
+    industry: orgCtx.industry || "Technology",
+    size: orgCtx.size || "Mid-market",
+    threatProfile: orgCtx.threatProfile || "Standard enterprise",
+  });
 
   try {
     const result = await invokeModel({
@@ -1760,6 +1768,10 @@ Format: [{"idx": 0, "score": 7, "reason": "brief reason"}]`;
       orgId: orgCtx.orgId,
       promptId: "threat-intel-relevance-scoring",
       tier: "triage",
+      untrustedContent: [
+        { label: "organization_context", content: organizationContext },
+        { label: "threat_intelligence_articles", content: articleSummaries },
+      ],
     });
 
     // Extract JSON from response — handle markdown code fences
@@ -1767,7 +1779,7 @@ Format: [{"idx": 0, "score": 7, "reason": "brief reason"}]`;
     const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (fenceMatch) jsonText = fenceMatch[1].trim();
 
-    const parsed = JSON.parse(jsonText) as Array<{ idx: number; score: number; reason: string }>;
+    const parsed = relevanceScoreSchema.parse(JSON.parse(jsonText));
     return parsed
       .map((p) => ({
         articleId: articles[p.idx]?.id ?? "",

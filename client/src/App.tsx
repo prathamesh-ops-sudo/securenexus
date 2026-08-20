@@ -37,6 +37,7 @@ const SettingsPage = lazy(() => import("@/pages/settings"));
 const IngestionPage = lazy(() => import("@/pages/ingestion"));
 const ConnectorsPage = lazy(() => import("@/pages/connectors"));
 const AIEnginePage = lazy(() => import("@/pages/ai-engine"));
+const AiSecurityPage = lazy(() => import("@/pages/ai-security"));
 const AlertDetailPage = lazy(() => import("@/pages/alert-detail"));
 const AnalyticsPage = lazy(() => import("@/pages/analytics"));
 const ThreatIntelPage = lazy(() => import("@/pages/threat-intel"));
@@ -494,6 +495,7 @@ function AuthenticatedApp() {
                       <Route path="/jit-secret-access" component={JitSecretAccessPage} />
                       <Route path="/secret-rotation-overview" component={SecretRotationOverviewPage} />
                       <Route path="/ai-engine" component={AIEnginePage} />
+                      <Route path="/ai-security" component={AiSecurityPage} />
                       <Route path="/soc-copilot" component={SocCopilotPage} />
                       <Route path="/prompt-to-artifact" component={PromptToArtifactPage} />
                       <Route path="/model-gateway" component={ModelGatewayPage} />

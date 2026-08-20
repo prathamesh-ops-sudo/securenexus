@@ -97,6 +97,10 @@ interface AlgorithmScore {
   available: boolean;
 }
 
+interface NarrativeResultWithSafety {
+  unverifiedCitations?: boolean;
+}
+
 function ConfidenceBadge({
   confidence,
   algorithmScores,
@@ -1363,6 +1367,14 @@ export default function IncidentDetailPage() {
                 <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
                   <Sparkles className="h-4 w-4 text-primary" />
                   AI-Generated Analysis (Risk Score: {narrativeResult.riskScore}/100)
+                  {(narrativeResult as NarrativeResult & NarrativeResultWithSafety).unverifiedCitations && (
+                    <Badge
+                      className="bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100"
+                      data-testid="badge-unverified-citations"
+                    >
+                      Unverified citations — human review required
+                    </Badge>
+                  )}
                   {narrativeResult.threatIntelSources && narrativeResult.threatIntelSources.length > 0 && (
                     <Badge
                       variant="outline"

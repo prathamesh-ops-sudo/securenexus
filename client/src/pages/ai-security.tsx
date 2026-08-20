@@ -1,0 +1,269 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ShieldCheck, AlertTriangle, Loader2 } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { apiRequest } from "@/lib/queryClient";
+
+interface SecuritySettings {
+  injectionMode: "off" | "flag_and_gate" | "block";
+  piiMasking: "mask_identifiers" | "mask_all" | "off";
+  aiEnabled: boolean;
+  models: {
+    default: string;
+    triage: string;
+    investigation: string;
+  };
+}
+
+type SecuritySettingsUpdate = Pick<SecuritySettings, "injectionMode" | "piiMasking" | "aiEnabled">;
+
+interface GuardEvent {
+  id: string;
+  created_at: string;
+  feature: string;
+  model_id: string;
+  injection_score: number;
+  signals: Array<{ rule: string; excerpt: string }>;
+  action_taken: string;
+  redaction_counts: Array<{ kind: string; count: number }>;
+  human_review_required: boolean;
+}
+
+function redactionTotal(events: GuardEvent[]): number {
+  return events.reduce((total, event) => total + event.redaction_counts.reduce((sum, item) => sum + item.count, 0), 0);
+}
+
+async function fetchEnvelope<T>(url: string): Promise<T> {
+  const response = await fetch(url);
+  const body = (await response.json()) as { data: T | null; errors?: Array<{ message: string }> };
+  if (!response.ok || body.data === null) throw new Error(body.errors?.[0]?.message || "Request failed");
+  return body.data;
+}
+
+export default function AiSecurityPage() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedEvent, setSelectedEvent] = useState<GuardEvent | null>(null);
+  const [severity, setSeverity] = useState<"" | "suspected" | "likely">("");
+  const settingsQuery = useQuery<SecuritySettings>({
+    queryKey: ["/api/ai/security-settings"],
+    queryFn: () => fetchEnvelope<SecuritySettings>("/api/ai/security-settings"),
+  });
+  const eventsQuery = useQuery<GuardEvent[]>({
+    queryKey: ["/api/ai/guard-events", severity],
+    queryFn: () =>
+      fetchEnvelope<GuardEvent[]>(`/api/ai/guard-events?pageSize=50${severity ? `&severity=${severity}` : ""}`),
+  });
+  const settingsMutation = useMutation({
+    mutationFn: async (settings: SecuritySettingsUpdate) => {
+      const response = await apiRequest("PUT", "/api/ai/security-settings", settings);
+      return (await response.json()) as SecuritySettings;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["/api/ai/security-settings"], data);
+      toast({ title: "AI security settings saved" });
+    },
+    onError: (error: Error) =>
+      toast({ title: "Could not save AI security settings", description: error.message, variant: "destructive" }),
+  });
+
+  if (settingsQuery.isLoading || eventsQuery.isLoading) {
+    return (
+      <div className="space-y-6 p-6">
+        <Skeleton className="h-10 w-72" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
+  if (settingsQuery.isError || eventsQuery.isError || !settingsQuery.data) {
+    return (
+      <div className="p-6 text-sm text-destructive">AI security settings or guard events could not be loaded.</div>
+    );
+  }
+
+  const settings = settingsQuery.data;
+  const update = (change: Partial<SecuritySettingsUpdate>) =>
+    settingsMutation.mutate({
+      injectionMode: settings.injectionMode,
+      piiMasking: settings.piiMasking,
+      aiEnabled: settings.aiEnabled,
+      ...change,
+    });
+  const events = eventsQuery.data ?? [];
+
+  return (
+    <div className="space-y-6 p-6">
+      <div>
+        <h1 className="text-2xl font-semibold flex items-center gap-2">
+          <ShieldCheck className="h-6 w-6" /> AI Security
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Review prompt-injection protections, egress redaction, and human-review gates for this organization.
+        </p>
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Models and redaction</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {[
+            ["Default / narrative / correlation", settings.models.default],
+            ["Triage", settings.models.triage],
+            ["Investigation", settings.models.investigation],
+          ].map(([tier, model]) => (
+            <div key={tier} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
+              <span>{tier}</span>
+              <code className="text-xs text-muted-foreground">{model}</code>
+            </div>
+          ))}
+          <p className="text-xs text-muted-foreground">
+            GPT-5.6 cost is not published; invocations still count toward limits and are shown as not published.
+          </p>
+          <div className="text-sm font-medium">Redactions recorded: {redactionTotal(events)}</div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Protection controls</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-5 md:grid-cols-2">
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Injection enforcement</span>
+            <Select
+              value={settings.injectionMode}
+              onValueChange={(value) => update({ injectionMode: value as SecuritySettings["injectionMode"] })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="flag_and_gate">Flag and require human review</SelectItem>
+                <SelectItem value="block">Block likely injection attempts</SelectItem>
+                <SelectItem value="off">Detect only (owner action)</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">PII masking</span>
+            <Select
+              value={settings.piiMasking}
+              onValueChange={(value) => update({ piiMasking: value as SecuritySettings["piiMasking"] })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="mask_identifiers">Mask identifiers, preserve network evidence</SelectItem>
+                <SelectItem value="mask_all">Mask identifiers, IPs, and hostnames</SelectItem>
+                <SelectItem value="off">Identifiers visible (secrets remain redacted)</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="block text-xs text-muted-foreground">
+              Masking identifiers keeps IPs, hostnames, hashes, and ports available for detection quality.
+            </span>
+          </label>
+          <label className="flex items-center gap-3 text-sm">
+            <Switch
+              checked={settings.aiEnabled}
+              onCheckedChange={(checked) => update({ aiEnabled: checked })}
+              disabled={settingsMutation.isPending}
+            />
+            <span>{settings.aiEnabled ? "AI analysis enabled" : "AI analysis disabled; no model calls will run"}</span>
+          </label>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Guard events</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="mb-4 max-w-xs">
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Severity filter</span>
+              <Select
+                value={severity || "all"}
+                onValueChange={(value) => setSeverity(value === "all" ? "" : (value as "suspected" | "likely"))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All detections</SelectItem>
+                  <SelectItem value="suspected">Suspected</SelectItem>
+                  <SelectItem value="likely">Likely</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+          </div>
+          {events.length === 0 ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              No AI guard events have been recorded.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {events.map((event) => (
+                <button
+                  key={event.id}
+                  className="w-full rounded-md border p-3 text-left hover:bg-muted/40"
+                  onClick={() => setSelectedEvent(event)}
+                >
+                  <div className="flex items-center gap-2 text-sm">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    <span className="font-medium">{event.feature}</span>
+                    <span className="text-muted-foreground">{event.action_taken}</span>
+                    <span className="ml-auto">score {event.injection_score}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {new Date(event.created_at).toLocaleString()} · {event.model_id}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      <Sheet
+        open={selectedEvent !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedEvent(null);
+        }}
+      >
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Signal details</SheetTitle>
+          </SheetHeader>
+          {selectedEvent && (
+            <div className="space-y-3 pt-6 text-sm">
+              <p className="text-muted-foreground">
+                Raw evidence is never shown here. Excerpts are redacted before persistence.
+              </p>
+              {selectedEvent.signals.map((signal) => (
+                <div key={signal.rule} className="rounded border p-2">
+                  <strong>{signal.rule}</strong>
+                  <p className="mt-1 text-muted-foreground">{signal.excerpt}</p>
+                </div>
+              ))}
+              {selectedEvent.human_review_required && (
+                <p className="font-medium text-amber-600">
+                  This analysis is gated and requires human review before autonomous action.
+                </p>
+              )}
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+      {settingsMutation.isPending && (
+        <div className="fixed bottom-4 right-4 flex items-center gap-2 rounded bg-background p-2 text-xs shadow">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Saving…
+        </div>
+      )}
+    </div>
+  );
+}

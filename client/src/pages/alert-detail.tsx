@@ -62,6 +62,7 @@ interface TriageResult {
   falsePositiveLikelihood: number;
   relatedIocs: (string | { type: string; value: string })[];
   threatIntelSources?: string[];
+  humanReviewRequired?: boolean;
 }
 
 export default function AlertDetailPage() {
@@ -598,6 +599,14 @@ export default function AlertDetailPage() {
                 <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
                   <Brain className="h-4 w-4 text-primary" />
                   AI Triage Results
+                  {triageResult.humanReviewRequired && (
+                    <Badge
+                      className="bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100"
+                      data-testid="badge-ai-gated"
+                    >
+                      Gated — human review required
+                    </Badge>
+                  )}
                   {triageResult.threatIntelSources && triageResult.threatIntelSources.length > 0 && (
                     <Badge
                       variant="outline"

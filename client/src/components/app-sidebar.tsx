@@ -268,6 +268,7 @@ const adminGroup: NavGroup = {
       label: "Team & Org",
       items: [
         { title: "Onboarding", url: "/onboarding", icon: Activity },
+        { title: "AI Security", url: "/ai-security", icon: ShieldCheck },
         { title: "Team & Invites", url: "/team", icon: Users },
         { title: "Org Settings", url: "/org-settings", icon: Building2 },
       ],
