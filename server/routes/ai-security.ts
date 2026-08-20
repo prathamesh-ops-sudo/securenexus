@@ -3,7 +3,7 @@ import { z } from "zod";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { ERROR_CODES, reply, replyError } from "../api-response";
-import { getOrgId } from "./shared";
+import { getOrgId, storage } from "./shared";
 import {
   getAiSecuritySettings,
   listAiGuardEvents,
@@ -23,8 +23,18 @@ const settingsSchema = z.object({
   aiEnabled: z.boolean(),
 });
 
+const relationshipQuerySchema = z
+  .object({
+    alertId: z.string().uuid().optional(),
+    incidentId: z.string().uuid().optional(),
+  })
+  .refine((value) => Boolean(value.alertId) !== Boolean(value.incidentId), {
+    message: "Provide exactly one alertId or incidentId.",
+  });
+
 export function registerAiSecurityRoutes(app: Express): void {
   const readChain = [isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("analyst")];
+  const relationshipReadChain = [isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("read_only")];
   const writeChain = [isAuthenticated, resolveOrgContext, requireOrgId, requireMinRole("admin")];
 
   app.get("/api/ai/security-settings", ...readChain, async (req, res) => {
@@ -83,6 +93,51 @@ export function registerAiSecurityRoutes(app: Express): void {
       return replyError(res, 500, [
         { code: ERROR_CODES.INTERNAL_ERROR, message: "Unable to update AI security settings." },
       ]);
+    }
+  });
+
+  app.get("/api/ai/guard-events/related", ...relationshipReadChain, async (req, res) => {
+    const parsed = relationshipQuerySchema.safeParse({
+      alertId: typeof req.query.alertId === "string" ? req.query.alertId : undefined,
+      incidentId: typeof req.query.incidentId === "string" ? req.query.incidentId : undefined,
+    });
+    if (!parsed.success) {
+      return replyError(res, 400, [
+        { code: ERROR_CODES.VALIDATION_ERROR, message: "Provide exactly one alertId or incidentId." },
+      ]);
+    }
+
+    try {
+      const orgId = getOrgId(req);
+      const relationship = parsed.data;
+      if (relationship.alertId) {
+        const alert = await storage.getAlert(relationship.alertId);
+        if (!alert || alert.orgId !== orgId) {
+          return replyError(res, 404, [{ code: ERROR_CODES.NOT_FOUND, message: "Alert not found." }]);
+        }
+      } else {
+        const incident = await storage.getIncident(relationship.incidentId!);
+        if (!incident || incident.orgId !== orgId) {
+          return replyError(res, 404, [{ code: ERROR_CODES.NOT_FOUND, message: "Incident not found." }]);
+        }
+      }
+
+      const result = await listAiGuardEvents({
+        orgId,
+        page: 1,
+        pageSize: 100,
+        alertId: relationship.alertId,
+        incidentId: relationship.incidentId,
+      });
+      return reply(res, result.events, {
+        page: 1,
+        pageSize: 100,
+        total: result.total,
+        totalPages: Math.ceil(result.total / 100),
+      });
+    } catch (error) {
+      log.error("Failed to read relationship-scoped AI guard events", { error: String(error) });
+      return replyError(res, 500, [{ code: ERROR_CODES.INTERNAL_ERROR, message: "Unable to load AI guard state." }]);
     }
   });
 

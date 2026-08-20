@@ -2,17 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-
-interface GuardEvent {
-  id: string;
-  injection_score: number;
-  signals: Array<{ rule?: string }>;
-  action_taken: string;
-  human_review_required: boolean;
-}
+import { classifyGuardEvents, type GuardEvent } from "@/lib/ai-guard-state";
 
 async function fetchGuardEvents(scope: "alertId" | "incidentId", id: string): Promise<GuardEvent[]> {
-  const response = await fetch(`/api/ai/guard-events?${scope}=${encodeURIComponent(id)}&page=1&pageSize=100`);
+  const response = await fetch(`/api/ai/guard-events/related?${scope}=${encodeURIComponent(id)}`);
   const body = (await response.json()) as { data: GuardEvent[] | null; errors?: Array<{ message?: string }> };
   if (!response.ok || !body.data) throw new Error(body.errors?.[0]?.message || "Unable to load AI guard state");
   return body.data;
@@ -28,11 +21,9 @@ export function AiGuardBanner({ alertId, incidentId }: { alertId?: string; incid
   });
 
   if (isLoading || events.length === 0) return null;
-  const gatedEvents = events.filter((event) => event.human_review_required || event.injection_score > 0);
-  if (gatedEvents.length === 0) return null;
-  const signals = Array.from(
-    new Set(gatedEvents.flatMap((event) => event.signals.map((signal) => signal.rule).filter(Boolean))),
-  );
+  const state = classifyGuardEvents(events);
+  if (!state) return null;
+  const isGated = state.kind === "gated";
 
   return (
     <Card className="border-amber-500/50 bg-amber-500/5" data-testid="ai-guard-banner">
@@ -40,20 +31,23 @@ export function AiGuardBanner({ alertId, incidentId }: { alertId?: string; incid
         <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold">AI analysis flagged for human review</h2>
+            <h2 className="text-sm font-semibold">
+              {isGated ? "AI analysis flagged for human review" : "AI analysis recorded a safety detection"}
+            </h2>
             <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100">
-              Human review required
+              {isGated ? "Human review required" : "Recorded; no gate"}
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            Persisted AI guard events for this {alertId ? "alert" : "incident"} detected untrusted instructions. No
-            autonomous action should rely on the flagged analysis.
+            {isGated
+              ? `Persisted AI guard events for this ${alertId ? "alert" : "incident"} indicate that the analysis requires human review. No autonomous action should rely on the flagged analysis.`
+              : `Persisted AI guard events for this ${alertId ? "alert" : "incident"} recorded an injection signal, but this event did not require human review under the current enforcement mode.`}
           </p>
-          {signals.length > 0 && (
+          {state.signals.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
               <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
-              <span className="font-medium">Detected signals:</span>
-              {signals.map((signal) => (
+              <span className="font-medium">{isGated ? "Detected signals:" : "Recorded signals:"}</span>
+              {state.signals.map((signal) => (
                 <Badge key={signal} variant="outline" className="text-[10px]">
                   {signal}
                 </Badge>
