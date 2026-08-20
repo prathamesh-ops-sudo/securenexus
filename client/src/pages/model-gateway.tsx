@@ -561,8 +561,8 @@ function CostTable({ costTable }: { costTable: Record<string, { input: number; o
       <TableHeader>
         <TableRow>
           <TableHead>Model</TableHead>
-          <TableHead className="text-right">Input (per token)</TableHead>
-          <TableHead className="text-right">Output (per token)</TableHead>
+          <TableHead className="text-right">Input (per 1K tokens)</TableHead>
+          <TableHead className="text-right">Output (per 1K tokens)</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>

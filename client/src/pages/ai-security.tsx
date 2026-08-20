@@ -148,6 +148,10 @@ export default function AiSecurityPage() {
             GPT-5.6 cost is not published; invocations still count toward limits and are shown as not published.
           </p>
           <div className="text-sm font-medium">Redactions recorded: {redactionTotal(events)}</div>
+          <p className="text-xs text-muted-foreground">
+            Redactions protect provider egress and are recorded per event; redaction alone does not gate autonomous
+            decisions.
+          </p>
         </CardContent>
       </Card>
       <Card>
@@ -307,6 +311,22 @@ export default function AiSecurityPage() {
                   <p className="mt-1 text-muted-foreground">{signal.excerpt}</p>
                 </div>
               ))}
+              {selectedEvent.redaction_counts.length > 0 && (
+                <div className="rounded border p-2">
+                  <strong>Provider-egress redactions</strong>
+                  <p className="mt-1 text-muted-foreground">
+                    Redactions were applied before provider egress. They are recorded for audit and do not by themselves
+                    gate autonomous action.
+                  </p>
+                  <ul className="mt-2 list-disc pl-5 text-muted-foreground">
+                    {selectedEvent.redaction_counts.map((redaction) => (
+                      <li key={redaction.kind}>
+                        {redaction.kind}: {redaction.count}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {selectedEvent.human_review_required && (
                 <p className="font-medium text-amber-600">
                   This analysis is gated and requires human review before autonomous action.

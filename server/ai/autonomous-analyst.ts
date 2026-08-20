@@ -16,6 +16,7 @@ import { computeConfidence, quickConfidence, estimateFpRate, type ConfidenceResu
 import { runAutonomousInvestigation, type InvestigationResult } from "./investigation-runner";
 import { dispatchAction, type ActionContext, type ActionResult } from "../action-dispatcher";
 import { getAiSecuritySettings } from "./security-store";
+import { getGuardVetoes } from "./safety-vetoes";
 import { triageAlert as runAiTriage } from "../ai";
 
 const log = logger.child("autonomous-analyst");
@@ -99,18 +100,13 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
       if (aiTriage.aiGuard) {
         const guard = aiTriage.aiGuard;
         guardMetadata.push(guard);
-        if (guard.injectionScore > 0) safetyVetoes.push("injection_detected");
-        if (guard.withheld) safetyVetoes.push("analysis_withheld");
-        if (guard.schemaRetryUsed) safetyVetoes.push("schema_retry_used");
-        if (guard.unverifiedCitations) safetyVetoes.push("unverified_citations");
-        if (guard.redactionRemovedContent) safetyVetoes.push("redaction_removed_content");
+        safetyVetoes.push(...getGuardVetoes(guard));
       }
     } catch (error) {
       const guard = (error as { aiGuard?: NonNullable<TriageResult["guardMetadata"]>[number] }).aiGuard;
       if (guard) {
         guardMetadata.push(guard);
-        if (guard.injectionScore > 0) safetyVetoes.push("injection_detected");
-        if (guard.withheld) safetyVetoes.push("analysis_withheld");
+        safetyVetoes.push(...getGuardVetoes(guard));
       } else {
         safetyVetoes.push("ai_triage_guard_unavailable");
       }

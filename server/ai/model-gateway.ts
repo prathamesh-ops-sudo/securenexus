@@ -71,7 +71,12 @@ export interface ModelInvokeResult {
   aiGuard?: AiGuardMetadata;
 }
 
-const COST_TABLE: Record<string, { input: number; output: number } | null> = {
+type CostRatesPerThousandTokens = {
+  input: number;
+  output: number;
+};
+
+const COST_TABLE_PER_1K_TOKENS: Record<string, CostRatesPerThousandTokens | null> = {
   "amazon.nova-pro-v1:0": { input: 0.0008, output: 0.0032 },
   "us.amazon.nova-pro-v1:0": { input: 0.0008, output: 0.0032 },
   "amazon.nova-lite-v1:0": { input: 0.00006, output: 0.00024 },
@@ -88,9 +93,9 @@ const COST_TABLE: Record<string, { input: number; output: number } | null> = {
 };
 
 function estimateCost(modelId: string, inputTokens: number, outputTokens: number): number | null {
-  const rates = COST_TABLE[modelId];
+  const rates = COST_TABLE_PER_1K_TOKENS[modelId];
   if (!rates) return null;
-  return inputTokens * rates.input + outputTokens * rates.output;
+  return (inputTokens * rates.input + outputTokens * rates.output) / 1000;
 }
 
 function normalizeTokenCount(value: number | null | undefined, fallback: number): number {
@@ -763,7 +768,7 @@ export function getGatewayDashboardData(): GatewayDashboardData {
       maxCacheEntries: MAX_CACHE_ENTRIES,
       maxRetries: MAX_RETRIES,
       retryBaseMs: RETRY_BASE_MS,
-      costTable: COST_TABLE,
+      costTable: COST_TABLE_PER_1K_TOKENS,
     },
   };
 }

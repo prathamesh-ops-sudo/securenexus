@@ -71,15 +71,16 @@ describe("Bedrock model gateway", () => {
   it("returns the Nova response and usage metadata on success", async () => {
     bedrockSend.mockResolvedValue({
       output: { message: { content: [{ text: "Evidence-backed response" }] } },
-      usage: { inputTokens: 12, outputTokens: 7 },
+      usage: { inputTokens: 1000, outputTokens: 1000 },
     });
 
     const result = await invokeModel(options);
 
     expect(result.modelId).toBe("amazon.nova-pro-v1:0");
     expect(result.text).toBe("Evidence-backed response");
-    expect(result.inputTokensEstimate).toBe(12);
-    expect(result.outputTokensEstimate).toBe(7);
+    expect(result.inputTokensEstimate).toBe(1000);
+    expect(result.outputTokensEstimate).toBe(1000);
+    expect(result.costEstimateUsd).toBe(0.004);
     expect(bedrockSend).toHaveBeenCalledOnce();
   });
 
