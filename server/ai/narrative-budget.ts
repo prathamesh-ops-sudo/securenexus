@@ -48,7 +48,7 @@ const SEVERITY_ORDER: Record<string, number> = {
   informational: 4,
 };
 
-const RESPONSE_JSON_INSTRUCTION = `\n\nRespond with this exact JSON structure:\n{\n  "narrative": "detailed multi-paragraph attacker-centric narrative",\n  "citedAlertIds": ["alert IDs cited"],\n  "summary": "one-line executive summary",\n  "attackTimeline": [{"timestamp": "ISO 8601", "description": "action", "alertId": "source", "mitreTechnique": "T1xxx"}],\n  "attackerProfile": {"ttps": [], "sophistication": "level", "likelyMotivation": "type"},\n  "killChainAnalysis": [{"phase": "phase", "description": "what occurred", "evidence": []}],\n  "mitigationSteps": ["steps"],\n  "iocs": [{"type": "type", "value": "value", "context": "context"}],\n  "riskScore": 85,\n  "nistPhase": "Detection|Analysis|Containment|Eradication|Recovery"\n}`;
+const RESPONSE_JSON_INSTRUCTION = `\n\nRespond with this exact JSON structure:\n{\n  "narrative": "detailed multi-paragraph attacker-centric narrative",\n  "citedAlertIds": ["alert IDs cited"],\n  "summary": "one-line executive summary",\n  "attackTimeline": [{"timestamp": "ISO 8601", "description": "action", "alertId": "source", "mitreTechnique": "T1xxx"}],\n  "attackerProfile": {"ttps": [], "sophistication": "level", "likelyMotivation": "type", "estimatedOrigin": "origin or unknown", "diamondModel": {"adversary": [], "capability": [], "infrastructure": [], "victim": []}},\n  "killChainAnalysis": [{"phase": "phase", "description": "what occurred", "evidence": []}],\n  "mitigationSteps": ["steps"],\n  "iocs": [{"type": "type", "value": "value", "context": "context"}],\n  "riskScore": 85,\n  "nistPhase": "Detection|Analysis|Containment|Eradication|Recovery"\n}`;
 
 export function buildBudgetedNarrativeMessage(
   incident: IncidentLike,
@@ -94,7 +94,8 @@ export function buildBudgetedNarrativeMessage(
   );
 
   // Reserve tokens for alert section overhead and response instruction
-  const overheadTokens = countTokens(`ASSOCIATED ALERT TELEMETRY (00 alerts):\n[]`) + countTokens(RESPONSE_JSON_INSTRUCTION);
+  const overheadTokens =
+    countTokens(`ASSOCIATED ALERT TELEMETRY (00 alerts):\n[]`) + countTokens(RESPONSE_JSON_INSTRUCTION);
   let remainingBudget = availableBudget - currentTokens - overheadTokens;
 
   // Pack alerts within remaining budget
@@ -143,6 +144,8 @@ export function buildBudgetedNarrativeMessage(
   }
   fullMessage += alertSection;
   fullMessage += RESPONSE_JSON_INSTRUCTION;
+  fullMessage +=
+    "\nUse strings for attackerProfile.diamondModel.adversary and attackerProfile.diamondModel.capability; use arrays for infrastructure and victim.";
 
   return {
     message: fullMessage,

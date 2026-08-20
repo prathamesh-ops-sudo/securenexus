@@ -119,11 +119,7 @@ describe("Token Budget Enforcement", () => {
 
   it("includes all alerts when budget is generous", () => {
     const incident = makeIncident();
-    const alerts = [
-      makeAlert("a1", "critical"),
-      makeAlert("a2", "high"),
-      makeAlert("a3", "medium"),
-    ];
+    const alerts = [makeAlert("a1", "critical"), makeAlert("a2", "high"), makeAlert("a3", "medium")];
 
     // Very generous budget
     const result = buildBudgetedNarrativeMessage(incident, alerts, "", 50000, 2048);
@@ -172,5 +168,12 @@ describe("Token Budget Enforcement", () => {
 
     const result = buildBudgetedNarrativeMessage(incident, alerts, "", 3000, 1000);
     expect(result.alertsIncluded + result.alertsTruncated).toBe(20);
+  });
+
+  it("includes all required narrative attacker-profile fields in the response contract", () => {
+    const result = buildBudgetedNarrativeMessage(makeIncident(), [makeAlert("a1", "critical")], "", 4096, 2048);
+
+    expect(result.message).toContain('"estimatedOrigin"');
+    expect(result.message).toContain('"diamondModel"');
   });
 });
