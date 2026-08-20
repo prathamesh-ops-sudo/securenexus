@@ -53,7 +53,7 @@ export interface ActiveLearningStats {
 // ─── Few-Shot Example Management ─────────────────────────────────────────────
 
 export async function addFewShotExample(params: {
-  orgId?: string;
+  orgId: string;
   domain: string;
   input: string;
   incorrectOutput: string;
@@ -68,7 +68,7 @@ export async function addFewShotExample(params: {
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
     [
-      params.orgId || null,
+      params.orgId,
       params.domain,
       params.input,
       params.incorrectOutput,
@@ -91,28 +91,23 @@ export async function addFewShotExample(params: {
   return rowToFewShotExample(row);
 }
 
-export async function getFewShotExamples(
-  domain: string,
-  orgId?: string,
-  limit: number = 10,
-): Promise<FewShotExample[]> {
+export async function getFewShotExamples(domain: string, orgId: string, limit: number = 10): Promise<FewShotExample[]> {
   const safeLimit = Math.min(Math.max(1, limit), 50);
 
-  // Get org-specific + global (null org_id) examples
   const result = await pool.query(
     `SELECT * FROM ai_few_shot_examples
-     WHERE domain = $1 AND active = true AND (org_id = $2 OR org_id IS NULL)
+     WHERE domain = $1 AND active = true AND org_id = $2
      ORDER BY created_at DESC
      LIMIT $3`,
-    [domain, orgId || null, safeLimit],
+    [domain, orgId, safeLimit],
   );
 
   return result.rows.map(rowToFewShotExample);
 }
 
-export async function getAllFewShotExamples(orgId?: string, domain?: string): Promise<FewShotExample[]> {
-  let query = `SELECT * FROM ai_few_shot_examples WHERE (org_id = $1 OR org_id IS NULL)`;
-  const params: (string | null)[] = [orgId || null];
+export async function getAllFewShotExamples(orgId: string, domain?: string): Promise<FewShotExample[]> {
+  let query = `SELECT * FROM ai_few_shot_examples WHERE org_id = $1`;
+  const params: string[] = [orgId];
 
   if (domain) {
     query += ` AND domain = $2`;
@@ -125,21 +120,17 @@ export async function getAllFewShotExamples(orgId?: string, domain?: string): Pr
   return result.rows.map(rowToFewShotExample);
 }
 
-export async function deactivateFewShotExample(id: string, orgId?: string): Promise<boolean> {
-  const result = orgId
-    ? await pool.query(`UPDATE ai_few_shot_examples SET active = false WHERE id = $1 AND org_id = $2 RETURNING id`, [
-        id,
-        orgId,
-      ])
-    : await pool.query(`UPDATE ai_few_shot_examples SET active = false WHERE id = $1 RETURNING id`, [id]);
+export async function deactivateFewShotExample(id: string, orgId: string): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE ai_few_shot_examples SET active = false WHERE id = $1 AND org_id = $2 RETURNING id`,
+    [id, orgId],
+  );
 
   return (result.rowCount ?? 0) > 0;
 }
 
-export async function deleteFewShotExample(id: string, orgId?: string): Promise<boolean> {
-  const result = orgId
-    ? await pool.query(`DELETE FROM ai_few_shot_examples WHERE id = $1 AND org_id = $2`, [id, orgId])
-    : await pool.query(`DELETE FROM ai_few_shot_examples WHERE id = $1`, [id]);
+export async function deleteFewShotExample(id: string, orgId: string): Promise<boolean> {
+  const result = await pool.query(`DELETE FROM ai_few_shot_examples WHERE id = $1 AND org_id = $2`, [id, orgId]);
 
   return (result.rowCount ?? 0) > 0;
 }
@@ -336,7 +327,7 @@ export async function getActiveLearningStats(orgId: string): Promise<ActiveLearn
   const examplesResult = await pool.query(
     `SELECT domain, COUNT(*) as cnt, SUM(CASE WHEN active THEN 1 ELSE 0 END) as active_cnt
      FROM ai_few_shot_examples
-     WHERE org_id = $1 OR org_id IS NULL
+     WHERE org_id = $1
      GROUP BY domain`,
     [orgId],
   );
@@ -437,7 +428,7 @@ export async function getLearningLog(orgId: string, limit: number = 50): Promise
  * Build a few-shot augmented system prompt by appending analyst corrections
  * to the base system prompt for a given domain.
  */
-export async function buildFewShotAugmentedPrompt(domain: string, orgId?: string): Promise<string | null> {
+export async function buildFewShotAugmentedPrompt(domain: string, orgId: string): Promise<string | null> {
   const examples = await getFewShotExamples(domain, orgId, 5);
   if (examples.length === 0) return null;
   return formatFewShotExamplesForPrompt(examples);

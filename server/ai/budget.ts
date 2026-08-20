@@ -20,7 +20,7 @@ const FALLBACK_BUDGET: PlanAiBudget = PLAN_AI_BUDGETS["free"];
 export interface UsageRecord {
   inputTokens: number;
   outputTokens: number;
-  costUsd: number;
+  costUsd: number | null;
   modelId: string;
   promptId?: string;
   promptVersion?: number;
@@ -125,7 +125,7 @@ export async function trackUsage(orgId: string, record: UsageRecord): Promise<vo
 
   const result = await pool.query(
     `UPDATE org_ai_budgets
-     SET daily_spend_usd = daily_spend_usd + $2,
+     SET daily_spend_usd = daily_spend_usd + COALESCE($2::double precision, 0),
          daily_invocations = daily_invocations + 1,
          daily_input_tokens = daily_input_tokens + $3,
          daily_output_tokens = daily_output_tokens + $4,

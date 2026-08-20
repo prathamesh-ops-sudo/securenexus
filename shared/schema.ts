@@ -3470,6 +3470,55 @@ export const orgAiBudgets = pgTable(
 
 export type OrgAiBudget = typeof orgAiBudgets.$inferSelect;
 
+export const orgAiSecuritySettings = pgTable(
+  "org_ai_security_settings",
+  {
+    orgId: varchar("org_id")
+      .primaryKey()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    injectionMode: text("injection_mode").notNull().default("flag_and_gate"),
+    piiMasking: text("pii_masking").notNull().default("mask_identifiers"),
+    aiEnabled: boolean("ai_enabled").notNull().default(true),
+    updatedBy: varchar("updated_by"),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_org_ai_security_settings_org").on(table.orgId)],
+);
+
+export const aiGuardEvents = pgTable(
+  "ai_guard_events",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()::text`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow(),
+    invocationId: varchar("invocation_id").notNull(),
+    feature: text("feature").notNull(),
+    modelId: text("model_id").notNull(),
+    injectionScore: integer("injection_score").notNull().default(0),
+    signals: jsonb("signals").notNull().default([]),
+    enforcementMode: text("enforcement_mode").notNull(),
+    actionTaken: text("action_taken").notNull(),
+    redactionCounts: jsonb("redaction_counts").notNull().default([]),
+    humanReviewRequired: boolean("human_review_required").notNull().default(false),
+    alertId: varchar("alert_id"),
+    incidentId: varchar("incident_id"),
+  },
+  (table) => [
+    index("idx_ai_guard_events_org_created").on(table.orgId, table.createdAt),
+    index("idx_ai_guard_events_org_feature").on(table.orgId, table.feature),
+    index("idx_ai_guard_events_org_score").on(table.orgId, table.injectionScore),
+    index("idx_ai_guard_events_alert").on(table.orgId, table.alertId),
+    index("idx_ai_guard_events_incident").on(table.orgId, table.incidentId),
+  ],
+);
+
+export type OrgAiSecuritySettings = typeof orgAiSecuritySettings.$inferSelect;
+export type AiGuardEvent = typeof aiGuardEvents.$inferSelect;
+
 export const aiFewShotExamples = pgTable(
   "ai_few_shot_examples",
   {

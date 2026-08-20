@@ -36,11 +36,12 @@ process.env.AWS_REGION ||= "us-east-1";
 
 describe("Bedrock model gateway", () => {
   let invokeModel: typeof import("../ai/model-gateway").invokeModel;
+  let buildCacheKey: typeof import("../ai/model-gateway").buildCacheKey;
   let withAiFallback: typeof import("../ai/fallback").withAiFallback;
   let config: typeof import("../config").config;
 
   beforeAll(async () => {
-    ({ invokeModel } = await import("../ai/model-gateway"));
+    ({ invokeModel, buildCacheKey } = await import("../ai/model-gateway"));
     ({ withAiFallback } = await import("../ai/fallback"));
     ({ config } = await import("../config"));
   });
@@ -61,9 +62,9 @@ describe("Bedrock model gateway", () => {
   };
 
   it("uses reachable Nova defaults for each AI tier", () => {
-    expect(config.ai.modelId).toBe("amazon.nova-pro-v1:0");
-    expect(config.ai.triage.modelId).toBe("amazon.nova-lite-v1:0");
-    expect(config.ai.investigation.modelId).toBe("amazon.nova-pro-v1:0");
+    expect(config.ai.modelId).toBe("us.openai.gpt-5.6-terra");
+    expect(config.ai.triage.modelId).toBe("us.amazon.nova-2-lite-v1:0");
+    expect(config.ai.investigation.modelId).toBe("us.openai.gpt-5.6-terra");
   });
 
   it("returns the Nova response and usage metadata on success", async () => {
@@ -79,6 +80,14 @@ describe("Bedrock model gateway", () => {
     expect(result.inputTokensEstimate).toBe(12);
     expect(result.outputTokensEstimate).toBe(7);
     expect(bedrockSend).toHaveBeenCalledOnce();
+  });
+
+  it("requires organization scope and isolates cache keys by organization", () => {
+    expect(buildCacheKey({ ...options, orgId: undefined })).toBeNull();
+    const first = buildCacheKey({ ...options, orgId: "org-a" });
+    const second = buildCacheKey({ ...options, orgId: "org-b" });
+    expect(first).not.toBe(second);
+    expect(first).toMatch(/^mc:[a-f0-9]{64}$/);
   });
 
   it("returns an explicit unavailable result for Bedrock access denial", async () => {
@@ -98,6 +107,6 @@ describe("Bedrock model gateway", () => {
     const result = await withAiFallback("test:throttled", () => invokeModel(options));
 
     expect(result).toEqual({ data: null, source: "unavailable" });
-    expect(bedrockSend).toHaveBeenCalledTimes(3);
+    expect(bedrockSend).toHaveBeenCalledTimes(9);
   }, 10_000);
 });

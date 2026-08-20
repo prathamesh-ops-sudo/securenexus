@@ -6,6 +6,7 @@ import { registerAlertsRoutes } from "./alerts";
 import { registerIncidentsRoutes } from "./incidents";
 import { registerConnectorsRoutes } from "./connectors";
 import { registerAiRoutes } from "./ai";
+import { registerAiSecurityRoutes } from "./ai-security";
 import { registerComplianceRoutes } from "./compliance";
 import { registerEntitiesRoutes } from "./entities";
 import { registerPlaybooksRoutes } from "./playbooks";
@@ -119,6 +120,7 @@ export function registerAllDomainRoutes(app: Express): void {
   registerIncidentsRoutes(app);
   registerConnectorsRoutes(app);
   registerAiRoutes(app);
+  registerAiSecurityRoutes(app);
   registerIngestionRoutes(app);
   registerEntitiesRoutes(app);
   registerPlaybooksRoutes(app);

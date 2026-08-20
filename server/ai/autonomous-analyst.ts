@@ -15,6 +15,7 @@ import { logger } from "../logger";
 import { computeConfidence, quickConfidence, estimateFpRate, type ConfidenceResult } from "./confidence-scorer";
 import { runAutonomousInvestigation, type InvestigationResult } from "./investigation-runner";
 import { dispatchAction, type ActionContext, type ActionResult } from "../action-dispatcher";
+import { getAiSecuritySettings } from "./security-store";
 
 const log = logger.child("autonomous-analyst");
 
@@ -39,6 +40,7 @@ export interface TriageResult {
   investigation: InvestigationResult | null;
   timeToDecisionMs: number;
   humanApprovalRequired: boolean;
+  safetyVetoes?: string[];
 }
 
 export interface RecommendedAction {
@@ -49,12 +51,30 @@ export interface RecommendedAction {
   autoExecute: boolean;
 }
 
+const AUTONOMOUS_ACTION_ALLOWLIST = new Set([
+  "isolate_host",
+  "block_ip",
+  "block_domain",
+  "quarantine_file",
+  "disable_user",
+  "kill_process",
+  "auto_triage",
+  "change_status",
+  "add_tag",
+  "escalate",
+  "notify",
+]);
+
 /**
  * Main entry point: triage an alert through the autonomous analyst
  */
 export async function triageAlert(request: TriageRequest): Promise<TriageResult> {
   const startTime = Date.now();
   const { alertId, orgId, userId, userName } = request;
+  const securitySettings = await getAiSecuritySettings(orgId);
+  const safetyVetoes: string[] = [];
+  if (!securitySettings.aiEnabled) safetyVetoes.push("organization_ai_kill_switch");
+  if (securitySettings.injectionMode === "flag_and_gate") safetyVetoes.push("injection_gate_requires_human_review");
 
   log.info("Starting autonomous triage", { alertId, orgId });
 
@@ -124,9 +144,22 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
 
   // 6. Execute actions for Tier 1 (auto-act if confidence > 95%)
   const executedActions: ActionResult[] = [];
-  if (tier === "tier1_autonomous" && confidence.shouldAutoAct) {
+  if (tier === "tier1_autonomous" && confidence.shouldAutoAct && safetyVetoes.length === 0) {
     const autoActions = recommendedActions.filter((a) => a.autoExecute);
     for (const action of autoActions) {
+      if (!AUTONOMOUS_ACTION_ALLOWLIST.has(action.type)) {
+        safetyVetoes.push(`unknown_action:${action.type}`);
+        await writeAutonomyLog({
+          orgId,
+          action: "action_blocked",
+          tier,
+          alertId,
+          details: { actionType: action.type, reason: "action_not_allowlisted" },
+          success: false,
+          triggeredBy: "ai_analyst",
+        });
+        continue;
+      }
       try {
         const ctx: ActionContext = {
           orgId,
@@ -165,7 +198,7 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
   }
 
   // 7. Determine outcome
-  const outcome = determineOutcome(confidence, investigation, tier);
+  const outcome = safetyVetoes.length > 0 ? "pending_review" : determineOutcome(confidence, investigation, tier);
   const reasoning = buildReasoning(alert, confidence, investigation);
   const executiveSummary = buildExecutiveSummary(alert, confidence, investigation, outcome);
 
@@ -192,7 +225,7 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
       mitreTechniques: alert.mitreTechnique ? [alert.mitreTechnique] : null,
       relatedAlertIds: investigation?.correlations.relatedAlerts.map((r) => r.id) ?? null,
       timeToDecisionMs,
-      status: tier === "tier1_autonomous" ? "completed" : "pending_review",
+      status: tier === "tier1_autonomous" && safetyVetoes.length === 0 ? "completed" : "pending_review",
     })
     .returning();
 
@@ -249,7 +282,8 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
     executedActions,
     investigation,
     timeToDecisionMs,
-    humanApprovalRequired: tier !== "tier1_autonomous",
+    humanApprovalRequired: tier !== "tier1_autonomous" || safetyVetoes.length > 0,
+    safetyVetoes,
   };
 }
 
@@ -327,6 +361,19 @@ export async function approveDecision(decisionId: string, orgId: string, reviewe
   // Execute recommended actions after approval
   const actions = (existing.recommendedActions || []) as RecommendedAction[];
   for (const action of actions) {
+    if (!AUTONOMOUS_ACTION_ALLOWLIST.has(action.type)) {
+      await writeAutonomyLog({
+        orgId,
+        decisionId,
+        action: "action_blocked",
+        tier: existing.tier,
+        alertId: existing.alertId || undefined,
+        details: { actionType: action.type, reason: "action_not_allowlisted" },
+        success: false,
+        triggeredBy: reviewedBy,
+      });
+      continue;
+    }
     try {
       const ctx: ActionContext = {
         orgId,

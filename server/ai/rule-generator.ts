@@ -1,7 +1,41 @@
 import { invokeModel } from "./model-gateway";
 import { logger } from "../logger";
+import { z } from "zod";
 
 const log = logger.child("rule-generator");
+
+const generatedRuleSchema = (ruleField: "sigmaYaml" | "yaraRule") =>
+  z.object({
+    name: z.string().min(1).max(256),
+    description: z.string().max(4000),
+    severity: z.enum(["low", "medium", "high", "critical"]),
+    mitreTactic: z.string().max(128),
+    mitreTechnique: z.string().regex(/^T\d{4}(\.\d{3})?$/),
+    tags: z.array(z.string().max(128)).max(50),
+    [ruleField]: z.string().max(20000),
+    conditionTree: z.record(z.string(), z.unknown()),
+    eventTypes: z.array(z.string().max(128)).max(50),
+    falsePositiveNotes: z.string().max(4000),
+    references: z.array(z.string().max(2000)).max(50),
+  });
+
+const ttpExtractionSchema = z.object({
+  ttps: z
+    .array(
+      z.object({
+        tactic: z.string().max(128),
+        techniqueId: z.string().regex(/^T\d{4}(\.\d{3})?$/),
+        techniqueName: z.string().max(256),
+        description: z.string().max(4000),
+        indicators: z.array(z.string().max(1000)).max(100),
+        suggestedDetection: z.string().max(4000),
+      }),
+    )
+    .max(100),
+  summary: z.string().max(6000),
+  threatActor: z.string().max(512),
+  targetSectors: z.array(z.string().max(256)).max(50),
+});
 
 const SONNET_MODEL = "amazon.nova-pro-v1:0";
 
@@ -131,7 +165,7 @@ export interface RuleGenerationResult {
   modelId: string;
   inputTokens: number;
   outputTokens: number;
-  costUsd: number;
+  costUsd: number | null;
   latencyMs: number;
 }
 
@@ -144,15 +178,16 @@ export async function generateSigmaRule(context: string, orgId: string): Promise
     modelId: SONNET_MODEL,
     backend: "bedrock",
     systemPrompt: SIGMA_SYSTEM_PROMPT,
-    userMessage: `Generate a Sigma detection rule for the following security context:\n\n${context}`,
+    userMessage: "Generate a Sigma detection rule from the supplied security evidence.",
     maxTokens: 4096,
     temperature: 0.3,
     topP: 0.9,
     orgId,
     skipCache: true,
+    untrustedContent: [{ label: "detection_rule_context", content: context }],
   });
 
-  const rule = parseJsonResponse<GeneratedSigmaRule>(result.text);
+  const rule = parseJsonResponse<GeneratedSigmaRule>(result.text, generatedRuleSchema("sigmaYaml"));
   const quality = scoreRuleQuality(rule, "sigma");
 
   return {
@@ -173,15 +208,16 @@ export async function generateYaraRule(context: string, orgId: string): Promise<
     modelId: SONNET_MODEL,
     backend: "bedrock",
     systemPrompt: YARA_SYSTEM_PROMPT,
-    userMessage: `Generate a YARA detection rule for the following security context:\n\n${context}`,
+    userMessage: "Generate a YARA detection rule from the supplied security evidence.",
     maxTokens: 4096,
     temperature: 0.3,
     topP: 0.9,
     orgId,
     skipCache: true,
+    untrustedContent: [{ label: "detection_rule_context", content: context }],
   });
 
-  const rule = parseJsonResponse<GeneratedYaraRule>(result.text);
+  const rule = parseJsonResponse<GeneratedYaraRule>(result.text, generatedRuleSchema("yaraRule"));
   const quality = scoreRuleQuality(rule, "yara");
 
   return {
@@ -202,7 +238,7 @@ export async function extractTTPs(
   result: TTPExtractionResult;
   inputTokens: number;
   outputTokens: number;
-  costUsd: number;
+  costUsd: number | null;
   latencyMs: number;
 }> {
   log.info("Extracting TTPs from threat intel", { orgId, reportLength: threatIntelReport.length });
@@ -211,15 +247,16 @@ export async function extractTTPs(
     modelId: SONNET_MODEL,
     backend: "bedrock",
     systemPrompt: TTP_EXTRACTION_PROMPT,
-    userMessage: `Extract TTPs from this threat intelligence report:\n\n${threatIntelReport}`,
+    userMessage: "Extract TTPs from the supplied threat intelligence evidence.",
     maxTokens: 4096,
     temperature: 0.2,
     topP: 0.9,
     orgId,
     skipCache: true,
+    untrustedContent: [{ label: "threat_intelligence_report", content: threatIntelReport }],
   });
 
-  const result = parseJsonResponse<TTPExtractionResult>(modelResult.text);
+  const result = parseJsonResponse<TTPExtractionResult>(modelResult.text, ttpExtractionSchema);
 
   return {
     result,
@@ -399,18 +436,18 @@ export function evaluateLifecycle(rule: {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function parseJsonResponse<T>(text: string): T {
+function parseJsonResponse<T>(text: string, schema: z.ZodType): T {
   // Try to extract JSON from markdown code blocks first
   const jsonMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   const jsonStr = jsonMatch ? jsonMatch[1].trim() : text.trim();
 
   try {
-    return JSON.parse(jsonStr) as T;
+    return schema.parse(JSON.parse(jsonStr)) as T;
   } catch {
     // Try to find JSON object in the text
     const objMatch = jsonStr.match(/\{[\s\S]*\}/);
     if (objMatch) {
-      return JSON.parse(objMatch[0]) as T;
+      return schema.parse(JSON.parse(objMatch[0])) as T;
     }
     throw new Error("Failed to parse AI response as JSON");
   }
