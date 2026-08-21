@@ -1329,7 +1329,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
         const addAlertQuery = (name: string, field: string, description: string) => {
           queries.push({
             name,
-            query: `alerts | where ${field} == "${escapedValue}"`,
+            query: `alerts | where ${field} ${field === "payload" ? "contains" : "=="} "${escapedValue}"`,
             description,
             dataSource: "alerts",
           });
@@ -1337,7 +1337,7 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
         const addSensorQuery = (name: string, field: string, description: string) => {
           queries.push({
             name,
-            query: `sensor_events | where ${field} == "${escapedValue}"`,
+            query: `sensor_events | where ${field} ${field === "payload" ? "contains" : "=="} "${escapedValue}"`,
             description,
             dataSource: "sensor_events",
           });

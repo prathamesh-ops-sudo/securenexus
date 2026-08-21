@@ -47,12 +47,15 @@ export function mapCloudWatchProbeError(error: unknown): Pick<LogSourceProbeResu
   return { reasonCode: "unknown", message: `CloudWatch probe failed: ${message}` };
 }
 
-export function buildReceiverProbeResult(source: {
-  sourceType: string;
-  httpEndpoint?: string | null;
-  eventsReceived: number;
-  lastEventAt: Date | string | null;
-}): LogSourceProbeResult {
+export function buildReceiverProbeResult(
+  source: {
+    sourceType: string;
+    httpEndpoint?: string | null;
+    eventsReceived: number;
+    lastEventAt: Date | string | null;
+  },
+  wording = "Cannot verify this receiver-side source from the platform.",
+): LogSourceProbeResult {
   const everReceived = source.eventsReceived > 0 || source.lastEventAt !== null;
   const receiver = source.httpEndpoint || "the configured receiver";
   return {
@@ -61,8 +64,8 @@ export function buildReceiverProbeResult(source: {
     timestamp: new Date().toISOString(),
     status: "unavailable",
     message: everReceived
-      ? `Cannot verify this receiver-side source from the platform. The source must send an event to ${receiver}; ${source.eventsReceived} event(s) have arrived, most recently ${String(source.lastEventAt)}.`
-      : `Cannot verify this receiver-side source from the platform. The source must send an event to ${receiver}; no events have been received yet.`,
+      ? `${wording} The source must send an event to ${receiver}; ${source.eventsReceived} event(s) have arrived, most recently ${String(source.lastEventAt)}.`
+      : `${wording} The source must send an event to ${receiver}; no events have been received yet.`,
     reasonCode: "configuration",
     eventReceipt: {
       eventsReceived: source.eventsReceived,
@@ -78,14 +81,7 @@ export function buildHttpPushProbeResult(source: {
   eventsReceived: number;
   lastEventAt: Date | string | null;
 }): LogSourceProbeResult {
-  const result = buildReceiverProbeResult(source);
-  return {
-    ...result,
-    message: result.message.replace(
-      "Cannot verify this receiver-side source from the platform.",
-      "Cannot verify an HTTP push source from this side.",
-    ),
-  };
+  return buildReceiverProbeResult(source, "Cannot verify an HTTP push source from this side.");
 }
 
 export async function probeCloudWatchLogSource(source: {

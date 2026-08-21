@@ -119,6 +119,7 @@ function parseSigmaYaml(text: string): {
   description?: string;
   logsource?: { category?: string; product?: string; service?: string };
   detection?: Record<string, unknown>;
+  condition?: string;
 } {
   const result: Record<string, unknown> = {};
   let section = "";
@@ -173,9 +174,10 @@ export function compileSigmaRule(ruleText: string): CompiledFilter {
   if (logsource.category === "firewall" || logsource.service === "syslog") targetTable = "ingestion_logs";
 
   const detection = rule.detection || {};
-  const conditions: HuntCondition[] = [];
+  const selectionConditions = new Map<string, HuntCondition[]>();
   for (const [selectionName, rawSelection] of Object.entries(detection)) {
     if (selectionName === "condition" || typeof rawSelection !== "object" || rawSelection === null) continue;
+    const compiledSelection: HuntCondition[] = [];
     for (const [rawField, rawValue] of Object.entries(rawSelection as Record<string, unknown>)) {
       const [field, ...modifiers] = rawField.split("|");
       const modifier = modifiers.join("|");
@@ -190,13 +192,41 @@ export function compileSigmaRule(ruleText: string): CompiledFilter {
               : "eq";
         const parsed = condition(targetTable, field, op, typeof value === "string" ? value : String(value));
         if (!parsed) return rejected(targetTable, `Sigma field "${field}" is not supported for ${targetTable}.`);
-        conditions.push(parsed);
+        compiledSelection.push(parsed);
       }
     }
+    if (compiledSelection.length > 0) selectionConditions.set(selectionName, compiledSelection);
   }
+
+  if (selectionConditions.size === 0) {
+    return rejected(targetTable, "Sigma rule has no supported detection conditions.");
+  }
+
+  const conditionExpression =
+    typeof detection.condition === "string"
+      ? detection.condition.trim()
+      : typeof rule.condition === "string"
+        ? rule.condition.trim()
+        : "";
+  if (!conditionExpression) {
+    return rejected(targetTable, "Sigma rule has no supported condition expression.");
+  }
+  if (/\b(?:not|or)\b|\b(?:1|all)\s+of\b|\*/i.test(conditionExpression)) {
+    return rejected(targetTable, `Sigma condition expression "${conditionExpression}" is not supported yet.`);
+  }
+
+  const selectionNames = conditionExpression.split(/\s+and\s+/i).map((name) => name.trim());
+  if (selectionNames.some((name) => !/^[A-Za-z_][\w-]*$/.test(name) || !selectionConditions.has(name))) {
+    const unknown = selectionNames.find((name) => !selectionConditions.has(name)) || conditionExpression;
+    return rejected(targetTable, `Sigma condition expression references unsupported selection "${unknown}".`);
+  }
+
+  const conditions = selectionNames.flatMap((name) => selectionConditions.get(name) || []);
+  if (conditions.length === 0) return rejected(targetTable, "Sigma rule has no supported detection conditions.");
+
   return {
     conditions,
-    conditionLogic: conditions.length > 1 ? "and" : "and",
+    conditionLogic: "and",
     explanation: `Sigma rule "${rule.title || "Untitled"}": ${rule.description || "No description"}`,
     targetTable,
   };
@@ -213,6 +243,9 @@ export function compileYaraRule(ruleText: string): CompiledFilter {
     if (hexMatch) patterns.push(hexMatch[1].replace(/\s/g, ""));
   }
   const ruleName = ruleText.match(/rule\s+(\w+)/i)?.[1] || "Untitled YARA Rule";
+  if (patterns.length === 0) {
+    return rejected(targetTable, "YARA rule contains no supported string patterns.");
+  }
   return {
     conditions: patterns.map((value) => ({ field: "payloadText", operator: "contains", value })),
     conditionLogic: "or",

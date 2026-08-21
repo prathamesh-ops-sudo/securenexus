@@ -28,6 +28,7 @@ import { executeHunt, pivotOnIoc, generateHuntHypotheses } from "../hunt-engine"
 const log = logger.child("threat-hunting");
 
 const ALLOWED_QUERY_TYPES = HUNT_QUERY_TYPES as readonly string[];
+const SUPPORTED_QUERY_TYPES = ["sigma", "yara", "kql", "sql"] as const;
 const ALLOWED_STATUSES = HUNT_STATUSES as readonly string[];
 const ALLOWED_CADENCES = ["daily", "weekly", "biweekly", "monthly"];
 const ALLOWED_DIFFICULTIES = ["beginner", "intermediate", "advanced"];
@@ -43,6 +44,41 @@ const ALLOWED_CATEGORIES = [
   "c2",
   "other",
 ];
+
+type HuntRow = typeof threatHunts.$inferSelect;
+
+function huntReason(hunt: HuntRow): string | null {
+  if (hunt.status !== "rejected" && hunt.status !== "failed" && hunt.queryType !== "custom") return null;
+  if (hunt.queryType === "custom") {
+    return `Query type "custom" is not executable. Supported types: ${SUPPORTED_QUERY_TYPES.join(", ")}.`;
+  }
+  if (hunt.compiledQuery) {
+    try {
+      const compiled = JSON.parse(hunt.compiledQuery) as {
+        rejectionReason?: unknown;
+        reason?: unknown;
+        explanation?: unknown;
+      };
+      if (typeof compiled.rejectionReason === "string") return compiled.rejectionReason;
+      if (typeof compiled.reason === "string") return compiled.reason;
+      if (hunt.status === "rejected" && typeof compiled.explanation === "string") return compiled.explanation;
+    } catch {
+      // Preserve the hunt row even if an older compiled payload is malformed.
+    }
+  }
+  return hunt.status === "failed"
+    ? "The last hunt execution failed; run it again for the execution reason."
+    : "This hunt is not executable.";
+}
+
+function withHuntReason(hunt: HuntRow): HuntRow & { reason: string | null } {
+  const reason = huntReason(hunt);
+  return {
+    ...hunt,
+    status: hunt.queryType === "custom" && reason ? "rejected" : hunt.status,
+    reason,
+  };
+}
 
 export function registerThreatHuntingRoutes(app: Express): void {
   // =========================================================================
@@ -71,7 +107,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
         .orderBy(desc(threatHunts.updatedAt))
         .limit(200);
 
-      res.json({ hunts });
+      res.json({ hunts: hunts.map(withHuntReason) });
     } catch (error) {
       log.error("List hunts error", { error: String(error) });
       res.status(500).json({ message: "Failed to list hunts" });
@@ -93,10 +129,10 @@ export function registerThreatHuntingRoutes(app: Express): void {
         if (!name || typeof name !== "string") {
           return res.status(400).json({ message: "Name is required" });
         }
-        if (!queryType || !ALLOWED_QUERY_TYPES.includes(queryType)) {
+        if (!queryType || !SUPPORTED_QUERY_TYPES.includes(queryType)) {
           return res
             .status(400)
-            .json({ message: `Invalid query type. Must be one of: ${ALLOWED_QUERY_TYPES.join(", ")}` });
+            .json({ message: `Invalid query type. Supported types: ${SUPPORTED_QUERY_TYPES.join(", ")}` });
         }
         if (!queryText || typeof queryText !== "string") {
           return res.status(400).json({ message: "Query text is required" });
@@ -109,7 +145,9 @@ export function registerThreatHuntingRoutes(app: Express): void {
           const compiled = compileQuery(queryType, queryText);
           compiledQuery = JSON.stringify(compiled);
           initialStatus = compiled.rejected ? "rejected" : "ready";
-        } catch {
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : "Query compilation failed.";
+          compiledQuery = JSON.stringify({ rejected: true, rejectionReason: reason, explanation: reason });
           initialStatus = "rejected";
         }
 
@@ -130,7 +168,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
           })
           .returning();
 
-        res.status(201).json({ hunt });
+        res.status(201).json({ hunt: withHuntReason(hunt) });
       } catch (error) {
         log.error("Create hunt error", { error: String(error) });
         res.status(500).json({ message: "Failed to create hunt" });
@@ -173,7 +211,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
         .from(huntLibrary)
         .where(and(eq(huntLibrary.huntId, id), eq(huntLibrary.orgId, orgId)));
 
-      res.json({ hunt, results, schedules, libraryEntry: libraryEntry || null });
+      res.json({ hunt: withHuntReason(hunt), results, schedules, libraryEntry: libraryEntry || null });
     } catch (error) {
       log.error("Get hunt error", { error: String(error) });
       res.status(500).json({ message: "Failed to get hunt" });
@@ -206,7 +244,14 @@ export function registerThreatHuntingRoutes(app: Express): void {
         const updateData: Record<string, unknown> = { updatedAt: new Date() };
         if (name && typeof name === "string") updateData.name = name.substring(0, 200);
         if (typeof description === "string") updateData.description = description.substring(0, 2000);
-        if (queryType && ALLOWED_QUERY_TYPES.includes(queryType)) updateData.queryType = queryType;
+        if (queryType) {
+          if (!SUPPORTED_QUERY_TYPES.includes(queryType)) {
+            return res
+              .status(400)
+              .json({ message: `Invalid query type. Supported types: ${SUPPORTED_QUERY_TYPES.join(", ")}` });
+          }
+          updateData.queryType = queryType;
+        }
         if (queryText && typeof queryText === "string") {
           updateData.queryText = queryText.substring(0, 10000);
           // Re-compile
@@ -214,8 +259,9 @@ export function registerThreatHuntingRoutes(app: Express): void {
             const compiled = compileQuery((updateData.queryType as string) || existing.queryType, queryText);
             updateData.compiledQuery = JSON.stringify(compiled);
             updateData.status = compiled.rejected ? "rejected" : "ready";
-          } catch {
-            updateData.compiledQuery = null;
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : "Query compilation failed.";
+            updateData.compiledQuery = JSON.stringify({ rejected: true, rejectionReason: reason, explanation: reason });
             updateData.status = "rejected";
           }
         }
@@ -230,7 +276,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
           .where(and(eq(threatHunts.id, id), eq(threatHunts.orgId, orgId)))
           .returning();
 
-        res.json({ hunt: updated });
+        res.json({ hunt: withHuntReason(updated) });
       } catch (error) {
         log.error("Update hunt error", { error: String(error) });
         res.status(500).json({ message: "Failed to update hunt" });

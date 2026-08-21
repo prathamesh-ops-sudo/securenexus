@@ -90,6 +90,7 @@ interface ThreatHunt {
   queryText: string;
   compiledQuery: string | null;
   status: string;
+  reason?: string | null;
   hypothesis: string | null;
   mitreTechniques: string[];
   tags: string[];
@@ -432,10 +433,18 @@ function QueryBuilderTab() {
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       apiRequest("POST", "/api/threat-hunting/hunts", data).then((r) => r.json()),
-    onSuccess: () => {
+    onSuccess: (data: { hunt?: ThreatHunt }) => {
       qc.invalidateQueries({ queryKey: ["/api/threat-hunting/hunts"] });
       qc.invalidateQueries({ queryKey: ["/api/threat-hunting/stats"] });
-      toast({ title: "Hunt created" });
+      if (data.hunt?.status === "rejected" || data.hunt?.status === "failed") {
+        toast({
+          title: "Hunt stored but not executable",
+          description: data.hunt.reason || "The query was rejected.",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Hunt created" });
+      }
       setOpen(false);
       resetForm();
     },
@@ -547,7 +556,6 @@ LIMIT 100`,
                       <SelectItem value="yara">YARA Rule</SelectItem>
                       <SelectItem value="kql">KQL Query</SelectItem>
                       <SelectItem value="sql">SQL Query</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -671,6 +679,9 @@ LIMIT 100`,
                           </span>
                         )}
                       </div>
+                      {hunt.reason && (hunt.status === "rejected" || hunt.status === "failed") && (
+                        <p className="text-xs text-orange-300 mt-1 max-w-xl">{hunt.reason}</p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -678,7 +689,7 @@ LIMIT 100`,
                       size="sm"
                       variant="ghost"
                       onClick={() => executeMutation.mutate(hunt.id)}
-                      disabled={executeMutation.isPending}
+                      disabled={executeMutation.isPending || Boolean(hunt.reason)}
                       title="Execute hunt"
                     >
                       {executeMutation.isPending ? (
@@ -749,6 +760,12 @@ function HuntDetailView({ hunt }: { hunt: ThreatHunt }) {
           <span>{formatDate(hunt.lastRunAt)}</span>
         </div>
       </div>
+      {hunt.reason && (hunt.status === "rejected" || hunt.status === "failed") && (
+        <div className="rounded-md border border-orange-500/20 bg-orange-500/5 p-3 text-sm text-orange-300">
+          <span className="font-medium">Reason: </span>
+          {hunt.reason}
+        </div>
+      )}
 
       {hunt.hypothesis && (
         <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-md">
@@ -2555,7 +2572,6 @@ function NotebookTab() {
                         <SelectItem value="yara">YARA</SelectItem>
                         <SelectItem value="kql">KQL</SelectItem>
                         <SelectItem value="sql">SQL</SelectItem>
-                        <SelectItem value="custom">Custom</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

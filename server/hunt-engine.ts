@@ -8,7 +8,13 @@
 import { sql } from "drizzle-orm";
 import { alerts, ingestionLogs, sensorEvents } from "@shared/schema";
 import { db } from "./db";
-import { compileQuery, type CompiledFilter, type HuntCondition, type HuntTable } from "./sigma-compiler";
+import {
+  compileQuery,
+  HuntQueryRejectedError,
+  type CompiledFilter,
+  type HuntCondition,
+  type HuntTable,
+} from "./sigma-compiler";
 import { logger } from "./logger";
 
 const log = logger.child("hunt-engine");
@@ -116,15 +122,14 @@ function tableParts(table: HuntTable) {
 
 async function queryTable(compiled: CompiledFilter, orgId: string, limit: number): Promise<Record<string, unknown>[]> {
   const tableName = compiled.targetTable;
+  if (compiled.conditions.length === 0) {
+    throw new HuntQueryRejectedError("Hunt contains no supported executable conditions.");
+  }
   const tableRef = sql.raw(`"${tableName}"`);
   const { org, created } = tableParts(tableName);
   const filters = compiled.conditions.map((item) => conditionSql(tableName, item));
   const conditionFragment =
-    filters.length === 0
-      ? sql`TRUE`
-      : compiled.conditionLogic === "or"
-        ? sql`(${sql.join(filters, sql` OR `)})`
-        : sql`(${sql.join(filters, sql` AND `)})`;
+    compiled.conditionLogic === "or" ? sql`(${sql.join(filters, sql` OR `)})` : sql`(${sql.join(filters, sql` AND `)})`;
 
   return db.transaction(async (tx) => {
     await tx.execute(sql.raw(`SET LOCAL statement_timeout = '${QUERY_TIMEOUT_MS}ms'`));
@@ -156,6 +161,17 @@ export async function executeHunt(
       reason: compiled.rejectionReason || compiled.explanation,
     };
   }
+  if (compiled.conditions.length === 0) {
+    return {
+      status: "rejected",
+      eventCount: 0,
+      events: [],
+      executionDurationMs: Date.now() - startMs,
+      targetTable: compiled.targetTable,
+      explanation: "Hunt contains no supported executable conditions.",
+      reason: "Hunt contains no supported executable conditions.",
+    };
+  }
 
   try {
     const events = await queryTable(compiled, orgId, cappedLimit);
@@ -170,6 +186,17 @@ export async function executeHunt(
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     log.error("Hunt execution failed", { error: reason, orgId, targetTable: compiled.targetTable });
+    if (error instanceof HuntQueryRejectedError) {
+      return {
+        status: "rejected",
+        eventCount: 0,
+        events: [],
+        executionDurationMs: Date.now() - startMs,
+        targetTable: compiled.targetTable,
+        explanation: reason,
+        reason,
+      };
+    }
     return {
       status: "failed",
       eventCount: 0,
