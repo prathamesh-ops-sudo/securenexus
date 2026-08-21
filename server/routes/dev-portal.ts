@@ -48,39 +48,33 @@ const MAX_WHERE_CLAUSES = 20;
 const MAX_IN_VALUES = 200;
 const DB_QUERY_TIMEOUT_MS = 5_000;
 const REDACTED_VALUE = "[REDACTED]";
-const SENSITIVE_COLUMN_NAMES = new Set([
-  "password",
-  "password_hash",
-  "passwd",
-  "mfa_secret",
-  "backup_codes",
-  "recovery_codes",
-  "private_key",
-  "key_hash",
-  "webhook_secret",
-  "client_secret",
-  "access_token",
-  "refresh_token",
-  "session_token",
-  "reset_token",
-  "invite_token",
-  "verification_token",
-  "bearer_token",
-  "bearer_token_hash",
-  "oauth_token",
-  "api_key",
-  "api_key_hash",
-  "secret",
-]);
 const SENSITIVE_TABLE_COLUMNS = new Set([
   "connectors:config",
   "api_keys:key",
   "api_keys:secret",
+  "organizations:sovereign_key_config",
   "password_reset_tokens:token",
+  "sessions:sess",
   "sessions:sid",
   "org_sso_configs:certificate",
   "outbound_webhooks:headers",
 ]);
+const SENSITIVE_WORD_PATTERN =
+  /(^|_)(secret|secrets|token|tokens|api_?key|apikey|credential|credentials|private_?key|key_hash|passphrase|password|certificate|certificates?|backup_?codes?|recovery_?codes?|sid|session|sessions|otp|pin)(_|$)/i;
+const OPERATIONAL_SUFFIX_PATTERN =
+  /(^|_)(at|on|date|time|timestamp|days?|hours?|minutes?|count|counts|status|state|type|prefix|length|age|rotation|expires?|expiry|required|enabled|active|ref|name|path|provider|classification|advisory|certifications?|submitted|start|end|metadata)$/i;
+const OPERATIONAL_COLUMN_PATTERNS = [
+  /^password_(min_length|expiry_days|require_[a-z_]+)$/i,
+  /^password_(changed_at|change_required)$/i,
+  /^(is|has|can|should)_encrypted$/i,
+  /(^|_)(api_?key|credential|secret|token)_id$/i,
+  /^(ai_tokens_per_month|daily_(input|output)_tokens|(input|output)_tokens|max_tokens)$/i,
+  /^max_concurrent_sessions$/i,
+  /^secrets_found$/i,
+  /^secret_field$/i,
+  /^submitted_credentials$/i,
+  /^accessed_credential$/i,
+];
 
 type FilterPrimitive = string | number | boolean;
 type RawFilterClause = {
@@ -89,17 +83,12 @@ type RawFilterClause = {
   value?: unknown;
 };
 
-function isSensitiveColumn(tableName: string, columnName: string): boolean {
+export function isSensitiveColumn(tableName: string, columnName: string): boolean {
   const normalizedColumn = columnName.toLowerCase();
-  if (SENSITIVE_COLUMN_NAMES.has(normalizedColumn)) return true;
   if (SENSITIVE_TABLE_COLUMNS.has(`${tableName}:${normalizedColumn}`)) return true;
-  return (
-    /(^|_)(password|passwd|pass_hash)(_|$)/i.test(normalizedColumn) ||
-    /(^|_)(mfa|backup|recovery)_(secret|code|codes?)(_|$)/i.test(normalizedColumn) ||
-    /(^|_)(credential|credentials|encrypted)(_|$)/i.test(normalizedColumn) ||
-    /(^|_)(token|token_hash)(_|$)/i.test(normalizedColumn) ||
-    /(^|_)(access|refresh|session|reset|invite|verification|bearer|oauth)_(token|secret)(_|$)/i.test(normalizedColumn)
-  );
+  if (!SENSITIVE_WORD_PATTERN.test(normalizedColumn)) return false;
+  if (OPERATIONAL_COLUMN_PATTERNS.some((pattern) => pattern.test(normalizedColumn))) return false;
+  return !OPERATIONAL_SUFFIX_PATTERN.test(normalizedColumn);
 }
 
 function redactRows(rows: unknown[], tableName: string, redactedColumns: Set<string>): Record<string, unknown>[] {
