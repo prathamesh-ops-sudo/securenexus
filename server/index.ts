@@ -5,6 +5,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startReportScheduler } from "./report-scheduler";
+import { startHuntScheduler } from "./hunt-scheduler";
 import { sliMiddleware, startSliCollection } from "./sli-middleware";
 import { performanceBudgetMiddleware } from "./db-performance";
 import { startJobWorker } from "./job-queue";
@@ -230,6 +231,7 @@ export function log(message: string, source = "express") {
       initializeTenantThrottle();
       startPoolHealthMonitor();
       startReportScheduler();
+      startHuntScheduler();
       startRetentionScheduler();
       startJobWorker();
       startSliCollection();

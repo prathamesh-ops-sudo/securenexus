@@ -130,6 +130,7 @@ interface HuntScheduleRow {
   };
   huntName: string | null;
   huntQueryType: string | null;
+  hunt: (ThreatHunt & { reason?: string | null }) | null;
 }
 
 interface LibraryEntry {
@@ -195,6 +196,8 @@ interface NotebookStep {
   queryText: string;
   notes: string;
   resultSummary: string | null;
+  status?: "completed" | "failed" | "rejected" | null;
+  reason?: string | null;
   eventCount: number | null;
   lastExecutedAt: string | null;
   outputVariables: Record<string, unknown>;
@@ -689,7 +692,7 @@ LIMIT 100`,
                       size="sm"
                       variant="ghost"
                       onClick={() => executeMutation.mutate(hunt.id)}
-                      disabled={executeMutation.isPending || Boolean(hunt.reason)}
+                      disabled={executeMutation.isPending || hunt.status === "rejected" || hunt.queryType === "custom"}
                       title="Execute hunt"
                     >
                       {executeMutation.isPending ? (
@@ -1240,7 +1243,22 @@ function HuntSchedulesTab() {
                       {row.huntQueryType || "?"}
                     </Badge>
                     <span className="text-sm">{row.huntName || "Unknown Hunt"}</span>
+                    {row.hunt?.status && row.hunt.status !== "completed" && (
+                      <Badge
+                        variant="outline"
+                        className={
+                          row.hunt.status === "failed"
+                            ? "text-red-400 border-red-500/30 text-[10px]"
+                            : "text-orange-400 border-orange-500/30 text-[10px]"
+                        }
+                      >
+                        {row.hunt.status}
+                      </Badge>
+                    )}
                   </div>
+                  {row.hunt?.reason && row.hunt.status !== "completed" && (
+                    <p className="text-xs text-muted-foreground mt-1">{row.hunt.reason}</p>
+                  )}
                 </TableCell>
                 <TableCell className="capitalize text-sm">{row.schedule.cadence}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{formatDate(row.schedule.nextRunAt)}</TableCell>
@@ -2319,13 +2337,39 @@ function NotebookTab() {
         queryType,
         queryText,
       }).then((r) => r.json()),
-    onSuccess: (data: { result: { eventCount: number; executionDurationMs: number }; stepIndex: number }) => {
+    onSuccess: (data: {
+      result: { status: "completed"; eventCount: number; executionDurationMs: number };
+      stepIndex: number;
+    }) => {
       qc.invalidateQueries({ queryKey: ["/api/threat-hunting/notebooks"] });
       toast({
         title: `Step executed: ${data.result.eventCount} events in ${formatDuration(data.result.executionDurationMs)}`,
       });
     },
-    onError: (e: Error) => toast({ title: "Execution failed", description: e.message, variant: "destructive" }),
+    onError: (e: Error, variables) => {
+      qc.invalidateQueries({ queryKey: ["/api/threat-hunting/notebooks"] });
+      const status = "status" in e && typeof e.status === "number" ? e.status : 500;
+      setSelectedNotebook((previous) => {
+        if (!previous || previous.id !== variables.notebookId) return previous;
+        const steps = [...previous.steps];
+        const step = steps[variables.stepIndex];
+        if (!step) return previous;
+        steps[variables.stepIndex] = {
+          ...step,
+          status: status === 422 ? "rejected" : "failed",
+          reason: e.message,
+          eventCount: null,
+          resultSummary: `${status === 422 ? "Rejected" : "Failed"}: ${e.message}`,
+          lastExecutedAt: new Date().toISOString(),
+        };
+        return { ...previous, steps };
+      });
+      toast({
+        title: status === 422 ? "Step rejected" : "Step failed",
+        description: e.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const deleteMutation = useMutation({
@@ -2507,7 +2551,15 @@ function NotebookTab() {
                     {step.resultSummary && (
                       <Badge
                         variant="outline"
-                        className={`text-[10px] ${step.eventCount && step.eventCount > 0 ? "text-amber-400 border-amber-500/30" : "text-emerald-400 border-emerald-500/30"}`}
+                        className={`text-[10px] ${
+                          step.status === "rejected"
+                            ? "text-orange-400 border-orange-500/30"
+                            : step.status === "failed"
+                              ? "text-red-400 border-red-500/30"
+                              : step.eventCount && step.eventCount > 0
+                                ? "text-amber-400 border-amber-500/30"
+                                : "text-emerald-400 border-emerald-500/30"
+                        }`}
                       >
                         {step.resultSummary}
                       </Badge>
@@ -2516,6 +2568,11 @@ function NotebookTab() {
                   {expandedSteps.has(idx) && (
                     <div className="px-4 pb-3 space-y-2 border-t bg-muted/10">
                       {step.notes && <p className="text-xs text-muted-foreground mt-2">{step.notes}</p>}
+                      {step.status && step.status !== "completed" && step.reason && (
+                        <p className="text-xs text-orange-300">
+                          {step.status === "rejected" ? "Rejected" : "Failed"}: {step.reason}
+                        </p>
+                      )}
                       <pre className="text-[10px] font-mono p-2 bg-muted/30 rounded max-h-32 overflow-auto whitespace-pre-wrap">
                         {step.queryText || "No query defined"}
                       </pre>

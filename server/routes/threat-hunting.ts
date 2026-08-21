@@ -24,6 +24,8 @@ import {
 import crypto from "crypto";
 import { compileQuery } from "../sigma-compiler";
 import { executeHunt, pivotOnIoc, generateHuntHypotheses } from "../hunt-engine";
+import { computeNextHuntRun, persistHuntExecution } from "../hunt-scheduler";
+import { recordNotebookStepExecution } from "../notebook-execution";
 
 const log = logger.child("threat-hunting");
 
@@ -345,10 +347,12 @@ export function registerThreatHuntingRoutes(app: Express): void {
         const result = await executeHunt(hunt.queryType, hunt.queryText, orgId, limit);
 
         if (result.status !== "completed") {
-          await db
-            .update(threatHunts)
-            .set({ status: result.status, updatedAt: new Date() })
-            .where(and(eq(threatHunts.id, id), eq(threatHunts.orgId, orgId)));
+          await persistHuntExecution(
+            hunt,
+            orgId,
+            result,
+            ((req as unknown as Record<string, unknown>).userId as string) || null,
+          );
           return res.status(result.status === "rejected" ? 422 : 500).json({
             message: result.reason || result.explanation,
             status: result.status,
@@ -356,30 +360,12 @@ export function registerThreatHuntingRoutes(app: Express): void {
           });
         }
 
-        // Store result
-        const [savedResult] = await db
-          .insert(huntResults)
-          .values({
-            orgId,
-            huntId: id,
-            eventCount: result.eventCount,
-            eventsJson: result.events,
-            executionDurationMs: result.executionDurationMs,
-            executedBy: ((req as unknown as Record<string, unknown>).userId as string) || null,
-          })
-          .returning();
-
-        // Update hunt status and stats
-        await db
-          .update(threatHunts)
-          .set({
-            status: "completed",
-            lastRunAt: new Date(),
-            lastRunDurationMs: result.executionDurationMs,
-            lastRunEventCount: result.eventCount,
-            updatedAt: new Date(),
-          })
-          .where(and(eq(threatHunts.id, id), eq(threatHunts.orgId, orgId)));
+        const savedResult = await persistHuntExecution(
+          hunt,
+          orgId,
+          result,
+          ((req as unknown as Record<string, unknown>).userId as string) || null,
+        );
 
         res.json({ result: savedResult, execution: result });
       } catch (error) {
@@ -441,6 +427,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
       const allSchedules = await db
         .select({
           schedule: huntSchedules,
+          hunt: threatHunts,
           huntName: threatHunts.name,
           huntQueryType: threatHunts.queryType,
         })
@@ -450,7 +437,12 @@ export function registerThreatHuntingRoutes(app: Express): void {
         .orderBy(desc(huntSchedules.createdAt))
         .limit(100);
 
-      res.json({ schedules: allSchedules });
+      res.json({
+        schedules: allSchedules.map((row) => ({
+          ...row,
+          hunt: row.hunt ? withHuntReason(row.hunt) : null,
+        })),
+      });
     } catch (error) {
       log.error("List schedules error", { error: String(error) });
       res.status(500).json({ message: "Failed to list schedules" });
@@ -496,7 +488,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
             cadence,
             dayOfWeek: safeDow,
             hourUtc: safeHour,
-            nextRunAt: computeNextRun(cadence, safeHour, safeDow),
+            nextRunAt: computeNextHuntRun(cadence, safeHour, safeDow),
           })
           .returning();
 
@@ -856,6 +848,16 @@ export function registerThreatHuntingRoutes(app: Express): void {
 
       const [resultCount] = await db.select({ count: count() }).from(huntResults).where(eq(huntResults.orgId, orgId));
 
+      const [failedHuntCount] = await db
+        .select({ count: count() })
+        .from(threatHunts)
+        .where(and(eq(threatHunts.orgId, orgId), eq(threatHunts.status, "failed")));
+
+      const [rejectedHuntCount] = await db
+        .select({ count: count() })
+        .from(threatHunts)
+        .where(and(eq(threatHunts.orgId, orgId), eq(threatHunts.status, "rejected")));
+
       const [scheduleCount] = await db
         .select({ count: count() })
         .from(huntSchedules)
@@ -880,6 +882,8 @@ export function registerThreatHuntingRoutes(app: Express): void {
       res.json({
         totalHunts: huntCount?.count || 0,
         totalExecutions: resultCount?.count || 0,
+        failedExecutions: failedHuntCount?.count || 0,
+        rejectedExecutions: rejectedHuntCount?.count || 0,
         activeSchedules: scheduleCount?.count || 0,
         totalPlaybooks: playbookCount?.count || 0,
         recentResults,
@@ -1171,29 +1175,51 @@ export function registerThreatHuntingRoutes(app: Express): void {
           .where(and(eq(huntNotebooks.id, id), eq(huntNotebooks.orgId, orgId)));
         if (!notebook) return res.status(404).json({ message: "Notebook not found" });
 
-        if (!queryType || !ALLOWED_QUERY_TYPES.includes(queryType)) {
-          return res.status(400).json({ message: "Invalid query type" });
+        if (!queryType || !SUPPORTED_QUERY_TYPES.includes(queryType)) {
+          return res
+            .status(400)
+            .json({ message: `Invalid query type. Supported types: ${SUPPORTED_QUERY_TYPES.join(", ")}` });
         }
         if (!queryText || typeof queryText !== "string") {
           return res.status(400).json({ message: "Query text is required" });
         }
 
-        const result = await executeHunt(queryType, queryText, orgId, 100);
+        let result: Awaited<ReturnType<typeof executeHunt>>;
+        try {
+          result = await executeHunt(queryType, queryText, orgId, 100);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          result = {
+            status: "failed" as const,
+            eventCount: 0,
+            events: [],
+            executionDurationMs: 0,
+            targetTable: "alerts",
+            explanation: "Hunt execution failed.",
+            reason,
+          };
+        }
 
         // Update the step with results
         const steps = Array.isArray(notebook.steps) ? [...(notebook.steps as Record<string, unknown>[])] : [];
         const idx = typeof stepIndex === "number" ? stepIndex : steps.length - 1;
-        if (idx >= 0 && idx < steps.length) {
-          steps[idx] = {
-            ...steps[idx],
-            resultSummary: `${result.eventCount} events found in ${result.executionDurationMs}ms`,
-            lastExecutedAt: new Date().toISOString(),
-            eventCount: result.eventCount,
-          };
+        const updatedSteps = recordNotebookStepExecution(steps, idx, result);
+        if (!updatedSteps) {
+          return res.status(400).json({ message: "Notebook step index is invalid" });
         }
 
-        await db.update(huntNotebooks).set({ steps, updatedAt: new Date() }).where(eq(huntNotebooks.id, id));
+        await db
+          .update(huntNotebooks)
+          .set({ steps: updatedSteps, updatedAt: new Date() })
+          .where(and(eq(huntNotebooks.id, id), eq(huntNotebooks.orgId, orgId)));
 
+        if (result.status !== "completed") {
+          return res.status(result.status === "rejected" ? 422 : 500).json({
+            message: result.reason || result.explanation,
+            result,
+            stepIndex: idx,
+          });
+        }
         res.json({ result, stepIndex: idx });
       } catch (error) {
         log.error("Execute notebook step error", { error: String(error) });
@@ -1875,36 +1901,6 @@ export function registerThreatHuntingRoutes(app: Express): void {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-function computeNextRun(cadence: string, hourUtc: number, dayOfWeek: number | null): Date {
-  const now = new Date();
-  const next = new Date(now);
-  next.setUTCHours(hourUtc, 0, 0, 0);
-
-  switch (cadence) {
-    case "daily":
-      if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
-      break;
-    case "weekly":
-      if (dayOfWeek !== null) {
-        const diff = (dayOfWeek - now.getUTCDay() + 7) % 7;
-        next.setUTCDate(next.getUTCDate() + (diff === 0 && next <= now ? 7 : diff));
-      } else {
-        next.setUTCDate(next.getUTCDate() + 7);
-      }
-      break;
-    case "biweekly":
-      next.setUTCDate(next.getUTCDate() + 14);
-      break;
-    case "monthly":
-      next.setUTCMonth(next.getUTCMonth() + 1);
-      break;
-    default:
-      next.setUTCDate(next.getUTCDate() + 1);
-  }
-
-  return next;
-}
 
 // ─── Helper: Generate Sigma rule from hunt ──────────────────────────────────
 
