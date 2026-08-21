@@ -35,7 +35,6 @@ interface UsageMetric {
   current: number;
   limit: number;
   unit: string;
-  trend: number;
 }
 
 interface MeteringData {
@@ -264,13 +263,6 @@ export default function UsageMeteringAnalyticsPage() {
                         <span className="text-sm">
                           {m.current.toLocaleString()} / {m.limit.toLocaleString()} {m.unit}
                         </span>
-                        {m.trend !== 0 && (
-                          <Badge variant={m.trend > 0 ? "secondary" : "default"}>
-                            <TrendingUp className="mr-1 h-3 w-3" />
-                            {m.trend > 0 ? "+" : ""}
-                            {m.trend}%
-                          </Badge>
-                        )}
                         <Badge variant={pct >= 90 ? "destructive" : pct >= 70 ? "secondary" : "outline"}>{pct}%</Badge>
                       </div>
                     </div>

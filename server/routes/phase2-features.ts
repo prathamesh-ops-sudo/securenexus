@@ -756,28 +756,24 @@ export function registerPhase2FeatureRoutes(app: Express): void {
           current: alertCount,
           limit: planLimits.alerts,
           unit: "alerts",
-          trend: 0,
         },
         {
           category: "incidents",
           current: incidentCount,
           limit: planLimits.incidents,
           unit: "incidents",
-          trend: 0,
         },
         {
           category: "connectors",
           current: connectorCount,
           limit: planLimits.connectors,
           unit: "integrations",
-          trend: 0,
         },
         {
           category: "audit_logs",
           current: auditLogCount,
           limit: planLimits.auditLogs,
           unit: "entries",
-          trend: 0,
         },
       ];
 

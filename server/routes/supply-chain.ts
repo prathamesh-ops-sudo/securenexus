@@ -649,13 +649,11 @@ export function registerSupplyChainRoutes(app: Express): void {
     requireMinRole("analyst"),
     async (req: Request, res: Response) => {
       try {
-        const orgId = getOrgId(req);
         res.status(503).json({
           available: false,
           status: "unavailable",
           reason:
             "Dependency monitoring requires a configured advisory provider such as OSV.dev or NVD. No findings were created.",
-          orgId,
         });
       } catch (error) {
         log.error("Dependency monitor scan failed", { error: String(error) });

@@ -11,7 +11,15 @@ import { db } from "../db";
 import { storage } from "../storage";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
-import { sastFindings, secretsExposed, ciGates, codeReviewFindings, securityDebtItems } from "@shared/schema";
+import {
+  sastFindings,
+  secretsExposed,
+  ciGates,
+  codeReviewFindings,
+  securityDebtItems,
+  connectors,
+  integrationConfigs,
+} from "@shared/schema";
 import { eq, and, desc, sql, count, ilike } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { logger } from "../logger";
@@ -790,6 +798,26 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
   app.get("/api/developer-security/config", ...authChain, async (req, res) => {
     try {
       const orgId = (req as any).orgId;
+      const [configuredConnectors, configuredIntegrations] = await Promise.all([
+        db
+          .select({ type: connectors.type, status: connectors.status })
+          .from(connectors)
+          .where(eq(connectors.orgId, orgId)),
+        db
+          .select({ type: integrationConfigs.type, status: integrationConfigs.status })
+          .from(integrationConfigs)
+          .where(eq(integrationConfigs.orgId, orgId)),
+      ]);
+      const githubConfigured = [...configuredConnectors, ...configuredIntegrations].some(
+        (integration) =>
+          ["github", "github_app", "github_token"].includes(integration.type.toLowerCase()) &&
+          ["active", "connected", "configured"].includes(integration.status.toLowerCase()),
+      );
+      const gitlabConfigured = [...configuredConnectors, ...configuredIntegrations].some(
+        (integration) =>
+          ["gitlab", "gitlab_ci", "gitlab_token"].includes(integration.type.toLowerCase()) &&
+          ["active", "connected", "configured"].includes(integration.status.toLowerCase()),
+      );
 
       res.json({
         data: {
@@ -824,8 +852,18 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
             reason: "SAST language support is not persisted as organization configuration.",
           },
           integrations: {
-            github: { enabled: true, webhookConfigured: false },
-            gitlab: { enabled: true, webhookConfigured: false },
+            github: {
+              enabled: githubConfigured,
+              webhookConfigured: githubConfigured && Boolean(process.env.GITHUB_WEBHOOK_SECRET),
+              available: githubConfigured,
+              reason: githubConfigured ? null : "No active GitHub integration is configured for this organization.",
+            },
+            gitlab: {
+              enabled: gitlabConfigured,
+              webhookConfigured: gitlabConfigured && Boolean(process.env.GITLAB_WEBHOOK_SECRET),
+              available: gitlabConfigured,
+              reason: gitlabConfigured ? null : "No active GitLab integration is configured for this organization.",
+            },
             ide: {
               vscode: { available: true, extensionId: "securenexus.sast" },
               jetbrains: { available: true, pluginId: "com.securenexus.sast" },

@@ -25,7 +25,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 interface RoleDashboardData {
   role: string;
   widgets: { id: string; title: string; type: string; value: number | string; trend?: number; status?: string }[];
-  recentActivity: { id: string; action: string; timestamp: string; user: string }[];
   kpis: { label: string; value: number; target: number; unit: string }[];
 }
 
@@ -74,7 +73,6 @@ export default function RoleDashboardPage() {
   }
 
   const widgets = Array.isArray(dashboard.widgets) ? dashboard.widgets : [];
-  const activity = Array.isArray(dashboard.recentActivity) ? dashboard.recentActivity : [];
   const kpis = Array.isArray(dashboard.kpis) ? dashboard.kpis : [];
 
   return (

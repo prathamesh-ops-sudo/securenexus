@@ -619,21 +619,98 @@ export function registerEndpointsRoutes(app: Express): void {
         const account = await storage.getCspmAccount(p(req.params.accountId));
         if (!account || account.orgId !== orgId) return res.status(404).json({ message: "CSPM account not found" });
 
-        const findings = await storage.getCspmFindings(orgId);
+        const [findings, scans] = await Promise.all([
+          storage.getCspmFindings(orgId, undefined, undefined),
+          storage.getCspmScans(orgId, account.id),
+        ]);
+        const completedScans = scans.filter((scan) => scan.status === "completed");
+        const latestCompletedScan = completedScans[0] || null;
+        const accountFindings = findings.filter((finding) => finding.accountId === account.id);
+        const frameworks = COMPLIANCE_FRAMEWORKS.map((framework) => {
+          const frameworkFindings = accountFindings.filter((finding) =>
+            (finding.complianceFrameworks || []).some((name) => {
+              const normalized = name.toLowerCase().replaceAll("-", "_");
+              return framework.id === "pci"
+                ? normalized === "pci" || normalized === "pci_dss"
+                : normalized === framework.id;
+            }),
+          );
+          const observedControls = new Map<
+            string,
+            {
+              controlId: string;
+              controlName: string;
+              category: string;
+              severity: string;
+              status: string;
+              findingCount: number;
+            }
+          >();
+          for (const finding of frameworkFindings) {
+            const existing = observedControls.get(finding.ruleId);
+            const findingStatus = finding.status === "open" || !finding.status ? "fail" : "pass";
+            observedControls.set(finding.ruleId, {
+              controlId: finding.ruleId,
+              controlName: finding.ruleName,
+              category: finding.resourceType,
+              severity: finding.severity,
+              status: existing?.status === "fail" || findingStatus === "fail" ? "fail" : "pass",
+              findingCount: (existing?.findingCount || 0) + 1,
+            });
+          }
+          const definedControls = framework.controls
+            .filter((control) => !observedControls.has(control.id))
+            .map((control) => ({
+              controlId: control.id,
+              controlName: control.name,
+              category: control.category,
+              severity: control.severity,
+              status: "not_evaluated",
+              findingCount: 0,
+            }));
+          const observedControlValues = Array.from(observedControls.values());
+          const controls = [...observedControlValues, ...definedControls];
+          const evaluatedControls = observedControlValues;
+          const passingControls = evaluatedControls.filter((control) => control.status === "pass").length;
+          const failingControls = evaluatedControls.filter((control) => control.status === "fail").length;
+          return {
+            frameworkId: framework.id,
+            frameworkName: framework.name,
+            version: framework.version,
+            overallScore:
+              evaluatedControls.length > 0 ? Math.round((passingControls / evaluatedControls.length) * 100) : null,
+            passingControls,
+            failingControls,
+            notEvaluatedControls: controls.length - evaluatedControls.length,
+            totalControls: controls.length,
+            totalFindings: frameworkFindings.length,
+            controls,
+            evaluatedFrom: evaluatedControls.length > 0 ? "persisted cspm_findings" : null,
+          };
+        });
+        const evaluatedFrameworks = frameworks.filter((framework) => framework.overallScore !== null);
+        const hasAssessmentEvidence = completedScans.length > 0 && evaluatedFrameworks.length > 0;
 
         res.json({
           accountId: account.id,
           accountName: account.displayName || account.accountId,
           provider: account.cloudProvider,
-          overallScore: null,
-          frameworks: [],
-          lastAssessed: null,
-          available: false,
-          status: "not_assessed",
-          reason:
-            findings.length > 0
-              ? "CSPM findings exist, but no persisted control assessment maps them to passing or failing controls."
-              : "No CSPM assessment has been completed for this cloud account.",
+          overallScore:
+            evaluatedFrameworks.length > 0
+              ? Math.round(
+                  evaluatedFrameworks.reduce((sum, framework) => sum + (framework.overallScore || 0), 0) /
+                    evaluatedFrameworks.length,
+                )
+              : null,
+          frameworks,
+          lastAssessed: latestCompletedScan?.completedAt || null,
+          available: hasAssessmentEvidence,
+          status: hasAssessmentEvidence ? "assessed" : "not_assessed",
+          reason: hasAssessmentEvidence
+            ? "Control results are derived from persisted CSPM findings produced by the latest completed scan; controls without finding evidence are not evaluated."
+            : completedScans.length === 0
+              ? "No completed CSPM scan has been recorded for this cloud account."
+              : "A completed CSPM scan exists, but persisted findings contain no framework/control evaluation evidence.",
         });
       } catch (error) {
         logger.child("routes").error("Compliance scoring error", { error: String(error) });
@@ -771,41 +848,72 @@ export function registerEndpointsRoutes(app: Express): void {
           }
         }
 
-        // Count findings by severity
+        const completedScanIds = new Set(scans.filter((scan) => scan.status === "completed").map((scan) => scan.id));
+        const accountById = new Map(accounts.map((account) => [account.id, account]));
+
+        // Count findings by provider and severity.
         for (const finding of findings) {
-          // Find which account this finding belongs to
-          for (const prov of Object.keys(providerStats)) {
-            const ps = providerStats[prov];
-            ps.findingCount++;
-            const sev = (finding as any).severity || "info";
-            if (sev === "critical") ps.criticalCount++;
-            else if (sev === "high") ps.highCount++;
-            else if (sev === "medium") ps.mediumCount++;
-            else ps.lowCount++;
-            break; // count once
-          }
+          const account = accountById.get(finding.accountId);
+          const provider = account ? (account as any).cloudProvider || "unknown" : null;
+          if (!provider || !providerStats[provider]) continue;
+          const ps = providerStats[provider];
+          ps.findingCount++;
+          const sev = (finding as any).severity || "info";
+          if (sev === "critical") ps.criticalCount++;
+          else if (sev === "high") ps.highCount++;
+          else if (sev === "medium") ps.mediumCount++;
+          else ps.lowCount++;
         }
 
-        const providers = Object.values(providerStats);
+        // A completed scan with no findings is measured clean; no completed scan is unavailable.
+        for (const provider of Object.values(providerStats)) {
+          const providerAccountIds = accounts
+            .filter((account) => (account as any).cloudProvider === provider.provider)
+            .map((account) => account.id);
+          const hasCompletedScan = scans.some(
+            (scan) => completedScanIds.has(scan.id) && providerAccountIds.includes(scan.accountId),
+          );
+          if (!hasCompletedScan) continue;
+          const weightedFindings =
+            provider.criticalCount * 10 + provider.highCount * 5 + provider.mediumCount * 2 + provider.lowCount;
+          provider.score = Math.max(0, Math.min(100, 100 - Math.min(weightedFindings, 100)));
+        }
+
+        const providers = Object.values(providerStats).map((provider) => ({
+          ...provider,
+          scoreBasis:
+            provider.score === null
+              ? null
+              : "Derived from severity-weighted persisted CSPM findings for completed scans.",
+        }));
+        const scoredProviders = providers.filter((provider) => provider.score !== null);
+        const overallScore =
+          scoredProviders.length > 0
+            ? Math.round(
+                scoredProviders.reduce((sum, provider) => sum + (provider.score || 0), 0) / scoredProviders.length,
+              )
+            : null;
 
         const totalFindings = findings.length;
         const criticalFindings = findings.filter((f: any) => f.severity === "critical").length;
         const openFindings = findings.filter((f: any) => f.status === "open" || !f.status).length;
 
         res.json({
-          overallScore: null,
+          overallScore,
           totalAccounts: accounts.length,
           totalFindings,
           criticalFindings,
           openFindings,
           totalScans: scans.length,
           providers,
-          available: false,
-          status: "not_assessed",
+          available: overallScore !== null,
+          status: overallScore !== null ? "assessed" : "not_assessed",
           reason:
             accounts.length === 0
               ? "No cloud accounts are configured. Connect a cloud account and run a CSPM assessment."
-              : "Cloud accounts and findings are present, but no persisted control assessment supports a security score.",
+              : overallScore !== null
+                ? "Provider scores are derived from severity-weighted persisted CSPM findings and completed scan records."
+                : "No completed CSPM scan has been recorded for the configured cloud accounts.",
           recentScans: scans
             .sort(
               (a: any, b: any) =>

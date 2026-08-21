@@ -601,8 +601,11 @@ export default function BoardDashboardPage() {
                     <p className="text-lg font-bold">{formatCurrency(data.roi.estimatedSavings)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Loss Expectancy</p>
-                    <p className="text-lg font-bold text-muted-foreground">Unavailable</p>
+                    <p className="text-xs text-muted-foreground">Compliance Assessments</p>
+                    <p className="text-lg font-bold">{data.assessmentCount}</p>
+                    <a href="/compliance" className="text-xs text-primary hover:underline">
+                      Open Compliance Center
+                    </a>
                   </div>
                 </div>
                 <p className="mt-3 text-xs text-muted-foreground">

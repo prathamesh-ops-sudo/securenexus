@@ -872,9 +872,55 @@ const VERSION_STATUS_CONFIG: Record<string, { color: string }> = {
   rollback: { color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
 };
 
-function ModelVersionsPanel({ versions }: { versions: ModelVersion[] }) {
+function ModelVersionsPanel({
+  versions,
+  configuredModelId,
+  usage,
+  available,
+  reason,
+}: {
+  versions: ModelVersion[];
+  configuredModelId: string | null;
+  usage: VersionsResponse["usage"];
+  available: boolean;
+  reason: string | null;
+}) {
   return (
     <div className="space-y-4">
+      <div className="rounded-md border border-border/50 bg-card/50 p-3 space-y-2">
+        <p className="text-xs font-medium">Configured Model</p>
+        <p className="text-sm font-mono">{configuredModelId || "Not configured"}</p>
+        <p className="text-xs text-muted-foreground">
+          {available
+            ? "Identity is read from the active model configuration."
+            : reason || "Model usage is unavailable."}
+        </p>
+      </div>
+      <div className="rounded-md border border-border/50 bg-card/50 p-3">
+        <p className="text-xs font-medium mb-2">Persisted Usage</p>
+        {usage ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center text-[10px]">
+            <div>
+              <p className="text-muted-foreground">Invocations</p>
+              <p className="font-medium">{usage.invocationCount.toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Input Tokens</p>
+              <p className="font-medium">{usage.totalInputTokens.toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Output Tokens</p>
+              <p className="font-medium">{usage.totalOutputTokens.toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Total Cost</p>
+              <p className="font-medium">{formatCost(usage.totalCostUsd)}</p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">{reason || "No persisted model usage has been recorded."}</p>
+        )}
+      </div>
       <div>
         <p className="text-xs font-medium mb-2">Active Model Versions</p>
         <div className="space-y-2">
@@ -1483,7 +1529,13 @@ export default function ModelGatewayPage() {
             </CardHeader>
             <CardContent>
               {versionsData ? (
-                <ModelVersionsPanel versions={versionsData.versions} />
+                <ModelVersionsPanel
+                  versions={versionsData.versions}
+                  configuredModelId={versionsData.configuredModelId}
+                  usage={versionsData.usage}
+                  available={versionsData.available}
+                  reason={versionsData.reason}
+                />
               ) : (
                 <Skeleton className="h-40 w-full" />
               )}

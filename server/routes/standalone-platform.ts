@@ -13,6 +13,7 @@ import {
   securityAssessments,
   assessmentResponses,
   threatReports,
+  incidents,
   alerts,
   ASSET_TYPES,
   ASSET_CRITICALITIES,
@@ -29,6 +30,41 @@ import {
 } from "../../shared/schema";
 
 const log = logger.child("standalone-platform");
+
+async function getAssetSecurityHistory(orgId: string, asset: typeof assetInventory.$inferSelect) {
+  const identifiers = [asset.hostname, asset.ipAddress, asset.fqdn].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+  const linkedAlerts =
+    identifiers.length > 0
+      ? await db
+          .select()
+          .from(alerts)
+          .where(
+            and(
+              eq(alerts.orgId, orgId),
+              or(
+                ...identifiers.flatMap((value) => [
+                  eq(alerts.hostname, value),
+                  eq(alerts.sourceIp, value),
+                  eq(alerts.destIp, value),
+                ]),
+              ),
+            ),
+          )
+          .orderBy(desc(alerts.createdAt))
+      : [];
+  const linkedAlertIds = new Set(linkedAlerts.map((alert) => alert.id));
+  const organizationIncidents = await db.select().from(incidents).where(eq(incidents.orgId, orgId));
+  const linkedIncidents = organizationIncidents.filter((incident) => {
+    const affectedAssets = incident.affectedAssets;
+    const serialized = JSON.stringify(affectedAssets || []);
+    const referencesAsset = identifiers.some((value) => serialized.includes(value)) || serialized.includes(asset.id);
+    const referencesAlert = (incident.referencedAlertIds || []).some((id) => linkedAlertIds.has(id));
+    return referencesAsset || referencesAlert;
+  });
+  return { linkedAlerts, linkedIncidents };
+}
 
 // ============================================================================
 // Assessment framework templates with built-in controls
@@ -896,6 +932,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
       if (!asset) return res.status(404).json({ message: "Asset not found" });
 
       const softwareInventory = Array.isArray(asset.installedSoftware) ? asset.installedSoftware : [];
+      const { linkedAlerts, linkedIncidents } = await getAssetSecurityHistory(orgId, asset);
 
       res.json({
         asset,
@@ -909,7 +946,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
           compliant: null,
           reason: "No asset-scoped compliance assessment is persisted for this asset.",
         },
-        alertHistory: [],
+        alertHistory: linkedAlerts,
         vulnerabilityBreakdown: null,
         availability: {
           softwareInventory: {
@@ -928,8 +965,11 @@ export function registerStandalonePlatformRoutes(app: Express): void {
             reason: "User-session telemetry is not collected for asset inventory records.",
           },
           securityHistory: {
-            available: false,
-            reason: "Asset-linked alert and incident history is not persisted.",
+            available: linkedAlerts.length > 0 || linkedIncidents.length > 0,
+            reason:
+              linkedAlerts.length > 0 || linkedIncidents.length > 0
+                ? null
+                : "No alerts or incidents matched this asset by persisted hostname, IP address, or incident references.",
           },
           vulnerabilities: {
             available: asset.vulnerabilityCount > 0,
@@ -1010,8 +1050,8 @@ export function registerStandalonePlatformRoutes(app: Express): void {
   app.get("/api/assets/import-sources", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const assets = await db
-        .select({ id: assetInventory.id })
+      const [{ assetCount }] = await db
+        .select({ assetCount: count() })
         .from(assetInventory)
         .where(eq(assetInventory.orgId, orgId));
       res.json({
@@ -1019,7 +1059,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
         available: false,
         reason:
           "No asset connector status is persisted. Connect Active Directory, cloud inventory, EDR, CMDB, or a vulnerability scanner to collect source data.",
-        assetCount: assets.length,
+        assetCount: Number(assetCount),
       });
     } catch (error) {
       log.error("Failed to get import sources", { error: String(error) });
@@ -1140,11 +1180,10 @@ export function registerStandalonePlatformRoutes(app: Express): void {
         .from(assetInventory)
         .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
       if (!asset) return res.status(404).json({ message: "Asset not found" });
-      const findings: unknown[] = [];
       res.json({
         assetId: asset.id,
-        findings,
-        openCount: 0,
+        findings: [],
+        openCount: null,
         available: false,
         reason: "No asset-linked CSPM findings are persisted. Connect a cloud account and run a CSPM scan.",
       });
@@ -1163,21 +1202,22 @@ export function registerStandalonePlatformRoutes(app: Express): void {
         .from(assetInventory)
         .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
       if (!asset) return res.status(404).json({ message: "Asset not found" });
-      const alerts: Array<{ status?: string }> = [];
-      const incidents: unknown[] = [];
+      const { linkedAlerts, linkedIncidents } = await getAssetSecurityHistory(orgId, asset);
       res.json({
         assetId: asset.id,
         assetName: asset.name,
-        alerts,
-        incidents,
+        alerts: linkedAlerts,
+        incidents: linkedIncidents,
         summary: {
-          totalAlerts: alerts.length,
-          openAlerts: alerts.filter((a) => a.status === "open").length,
-          totalIncidents: incidents.length,
+          totalAlerts: linkedAlerts.length,
+          openAlerts: linkedAlerts.filter((alert) => alert.status === "open").length,
+          totalIncidents: linkedIncidents.length,
         },
-        available: false,
+        available: linkedAlerts.length > 0 || linkedIncidents.length > 0,
         reason:
-          "Asset-linked alert and incident history is not persisted. Review organization-level alerts and incidents instead.",
+          linkedAlerts.length > 0 || linkedIncidents.length > 0
+            ? null
+            : "No alerts or incidents matched this asset by persisted hostname, IP address, or incident references.",
       });
     } catch (error) {
       log.error("Failed to get security history", { error: String(error) });

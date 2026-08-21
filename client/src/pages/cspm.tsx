@@ -2119,14 +2119,20 @@ function CompliancePostureTab() {
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-semibold">{fw.frameworkName}</p>
-                      <Badge
-                        variant={fw.overallScore >= 80 ? "default" : fw.overallScore >= 50 ? "outline" : "destructive"}
-                        className="no-default-hover-elevate no-default-active-elevate"
-                      >
-                        {fw.overallScore}%
-                      </Badge>
+                      {fw.overallScore === null ? (
+                        <Badge variant="outline">Not evaluated</Badge>
+                      ) : (
+                        <Badge
+                          variant={
+                            fw.overallScore >= 80 ? "default" : fw.overallScore >= 50 ? "outline" : "destructive"
+                          }
+                          className="no-default-hover-elevate no-default-active-elevate"
+                        >
+                          {fw.overallScore}%
+                        </Badge>
+                      )}
                     </div>
-                    <Progress value={fw.overallScore} className="h-2" />
+                    {fw.overallScore !== null && <Progress value={fw.overallScore} className="h-2" />}
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div>
                         <span className="text-muted-foreground">Passing:</span>{" "}
@@ -2197,8 +2203,10 @@ function CompliancePostureTab() {
                           <TableCell>
                             {ctrl.status === "pass" ? (
                               <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            ) : (
+                            ) : ctrl.status === "fail" ? (
                               <XCircle className="h-4 w-4 text-red-500" />
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Not evaluated</span>
                             )}
                           </TableCell>
                           <TableCell className="text-xs">{ctrl.findingCount}</TableCell>

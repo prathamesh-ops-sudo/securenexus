@@ -11,6 +11,7 @@ import {
   boardKpiConfigs,
   incidents,
   alerts,
+  securityAssessments,
   METRIC_KPI_TYPES,
   METRIC_PERIOD_TYPES,
   SLA_SEVERITY_TARGETS,
@@ -58,11 +59,12 @@ export function registerSecurityMetricsRoutes(app: Express): void {
         const periodEnd = new Date();
         const periodStart = new Date(Date.now() - periodDays * 86400000);
 
-        const [mttrMttd, roi, sla, fpRate] = await Promise.all([
+        const [mttrMttd, roi, sla, fpRate, assessmentCount] = await Promise.all([
           computeMttrMttd(orgId, periodStart, periodEnd),
           computeSecurityRoi(orgId, periodStart, periodEnd),
           computeSlaCompliance(orgId),
           computeFalsePositiveRate(orgId, periodStart, periodEnd),
+          db.select({ count: count() }).from(securityAssessments).where(eq(securityAssessments.orgId, orgId)),
         ]);
 
         // Coverage score from heatmap
@@ -115,6 +117,7 @@ export function registerSecurityMetricsRoutes(app: Express): void {
           sla,
           coverageScore,
           falsePositiveRate: fpRate,
+          assessmentCount: Number(assessmentCount[0]?.count || 0),
           benchmarks,
           period: { start: periodStart.toISOString(), end: periodEnd.toISOString(), days: periodDays },
         });
