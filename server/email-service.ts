@@ -6,12 +6,24 @@ const log = logger.child("email-service");
 
 const FROM_ADDRESS = "noreply@aricatech.xyz";
 const FROM_NAME = "SecureNexus";
+export const EMAIL_CONNECTION_TIMEOUT_MS = 3_000;
+export const EMAIL_SOCKET_TIMEOUT_MS = 5_000;
+export const EMAIL_REQUEST_TIMEOUT_MS = 10_000;
+export const EMAIL_OVERALL_TIMEOUT_MS = 15_000;
 
 let sesClient: SESv2Client | null = null;
 
 function getSesClient(): SESv2Client {
   if (!sesClient) {
-    sesClient = new SESv2Client({ region: config.aws?.region || "us-east-1" });
+    sesClient = new SESv2Client({
+      region: config.aws?.region || "us-east-1",
+      requestHandler: {
+        connectionTimeout: EMAIL_CONNECTION_TIMEOUT_MS,
+        socketTimeout: EMAIL_SOCKET_TIMEOUT_MS,
+        requestTimeout: EMAIL_REQUEST_TIMEOUT_MS,
+        throwOnRequestTimeout: true,
+      },
+    });
   }
   return sesClient;
 }
@@ -61,7 +73,21 @@ export async function sendEmailWithStatus(params: {
       },
     });
 
-    await client.send(command);
+    const abortController = new AbortController();
+    let deadlineTimer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        client.send(command, { abortSignal: abortController.signal }),
+        new Promise<never>((_, reject) => {
+          deadlineTimer = setTimeout(() => {
+            abortController.abort();
+            reject(new Error(`Email provider deadline exceeded after ${EMAIL_OVERALL_TIMEOUT_MS}ms`));
+          }, EMAIL_OVERALL_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (deadlineTimer) clearTimeout(deadlineTimer);
+    }
     log.info("Email sent successfully", { to: recipients, subject: params.subject });
     return { accepted: true, status: "accepted" };
   } catch (err) {
