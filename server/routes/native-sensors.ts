@@ -757,6 +757,21 @@ EOF`;
   // DETECTION RULES
   // ==========================================================================
 
+  // 48.3: Rule effectiveness scoring
+  app.get("/api/detection-rules/effectiveness", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    try {
+      res.json({
+        available: false,
+        scores: [],
+        reason:
+          "Rule match counts are available, but true-positive, false-positive, and triage outcomes are not persisted.",
+      });
+    } catch (error) {
+      log.error("Rule effectiveness error", { error: String(error) });
+      res.status(500).json({ message: "Failed to compute effectiveness scores" });
+    }
+  });
+
   // List detection rules (built-in global + org-specific)
   app.get("/api/detection-rules", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
@@ -1435,52 +1450,6 @@ EOF`;
       }
     },
   );
-
-  // 48.3: Rule effectiveness scoring
-  app.get("/api/detection-rules/effectiveness", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-
-      const rules = await db
-        .select()
-        .from(detectionRules)
-        .where(or(eq(detectionRules.orgId, orgId), sql`${detectionRules.orgId} IS NULL`));
-
-      const scores = rules.map((r) => {
-        const matchCt = r.matchCount || 0;
-        // Derive TP/FP rates from match count and false positive feedback
-        // Rules with higher match counts and no dismissals have better TP rates
-        const fpCount = (r as any).falsePositiveCount || 0;
-        const tpRate = matchCt > 0 ? Math.round(Math.max(0, Math.min(100, ((matchCt - fpCount) / matchCt) * 100))) : 0;
-        const fpRate = matchCt > 0 ? Math.round(Math.min(100, (fpCount / matchCt) * 100)) : 0;
-        // Estimate triage time from rule complexity (condition tree depth)
-        const conditionComplexity = r.conditionTree ? JSON.stringify(r.conditionTree).length : 0;
-        const meanTriageSec = matchCt > 0 ? Math.round(60 + conditionComplexity * 0.5) : 0;
-        const score =
-          matchCt > 0
-            ? Math.round(
-                tpRate * 0.4 + (100 - fpRate) * 0.3 + Math.min(100, (600 / Math.max(1, meanTriageSec)) * 100) * 0.3,
-              )
-            : 0;
-
-        return {
-          ruleId: r.id,
-          ruleName: r.name,
-          alertsGenerated: matchCt,
-          truePositiveRate: tpRate,
-          falsePositiveRate: fpRate,
-          meanTriageTimeSec: meanTriageSec,
-          effectivenessScore: score,
-          flaggedForReview: fpRate > 20 || (matchCt > 100 && tpRate < 50),
-        };
-      });
-
-      res.json({ scores });
-    } catch (error) {
-      log.error("Rule effectiveness error", { error: String(error) });
-      res.status(500).json({ message: "Failed to compute effectiveness scores" });
-    }
-  });
 
   // 48.4: Rule dependency management
   app.get("/api/detection-rules/dependencies", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {

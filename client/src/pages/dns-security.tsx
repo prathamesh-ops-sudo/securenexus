@@ -30,7 +30,98 @@ import { DashboardSkeleton } from "@/components/page-skeleton";
 import { ReadOnlyActionNotice } from "@/components/read-only-action-notice";
 import { useOrgContext } from "@/hooks/use-org-context";
 
-async function apiFetch(url: string, options?: RequestInit) {
+type DnsEvent = {
+  id: string;
+  timestamp: string;
+  eventType: string;
+  queryName: string;
+  queryType: string;
+  sourceIp: string;
+  entropy: number;
+  isSuspicious: boolean;
+};
+
+type DnsFinding = {
+  id: string;
+  findingType: string;
+  severity: string;
+  domain: string;
+  description: string;
+  confidence: number;
+  sourceIp: string;
+  status: string;
+  createdAt: string;
+  mitreTechnique: string;
+};
+
+type Sinkhole = {
+  id: string;
+  domain: string;
+  reason: string;
+  status: string;
+  hitCount: number;
+  lastHitAt: string;
+  createdAt: string;
+};
+
+type PassiveDnsRecord = {
+  id: string;
+  domain: string;
+  recordType: string;
+  resolvedValue: string;
+  firstSeen: string;
+  lastSeen: string;
+  queryCount: number;
+};
+
+type DnsStats = {
+  totalEvents: number;
+  totalFindings: number;
+  openFindings: number;
+  sinkholedDomainCount: number;
+  sinkholedHits: number;
+  passiveDnsRecordCount: number;
+  topQueriedDomains?: Array<{ domain: string; count: number }>;
+  topNxdomains?: Array<{ domain: string; count: number }>;
+  ingestionStatus?: {
+    healthy: boolean;
+    totalEventsLast24h: number;
+    sources: Array<{ type: string; label: string; detected: boolean; eventCount: number }>;
+  };
+  policyStats?: {
+    blockedQueries30d: number;
+    activeRpzEntries: number;
+    sinkholeHits30d: number;
+    enforcementActive: boolean;
+  };
+};
+
+type DgaResult = {
+  isDga: boolean;
+  confidence: number;
+  entropy: number;
+  features: Record<string, unknown>;
+};
+
+type NrdResult = {
+  isNewlyRegistered: boolean;
+  domainAgeDays: number | null;
+  risk: string;
+};
+
+type TunnelingResult = {
+  isTunneling: boolean;
+  confidence: number;
+  indicators: Record<string, unknown>;
+};
+
+type ExfiltrationResult = {
+  isExfiltration: boolean;
+  confidence: number;
+  indicators: Record<string, unknown>;
+};
+
+async function apiFetch<T = unknown>(url: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options?.headers as Record<string, string>),
@@ -51,9 +142,27 @@ async function apiFetch(url: string, options?: RequestInit) {
     credentials: "include",
     headers,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || res.statusText);
-  return data;
+  const body = await res.json();
+  const errors = body?.errors;
+  if (!res.ok) {
+    throw new Error(errors?.[0]?.message || body?.error || res.statusText);
+  }
+  if (Array.isArray(errors) && errors.length > 0) {
+    throw new Error(errors[0]?.message || "The server returned an error.");
+  }
+  return (body && typeof body === "object" && "data" in body ? body.data : body) as T;
+}
+
+function parseListResponse<T>(payload: unknown, label: string): { items: T[]; total: number } {
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    !Array.isArray((payload as { items?: unknown }).items) ||
+    typeof (payload as { total?: unknown }).total !== "number"
+  ) {
+    throw new Error(`${label} returned an invalid response.`);
+  }
+  return payload as { items: T[]; total: number };
 }
 
 function severityColor(severity: string) {
@@ -94,9 +203,10 @@ function DnsEventsTab() {
   if (domainFilter) params.set("domain", domainFilter);
   params.set("limit", "50");
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError } = useQuery<{ items: DnsEvent[]; total: number }>({
     queryKey: ["/api/dns-security/events", eventType, sourceIp, domainFilter],
-    queryFn: () => apiFetch(`/api/dns-security/events?${params.toString()}`),
+    queryFn: async () =>
+      parseListResponse<DnsEvent>(await apiFetch(`/api/dns-security/events?${params.toString()}`), "DNS events"),
     retry: false,
   });
 
@@ -141,6 +251,9 @@ function DnsEventsTab() {
       </div>
 
       {isLoading && <p className="text-muted-foreground text-sm">Loading events...</p>}
+      {isError && (
+        <p className="text-sm text-destructive">DNS events are unavailable because the server returned an error.</p>
+      )}
 
       {data && (
         <>
@@ -220,9 +333,10 @@ function DnsFindingsTab() {
   if (status && status !== "all") params.set("status", status);
   params.set("limit", "50");
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError } = useQuery<{ items: DnsFinding[]; total: number }>({
     queryKey: ["/api/dns-security/findings", findingType, severity, status],
-    queryFn: () => apiFetch(`/api/dns-security/findings?${params.toString()}`),
+    queryFn: async () =>
+      parseListResponse<DnsFinding>(await apiFetch(`/api/dns-security/findings?${params.toString()}`), "DNS findings"),
     retry: false,
   });
 
@@ -291,6 +405,9 @@ function DnsFindingsTab() {
       </div>
 
       {isLoading && <p className="text-muted-foreground text-sm">Loading findings...</p>}
+      {isError && (
+        <p className="text-sm text-destructive">DNS findings are unavailable because the server returned an error.</p>
+      )}
 
       {data && (
         <>
@@ -373,9 +490,10 @@ function SinkholesTab() {
   const [newDomain, setNewDomain] = useState("");
   const [newReason, setNewReason] = useState("");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery<{ items: Sinkhole[]; total: number }>({
     queryKey: ["/api/dns-security/sinkholes"],
-    queryFn: () => apiFetch("/api/dns-security/sinkholes?limit=100"),
+    queryFn: async () =>
+      parseListResponse<Sinkhole>(await apiFetch("/api/dns-security/sinkholes?limit=100"), "DNS sinkholes"),
   });
 
   const addMut = useMutation({
@@ -451,6 +569,9 @@ function SinkholesTab() {
       </div>
 
       {isLoading && <p className="text-muted-foreground text-sm">Loading sinkholes...</p>}
+      {isError && (
+        <p className="text-sm text-destructive">DNS sinkholes are unavailable because the server returned an error.</p>
+      )}
 
       {data && (
         <div className="border rounded-md overflow-auto">
@@ -525,9 +646,13 @@ function PassiveDnsTab() {
   if (domainFilter) params.set("domain", domainFilter);
   params.set("limit", "50");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery<{ items: PassiveDnsRecord[]; total: number }>({
     queryKey: ["/api/dns-security/passive-dns", domainFilter],
-    queryFn: () => apiFetch(`/api/dns-security/passive-dns?${params.toString()}`),
+    queryFn: async () =>
+      parseListResponse<PassiveDnsRecord>(
+        await apiFetch(`/api/dns-security/passive-dns?${params.toString()}`),
+        "Passive DNS",
+      ),
   });
 
   return (
@@ -543,6 +668,11 @@ function PassiveDnsTab() {
       </div>
 
       {isLoading && <p className="text-muted-foreground text-sm">Loading records...</p>}
+      {isError && (
+        <p className="text-sm text-destructive">
+          Passive DNS data is unavailable because the server returned an error.
+        </p>
+      )}
 
       {data && (
         <>
@@ -604,51 +734,46 @@ function AnalysisToolsTab() {
   const { isPlatformAdminReadOnly } = useOrgContext();
   const { toast } = useToast();
   const [domain, setDomain] = useState("");
-  const [dgaResult, setDgaResult] = useState<{
-    isDga: boolean;
-    confidence: number;
-    entropy: number;
-    features: Record<string, unknown>;
-  } | null>(null);
-  const [nrdResult, setNrdResult] = useState<{
-    isNewlyRegistered: boolean;
-    domainAgeDays: number | null;
-    risk: string;
-  } | null>(null);
+  const [dgaResult, setDgaResult] = useState<DgaResult | null>(null);
+  const [nrdResult, setNrdResult] = useState<NrdResult | null>(null);
   const [tunnelingDomain, setTunnelingDomain] = useState("");
-  const [tunnelingResult, setTunnelingResult] = useState<{
-    isTunneling: boolean;
-    confidence: number;
-    indicators: Record<string, unknown>;
-  } | null>(null);
+  const [tunnelingResult, setTunnelingResult] = useState<TunnelingResult | null>(null);
   const [exfilIp, setExfilIp] = useState("");
-  const [exfilResult, setExfilResult] = useState<{
-    isExfiltration: boolean;
-    confidence: number;
-    indicators: Record<string, unknown>;
-  } | null>(null);
+  const [exfilResult, setExfilResult] = useState<ExfiltrationResult | null>(null);
 
   const dgaMut = useMutation({
     mutationFn: (d: string) =>
-      apiFetch("/api/dns-security/analyze/dga", { method: "POST", body: JSON.stringify({ domain: d }) }),
+      apiFetch<DgaResult>("/api/dns-security/analyze/dga", {
+        method: "POST",
+        body: JSON.stringify({ domain: d }),
+      }),
     onSuccess: (data) => setDgaResult(data),
   });
 
   const nrdMut = useMutation({
     mutationFn: (d: string) =>
-      apiFetch("/api/dns-security/analyze/nrd", { method: "POST", body: JSON.stringify({ domain: d }) }),
+      apiFetch<NrdResult>("/api/dns-security/analyze/nrd", {
+        method: "POST",
+        body: JSON.stringify({ domain: d }),
+      }),
     onSuccess: (data) => setNrdResult(data),
   });
 
   const tunnelingMut = useMutation({
     mutationFn: (d: string) =>
-      apiFetch("/api/dns-security/analyze/tunneling", { method: "POST", body: JSON.stringify({ domain: d }) }),
+      apiFetch<TunnelingResult>("/api/dns-security/analyze/tunneling", {
+        method: "POST",
+        body: JSON.stringify({ domain: d }),
+      }),
     onSuccess: (data) => setTunnelingResult(data),
   });
 
   const exfilMut = useMutation({
     mutationFn: (ip: string) =>
-      apiFetch("/api/dns-security/analyze/exfiltration", { method: "POST", body: JSON.stringify({ sourceIp: ip }) }),
+      apiFetch<ExfiltrationResult>("/api/dns-security/analyze/exfiltration", {
+        method: "POST",
+        body: JSON.stringify({ sourceIp: ip }),
+      }),
     onSuccess: (data) => setExfilResult(data),
   });
 
@@ -864,9 +989,13 @@ function AnalysisToolsTab() {
 }
 
 export default function DnsSecurityPage() {
-  const { data: stats, isLoading } = useQuery({
+  const {
+    data: stats,
+    isLoading,
+    isError: isStatsError,
+  } = useQuery<DnsStats>({
     queryKey: ["/api/dns-security/dashboard"],
-    queryFn: () => apiFetch("/api/dns-security/dashboard").catch(() => null),
+    queryFn: () => apiFetch<DnsStats>("/api/dns-security/dashboard"),
     retry: false,
   });
 
@@ -880,6 +1009,11 @@ export default function DnsSecurityPage() {
           Native DNS threat detection, sinkholing, and passive DNS intelligence
         </p>
       </div>
+      {isStatsError && (
+        <p className="text-sm text-destructive">
+          DNS dashboard data is unavailable because the server returned an error.
+        </p>
+      )}
 
       {/* Stats */}
       {stats && (

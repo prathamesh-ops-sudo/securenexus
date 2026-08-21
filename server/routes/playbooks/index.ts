@@ -8,11 +8,11 @@ import { registerPlaybooksSimulationsRoutes } from "./simulations";
 import { registerPlaybooksNotificationsRoutes } from "./notifications";
 
 export function registerPlaybooksRoutes(app: Express): void {
+  registerPlaybooksSchedulingRoutes(app);
   registerPlaybooksCrudRoutes(app);
   registerPlaybooksExecutionRoutes(app);
   registerPlaybooksApprovalsRoutes(app);
   registerPlaybooksVersionsRoutes(app);
-  registerPlaybooksSchedulingRoutes(app);
   registerPlaybooksSimulationsRoutes(app);
   registerPlaybooksNotificationsRoutes(app);
 }

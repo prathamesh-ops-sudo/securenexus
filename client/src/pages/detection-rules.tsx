@@ -895,8 +895,25 @@ function RuleTestSandbox({ rule }: { rule: DetectionRule }) {
 }
 
 // 48.3: Rule Effectiveness Scoring
-function RuleEffectivenessPanel({ rules }: { rules: DetectionRule[] }) {
-  const { data: effectivenessData } = useQuery({
+function RuleEffectivenessPanel() {
+  const {
+    data: effectivenessData,
+    isLoading: effectivenessLoading,
+    isError: effectivenessError,
+  } = useQuery<{
+    available: boolean;
+    reason?: string;
+    scores: Array<{
+      ruleId: string;
+      ruleName: string;
+      alertsGenerated: number;
+      truePositiveRate: number;
+      falsePositiveRate: number;
+      meanTriageTimeSec: number;
+      effectivenessScore: number;
+      flaggedForReview: boolean;
+    }>;
+  }>({
     queryKey: ["/api/detection-rules/effectiveness"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/detection-rules/effectiveness");
@@ -904,27 +921,34 @@ function RuleEffectivenessPanel({ rules }: { rules: DetectionRule[] }) {
     },
   });
 
-  const scores: Array<{
-    ruleId: string;
-    ruleName: string;
-    alertsGenerated: number;
-    truePositiveRate: number;
-    falsePositiveRate: number;
-    meanTriageTimeSec: number;
-    effectivenessScore: number;
-    flaggedForReview: boolean;
-  }> =
-    effectivenessData?.scores ||
-    rules.map((r) => ({
-      ruleId: r.id,
-      ruleName: r.name,
-      alertsGenerated: r.matchCount,
-      truePositiveRate: r.matchCount > 0 ? 70 + Math.random() * 25 : 0,
-      falsePositiveRate: r.matchCount > 0 ? 5 + Math.random() * 20 : 0,
-      meanTriageTimeSec: r.matchCount > 0 ? 120 + Math.random() * 600 : 0,
-      effectivenessScore: r.matchCount > 0 ? 40 + Math.random() * 55 : 0,
-      flaggedForReview: r.matchCount > 0 && Math.random() < 0.15,
-    }));
+  if (effectivenessLoading) {
+    return <p className="text-sm text-muted-foreground">Loading rule effectiveness data...</p>;
+  }
+
+  if (effectivenessError) {
+    return (
+      <p className="text-sm text-destructive">
+        Rule effectiveness is unavailable because the server returned an error.
+      </p>
+    );
+  }
+
+  if (!effectivenessData?.available || effectivenessData.scores.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center">
+          <Gauge className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+          <p className="text-sm font-medium text-muted-foreground">Rule effectiveness is unavailable</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {effectivenessData?.reason ||
+              "Outcome history is not available yet, so effectiveness metrics cannot be computed honestly."}
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const scores = effectivenessData.scores;
 
   const sorted = [...scores].sort((a, b) => b.effectivenessScore - a.effectivenessScore);
   const flaggedCount = sorted.filter((s) => s.flaggedForReview).length;
@@ -1747,7 +1771,7 @@ export default function DetectionRulesPage() {
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="effectiveness" className="mt-4">
-                <RuleEffectivenessPanel rules={rules} />
+                <RuleEffectivenessPanel />
               </TabsContent>
               <TabsContent value="dependencies" className="mt-4">
                 <RuleDependencyPanel rules={rules} />

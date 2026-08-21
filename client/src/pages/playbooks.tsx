@@ -1432,7 +1432,11 @@ export default function PlaybooksPage() {
     refetchInterval: 5000,
   });
 
-  const { data: runbookAnalytics, isLoading: runbookAnalyticsLoading } = useQuery<any>({
+  const {
+    data: runbookAnalytics,
+    isLoading: runbookAnalyticsLoading,
+    isError: runbookAnalyticsError,
+  } = useQuery<any>({
     queryKey: ["/api/playbooks/runbook-analytics"],
   });
 
@@ -3890,6 +3894,16 @@ export default function PlaybooksPage() {
                 </Card>
               ))}
             </div>
+          ) : runbookAnalyticsError ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <PieChart className="h-10 w-10 text-muted-foreground mb-3" />
+                <p className="text-sm font-medium text-destructive">Runbook analytics are unavailable</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  The server returned an error while loading persisted execution data.
+                </p>
+              </CardContent>
+            </Card>
           ) : runbookAnalytics ? (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
