@@ -1849,8 +1849,11 @@ export function registerEndpointsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const score = await calculatePostureScore(orgId);
-        res.status(201).json(score);
+        const result = await calculatePostureScore(orgId);
+        if (result.status === "unavailable") {
+          return res.status(422).json(result);
+        }
+        res.status(201).json(result.score);
       } catch (error) {
         res.status(500).json({ message: "Failed to calculate posture score" });
       }

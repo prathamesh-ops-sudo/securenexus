@@ -280,9 +280,15 @@ export function registerEngineControlsRoutes(app: Express): void {
             break;
           }
           case "posture": {
-            const scoreResult = await calculatePostureScore(orgId);
+            const scoreCalculation = await calculatePostureScore(orgId);
+            if (scoreCalculation.status === "unavailable") {
+              simulatedResult = { ...scoreCalculation };
+              break;
+            }
+            const scoreResult = scoreCalculation.score;
             simulatedResult = {
               currentScore: scoreResult,
+              coveredDimensions: scoreCalculation.coveredDimensions,
               weights: activePolicy,
               note: "Dry-run preview: posture score calculated with current settings",
             };

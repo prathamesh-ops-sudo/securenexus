@@ -1,93 +1,105 @@
 import { storage } from "./storage";
-import type { PostureScore, InsertPostureScore } from "@shared/schema";
+import type { InsertPostureScore, PostureScore } from "@shared/schema";
 
-export async function calculatePostureScore(orgId: string): Promise<PostureScore> {
-  const [findings, endpoints, allIncidents, compliancePolicy] = await Promise.all([
+export interface PostureUnavailable {
+  status: "unavailable";
+  overallScore: null;
+  coveredDimensions: string[];
+  reason: string;
+  requiredEvidence: string[];
+}
+
+export interface PostureCompleted {
+  status: "completed";
+  score: PostureScore;
+  coveredDimensions: string[];
+}
+
+export type PostureCalculationResult = PostureCompleted | PostureUnavailable;
+
+function scoreFromOpenFindings(findings: Array<{ severity: string }>): number {
+  const penalty = findings.reduce((total, finding) => {
+    const penalties: Record<string, number> = { critical: 10, high: 5, medium: 2, low: 1 };
+    return total + (penalties[finding.severity] || 0);
+  }, 0);
+  return Math.max(0, 100 - penalty);
+}
+
+function scoreFromIncidents(incidents: Array<{ severity: string }>): number {
+  const penalty = incidents.reduce((total, incident) => {
+    const penalties: Record<string, number> = { critical: 15, high: 10, medium: 5, low: 2 };
+    return total + (penalties[incident.severity] || 0);
+  }, 0);
+  return Math.max(0, 100 - penalty);
+}
+
+export async function calculatePostureScore(orgId: string): Promise<PostureCalculationResult> {
+  const [findings, scans, endpoints, allIncidents, compliancePolicy] = await Promise.all([
     storage.getCspmFindings(orgId),
+    storage.getCspmScans(orgId),
     storage.getEndpointAssets(orgId),
     storage.getIncidents(orgId),
     storage.getCompliancePolicy(orgId),
   ]);
 
-  const openFindings = findings.filter((f) => f.status === "open");
-
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const recentIncidents = allIncidents.filter((inc) => inc.createdAt && new Date(inc.createdAt) >= thirtyDaysAgo);
-  const openIncidents = recentIncidents.filter((inc) => inc.status !== "resolved" && inc.status !== "closed");
-
-  let cspmScore = 100;
-  for (const finding of openFindings) {
-    switch (finding.severity) {
-      case "critical":
-        cspmScore -= 10;
-        break;
-      case "high":
-        cspmScore -= 5;
-        break;
-      case "medium":
-        cspmScore -= 2;
-        break;
-      case "low":
-        cspmScore -= 1;
-        break;
-    }
-  }
-  cspmScore = Math.max(0, cspmScore);
-
-  let endpointScore: number;
-  if (endpoints.length === 0) {
-    endpointScore = 100;
-  } else {
-    const total = endpoints.reduce((sum, ep) => sum + (100 - (ep.riskScore ?? 0)), 0);
-    endpointScore = Math.round(total / endpoints.length);
-  }
-  endpointScore = Math.max(0, Math.min(100, endpointScore));
-
-  let incidentScore = 100;
-  for (const incident of openIncidents) {
-    switch (incident.severity) {
-      case "critical":
-        incidentScore -= 15;
-        break;
-      case "high":
-        incidentScore -= 10;
-        break;
-      case "medium":
-        incidentScore -= 5;
-        break;
-      case "low":
-        incidentScore -= 2;
-        break;
-    }
-  }
-  incidentScore = Math.max(0, incidentScore);
-
-  let complianceScore: number;
-  if (!compliancePolicy) {
-    complianceScore = 80;
-  } else {
-    const hasFrameworks = compliancePolicy.enabledFrameworks && compliancePolicy.enabledFrameworks.length > 0;
-    const hasPiiMasking = compliancePolicy.piiMaskingEnabled;
-    const hasPseudonymize = compliancePolicy.pseudonymizeExports;
-    const hasDpoEmail = !!compliancePolicy.dpoEmail;
-
-    const enforced = hasFrameworks && hasPiiMasking && hasPseudonymize && hasDpoEmail;
-    const partial = hasFrameworks || hasPiiMasking || hasPseudonymize;
-
-    if (enforced) {
-      complianceScore = 100;
-    } else if (partial) {
-      complianceScore =
-        50 + (hasFrameworks ? 15 : 0) + (hasPiiMasking ? 10 : 0) + (hasPseudonymize ? 10 : 0) + (hasDpoEmail ? 10 : 0);
-      complianceScore = Math.min(95, complianceScore);
-    } else {
-      complianceScore = 50;
-    }
-  }
-
-  const overallScore = Math.round(
-    cspmScore * 0.35 + endpointScore * 0.3 + incidentScore * 0.2 + complianceScore * 0.15,
+  const completedScanIds = new Set(scans.filter((scan) => scan.status === "completed").map((scan) => scan.id));
+  const hasCompletedCspmScan = completedScanIds.size > 0;
+  const openFindings = findings.filter((finding) => completedScanIds.has(finding.scanId) && finding.status === "open");
+  const measuredEndpoints = endpoints.filter(
+    (endpoint) => endpoint.riskScore !== null && endpoint.riskScore !== undefined,
   );
+  const recentIncidents = allIncidents.filter((incident) => incident.createdAt !== null);
+  const openIncidents = recentIncidents.filter(
+    (incident) => incident.status !== "resolved" && incident.status !== "closed",
+  );
+  const dimensions: Array<{ name: string; score: number; weight: number }> = [];
+  if (hasCompletedCspmScan) dimensions.push({ name: "cspm", score: scoreFromOpenFindings(openFindings), weight: 0.35 });
+  if (measuredEndpoints.length > 0) {
+    dimensions.push({
+      name: "endpoint",
+      score: Math.round(
+        measuredEndpoints.reduce((sum, endpoint) => sum + (100 - (endpoint.riskScore || 0)), 0) /
+          measuredEndpoints.length,
+      ),
+      weight: 0.3,
+    });
+  }
+  if (recentIncidents.length > 0) {
+    dimensions.push({ name: "incident", score: scoreFromIncidents(openIncidents), weight: 0.2 });
+  }
+  if (compliancePolicy) {
+    const hasFrameworks = Boolean(compliancePolicy.enabledFrameworks?.length);
+    const hasPiiMasking = Boolean(compliancePolicy.piiMaskingEnabled);
+    const hasPseudonymize = Boolean(compliancePolicy.pseudonymizeExports);
+    const hasDpoEmail = Boolean(compliancePolicy.dpoEmail);
+    dimensions.push({
+      name: "compliance",
+      score: (Number(hasFrameworks) + Number(hasPiiMasking) + Number(hasPseudonymize) + Number(hasDpoEmail)) * 25,
+      weight: 0.15,
+    });
+  }
+  if (dimensions.length === 0) {
+    return {
+      status: "unavailable",
+      overallScore: null,
+      coveredDimensions: [],
+      reason: "No completed posture evidence is available for this organization.",
+      requiredEvidence: [
+        "Complete a CSPM scan.",
+        "Collect endpoint risk telemetry.",
+        "Record security incidents.",
+        "Configure a compliance policy.",
+      ],
+    };
+  }
+  const totalWeight = dimensions.reduce((sum, dimension) => sum + dimension.weight, 0);
+  const overallScore = Math.round(
+    dimensions.reduce((sum, dimension) => sum + dimension.score * dimension.weight, 0) / totalWeight,
+  );
+  const cspmScore = dimensions.find((dimension) => dimension.name === "cspm")?.score ?? null;
+  const endpointScore = dimensions.find((dimension) => dimension.name === "endpoint")?.score ?? null;
+  const incidentScore = dimensions.find((dimension) => dimension.name === "incident")?.score ?? null;
+  const complianceScore = dimensions.find((dimension) => dimension.name === "compliance")?.score ?? null;
 
   const scoreData: InsertPostureScore = {
     orgId,
@@ -112,10 +124,8 @@ export async function calculatePostureScore(orgId: string): Promise<PostureScore
         score: endpointScore,
         weight: 0.3,
         totalEndpoints: endpoints.length,
-        averageRiskScore:
-          endpoints.length > 0
-            ? Math.round(endpoints.reduce((s, e) => s + (e.riskScore ?? 0), 0) / endpoints.length)
-            : 0,
+        measuredAssets: measuredEndpoints.length,
+        totalAssets: endpoints.length,
       },
       incident: {
         score: incidentScore,
@@ -132,12 +142,15 @@ export async function calculatePostureScore(orgId: string): Promise<PostureScore
       compliance: {
         score: complianceScore,
         weight: 0.15,
-        policyConfigured: !!compliancePolicy,
+        policyConfigured: Boolean(compliancePolicy),
         enabledFrameworks: compliancePolicy?.enabledFrameworks ?? [],
       },
     },
   };
 
-  const saved = await storage.createPostureScore(scoreData);
-  return saved;
+  return {
+    status: "completed",
+    score: await storage.createPostureScore(scoreData),
+    coveredDimensions: dimensions.map((dimension) => dimension.name),
+  };
 }
