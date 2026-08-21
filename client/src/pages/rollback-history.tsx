@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { usePageTitle } from "@/hooks/use-page-title";
 import {
@@ -15,7 +15,6 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
-  Undo2,
   ArrowRight,
   FileText,
   Activity,
@@ -76,17 +75,6 @@ export default function RollbackHistoryPage() {
   } = useQuery<{ rollbacks: RollbackEntry[]; count: number }>({
     queryKey: ["/api/autonomous/rollbacks"],
     queryFn: () => apiRequest("GET", "/api/autonomous/rollbacks").then((r) => r.json()),
-  });
-
-  const executeMutation = useMutation({
-    mutationFn: (rollbackId: string) => apiRequest("POST", `/api/autonomous/rollbacks/${rollbackId}/execute`),
-    onSuccess: () => {
-      toast({ title: "Rollback executed successfully" });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/autonomous/rollbacks"],
-      });
-    },
-    onError: () => toast({ title: "Rollback execution failed", variant: "destructive" }),
   });
 
   // 22.1: Rollback detail query
@@ -158,10 +146,18 @@ export default function RollbackHistoryPage() {
   const triggers = (triggersData as any)?.triggers || [];
 
   const statusIcon = (s: string) => {
-    if (s === "executed") return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+    if (s === "executed") return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
     if (s === "failed") return <XCircle className="h-4 w-4 text-red-500" />;
-    if (s === "completed") return <Undo2 className="h-4 w-4 text-blue-500" />;
+    if (s === "completed") return <CheckCircle2 className="h-4 w-4 text-blue-500" />;
     return <Clock className="h-4 w-4 text-yellow-500" />;
+  };
+
+  const statusLabel = (s: string) => {
+    if (s === "executed") return "Legacy record — unverified";
+    if (s === "completed") return "Completed — external state unverified";
+    if (s === "pending") return "Unavailable — native sensor required";
+    if (s === "timed_out") return "Timed out / unacknowledged";
+    return s;
   };
 
   if (isPending) {
@@ -226,7 +222,7 @@ export default function RollbackHistoryPage() {
               <p className="text-2xl font-bold">
                 {list.filter((e: RollbackEntry) => e.status === "executed" || e.status === "completed").length}
               </p>
-              <p className="text-xs text-muted-foreground">Executed</p>
+              <p className="text-xs text-muted-foreground">Agent completed</p>
             </div>
           </CardContent>
         </Card>
@@ -298,32 +294,15 @@ export default function RollbackHistoryPage() {
                       <div className="flex items-center gap-2">
                         <Badge
                           variant={
-                            e.status === "executed" || e.status === "completed"
-                              ? "default"
-                              : e.status === "failed"
-                                ? "destructive"
-                                : "outline"
+                            e.status === "completed" ? "default" : e.status === "failed" ? "destructive" : "outline"
                           }
                         >
-                          {e.status}
+                          {statusLabel(e.status)}
                         </Badge>
                         {e.status === "pending" && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(ev) => {
-                              ev.stopPropagation();
-                              executeMutation.mutate(e.id);
-                            }}
-                            disabled={executeMutation.isPending}
-                          >
-                            {executeMutation.isPending ? (
-                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                            ) : (
-                              <Undo2 className="mr-1 h-3 w-3" />
-                            )}
-                            Execute
-                          </Button>
+                          <Badge variant="outline" className="text-yellow-400 border-yellow-500/30">
+                            Native sensor dispatch unavailable
+                          </Badge>
                         )}
                         {expandedId === e.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       </div>

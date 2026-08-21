@@ -91,6 +91,7 @@ interface ActionsResponse {
     executingCount: number;
     completedCount: number;
     failedCount: number;
+    timedOutCount: number;
     rejectedCount: number;
     highRiskCount: number;
     mediumRiskCount: number;
@@ -156,6 +157,22 @@ function getTargetDisplay(action: ResponseAction): string {
   return "—";
 }
 
+function getStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    pending_approval: "Pending approval",
+    approved: "Awaiting sensor pickup",
+    dispatched: "Awaiting sensor pickup",
+    executing: "Executing on sensor",
+    completed: "Completed by sensor",
+    failed: "Failed according to sensor",
+    timed_out: "Timed out / unacknowledged",
+    rejected: "Rejected",
+    cancelled: "Cancelled",
+    simulated: "Unavailable (legacy simulated state)",
+  };
+  return labels[status] || status.replace(/_/g, " ");
+}
+
 async function apiFetch(url: string, options?: RequestInit) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   // Include org context header
@@ -213,7 +230,12 @@ export default function AgentResponsePage() {
     reason: "",
   });
 
-  const { data: actionsData, isLoading } = useQuery<ActionsResponse>({
+  const {
+    data: actionsData,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery<ActionsResponse>({
     queryKey: ["/api/native/response/actions", statusFilter, actionTypeFilter, searchQuery],
     queryFn: () => {
       const params = new URLSearchParams();
@@ -222,6 +244,7 @@ export default function AgentResponsePage() {
       if (searchQuery) params.set("q", searchQuery);
       return apiFetch(`/api/native/response/actions?${params}`);
     },
+    refetchInterval: 5000,
   });
 
   // Separate query for pending tab — not affected by All tab's filters
@@ -299,7 +322,7 @@ export default function AgentResponsePage() {
     mutationFn: (id: string) => apiFetch(`/api/native/response/actions/${id}/execute`, { method: "POST" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/native/response/actions"] });
-      toast({ title: "Action executed" });
+      toast({ title: "Action awaiting sensor pickup" });
     },
     onError: () => {
       toast({ title: "Failed to execute", variant: "destructive" });
@@ -389,22 +412,12 @@ export default function AgentResponsePage() {
     queryFn: () => apiFetch("/api/native/response/connector-status"),
   });
 
-  const executeViaConnector = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch(`/api/native/response/actions/${id}/execute-via-connector`, { method: "POST" }),
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/native/response/actions"] });
-      toast({ title: data.executionDetails?.isLiveExecution ? "Executed via connector" : "Simulated execution" });
-    },
-    onError: () => toast({ title: "Connector execution failed", variant: "destructive" }),
-  });
-
   // ─── 21.8 Rollback ────────────────────────────────────────────────────────
   const rollbackAction = useMutation({
     mutationFn: (id: string) => apiFetch(`/api/native/response/actions/${id}/rollback`, { method: "POST" }),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/native/response/actions"] });
-      toast({ title: "Rollback completed", description: data.message });
+      toast({ title: "Rollback awaiting sensor pickup", description: data.message });
     },
     onError: () => toast({ title: "Rollback failed", variant: "destructive" }),
   });
@@ -485,6 +498,12 @@ export default function AgentResponsePage() {
           <CardContent className="p-4">
             <div className="text-xs text-red-400">Failed</div>
             <div className="text-2xl font-semibold mt-1 text-red-400">{stats?.failedCount ?? 0}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-zinc-900/50 border-orange-500/20 border">
+          <CardContent className="p-4">
+            <div className="text-xs text-orange-400">Timed out</div>
+            <div className="text-2xl font-semibold mt-1 text-orange-400">{stats?.timedOutCount ?? 0}</div>
           </CardContent>
         </Card>
         <Card className="bg-zinc-900/50 border-zinc-800">
@@ -630,9 +649,11 @@ export default function AgentResponsePage() {
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="pending_approval">Pending</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="approved">Awaiting pickup</SelectItem>
+                <SelectItem value="executing">Executing on sensor</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
+                <SelectItem value="timed_out">Timed out / unacknowledged</SelectItem>
                 <SelectItem value="rejected">Rejected</SelectItem>
               </SelectContent>
             </Select>
@@ -672,6 +693,16 @@ export default function AgentResponsePage() {
                         Loading...
                       </TableCell>
                     </TableRow>
+                  ) : isError ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8">
+                        <p className="text-red-400">Unable to load response actions.</p>
+                        <Button size="sm" variant="outline" className="mt-3" onClick={() => refetch()}>
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                          Retry
+                        </Button>
+                      </TableCell>
+                    </TableRow>
                   ) : !actionsData?.actions?.length ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-12">
@@ -708,16 +739,8 @@ export default function AgentResponsePage() {
                         <TableCell>
                           <div className="flex items-center gap-1.5">
                             <Badge variant="outline" className={statusColors[action.status] || ""}>
-                              {action.status.replace(/_/g, " ")}
+                              {getStatusLabel(action.status)}
                             </Badge>
-                            {action.status === "simulated" && (
-                              <span
-                                className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                                title="No sensor agent deployed — action was simulated"
-                              >
-                                No Sensor
-                              </span>
-                            )}
                           </div>
                         </TableCell>
                         <TableCell className="text-sm">{action.requestedByName || "—"}</TableCell>
@@ -752,7 +775,7 @@ export default function AgentResponsePage() {
                                 onClick={() => executeAction.mutate(action.id)}
                               >
                                 <Play className="h-3 w-3 mr-1" />
-                                Execute
+                                Dispatch
                               </Button>
                             )}
                             {["pending_approval", "approved"].includes(action.status) && (
@@ -987,9 +1010,11 @@ export default function AgentResponsePage() {
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="pending_approval">Pending</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="approved">Awaiting pickup</SelectItem>
+                <SelectItem value="executing">Executing on sensor</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
+                <SelectItem value="timed_out">Timed out / unacknowledged</SelectItem>
                 <SelectItem value="rejected">Rejected</SelectItem>
               </SelectContent>
             </Select>
@@ -1020,7 +1045,7 @@ export default function AgentResponsePage() {
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{actionLabels[entry.actionType] || entry.actionType}</span>
                             <Badge variant="outline" className={statusColors[entry.status] || ""}>
-                              {entry.status.replace(/_/g, " ")}
+                              {getStatusLabel(entry.status)}
                             </Badge>
                             <Badge variant="outline" className={riskColors[entry.riskLevel] || ""}>
                               {entry.riskLevel}
@@ -1062,14 +1087,9 @@ export default function AgentResponsePage() {
                             </>
                           )}
                           {entry.status === "approved" && (
-                            <Button
-                              size="sm"
-                              className="h-6 text-[10px] bg-blue-600 hover:bg-blue-700"
-                              onClick={() => executeViaConnector.mutate(entry.id)}
-                            >
-                              <Play className="h-3 w-3 mr-0.5" />
-                              Execute
-                            </Button>
+                            <Badge variant="outline" className="text-[10px] text-yellow-400 border-yellow-500/30">
+                              Connector unavailable
+                            </Badge>
                           )}
                         </div>
                       </div>
@@ -1098,17 +1118,17 @@ export default function AgentResponsePage() {
               </Card>
               <Card className="bg-zinc-900/50 border-green-500/20 border">
                 <CardContent className="p-4">
-                  <div className="text-xs text-green-400">Connected</div>
+                  <div className="text-xs text-muted-foreground">Configured metadata</div>
                   <div className="text-2xl font-semibold mt-1 text-green-400">
-                    {connectorData.summary.connectedActionTypes}
+                    {connectorData.summary.configuredActionTypes}
                   </div>
                 </CardContent>
               </Card>
               <Card className="bg-zinc-900/50 border-zinc-800">
                 <CardContent className="p-4">
-                  <div className="text-xs text-yellow-400">Simulated</div>
+                  <div className="text-xs text-yellow-400">Unavailable adapters</div>
                   <div className="text-2xl font-semibold mt-1 text-yellow-400">
-                    {connectorData.summary.simulatedActionTypes}
+                    {connectorData.summary.unavailableActionTypes}
                   </div>
                 </CardContent>
               </Card>
@@ -1135,15 +1155,8 @@ export default function AgentResponsePage() {
                           <span className="font-medium">
                             {actionLabels[connector.actionType] || connector.actionType}
                           </span>
-                          <Badge
-                            variant="outline"
-                            className={
-                              connector.isConnected
-                                ? "bg-green-500/20 text-green-400 border-green-500/30"
-                                : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
-                            }
-                          >
-                            {connector.isConnected ? "Live" : "Simulated"}
+                          <Badge variant="outline" className={"bg-yellow-500/20 text-yellow-400 border-yellow-500/30"}>
+                            Unavailable
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">{connector.executionMethod}</p>
@@ -1584,13 +1597,8 @@ export default function AgentResponsePage() {
             <div className="space-y-4">
               <div className="flex gap-2 flex-wrap">
                 <Badge variant="outline" className={statusColors[selectedAction.status] || ""}>
-                  {selectedAction.status.replace(/_/g, " ")}
+                  {getStatusLabel(selectedAction.status)}
                 </Badge>
-                {selectedAction.status === "simulated" && (
-                  <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20">
-                    No Sensor Deployed
-                  </Badge>
-                )}
                 <Badge variant="outline" className={riskColors[selectedAction.riskLevel] || ""}>
                   {selectedAction.riskLevel} risk
                 </Badge>
@@ -1631,7 +1639,7 @@ export default function AgentResponsePage() {
 
               {selectedAction.resultOutput && (
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">Result</p>
+                  <p className="text-xs text-muted-foreground mb-1">Agent-reported output</p>
                   <pre className="text-sm bg-zinc-900 rounded p-3 border border-zinc-800 whitespace-pre-wrap font-mono">
                     {selectedAction.resultOutput}
                   </pre>
@@ -1640,7 +1648,7 @@ export default function AgentResponsePage() {
 
               {selectedAction.resultError && (
                 <div>
-                  <p className="text-xs text-red-400 mb-1">Error</p>
+                  <p className="text-xs text-red-400 mb-1">Agent error / timeout evidence</p>
                   <pre className="text-sm bg-red-950/30 rounded p-3 border border-red-500/30 whitespace-pre-wrap font-mono text-red-400">
                     {selectedAction.resultError}
                   </pre>

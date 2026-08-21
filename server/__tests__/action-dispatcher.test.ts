@@ -294,6 +294,21 @@ describe("Concurrent Execution Safety (RESP-05)", () => {
   });
 });
 
+describe("Native response dispatch truthfulness", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reports unavailable instead of simulating containment when no sensor is reachable", async () => {
+    const result = await dispatchAction("block_ip", { ip: "10.0.0.1" }, makeContext());
+
+    expect(result.status).toBe("unavailable");
+    expect(result.message).toContain("No reachable native sensor");
+    expect(result.details?.simulated).not.toBe(true);
+    expect(storage.createResponseAction).not.toHaveBeenCalled();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // RESP-01 / RESP-05: Permission Checks (Gap Closure)
 // ---------------------------------------------------------------------------

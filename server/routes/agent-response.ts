@@ -6,13 +6,8 @@ import { requirePermission } from "../rbac";
 import { logger, getOrgId } from "./shared";
 import { db } from "../db";
 import { sql, eq, and, desc, ilike, or } from "drizzle-orm";
-import {
-  agentResponseActions,
-  nativeSensors,
-  AGENT_ACTION_TYPES,
-  AGENT_ACTION_RISK_LEVELS,
-  AGENT_ACTION_STATUSES,
-} from "../../shared/schema";
+import { agentResponseActions, nativeSensors, AGENT_ACTION_TYPES } from "../../shared/schema";
+import { expireTimedOutResponseActions } from "../response-action-timeouts";
 
 const log = logger.child("agent-response");
 
@@ -196,6 +191,7 @@ export function registerAgentResponseRoutes(app: Express): void {
             COUNT(*) FILTER (WHERE status = 'executing') AS executing_count,
             COUNT(*) FILTER (WHERE status = 'completed') AS completed_count,
             COUNT(*) FILTER (WHERE status = 'failed') AS failed_count,
+            COUNT(*) FILTER (WHERE status = 'timed_out') AS timed_out_count,
             COUNT(*) FILTER (WHERE status = 'rejected') AS rejected_count,
             COUNT(*) FILTER (WHERE risk_level = 'high') AS high_risk_count,
             COUNT(*) FILTER (WHERE risk_level = 'medium') AS medium_risk_count,
@@ -214,6 +210,7 @@ export function registerAgentResponseRoutes(app: Express): void {
           executingCount: parseInt(s.executing_count || "0"),
           completedCount: parseInt(s.completed_count || "0"),
           failedCount: parseInt(s.failed_count || "0"),
+          timedOutCount: parseInt(s.timed_out_count || "0"),
           rejectedCount: parseInt(s.rejected_count || "0"),
           highRiskCount: parseInt(s.high_risk_count || "0"),
           mediumRiskCount: parseInt(s.medium_risk_count || "0"),
@@ -415,7 +412,7 @@ export function registerAgentResponseRoutes(app: Express): void {
   );
 
   // ==========================================================================
-  // SIMULATE EXECUTION — mark action as completed (for demo/testing)
+  // DISPATCH ACTION — leave approved action available for sensor pickup
   // ==========================================================================
 
   app.post(
@@ -445,30 +442,12 @@ export function registerAgentResponseRoutes(app: Express): void {
             .json({ message: `Action must be approved before execution. Current status: ${action.status}` });
         }
 
-        // Mark as executing then completed
-        await db
-          .update(agentResponseActions)
-          .set({
-            status: "executing",
-            dispatchedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(agentResponseActions.id, actionId));
+        log.info(`Action made available for sensor pickup: ${action.actionType}`, { actionId, orgId });
 
-        const [updated] = await db
-          .update(agentResponseActions)
-          .set({
-            status: "completed",
-            completedAt: new Date(),
-            resultOutput: `Action ${action.actionType} executed successfully on sensor ${action.sensorId}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(agentResponseActions.id, actionId))
-          .returning();
-
-        log.info(`Action executed: ${action.actionType}`, { actionId, orgId });
-
-        res.json({ action: updated, message: "Action executed successfully" });
+        res.json({
+          action,
+          message: "Action is awaiting sensor pickup. Completion requires an agent-reported result.",
+        });
       } catch (error) {
         log.error("Failed to execute action", { error: String(error) });
         res.status(500).json({ message: "Failed to execute action" });
@@ -1216,84 +1195,24 @@ export function registerAgentResponseRoutes(app: Express): void {
             .json({ message: `Cannot verify action in status: ${action.status}. Must be completed or executing.` });
         }
 
-        const [sensor] = await db
-          .select()
-          .from(nativeSensors)
-          .where(and(eq(nativeSensors.id, action.sensorId), eq(nativeSensors.orgId, orgId)))
-          .limit(1);
-
-        // Build verification checks based on action type
         const checks: Array<{ check: string; status: "pass" | "fail" | "unknown"; detail: string }> = [];
-
-        if (action.actionType === "isolate_host") {
-          const sensorOnline = sensor && sensor.status === "active";
-          checks.push({
-            check: "sensor_reachable",
-            status: sensorOnline ? "pass" : "unknown",
-            detail: sensorOnline
-              ? `Sensor ${sensor.hostname} is still reachable via management channel`
-              : "Sensor status unknown — may be isolated or offline",
-          });
-          checks.push({
-            check: "network_isolation_active",
-            status: sensorOnline ? "pass" : "unknown",
-            detail: sensorOnline
-              ? "Network isolation confirmed — host is isolated from general network"
-              : "Cannot verify isolation status — sensor offline",
-          });
-        } else if (action.actionType === "block_ip") {
-          checks.push({
-            check: "firewall_rule_exists",
-            status: "pass",
-            detail: `Firewall deny rule for ${action.targetIp} is active`,
-          });
-          checks.push({
-            check: "traffic_blocked",
-            status: "pass",
-            detail: `No outbound/inbound traffic observed to/from ${action.targetIp} since action execution`,
-          });
-        } else if (action.actionType === "block_domain") {
-          checks.push({
-            check: "dns_sinkhole_active",
-            status: "pass",
-            detail: `DNS sinkhole entry for ${action.targetDomain} is active`,
-          });
-        } else if (action.actionType === "disable_user") {
-          checks.push({
-            check: "account_disabled",
-            status: "pass",
-            detail: `User account "${action.targetUserName}" is in disabled state`,
-          });
-          checks.push({
-            check: "sessions_terminated",
-            status: "pass",
-            detail: "All active sessions for this user have been terminated",
-          });
-        } else if (action.actionType === "kill_process") {
-          checks.push({
-            check: "process_terminated",
-            status: "pass",
-            detail: `Process "${action.targetProcessName || action.targetPid}" is no longer running`,
-          });
-        } else if (action.actionType === "quarantine_file") {
-          checks.push({
-            check: "file_quarantined",
-            status: "pass",
-            detail: `File "${action.targetFilePath}" moved to quarantine vault`,
-          });
-          checks.push({
-            check: "execute_permission_removed",
-            status: "pass",
-            detail: "Execute permissions have been stripped from the file",
-          });
-        } else {
-          checks.push({
-            check: "action_completed",
-            status: action.status === "completed" ? "pass" : "unknown",
-            detail:
-              action.status === "completed" ? "Action completed successfully" : "Action status is not yet completed",
-          });
-        }
+        checks.push({
+          check: "agent_report",
+          status:
+            action.status === "completed" && action.resultOutput
+              ? "pass"
+              : action.status === "failed"
+                ? "fail"
+                : "unknown",
+          detail: action.resultOutput
+            ? `Sensor reported: ${action.resultOutput}`
+            : "No agent-reported output is available for this action.",
+        });
+        checks.push({
+          check: "external_state",
+          status: "unknown",
+          detail: "External provider or endpoint state cannot be independently verified by SecureNexus.",
+        });
 
         const allPassed = checks.every((c) => c.status === "pass");
         const anyFailed = checks.some((c) => c.status === "fail");
@@ -1318,7 +1237,7 @@ export function registerAgentResponseRoutes(app: Express): void {
         res.json({
           actionId: action.id,
           actionType: action.actionType,
-          verificationStatus: anyFailed ? "failed" : allPassed ? "verified" : "partial",
+          verificationStatus: anyFailed ? "failed" : allPassed ? "agent_reported" : "unverified",
           checks,
           verifiedAt: new Date().toISOString(),
         });
@@ -1560,19 +1479,21 @@ export function registerAgentResponseRoutes(app: Express): void {
             executionMethod: info.executionMethod,
             verificationMethod: info.verificationMethod,
             connectedPlatforms: matchingIntegrations.map((i) => ({ id: i.id, name: i.name, type: i.type })),
-            isConnected: matchingIntegrations.length > 0,
-            executionMode: matchingIntegrations.length > 0 ? "live" : "simulated",
+            hasMatchingIntegration: matchingIntegrations.length > 0,
+            isAvailable: false,
+            executionMode: "unavailable",
           };
         });
 
-        const connectedCount = connectorStatus.filter((c) => c.isConnected).length;
+        const configuredCount = connectorStatus.filter((c) => c.hasMatchingIntegration).length;
 
         res.json({
           connectorStatus,
           summary: {
             totalActionTypes: connectorStatus.length,
-            connectedActionTypes: connectedCount,
-            simulatedActionTypes: connectorStatus.length - connectedCount,
+            configuredActionTypes: configuredCount,
+            availableActionTypes: 0,
+            unavailableActionTypes: connectorStatus.length,
             activeIntegrations: activeIntegrations.length,
           },
         });
@@ -1583,7 +1504,7 @@ export function registerAgentResponseRoutes(app: Express): void {
     },
   );
 
-  // Execute through connector (or simulate if not connected)
+  // Connector execution is not implemented until provider adapters and credentials exist.
   app.post(
     "/api/native/response/actions/:id/execute-via-connector",
     isAuthenticated,
@@ -1606,78 +1527,14 @@ export function registerAgentResponseRoutes(app: Express): void {
           return res.status(400).json({ message: `Action must be approved. Current: ${action.status}` });
         }
 
-        const connectorInfo = CONNECTOR_REGISTRY[action.actionType];
-
-        // Check for matching integrations
-        let connectorUsed = "simulated";
-        let executionLog: string[] = [];
-
-        if (connectorInfo) {
-          const integrations = await db.execute(sql`
-            SELECT id, type, name FROM integrations
-            WHERE org_id = ${orgId} AND status = 'active'
-          `);
-          const activeIntegrations = ((integrations as any).rows || []) as Array<{
-            id: string;
-            type: string;
-            name: string;
-          }>;
-
-          const match = activeIntegrations.find((i) =>
-            connectorInfo.platforms.some(
-              (p) =>
-                i.name?.toLowerCase().includes(p.toLowerCase().split(" ")[0]) ||
-                i.type?.toLowerCase().includes(p.toLowerCase().split(" ")[0]),
-            ),
-          );
-
-          if (match) {
-            connectorUsed = match.name || match.type;
-            executionLog = [
-              `[${new Date().toISOString()}] Dispatching ${action.actionType} via ${connectorUsed}`,
-              `[${new Date().toISOString()}] ${connectorInfo.executionMethod}`,
-              `[${new Date().toISOString()}] Connector responded: action accepted`,
-              `[${new Date().toISOString()}] ${connectorInfo.verificationMethod}`,
-              `[${new Date().toISOString()}] Verification: action confirmed by ${connectorUsed}`,
-            ];
-          } else {
-            executionLog = [
-              `[${new Date().toISOString()}] No active connector found for ${action.actionType}`,
-              `[${new Date().toISOString()}] Falling back to simulated execution via native sensor agent`,
-              `[${new Date().toISOString()}] Dispatched to sensor ${action.sensorId}`,
-            ];
-          }
-        }
-
-        // Update action status
-        await db
-          .update(agentResponseActions)
-          .set({
-            status: "executing",
-            dispatchedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(agentResponseActions.id, actionId));
-
-        const [updated] = await db
-          .update(agentResponseActions)
-          .set({
-            status: "completed",
-            completedAt: new Date(),
-            resultOutput: `Executed via ${connectorUsed}. ${executionLog.join("\n")}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(agentResponseActions.id, actionId))
-          .returning();
-
-        log.info(`Action executed via connector: ${action.actionType}`, { actionId, connectorUsed, orgId });
-
-        res.json({
-          action: updated,
+        res.status(503).json({
+          action,
+          code: "CONNECTOR_EXECUTION_UNAVAILABLE",
+          message: "Connector execution is unavailable: no provider adapter is configured.",
           executionDetails: {
-            connectorUsed,
-            isLiveExecution: connectorUsed !== "simulated",
-            executionLog,
+            connectorUsed: null,
+            isLiveExecution: false,
+            executionLog: [],
           },
         });
       } catch (error) {
@@ -1692,11 +1549,11 @@ export function registerAgentResponseRoutes(app: Express): void {
   // ==========================================================================
 
   const ROLLBACK_ACTION_MAP: Record<string, string> = {
-    isolate_host: "un-isolate host",
-    block_ip: "unblock IP",
-    block_domain: "unblock domain",
-    disable_user: "re-enable user account",
-    quarantine_file: "restore file from quarantine",
+    isolate_host: "unisolate_host",
+    block_ip: "unblock_ip",
+    block_domain: "unblock_domain",
+    disable_user: "enable_user",
+    quarantine_file: "restore_file",
     kill_process: "N/A — process cannot be un-killed",
   };
 
@@ -1760,30 +1617,17 @@ export function registerAgentResponseRoutes(app: Express): void {
           })
           .returning();
 
-        // Simulate rollback execution
-        const [executed] = await db
-          .update(agentResponseActions)
-          .set({
-            status: "completed",
-            dispatchedAt: new Date(),
-            completedAt: new Date(),
-            resultOutput: `Rollback completed: ${rollbackAction} for original action ${actionId}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(agentResponseActions.id, rollback.id))
-          .returning();
-
-        log.info(`Action rolled back: ${action.actionType} → ${rollbackAction}`, {
+        log.info(`Rollback action made available for sensor pickup: ${action.actionType} → ${rollbackAction}`, {
           actionId,
           rollbackId: rollback.id,
           orgId,
         });
 
         res.json({
-          rollbackAction: executed,
+          rollbackAction: rollback,
           originalActionId: actionId,
           rollbackType: rollbackAction,
-          message: `Successfully rolled back: ${rollbackAction}`,
+          message: `Rollback is awaiting sensor pickup. Completion requires an agent-reported result.`,
         });
       } catch (error) {
         log.error("Rollback failed", { error: String(error) });
@@ -1832,73 +1676,83 @@ export function registerAgentResponseRoutes(app: Express): void {
 
         if (originalAction) {
           const rollbackType = ROLLBACK_ACTION_MAP[originalAction.actionType] || "unknown";
+          const hasAgentCompletion = latestRollback.status === "completed" && Boolean(latestRollback.resultOutput);
+          const agentDetail = latestRollback.resultOutput
+            ? `Agent reported: ${latestRollback.resultOutput}`
+            : `No agent completion evidence is available (status: ${latestRollback.status}).`;
 
           if (originalAction.actionType === "isolate_host") {
             verificationChecks.push({
-              check: "host_un_isolated",
-              status: latestRollback.status === "completed" ? "pass" : "fail",
-              detail:
-                latestRollback.status === "completed"
-                  ? "Host has been un-isolated and network connectivity restored"
-                  : "Un-isolation may not have completed successfully",
+              check: "agent_reported_rollback",
+              status: hasAgentCompletion ? "pass" : latestRollback.status === "failed" ? "fail" : "unknown",
+              detail: agentDetail,
             });
             verificationChecks.push({
-              check: "network_connectivity",
-              status: "pass",
-              detail: "Network connectivity tests passed — host can reach gateway",
+              check: "external_state",
+              status: "unknown",
+              detail: "External host isolation state cannot be verified by SecureNexus without provider evidence.",
             });
           } else if (originalAction.actionType === "block_ip") {
             verificationChecks.push({
-              check: "firewall_rule_removed",
-              status: latestRollback.status === "completed" ? "pass" : "fail",
-              detail:
-                latestRollback.status === "completed"
-                  ? `Firewall deny rule for ${originalAction.targetIp} has been removed`
-                  : "Firewall rule removal may not have completed",
+              check: "agent_reported_rollback",
+              status: hasAgentCompletion ? "pass" : latestRollback.status === "failed" ? "fail" : "unknown",
+              detail: agentDetail,
+            });
+            verificationChecks.push({
+              check: "external_state",
+              status: "unknown",
+              detail: "External firewall state cannot be verified by SecureNexus without provider evidence.",
             });
           } else if (originalAction.actionType === "block_domain") {
             verificationChecks.push({
-              check: "dns_sinkhole_removed",
-              status: latestRollback.status === "completed" ? "pass" : "fail",
-              detail:
-                latestRollback.status === "completed"
-                  ? `DNS sinkhole entry for ${originalAction.targetDomain} has been removed`
-                  : "DNS sinkhole removal may not have completed",
+              check: "agent_reported_rollback",
+              status: hasAgentCompletion ? "pass" : latestRollback.status === "failed" ? "fail" : "unknown",
+              detail: agentDetail,
+            });
+            verificationChecks.push({
+              check: "external_state",
+              status: "unknown",
+              detail: "External DNS/proxy state cannot be verified by SecureNexus without provider evidence.",
             });
           } else if (originalAction.actionType === "disable_user") {
             verificationChecks.push({
-              check: "account_re_enabled",
-              status: latestRollback.status === "completed" ? "pass" : "fail",
-              detail:
-                latestRollback.status === "completed"
-                  ? `User account "${originalAction.targetUserName}" has been re-enabled`
-                  : "Account re-enablement may not have completed",
+              check: "agent_reported_rollback",
+              status: hasAgentCompletion ? "pass" : latestRollback.status === "failed" ? "fail" : "unknown",
+              detail: agentDetail,
+            });
+            verificationChecks.push({
+              check: "external_state",
+              status: "unknown",
+              detail: "External identity-provider state cannot be verified by SecureNexus without provider evidence.",
             });
           } else if (originalAction.actionType === "quarantine_file") {
             verificationChecks.push({
-              check: "file_restored",
-              status: latestRollback.status === "completed" ? "pass" : "fail",
-              detail:
-                latestRollback.status === "completed"
-                  ? `File "${originalAction.targetFilePath}" has been restored from quarantine`
-                  : "File restoration may not have completed",
+              check: "agent_reported_rollback",
+              status: hasAgentCompletion ? "pass" : latestRollback.status === "failed" ? "fail" : "unknown",
+              detail: agentDetail,
+            });
+            verificationChecks.push({
+              check: "external_state",
+              status: "unknown",
+              detail: "External endpoint file state cannot be verified by SecureNexus without provider evidence.",
             });
           } else {
             verificationChecks.push({
               check: "rollback_completed",
-              status: latestRollback.status === "completed" ? "pass" : "unknown",
-              detail: `Rollback action (${rollbackType}) status: ${latestRollback.status}`,
+              status: hasAgentCompletion ? "pass" : latestRollback.status === "failed" ? "fail" : "unknown",
+              detail: `Rollback action (${rollbackType}) status: ${latestRollback.status}. ${agentDetail}`,
             });
           }
         }
 
         const allPassed = verificationChecks.every((c) => c.status === "pass");
+        const anyFailed = verificationChecks.some((c) => c.status === "fail");
 
         res.json({
           originalActionId: actionId,
           latestRollbackId: latestRollback.id,
           rollbackStatus: latestRollback.status,
-          verificationStatus: allPassed ? "verified" : "unverified",
+          verificationStatus: anyFailed ? "failed" : allPassed ? "agent_reported" : "unverified",
           checks: verificationChecks,
           rollbackHistory: rollbacks.map((r) => ({
             id: r.id,
@@ -1991,39 +1845,12 @@ export function registerAgentResponseRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
 
-        // Find actions that are executing and have exceeded their timeout
-        const executingActions = await db
-          .select()
-          .from(agentResponseActions)
-          .where(and(eq(agentResponseActions.orgId, orgId), eq(agentResponseActions.status, "executing")));
-
-        let timedOutCount = 0;
-        const timedOutActions: string[] = [];
-
-        for (const action of executingActions) {
-          const timeoutSeconds = (action.timeoutSeconds as number) || 300; // default 5 min
-          const dispatchedTime = action.dispatchedAt || action.createdAt;
-          if (!dispatchedTime) continue;
-
-          const elapsed = (Date.now() - new Date(dispatchedTime).getTime()) / 1000;
-          if (elapsed > timeoutSeconds) {
-            await db
-              .update(agentResponseActions)
-              .set({
-                status: "failed",
-                completedAt: new Date(),
-                resultError: `Timed out after ${Math.round(elapsed)}s (limit: ${timeoutSeconds}s)`,
-              })
-              .where(eq(agentResponseActions.id, action.id));
-            timedOutCount++;
-            timedOutActions.push(action.id);
-          }
-        }
+        const timedOutActions = await expireTimedOutResponseActions(orgId);
 
         res.json({
-          checked: executingActions.length,
-          timedOut: timedOutCount,
-          timedOutActionIds: timedOutActions,
+          checked: timedOutActions.length,
+          timedOut: timedOutActions.length,
+          timedOutActionIds: timedOutActions.map((action) => action.id),
         });
       } catch (error) {
         log.error("Timeout check failed", { error: String(error) });

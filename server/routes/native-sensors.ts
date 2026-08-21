@@ -20,6 +20,7 @@ import {
 } from "../../shared/schema";
 import { processEventBatch } from "../native-detections";
 import { seedBuiltinRules } from "../native-detections";
+import { expireTimedOutResponseActions } from "../response-action-timeouts";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -591,6 +592,8 @@ EOF`;
         return res.status(401).json({ message: "Invalid sensor credentials", actions: [] });
       }
 
+      await expireTimedOutResponseActions(sensor.orgId);
+
       // Atomically claim and return approved actions (prevents double-dispatch on concurrent polls)
       const claimedActions = await db.execute(sql`
         UPDATE agent_response_actions
@@ -642,7 +645,7 @@ EOF`;
     try {
       const sensorId = String(req.params.id);
       const actionId = String(req.params.actionId);
-      const { status, resultOutput } = req.body;
+      const { status, resultOutput, resultError } = req.body;
 
       // Authenticate sensor via API key
       const bearerToken =
@@ -655,7 +658,7 @@ EOF`;
 
       // Verify sensor exists AND API key matches
       const [sensorCheck] = await db
-        .select({ id: nativeSensors.id, apiKey: nativeSensors.apiKey })
+        .select({ id: nativeSensors.id, orgId: nativeSensors.orgId, apiKey: nativeSensors.apiKey })
         .from(nativeSensors)
         .where(eq(nativeSensors.id, sensorId))
         .limit(1);
@@ -670,9 +673,9 @@ EOF`;
 
       // Verify action belongs to this sensor
       const actionResult = await db.execute(sql`
-        SELECT id, sensor_id, action_type, org_id
+        SELECT id, sensor_id, action_type, org_id, status
         FROM agent_response_actions
-        WHERE id = ${actionId} AND sensor_id = ${sensorId}
+        WHERE id = ${actionId} AND sensor_id = ${sensorId} AND org_id = ${sensorCheck.orgId}
         LIMIT 1
       `);
 
@@ -681,15 +684,26 @@ EOF`;
         return res.status(404).json({ message: "Action not found for this sensor" });
       }
 
+      if (actionRow.status !== "executing") {
+        return res.status(409).json({
+          message: `Action cannot accept an agent result from status '${actionRow.status}'`,
+        });
+      }
+
       // Update action status
-      await db.execute(sql`
+      const updateResult = await db.execute(sql`
         UPDATE agent_response_actions
         SET status = ${status},
             completed_at = NOW(),
             result_output = ${String(resultOutput || "").slice(0, 4000)},
+            result_error = ${String(resultError || "").slice(0, 4000) || null},
             updated_at = NOW()
-        WHERE id = ${actionId}
+        WHERE id = ${actionId} AND sensor_id = ${sensorId} AND org_id = ${sensorCheck.orgId} AND status = 'executing'
+        RETURNING id
       `);
+      if (!((updateResult as { rows?: unknown[] }).rows || []).length) {
+        return res.status(409).json({ message: "Action is no longer executing and cannot accept this result" });
+      }
 
       log.info(`Action result reported: ${actionRow.action_type} -> ${status}`, {
         actionId,

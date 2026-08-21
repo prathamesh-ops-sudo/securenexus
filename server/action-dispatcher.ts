@@ -101,7 +101,7 @@ export interface ActionContext {
 
 export interface ActionResult {
   actionType: string;
-  status: "completed" | "failed" | "simulated" | "pending_approval" | "approved";
+  status: "completed" | "failed" | "simulated" | "pending_approval" | "approved" | "unavailable";
   message: string;
   details?: Record<string, unknown>;
   executedAt: string;
@@ -111,10 +111,7 @@ export interface ActionResult {
  * Check permissions before allowing action dispatch.
  * Validates org boundary and role-based access control.
  */
-function checkActionPermissions(
-  actionType: string,
-  context: ActionContext,
-): { allowed: boolean; reason?: string } {
+function checkActionPermissions(actionType: string, context: ActionContext): { allowed: boolean; reason?: string } {
   // Check org boundary: caller org must match target org
   if (context.callerOrgId && context.orgId && context.callerOrgId !== context.orgId) {
     return { allowed: false, reason: "Org boundary violation: caller org does not match target org" };
@@ -450,7 +447,11 @@ function determineInitialStatus(riskLevel: string): string {
  * 2. Lookup by hostname or IP in nativeSensors table
  * Returns null if no sensor can be resolved.
  */
-async function resolveSensorId(orgId: string, config: AgentActionConfig, context: ActionContext): Promise<string | null> {
+async function resolveSensorId(
+  orgId: string,
+  config: AgentActionConfig,
+  context: ActionContext,
+): Promise<string | null> {
   // 1. Explicit sensorId
   const explicit = context.sensorId || config?.sensorId;
   if (explicit) {
@@ -490,7 +491,7 @@ async function resolveSensorId(orgId: string, config: AgentActionConfig, context
 /**
  * Execute a real response action through the agent_response_actions pipeline.
  * Creates a DB entry with proper risk assessment and approval workflow.
- * Falls back to legacy simulation if no sensor can be resolved (no agent deployed).
+ * Fails visibly if no sensor can be resolved (no agent deployed).
  */
 async function executeAgentResponseAction(
   actionType: string,
@@ -503,8 +504,13 @@ async function executeAgentResponseAction(
 
   // If no orgId, we can't use the real pipeline
   if (!orgId) {
-    log.warn("No orgId in context — falling back to legacy simulation", { actionType, target });
-    return legacySimulateEdrAction(actionType, config, context, executedAt);
+    log.error("No orgId in context — cannot dispatch native response action", { actionType, target });
+    return unavailableAgentResponse(
+      actionType,
+      target,
+      "Organization context is required to dispatch a native response action.",
+      executedAt,
+    );
   }
 
   // Try to resolve sensor
@@ -512,22 +518,32 @@ async function executeAgentResponseAction(
   try {
     sensorId = await resolveSensorId(orgId, config, context);
   } catch (err) {
-    log.warn("Failed to resolve sensor — falling back to legacy simulation", {
+    log.error("Failed to resolve sensor — native response action unavailable", {
       actionType,
       target,
       error: String(err),
     });
-    return legacySimulateEdrAction(actionType, config, context, executedAt);
+    return unavailableAgentResponse(
+      actionType,
+      target,
+      "Sensor resolution failed; no native response action was dispatched.",
+      executedAt,
+    );
   }
 
-  // If no sensor found, fall back to simulation with a note
+  // Never represent an action as executed when no sensor is available.
   if (!sensorId) {
-    log.info("No matching sensor found — falling back to legacy simulation", {
+    log.warn("No matching sensor found — native response action unavailable", {
       actionType,
       target,
       orgId,
     });
-    return legacySimulateEdrAction(actionType, config, context, executedAt);
+    return unavailableAgentResponse(
+      actionType,
+      target,
+      "No reachable native sensor was found for this target.",
+      executedAt,
+    );
   }
 
   // Determine risk level and initial status
@@ -624,7 +640,7 @@ async function executeAgentResponseAction(
     return {
       actionType,
       status: "approved",
-      message: `${label} — approved and dispatched to sensor. Action ID: ${action.id}`,
+      message: `${label} — approved and awaiting sensor pickup. Action ID: ${action.id}`,
       details: {
         actionId: action.id,
         sensorId,
@@ -635,67 +651,41 @@ async function executeAgentResponseAction(
       executedAt,
     };
   } catch (err) {
-    log.error("Failed to create agent response action — falling back to legacy simulation", {
+    log.error("Failed to create agent response action", {
       actionType,
       target,
       error: String(err),
     });
-    return legacySimulateEdrAction(actionType, config, context, executedAt);
+    return {
+      actionType,
+      status: "failed",
+      message: "Native response action could not be persisted and was not dispatched.",
+      details: { actionType, target, reason: "Action persistence failed" },
+      executedAt,
+    };
   }
 }
 
-/**
- * Legacy simulation fallback — used when no native sensor is deployed
- * or when the agent response pipeline is unavailable.
- * Now persists to responseActions table with status "simulated" so
- * the UI can distinguish simulated actions from real ones.
- */
-async function legacySimulateEdrAction(
+function unavailableAgentResponse(
   actionType: string,
-  config: AgentActionConfig,
-  context: ActionContext,
+  target: string,
+  reason: string,
   executedAt: string,
-): Promise<ActionResult> {
-  const target = config?.target || config?.hostname || config?.ip || config?.hash || "unknown";
-  const actionLabels: Record<string, string> = {
-    isolate_host: `Isolated host "${target}" from network`,
-    block_ip: `Blocked IP address ${target} at firewall/EDR`,
-    block_domain: `Blocked domain ${target} via DNS/proxy`,
-    quarantine_file: `Quarantined file with hash ${target}`,
-    disable_user: `Disabled user account "${target}"`,
-    kill_process: `Terminated process "${target}" on affected hosts`,
-  };
-
-  // Persist simulated action to DB so it's visible in the response actions UI
-  if (context.storage && context.orgId) {
-    try {
-      await context.storage.createResponseAction({
-        orgId: context.orgId,
-        actionType,
-        incidentId: context.incidentId,
-        alertId: context.alertId,
-        targetType: actionType.split("_")[0],
-        targetValue: target,
-        status: "simulated",
-        requestPayload: { actionType, target, simulated: true, reason: "No native sensor agent found for target" },
-        responsePayload: { simulated: true, message: actionLabels[actionType] || actionType },
-        executedBy: context.userId,
-      });
-    } catch (err) {
-      log.warn("Failed to persist simulated action to DB", { actionType, target, error: String(err) });
-    }
-  }
-
+): ActionResult {
   return {
     actionType,
-    status: "simulated",
-    message: `[Simulated — no sensor deployed] ${actionLabels[actionType] || actionType}: ${target}`,
-    details: { actionType, target, simulated: true, reason: "No native sensor agent found for target" },
+    status: "unavailable",
+    message: `Native response action unavailable: ${reason}`,
+    details: { actionType, target, unavailable: true, reason },
     executedAt,
   };
 }
 
-async function executeAutoTriage(config: AutoTriageConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeAutoTriage(
+  config: AutoTriageConfig,
+  context: ActionContext,
+  executedAt: string,
+): Promise<ActionResult> {
   return {
     actionType: "auto_triage",
     status: "completed",
@@ -705,7 +695,11 @@ async function executeAutoTriage(config: AutoTriageConfig, context: ActionContex
   };
 }
 
-async function executeAssignAnalyst(config: AssignAnalystConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeAssignAnalyst(
+  config: AssignAnalystConfig,
+  context: ActionContext,
+  executedAt: string,
+): Promise<ActionResult> {
   const analyst = config?.analyst || config?.assignee || "on-call";
   if (context.incidentId && context.storage) {
     await context.storage.updateIncident(context.incidentId, { assignedTo: analyst });
@@ -719,7 +713,11 @@ async function executeAssignAnalyst(config: AssignAnalystConfig, context: Action
   };
 }
 
-async function executeChangeStatus(config: ChangeStatusConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeChangeStatus(
+  config: ChangeStatusConfig,
+  context: ActionContext,
+  executedAt: string,
+): Promise<ActionResult> {
   const newStatus = config?.status || config?.newStatus || "investigating";
   if (context.incidentId && context.storage) {
     await context.storage.updateIncident(context.incidentId, { status: newStatus });
@@ -744,7 +742,11 @@ async function executeAddTag(config: AddTagConfig, context: ActionContext, execu
   };
 }
 
-async function executeEscalate(config: EscalateConfig, context: ActionContext, executedAt: string): Promise<ActionResult> {
+async function executeEscalate(
+  config: EscalateConfig,
+  context: ActionContext,
+  executedAt: string,
+): Promise<ActionResult> {
   if (context.incidentId && context.storage) {
     await context.storage.updateIncident(context.incidentId, {
       escalated: true,

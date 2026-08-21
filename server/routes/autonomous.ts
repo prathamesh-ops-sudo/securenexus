@@ -552,21 +552,9 @@ export function registerAutonomousRoutes(app: Express): void {
           return res.status(404).json({ error: "Response action not found" });
         }
 
-        const rollback = await storage.createResponseActionRollback({
-          orgId,
-          originalActionId: validated.responseActionId,
-          actionType: action.actionType,
-          target: action.targetValue || "unknown",
-          rollbackAction: { reason: validated.reason || "Manual rollback request" },
-          status: "pending",
-          executedBy: (req as any).user?.id || "unknown",
-        });
-
-        log.info("Created rollback request", { orgId, rollbackId: rollback.id, actionId: validated.responseActionId });
-
-        return res.status(201).json({
-          rollbackId: rollback.id,
-          message: "Rollback request created",
+        return res.status(503).json({
+          code: "ROLLBACK_EXECUTION_UNAVAILABLE",
+          error: "Rollback execution is unavailable until the original action is linked to a native sensor action.",
         });
       } catch (error: any) {
         if (error.name === "ZodError") {
@@ -609,26 +597,16 @@ export function registerAutonomousRoutes(app: Express): void {
           return res.status(404).json({ error: "Original action not found" });
         }
 
-        // Update rollback status
-        await storage.updateResponseActionRollback(rollbackId, {
-          status: "completed",
-          executedAt: new Date(),
-          executedBy: (req as any).user?.id || "unknown",
-          result: {
-            message: `[Simulated] Rolled back ${action.actionType} on ${action.targetValue}`,
-            originalAction: {
-              actionType: action.actionType,
-              targetType: action.targetType,
-              targetValue: action.targetValue,
-            },
-          },
-        } as any);
+        log.warn("Rollback execution unavailable: native sensor dispatch is required", {
+          orgId,
+          rollbackId,
+          actionType: action.actionType,
+        });
 
-        log.info("Executed rollback", { orgId, rollbackId, actionType: action.actionType });
-
-        return res.json({
-          message: "Rollback executed successfully",
-          rollback: await storage.getResponseActionRollback(rollbackId),
+        return res.status(503).json({
+          code: "ROLLBACK_EXECUTION_UNAVAILABLE",
+          message: "Rollback execution is unavailable until a native sensor dispatch is configured.",
+          rollback,
         });
       } catch (error: any) {
         log.error("Failed to execute rollback", { error: error.message });
@@ -662,77 +640,34 @@ export function registerAutonomousRoutes(app: Express): void {
           ? await storage.getResponseAction(rollback.originalActionId)
           : null;
 
-        // Build before/after state comparison
-        const beforeState: Record<string, unknown> = {};
-        const afterState: Record<string, unknown> = {};
-
-        if (originalAction) {
-          const actionType = originalAction.actionType;
-          if (actionType === "isolate_host") {
-            beforeState.networkStatus = "isolated";
-            beforeState.connectivity = "none";
-            afterState.networkStatus = rollback.status === "completed" ? "connected" : "isolated";
-            afterState.connectivity = rollback.status === "completed" ? "restored" : "none";
-          } else if (actionType === "block_ip") {
-            beforeState.firewallRule = "active — blocking traffic";
-            afterState.firewallRule = rollback.status === "completed" ? "removed" : "active";
-          } else if (actionType === "block_domain") {
-            beforeState.dnsSinkhole = "active";
-            afterState.dnsSinkhole = rollback.status === "completed" ? "removed" : "active";
-          } else if (actionType === "disable_user") {
-            beforeState.accountStatus = "disabled";
-            beforeState.activeSessions = 0;
-            afterState.accountStatus = rollback.status === "completed" ? "enabled" : "disabled";
-            afterState.activeSessions = rollback.status === "completed" ? "restored" : 0;
-          } else if (actionType === "quarantine_file") {
-            beforeState.fileAccess = "quarantined";
-            afterState.fileAccess = rollback.status === "completed" ? "restored" : "quarantined";
-          }
-        }
-
-        // Build verification status
-        const verificationChecks: { check: string; status: string; detail: string }[] = [];
-        if (rollback.status === "completed" && originalAction) {
-          const actionType = originalAction.actionType;
-          if (actionType === "isolate_host") {
-            verificationChecks.push(
-              { check: "host_un_isolated", status: "pass", detail: "Host network connectivity restored" },
-              { check: "network_connectivity", status: "pass", detail: "Host can reach gateway" },
-            );
-          } else if (actionType === "block_ip") {
-            verificationChecks.push({
-              check: "firewall_rule_removed",
-              status: "pass",
-              detail: "IP unblocked in firewall",
-            });
-          } else if (actionType === "block_domain") {
-            verificationChecks.push({
-              check: "dns_sinkhole_removed",
-              status: "pass",
-              detail: "Domain resolves normally",
-            });
-          } else if (actionType === "disable_user") {
-            verificationChecks.push(
-              { check: "account_re_enabled", status: "pass", detail: "User account is active" },
-              { check: "password_reset_required", status: "unknown", detail: "Check if password reset was enforced" },
-            );
-          } else if (actionType === "quarantine_file") {
-            verificationChecks.push({
-              check: "file_restored",
-              status: "pass",
-              detail: "File restored to original location",
-            });
-          }
-        }
-
-        const verificationStatus =
-          verificationChecks.length === 0
-            ? "unverified"
-            : verificationChecks.every((c) => c.status === "pass")
-              ? "verified"
-              : verificationChecks.some((c) => c.status === "fail")
-                ? "failed"
-                : "partial";
+        const resultOutput =
+          rollback.result && typeof rollback.result === "object" && "resultOutput" in rollback.result
+            ? String((rollback.result as Record<string, unknown>).resultOutput)
+            : null;
+        const verificationChecks = [
+          {
+            check: "agent_report",
+            status:
+              rollback.status === "completed" && resultOutput
+                ? "pass"
+                : rollback.status === "failed"
+                  ? "fail"
+                  : "unknown",
+            detail: resultOutput
+              ? `Sensor reported: ${resultOutput}`
+              : "No agent-reported rollback output is available.",
+          },
+          {
+            check: "external_state",
+            status: "unknown",
+            detail: "External rollback state cannot be independently verified by SecureNexus.",
+          },
+        ];
+        const verificationStatus = verificationChecks.some((c) => c.status === "fail")
+          ? "failed"
+          : verificationChecks.every((c) => c.status === "pass")
+            ? "agent_reported"
+            : "unverified";
 
         return res.json({
           rollback,
@@ -749,8 +684,8 @@ export function registerAutonomousRoutes(app: Express): void {
             : null,
           initiatedBy: rollback.executedBy || "unknown",
           reason: (rollback.rollbackAction as any)?.reason || "No reason provided",
-          beforeState,
-          afterState,
+          beforeState: {},
+          afterState: {},
           verificationStatus,
           verificationChecks,
         });
@@ -785,76 +720,26 @@ export function registerAutonomousRoutes(app: Express): void {
           ? await storage.getResponseAction(rollback.originalActionId)
           : null;
 
-        // Calculate duration between original action and rollback
-        const originalCompletedAt = originalAction?.executedAt
-          ? new Date(originalAction.executedAt).getTime()
-          : originalAction?.createdAt
-            ? new Date(originalAction.createdAt).getTime()
-            : Date.now();
-        const rollbackCreatedAt = rollback.createdAt ? new Date(rollback.createdAt).getTime() : Date.now();
-        const durationMs = rollbackCreatedAt - originalCompletedAt;
-        const durationMinutes = Math.round(durationMs / 60000);
-
-        // Build impact analysis based on action type
         const actionType = originalAction?.actionType || rollback.actionType;
         const target = originalAction?.targetValue || rollback.target;
-
         const impactSummary: Record<string, unknown> = {
           actionType,
           target,
-          durationMinutes,
-          durationFormatted:
-            durationMinutes < 60
-              ? `${durationMinutes} minutes`
-              : `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`,
+          status: "unverified",
+          durationMinutes: null,
+          durationFormatted: "Unknown",
+          description: "Impact cannot be determined without agent and endpoint telemetry.",
+          businessImpact: "unknown",
         };
-
-        // Action-type-specific impact analysis — estimates derived from duration
-        const hoursActive = Math.max(1, Math.round(durationMinutes / 60));
-        if (actionType === "isolate_host") {
-          impactSummary.description = `Endpoint was isolated for ${impactSummary.durationFormatted}. During that time, all network connectivity was blocked.`;
-          impactSummary.affectedSessions = hoursActive;
-          impactSummary.serviceAlertsGenerated = Math.min(hoursActive, 5);
-          impactSummary.userImpact = "Users on this endpoint lost access to all network resources";
-          impactSummary.businessImpact = hoursActive > 3 ? "high" : "medium";
-        } else if (actionType === "block_ip") {
-          impactSummary.description = `IP ${target} was blocked for ${impactSummary.durationFormatted}. All inbound and outbound traffic was dropped.`;
-          impactSummary.droppedConnections = hoursActive * 5;
-          impactSummary.affectedServices = Math.min(hoursActive, 3);
-          impactSummary.businessImpact = "low";
-        } else if (actionType === "block_domain") {
-          impactSummary.description = `Domain ${target} was sinkholed for ${impactSummary.durationFormatted}. DNS queries returned the sinkhole address.`;
-          impactSummary.blockedQueries = hoursActive * 20;
-          impactSummary.affectedUsers = Math.min(hoursActive * 2, 15);
-          impactSummary.businessImpact = "low";
-        } else if (actionType === "disable_user") {
-          impactSummary.description = `User account ${target} was disabled for ${impactSummary.durationFormatted}. All active sessions were terminated.`;
-          impactSummary.terminatedSessions = 1;
-          impactSummary.missedAuthentications = hoursActive * 2;
-          impactSummary.ticketsCreated = 1;
-          impactSummary.businessImpact = "high";
-        } else if (actionType === "quarantine_file") {
-          impactSummary.description = `File ${target} was quarantined for ${impactSummary.durationFormatted}. File access was blocked.`;
-          impactSummary.accessAttempts = hoursActive;
-          impactSummary.businessImpact = "low";
-        } else {
-          impactSummary.description = `Action ${actionType} was active for ${impactSummary.durationFormatted} before rollback.`;
-          impactSummary.businessImpact = "unknown";
-        }
 
         return res.json({
           rollbackId,
           impact: impactSummary,
           timeline: [
             {
-              event: "Original action executed",
-              timestamp: originalAction?.executedAt || originalAction?.createdAt || null,
-              detail: `${actionType} on ${target}`,
-            },
-            {
-              event: "Action was active",
-              timestamp: null,
-              detail: `Duration: ${impactSummary.durationFormatted}`,
+              event: "Original action recorded",
+              timestamp: originalAction?.createdAt || null,
+              detail: `${actionType} on ${target}; external state unverified`,
             },
             {
               event: "Rollback requested",
@@ -864,9 +749,9 @@ export function registerAutonomousRoutes(app: Express): void {
             ...(rollback.executedAt
               ? [
                   {
-                    event: "Rollback executed",
+                    event: "Rollback result recorded",
                     timestamp: rollback.executedAt,
-                    detail: `Status: ${rollback.status}`,
+                    detail: `Status: ${rollback.status}; external state unverified`,
                   },
                 ]
               : []),
@@ -1063,7 +948,7 @@ export function registerAutonomousRoutes(app: Express): void {
           category: string;
         }[] = [];
 
-        // 1. Original action creation
+        // 1. Original action record
         if (originalAction) {
           auditEntries.push({
             timestamp: originalAction.createdAt ? new Date(originalAction.createdAt).toISOString() : null,
@@ -1077,8 +962,8 @@ export function registerAutonomousRoutes(app: Express): void {
             auditEntries.push({
               timestamp: new Date(originalAction.executedAt).toISOString(),
               actor: "system",
-              action: "original_action_completed",
-              detail: `Action completed with status: ${originalAction.status}`,
+              action: "original_action_status_recorded",
+              detail: `Recorded status: ${originalAction.status}; external state unverified`,
               category: "action",
             });
           }
@@ -1093,13 +978,13 @@ export function registerAutonomousRoutes(app: Express): void {
           category: "rollback",
         });
 
-        // 3. Rollback executed
+        // 3. Rollback result
         if (rollback.executedAt) {
           auditEntries.push({
             timestamp: new Date(rollback.executedAt).toISOString(),
             actor: rollback.executedBy || "system",
-            action: "rollback_executed",
-            detail: `Rollback ${rollback.status}`,
+            action: "rollback_result_recorded",
+            detail: `Rollback status: ${rollback.status}; external state unverified`,
             category: "rollback",
           });
         }

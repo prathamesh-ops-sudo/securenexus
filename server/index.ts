@@ -39,6 +39,7 @@ import { startConnectorHealthLoop, stopConnectorHealthLoop } from "./connector-h
 import { AiUnavailableError } from "./ai/fallback";
 import { replyError } from "./api-response";
 import { initializeAiPrompts } from "./ai";
+import { startResponseActionTimeoutScheduler } from "./response-action-timeouts";
 
 const startedAt = Date.now();
 
@@ -239,6 +240,7 @@ export function log(message: string, source = "express") {
       startDrillScheduler();
       startStaleSlotReaper();
       startBudgetResetScheduler();
+      startResponseActionTimeoutScheduler();
       startConnectorHealthLoop();
       registerShutdownHandler("job-worker", stopJobWorker);
       registerShutdownHandler("connector-health-loop", async () => stopConnectorHealthLoop());

@@ -52,7 +52,7 @@ function runStatusBadge(status: string) {
 function rollbackStatusBadge(status: string) {
   const styles: Record<string, string> = {
     pending: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
-    completed: "bg-green-500/10 text-green-500 border-green-500/20",
+    completed: "bg-blue-500/10 text-blue-500 border-blue-500/20",
     failed: "bg-red-500/10 text-red-500 border-red-500/20",
   };
   return styles[status] || "bg-muted text-muted-foreground border-muted";
@@ -654,40 +654,8 @@ function InvestigationsTab() {
 }
 
 function RollbacksTab() {
-  const { toast } = useToast();
-  const [newActionType, setNewActionType] = useState("");
-  const [newTarget, setNewTarget] = useState("");
-
   const { data: rollbacks, isLoading } = useQuery<any[]>({
     queryKey: ["/api/autonomous/rollbacks"],
-  });
-
-  const executeMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("POST", `/api/autonomous/rollbacks/${id}/execute`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/autonomous/rollbacks"] });
-      toast({ title: "Rollback executed", description: "The rollback action has been completed." });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Rollback failed", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const createMutation = useMutation({
-    mutationFn: async ({ actionType, target }: { actionType: string; target: string }) => {
-      await apiRequest("POST", "/api/autonomous/rollbacks", { actionType, target });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/autonomous/rollbacks"] });
-      setNewActionType("");
-      setNewTarget("");
-      toast({ title: "Rollback created", description: "New rollback record has been created." });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Creation failed", description: err.message, variant: "destructive" });
-    },
   });
 
   if (isLoading) {
@@ -714,46 +682,10 @@ function RollbacksTab() {
         </Badge>
       </div>
 
-      <Card data-testid="card-create-rollback">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Create New Rollback</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Select value={newActionType} onValueChange={setNewActionType}>
-              <SelectTrigger className="w-48" data-testid="select-action-type">
-                <SelectValue placeholder="Action type..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="block_ip">Block IP</SelectItem>
-                <SelectItem value="disable_user">Disable User</SelectItem>
-                <SelectItem value="quarantine_file">Quarantine File</SelectItem>
-                <SelectItem value="revoke_token">Revoke Token</SelectItem>
-                <SelectItem value="isolate_host">Isolate Host</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              placeholder="Target (e.g., IP, username)..."
-              value={newTarget}
-              onChange={(e) => setNewTarget(e.target.value)}
-              className="w-64"
-              data-testid="input-rollback-target"
-            />
-            <Button
-              onClick={() =>
-                newActionType && newTarget && createMutation.mutate({ actionType: newActionType, target: newTarget })
-              }
-              disabled={!newActionType || !newTarget || createMutation.isPending}
-              data-testid="button-create-rollback"
-            >
-              {createMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <RotateCcw className="h-4 w-4 mr-2" />
-              )}
-              Create Rollback
-            </Button>
-          </div>
+      <Card data-testid="card-rollback-unavailable">
+        <CardContent className="p-4 text-sm text-yellow-400">
+          Rollback execution is unavailable here until the original action is linked to a native sensor action. Use the
+          native response action workflow for sensor-dispatched rollbacks.
         </CardContent>
       </Card>
 
@@ -812,19 +744,9 @@ function RollbacksTab() {
                     </div>
                   </div>
                   {rollback.status === "pending" && (
-                    <Button
-                      variant="outline"
-                      onClick={() => executeMutation.mutate(String(rollback.id))}
-                      disabled={executeMutation.isPending}
-                      data-testid={`button-execute-rollback-${rollback.id || idx}`}
-                    >
-                      {executeMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Play className="h-4 w-4 mr-2" />
-                      )}
-                      Execute
-                    </Button>
+                    <Badge variant="outline" className="text-yellow-400 border-yellow-500/30">
+                      Native sensor dispatch unavailable
+                    </Badge>
                   )}
                 </div>
               </CardContent>

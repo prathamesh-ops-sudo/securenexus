@@ -6737,6 +6737,11 @@ export const AGENT_ACTION_TYPES = [
   "block_domain",
   "enable_logging",
   "restart_service",
+  "unisolate_host",
+  "unblock_ip",
+  "unblock_domain",
+  "restore_file",
+  "enable_user",
 ] as const;
 export const AGENT_ACTION_RISK_LEVELS = ["low", "medium", "high"] as const;
 export const AGENT_ACTION_STATUSES = [

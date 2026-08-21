@@ -59,10 +59,15 @@ export async function executeRollback(rollbackId: string, executedBy: string): P
     );
 
     return await storage.updateResponseActionRollback(rollbackId, {
-      status: result.status === "completed" || result.status === "simulated" ? "completed" : "failed",
+      status:
+        result.status === "completed"
+          ? "completed"
+          : result.status === "failed" || result.status === "unavailable"
+            ? "failed"
+            : "pending",
       executedBy,
       result,
-      executedAt: new Date(),
+      ...(result.status === "completed" ? { executedAt: new Date() } : {}),
     });
   } catch (error: any) {
     return await storage.updateResponseActionRollback(rollbackId, {
