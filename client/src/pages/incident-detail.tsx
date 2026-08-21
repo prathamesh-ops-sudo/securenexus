@@ -1383,6 +1383,14 @@ export default function IncidentDetailPage() {
                       Unverified citations — human review required
                     </Badge>
                   )}
+                  {narrativeResult.retrievalUnavailable && (
+                    <Badge
+                      className="bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100"
+                      data-testid="badge-retrieval-unavailable"
+                    >
+                      Historical context unavailable — human review required
+                    </Badge>
+                  )}
                   {narrativeResult.threatIntelSources && narrativeResult.threatIntelSources.length > 0 && (
                     <Badge
                       variant="outline"
@@ -1589,6 +1597,19 @@ export default function IncidentDetailPage() {
                   <p className="text-xs text-primary/80 font-medium mt-1" data-testid="text-ai-summary">
                     {incident.aiSummary}
                   </p>
+                )}
+                {(incident as any).attackerProfile?.retrievalUnavailable && (
+                  <div
+                    className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300"
+                    data-testid="banner-retrieval-unavailable"
+                  >
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      Historical threat-intelligence retrieval was unavailable when this analysis was generated.
+                      Historical context is unknown; review the alert evidence and retry retrieval before treating this
+                      narrative as complete.
+                    </span>
+                  </div>
                 )}
               </CardHeader>
               <CardContent className="space-y-3">
@@ -4079,4 +4100,5 @@ interface NarrativeResult {
   nistPhase?: string;
   citedAlertIds?: string[];
   threatIntelSources?: string[];
+  retrievalUnavailable?: boolean;
 }

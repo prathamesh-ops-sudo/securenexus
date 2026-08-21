@@ -271,6 +271,26 @@ describe("Async triage endpoint", () => {
       expect(mockBroadcastEvent).not.toHaveBeenCalled();
     });
 
+    it("preserves unavailable retrieval provenance in the completed result", async () => {
+      const mockAlert = { id: "alert-1", orgId: "org-1", title: "Test" };
+      const mockThreatCtx = { enrichmentResults: [], osintMatches: [], retrievalUnavailable: true };
+      const mockResult = { severity: "high", priority: 1 };
+
+      mockStorage.getAlert.mockResolvedValue(mockAlert);
+      mockTriageAlert.mockResolvedValue(mockResult);
+      mockBuildThreatIntelContext.mockResolvedValue(mockThreatCtx);
+
+      const { getAiTriageHandler } = await import("../routes/ai/triage");
+      const handler = getAiTriageHandler();
+
+      const result = await handler({ id: "job-1", payload: { alertId: "alert-1", orgId: "org-1" } });
+
+      expect(result).toEqual({
+        alertId: "alert-1",
+        result: { severity: "high", priority: 1, retrievalUnavailable: true },
+      });
+    });
+
     it("returns error result on triageAlert failure", async () => {
       mockStorage.getAlert.mockResolvedValue({ id: "alert-1", orgId: "org-1" });
       mockBuildThreatIntelContext.mockResolvedValue({ enrichmentResults: [], osintMatches: [] });

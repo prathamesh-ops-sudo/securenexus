@@ -293,7 +293,7 @@ function BASDashboardTab() {
     return (
       <ErrorState
         title="BAS dashboard unavailable"
-        message="We couldn't retrieve simulation validation data. Empty metrics are not shown as zero."
+        message="We couldn't retrieve simulation validation data. Coverage and control results are currently unknown. Retry, or check the validation service if the problem continues."
         onRetry={() => {
           void refetchStats();
           void refetchHeatmap();
@@ -1773,7 +1773,7 @@ function CoverageTrackingTab() {
     return (
       <ErrorState
         title="Coverage tracking unavailable"
-        message="We couldn't retrieve chaos validation coverage. No failed read is represented as zero coverage."
+        message="We couldn't retrieve chaos validation coverage. Coverage status is currently unknown. Retry, or check the validation service if the problem continues."
         onRetry={() => {
           void refetchStats();
           void refetchGaps();

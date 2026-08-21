@@ -1075,7 +1075,7 @@ function BlastRadiusTab() {
           <CardContent>
             <ErrorState
               title="Identity risk profiles unavailable"
-              message="We couldn't retrieve the identity risk assessment. No-profile results are not available until the service responds."
+              message="We couldn't retrieve the identity risk assessment. Retry, or check the identity service if the problem continues."
               onRetry={() => refetch()}
               compact
             />
@@ -1545,7 +1545,7 @@ function LateralMovementTab() {
           <CardContent>
             <ErrorState
               title="Access graph unavailable"
-              message="We couldn't retrieve the lateral-movement graph. An empty graph cannot be shown until the service responds."
+              message="We couldn't retrieve the lateral-movement graph. Retry, or check the identity service if the problem continues."
               onRetry={() => refetch()}
               compact
             />

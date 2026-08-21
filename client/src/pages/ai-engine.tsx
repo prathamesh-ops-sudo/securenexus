@@ -89,6 +89,7 @@ interface CorrelationResult {
   uncorrelatedAlertIds: string[];
   overallAssessment: string;
   threatLandscape: string;
+  retrievalUnavailable?: boolean;
 }
 
 interface TriageResult {
@@ -107,6 +108,7 @@ interface TriageResult {
   escalationRequired: boolean;
   containmentAdvice: string;
   threatIntelSources?: string[];
+  retrievalUnavailable?: boolean;
 }
 
 interface AIConfig {
@@ -1473,6 +1475,18 @@ export default function AIEnginePage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
+              {correlationResult.retrievalUnavailable && (
+                <div
+                  className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300"
+                  data-testid="correlation-retrieval-unavailable"
+                >
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    Historical threat-intelligence retrieval was unavailable for this correlation. Historical context is
+                    unknown; review the alert evidence and retry retrieval before treating this result as complete.
+                  </span>
+                </div>
+              )}
               <div>
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
                   Overall Assessment
@@ -1785,6 +1799,19 @@ export default function AIEnginePage() {
 
           {triageResult && !triage.isPending && (
             <div className="space-y-4 pt-2" data-testid="section-triage-results">
+              {triageResult.retrievalUnavailable && (
+                <div
+                  className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300"
+                  data-testid="triage-retrieval-unavailable"
+                >
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    Historical threat-intelligence retrieval was unavailable for this analysis. The verdict does not
+                    confirm that no related incidents or advisories exist; review the alert evidence and retry retrieval
+                    before treating this result as complete.
+                  </span>
+                </div>
+              )}
               {triageResult.threatIntelSources && triageResult.threatIntelSources.length > 0 && (
                 <div className="flex items-center gap-2 flex-wrap" data-testid="triage-intel-sources">
                   <Badge variant="outline" className="text-[10px] gap-1 border-green-500/50 text-green-500">

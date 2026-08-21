@@ -3118,7 +3118,7 @@ export default function PlaybooksPage() {
               <CardContent>
                 <ErrorState
                   title="Execution analytics unavailable"
-                  message="We couldn't retrieve persisted playbook executions. Empty execution history is not shown as a measured zero."
+                  message="We couldn't retrieve persisted playbook executions. Execution rates are currently unknown. Retry, or check the playbook service if the problem continues."
                   onRetry={() => refetchAnalytics()}
                   compact
                 />

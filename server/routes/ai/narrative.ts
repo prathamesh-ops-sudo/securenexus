@@ -57,6 +57,9 @@ export function registerAiNarrativeRoutes(app: Express): void {
             )
           : [];
         const { diamondModel: _dm, ...storedAttackerProfile } = result.attackerProfile || ({} as any);
+        if (result.retrievalUnavailable) {
+          (storedAttackerProfile as any).retrievalUnavailable = true;
+        }
         await storage.updateIncident(p(req.params.incidentId), {
           aiNarrative: result.narrative,
           aiSummary: result.summary,
@@ -151,12 +154,16 @@ export function registerAiNarrativeRoutes(app: Express): void {
             })();
 
             if (parsed) {
+              parsed.retrievalUnavailable = threatIntelCtx.retrievalUnavailable === true;
               const storedIocs = Array.isArray(parsed.iocs)
                 ? parsed.iocs.map((ioc: any) =>
                     typeof ioc === "string" ? ioc : `${ioc.value} (${ioc.type}: ${ioc.context})`,
                   )
                 : [];
               const { diamondModel: _dm, ...storedAttackerProfile } = parsed.attackerProfile || ({} as any);
+              if (parsed.retrievalUnavailable) {
+                storedAttackerProfile.retrievalUnavailable = true;
+              }
               await storage.updateIncident(p(req.params.incidentId), {
                 aiNarrative: parsed.narrative || fullText,
                 aiSummary: parsed.summary,

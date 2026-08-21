@@ -24,6 +24,9 @@ export function getAiTriageHandler(): (job: any) => Promise<any> {
       }
       const threatIntelCtx = await buildThreatIntelContext([alert]);
       const result = await triageAlert(alert, threatIntelCtx, orgId);
+      if (threatIntelCtx.retrievalUnavailable) {
+        result.retrievalUnavailable = true;
+      }
 
       // Broadcast completion via SSE
       const { broadcastEvent } = await import("../../event-bus");
@@ -170,6 +173,9 @@ export function registerAiTriageRoutes(app: Express): void {
           return res.status(503).json({ message: "AI correlation temporarily unavailable", status: "ai_unavailable" });
         }
         const result = fallbackResult.data!;
+        if (threatIntelCtx.retrievalUnavailable) {
+          result.retrievalUnavailable = true;
+        }
         await storage.createAuditLog({
           userId: (req as any).user?.id,
           userName: (req as any).user?.firstName

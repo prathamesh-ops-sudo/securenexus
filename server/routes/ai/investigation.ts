@@ -51,6 +51,9 @@ export function registerAiInvestigationRoutes(app: Express): void {
             .json({ message: "AI deep investigation temporarily unavailable", status: "ai_unavailable" });
         }
         const result = fallbackResult.data!;
+        if (threatIntelCtx?.retrievalUnavailable) {
+          result.retrievalUnavailable = true;
+        }
 
         persistAttackGraph(result as unknown as Record<string, unknown>, incident.id, orgId).catch((err) => {
           logger.child("ai").warn("Failed to persist attack graph", { error: String(err) });
@@ -114,6 +117,9 @@ export function registerAiInvestigationRoutes(app: Express): void {
             .json({ message: "AI threat hunting temporarily unavailable", status: "ai_unavailable" });
         }
         const result = fallbackResult.data!;
+        if (threatIntelCtx?.retrievalUnavailable) {
+          result.retrievalUnavailable = true;
+        }
 
         await storage.createAuditLog({
           userId: (req as any).user?.id,

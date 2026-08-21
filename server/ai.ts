@@ -630,12 +630,14 @@ export interface CorrelationResult {
   uncorrelatedAlertIds: string[];
   overallAssessment: string;
   threatLandscape: string;
+  retrievalUnavailable?: boolean;
 }
 
 export interface NarrativeResult {
   narrative: string;
   citedAlertIds?: string[];
   unverifiedCitations?: boolean;
+  retrievalUnavailable?: boolean;
   summary: string;
   attackTimeline: { timestamp: string; description: string; alertId?: string; mitreTechnique?: string }[];
   attackerProfile: {
@@ -678,6 +680,7 @@ export interface TriageResult {
   escalationRequired: boolean;
   containmentAdvice: string;
   threatIntelSources?: string[];
+  retrievalUnavailable?: boolean;
   humanReviewRequired?: boolean;
   aiGuard?: ModelInvokeResult["aiGuard"];
 }
@@ -1059,6 +1062,13 @@ export function formatThreatIntelForPrompt(ctx: ThreatIntelContext): string {
     lines.push("");
   }
 
+  if (ctx.retrievalUnavailable) {
+    lines.push(
+      "HISTORICAL RETRIEVAL STATUS: UNAVAILABLE. Do not cite the failed retrieval, count it as evidence consulted, or derive confidence from the absence of results. Historical context is unknown; rely only on evidence that was actually retrieved.",
+    );
+    lines.push("");
+  }
+
   lines.push(
     "Use this threat intelligence to inform your analysis. IOCs with high reputation scores or OSINT matches should increase your confidence that this is a genuine threat, not a false positive. Cross-reference these findings with the alert telemetry. Items above are ranked by relevance — malicious verdicts and high-confidence OSINT matches appear first.",
   );
@@ -1093,7 +1103,10 @@ export async function correlateAlerts(
     [{ label: "alert_and_threat_intelligence_evidence", content: finalUserMessage }],
     correlationOutputSchema,
   );
-  return parseValidatedModelJson(text, correlationOutputSchema);
+  return {
+    ...parseValidatedModelJson<CorrelationResult>(text, correlationOutputSchema),
+    retrievalUnavailable: threatIntelCtx?.retrievalUnavailable === true,
+  };
 }
 
 function buildCorrelationUserMessage(alertsData: Alert[]): string {
@@ -1159,6 +1172,7 @@ export async function generateIncidentNarrative(
     { incidentId: incident.id },
   );
   const parsed = parseValidatedModelJson<NarrativeResult>(text, narrativeOutputSchema);
+  parsed.retrievalUnavailable = threatIntelCtx?.retrievalUnavailable === true;
   const validAlertIds = new Set(alerts.map((alert) => alert.id));
   const validCitations = (parsed.citedAlertIds ?? []).filter((id) => validAlertIds.has(id));
   const droppedCitations = (parsed.citedAlertIds ?? []).filter((id) => !validAlertIds.has(id));
@@ -1256,6 +1270,7 @@ export async function triageAlert(
   );
   return {
     ...parseValidatedModelJson(text, triageOutputSchema),
+    retrievalUnavailable: threatIntelCtx?.retrievalUnavailable === true,
     humanReviewRequired: aiGuard?.humanReviewRequired ?? false,
     aiGuard,
   };
@@ -1470,6 +1485,7 @@ function parseValidatedModelJson<T>(text: string, schema: z.ZodType): T {
 // =============================
 
 export interface DeepInvestigationResult {
+  retrievalUnavailable?: boolean;
   executiveSummary: string;
   investigationConfidence: number;
   scopeAssessment: {
@@ -1558,6 +1574,7 @@ export interface DeepInvestigationResult {
 }
 
 export interface ThreatHuntingResult {
+  retrievalUnavailable?: boolean;
   huntMissionId: string;
   hypotheses: Array<{
     id: string;
@@ -1765,7 +1782,10 @@ ${threatIntelBlock}`;
       investigationOutputSchema,
       { incidentId: incident.id },
     );
-    return parseValidatedModelJson<DeepInvestigationResult>(text, investigationOutputSchema);
+    return {
+      ...parseValidatedModelJson<DeepInvestigationResult>(text, investigationOutputSchema),
+      retrievalUnavailable: threatIntelCtx?.retrievalUnavailable === true,
+    };
   } catch (error) {
     log.warn("AI deep investigation unavailable", { error: String(error) });
     throw new AiUnavailableError("deep investigation", error);
@@ -1806,7 +1826,10 @@ ${threatIntelBlock}`;
       [{ label: "threat_hunting_evidence", content: userMessage }],
       threatHuntingOutputSchema,
     );
-    return parseValidatedModelJson<ThreatHuntingResult>(text, threatHuntingOutputSchema);
+    return {
+      ...parseValidatedModelJson<ThreatHuntingResult>(text, threatHuntingOutputSchema),
+      retrievalUnavailable: threatIntelCtx?.retrievalUnavailable === true,
+    };
   } catch (error) {
     log.warn("AI threat hunt unavailable", { error: String(error) });
     throw new AiUnavailableError("threat hunting", error);

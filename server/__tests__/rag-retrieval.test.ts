@@ -52,5 +52,30 @@ describe("RAG retrieval truthfulness", () => {
     expect(context.retrievalStatus).toBe("unavailable");
     expect(context.similarPastIncidents).toEqual([]);
     expect(formatRAGContextForPrompt(context)).toContain("Do not infer that no relevant");
+    expect(formatRAGContextForPrompt(context)).not.toContain("HISTORICAL & KNOWLEDGE BASE CONTEXT (RAG)");
+  });
+
+  it("marks failed historical retrieval as unavailable without evidence or confidence provenance", async () => {
+    const { formatThreatIntelForPrompt } = await import("../ai");
+    const prompt = formatThreatIntelForPrompt({
+      enrichmentResults: [],
+      osintMatches: [],
+      summary: "",
+      historicalContext: {
+        similarPastIncidents: [],
+        relatedAttackTechniques: [],
+        relevantCveAdvisories: [],
+        ragSummary: "",
+        retrievalStatus: "unavailable",
+        retrievalError: "knowledge base unavailable",
+      },
+      retrievalUnavailable: true,
+    });
+
+    expect(prompt).toContain("HISTORICAL RETRIEVAL STATUS: UNAVAILABLE");
+    expect(prompt).toContain("Do not cite the failed retrieval");
+    expect(prompt).toContain("count it as evidence consulted");
+    expect(prompt).not.toContain("SIMILAR PAST INCIDENTS:");
+    expect(prompt).not.toContain("Matched 0");
   });
 });

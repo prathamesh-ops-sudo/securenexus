@@ -133,7 +133,7 @@ function OverviewTab() {
     return (
       <ErrorState
         title="Data residency summary unavailable"
-        message="We couldn't retrieve the tenant's residency configuration and compliance summary. No compliance score or permissive default is shown."
+        message="We couldn't retrieve the tenant's residency configuration and compliance summary. Compliance status is currently unknown. Retry, or check the data residency service if the problem continues."
         onRetry={() => {
           void refetchConfig();
           void refetchSummary();
