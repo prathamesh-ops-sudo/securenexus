@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { DashboardSkeleton } from "@/components/page-skeleton";
+import { ErrorState } from "@/components/empty-state";
 import { apiQuery } from "@/lib/queryClient";
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -163,12 +164,12 @@ interface PurpleTeamResult {
 interface ChaosStats {
   totalTechniques: number;
   simulatedTechniques: number;
-  coveragePercent: number;
+  coveragePercent: number | null;
   totalSimulations: number;
   passedSimulations: number;
   failedSimulations: number;
-  bypassRate: number;
-  avgControlEffectiveness: number;
+  bypassRate: number | null;
+  avgControlEffectiveness: number | null;
   criticalGaps: number;
   highGaps: number;
   scheduledValidations: number;
@@ -264,18 +265,41 @@ function coverageBg(coverage: string): string {
 // ── BAS Dashboard Tab ─────────────────────────────────────────────────────────
 
 function BASDashboardTab() {
-  const { data: stats, isLoading: statsLoading } = useQuery<ChaosStats>({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    isError: statsError,
+    refetch: refetchStats,
+  } = useQuery<ChaosStats>({
     queryKey: ["/api/chaos-engineering/stats"],
     queryFn: () => apiFetch("/api/chaos-engineering/stats"),
   });
 
-  const { data: heatmap, isLoading: heatmapLoading } = useQuery<HeatmapData>({
+  const {
+    data: heatmap,
+    isLoading: heatmapLoading,
+    isError: heatmapError,
+    refetch: refetchHeatmap,
+  } = useQuery<HeatmapData>({
     queryKey: ["/api/chaos-engineering/heatmap"],
     queryFn: () => apiFetch("/api/chaos-engineering/heatmap"),
   });
 
   if (statsLoading || heatmapLoading) {
     return <div className="flex items-center justify-center py-12 text-muted-foreground">Loading BAS dashboard...</div>;
+  }
+
+  if (statsError || heatmapError) {
+    return (
+      <ErrorState
+        title="BAS dashboard unavailable"
+        message="We couldn't retrieve simulation validation data. Empty metrics are not shown as zero."
+        onRetry={() => {
+          void refetchStats();
+          void refetchHeatmap();
+        }}
+      />
+    );
   }
 
   return (
@@ -289,7 +313,11 @@ function BASDashboardTab() {
                 <Target className="h-5 w-5 text-blue-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{stats?.coveragePercent ?? 0}%</p>
+                <p className="text-2xl font-bold">
+                  {stats?.totalSimulations === 0 || stats?.coveragePercent == null
+                    ? "Not yet measured"
+                    : `${stats.coveragePercent}%`}
+                </p>
                 <p className="text-xs text-muted-foreground">ATT&CK Coverage</p>
               </div>
             </div>
@@ -302,7 +330,9 @@ function BASDashboardTab() {
                 <Shield className="h-5 w-5 text-green-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{stats?.avgControlEffectiveness ?? 0}%</p>
+                <p className="text-2xl font-bold">
+                  {stats?.avgControlEffectiveness == null ? "Not yet measured" : `${stats.avgControlEffectiveness}%`}
+                </p>
                 <p className="text-xs text-muted-foreground">Avg Control Effectiveness</p>
               </div>
             </div>
@@ -315,7 +345,9 @@ function BASDashboardTab() {
                 <AlertTriangle className="h-5 w-5 text-red-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{stats?.bypassRate ?? 0}%</p>
+                <p className="text-2xl font-bold">
+                  {stats?.bypassRate == null ? "Not yet measured" : `${stats.bypassRate}%`}
+                </p>
                 <p className="text-xs text-muted-foreground">Bypass Rate</p>
               </div>
             </div>
@@ -404,7 +436,11 @@ function BASDashboardTab() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {heatmap && Object.keys(heatmap).length > 0 ? (
+          {stats?.totalSimulations === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              No simulation validation data yet. Run a simulation to measure ATT&amp;CK coverage.
+            </div>
+          ) : heatmap && Object.keys(heatmap).length > 0 ? (
             <div className="space-y-4">
               {Object.entries(heatmap).map(([tacticName, techniques]) => (
                 <div key={tacticName}>
@@ -446,7 +482,9 @@ function BASDashboardTab() {
               </div>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No heatmap data available. Run simulations to populate.</p>
+            <p className="text-sm text-muted-foreground">
+              No simulation validation data yet. Run a simulation to measure ATT&amp;CK coverage.
+            </p>
           )}
         </CardContent>
       </Card>
@@ -1709,12 +1747,20 @@ function ScenarioBuilderTab() {
 // ── 61.5 — Coverage Tracking Tab ─────────────────────────────────────────────
 
 function CoverageTrackingTab() {
-  const { data: stats } = useQuery<ChaosStats>({
+  const {
+    data: stats,
+    isError: statsError,
+    refetch: refetchStats,
+  } = useQuery<ChaosStats>({
     queryKey: ["/api/chaos-engineering/stats"],
     queryFn: () => apiFetch("/api/chaos-engineering/stats"),
   });
 
-  const { data: gaps } = useQuery<GapEntry[]>({
+  const {
+    data: gaps,
+    isError: gapsError,
+    refetch: refetchGaps,
+  } = useQuery<GapEntry[]>({
     queryKey: ["/api/chaos-engineering/gaps"],
     queryFn: () => apiFetch("/api/chaos-engineering/gaps"),
   });
@@ -1722,6 +1768,19 @@ function CoverageTrackingTab() {
   const closedGaps = (gaps ?? []).filter((g) => g.coverageStatus === "full").length;
   const remainingGaps = (gaps ?? []).filter((g) => g.coverageStatus !== "full").length;
   const totalGaps = (gaps ?? []).length;
+
+  if (statsError || gapsError) {
+    return (
+      <ErrorState
+        title="Coverage tracking unavailable"
+        message="We couldn't retrieve chaos validation coverage. No failed read is represented as zero coverage."
+        onRetry={() => {
+          void refetchStats();
+          void refetchGaps();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -1734,7 +1793,11 @@ function CoverageTrackingTab() {
                 <Target className="h-5 w-5 text-blue-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{stats?.coveragePercent || 0}%</p>
+                <p className="text-2xl font-bold">
+                  {stats?.totalSimulations === 0 || stats?.coveragePercent == null
+                    ? "Not yet measured"
+                    : `${stats.coveragePercent}%`}
+                </p>
                 <p className="text-xs text-muted-foreground">Current Coverage</p>
               </div>
             </div>
@@ -1773,7 +1836,7 @@ function CoverageTrackingTab() {
                 <Activity className="h-5 w-5 text-purple-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{stats?.purpleTeamExercises || 0}</p>
+                <p className="text-2xl font-bold">{stats?.purpleTeamExercises ?? 0}</p>
                 <p className="text-xs text-muted-foreground">Exercises Run</p>
               </div>
             </div>

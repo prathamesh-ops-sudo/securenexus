@@ -49,6 +49,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { DashboardSkeleton } from "@/components/page-skeleton";
+import { ErrorState } from "@/components/empty-state";
 
 // ============================================================================
 // Types
@@ -1024,7 +1025,7 @@ function BlastRadiusTab() {
   const [search, setSearch] = useState("");
   const [riskFilter, setRiskFilter] = useState<string>("all");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["/api/identity/risk-profiles", riskFilter, search],
     queryFn: () => {
       const params = new URLSearchParams();
@@ -1069,174 +1070,193 @@ function BlastRadiusTab() {
         </div>
       </div>
 
-      {/* Risk Distribution */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      {isError ? (
         <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-xl font-bold">{stats.total || 0}</p>
-            <p className="text-xs text-muted-foreground">Total Profiled</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-xl font-bold text-red-400">{stats.critical || 0}</p>
-            <p className="text-xs text-muted-foreground">Critical</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-xl font-bold text-orange-400">{stats.high || 0}</p>
-            <p className="text-xs text-muted-foreground">High</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-xl font-bold text-orange-400">{stats.stale || 0}</p>
-            <p className="text-xs text-muted-foreground">Stale</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-xl font-bold text-yellow-400">{stats.noMfa || 0}</p>
-            <p className="text-xs text-muted-foreground">No MFA</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {isLoading ? (
-        <div className="text-center py-8 text-muted-foreground">Loading profiles...</div>
-      ) : profiles.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Target className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No Identity Risk Profiles</h3>
-            <p className="text-sm text-muted-foreground">
-              Run an identity risk assessment to populate blast radius data.
-            </p>
+          <CardContent>
+            <ErrorState
+              title="Identity risk profiles unavailable"
+              message="We couldn't retrieve the identity risk assessment. No-profile results are not available until the service responds."
+              onRetry={() => refetch()}
+              compact
+            />
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {/* 53.2: Blast Radius Visual Graph */}
-          {profiles.length > 0 && (
+        <>
+          {/* Risk Distribution */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Target className="h-4 w-4 text-red-400" />
-                  Blast Radius Graph — First &amp; Second Hop Access
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-3 items-start">
-                  {profiles.slice(0, 6).map((p) => {
-                    const hopColor = p.canReachCritical
-                      ? "border-red-500 bg-red-500/10"
-                      : p.riskLevel === "high"
-                        ? "border-orange-500 bg-orange-500/10"
-                        : "border-blue-500 bg-blue-500/10";
-                    return (
-                      <div key={p.id} className="flex flex-col items-center gap-1">
-                        <div className={`rounded-full w-14 h-14 flex items-center justify-center border-2 ${hopColor}`}>
-                          <Users className="h-5 w-5" />
-                        </div>
-                        <span className="text-[10px] font-medium text-center max-w-[80px] truncate">{p.userName}</span>
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                          <ArrowRight className="h-2.5 w-2.5" />
-                          <span>{p.accessibleSystems || 0} sys</span>
-                        </div>
-                        {(p.lateralMovementPaths || 0) > 0 ? (
-                          <div className="flex items-center gap-0.5 text-[10px] text-orange-400">
-                            <Network className="h-2.5 w-2.5" />
-                            <span>{p.lateralMovementPaths} 2nd-hop</span>
-                          </div>
-                        ) : null}
-                        {p.canReachCritical ? (
-                          <Badge
-                            variant="outline"
-                            className="text-[9px] h-4 bg-red-500/20 text-red-400 border-red-500/30"
-                          >
-                            Crown Jewel
-                          </Badge>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="flex items-center gap-4 mt-3 text-[10px]">
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-red-500" /> Critical / Crown Jewel
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-orange-500" /> High Risk
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-blue-500" /> Standard
-                  </span>
-                </div>
+              <CardContent className="p-3 text-center">
+                <p className="text-xl font-bold">{stats.total || 0}</p>
+                <p className="text-xs text-muted-foreground">Total Profiled</p>
               </CardContent>
             </Card>
-          )}
-
-          {/* Profile list */}
-          <div className="space-y-2">
-            {profiles.map((p) => (
-              <Card key={p.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{p.userName}</span>
-                        {p.userEmail && <span className="text-xs text-muted-foreground">{p.userEmail}</span>}
-                        {riskBadge(p.riskLevel)}
-                      </div>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
-                        <span className="flex items-center gap-1">
-                          <Target className="h-3 w-3" /> Blast Radius: {riskMeter(p.blastRadiusScore || 0)}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Server className="h-3 w-3" /> {p.accessibleSystems || 0} systems
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Network className="h-3 w-3" /> {p.lateralMovementPaths || 0} paths
-                        </span>
-                        {p.canReachCritical && (
-                          <Badge variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/30">
-                            Can reach critical
-                          </Badge>
-                        )}
-                        {p.isStale && (
-                          <Badge
-                            variant="outline"
-                            className="text-xs bg-orange-500/10 text-orange-400 border-orange-500/30"
-                          >
-                            Stale ({p.daysSinceActivity}d)
-                          </Badge>
-                        )}
-                        {!p.mfaEnabled && (
-                          <Badge
-                            variant="outline"
-                            className="text-xs bg-yellow-500/10 text-yellow-400 border-yellow-500/30"
-                          >
-                            No MFA
-                          </Badge>
-                        )}
-                        {p.hasExcessivePermissions && (
-                          <Badge variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/30">
-                            Excessive perms
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right ml-4">
-                      <div className="text-lg font-bold">{p.riskScore}</div>
-                      <div className="text-xs text-muted-foreground">Risk Score</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            <Card>
+              <CardContent className="p-3 text-center">
+                <p className="text-xl font-bold text-red-400">{stats.critical || 0}</p>
+                <p className="text-xs text-muted-foreground">Critical</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3 text-center">
+                <p className="text-xl font-bold text-orange-400">{stats.high || 0}</p>
+                <p className="text-xs text-muted-foreground">High</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3 text-center">
+                <p className="text-xl font-bold text-orange-400">{stats.stale || 0}</p>
+                <p className="text-xs text-muted-foreground">Stale</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3 text-center">
+                <p className="text-xl font-bold text-yellow-400">{stats.noMfa || 0}</p>
+                <p className="text-xs text-muted-foreground">No MFA</p>
+              </CardContent>
+            </Card>
           </div>
-        </div>
+
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">Loading profiles...</div>
+          ) : profiles.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Target className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No Identity Risk Profiles</h3>
+                <p className="text-sm text-muted-foreground">
+                  Run an identity risk assessment to populate blast radius data.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {/* 53.2: Blast Radius Visual Graph */}
+              {profiles.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <Target className="h-4 w-4 text-red-400" />
+                      Blast Radius Graph — First &amp; Second Hop Access
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-3 items-start">
+                      {profiles.slice(0, 6).map((p) => {
+                        const hopColor = p.canReachCritical
+                          ? "border-red-500 bg-red-500/10"
+                          : p.riskLevel === "high"
+                            ? "border-orange-500 bg-orange-500/10"
+                            : "border-blue-500 bg-blue-500/10";
+                        return (
+                          <div key={p.id} className="flex flex-col items-center gap-1">
+                            <div
+                              className={`rounded-full w-14 h-14 flex items-center justify-center border-2 ${hopColor}`}
+                            >
+                              <Users className="h-5 w-5" />
+                            </div>
+                            <span className="text-[10px] font-medium text-center max-w-[80px] truncate">
+                              {p.userName}
+                            </span>
+                            <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                              <ArrowRight className="h-2.5 w-2.5" />
+                              <span>{p.accessibleSystems || 0} sys</span>
+                            </div>
+                            {(p.lateralMovementPaths || 0) > 0 ? (
+                              <div className="flex items-center gap-0.5 text-[10px] text-orange-400">
+                                <Network className="h-2.5 w-2.5" />
+                                <span>{p.lateralMovementPaths} 2nd-hop</span>
+                              </div>
+                            ) : null}
+                            {p.canReachCritical ? (
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] h-4 bg-red-500/20 text-red-400 border-red-500/30"
+                              >
+                                Crown Jewel
+                              </Badge>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center gap-4 mt-3 text-[10px]">
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-red-500" /> Critical / Crown Jewel
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-orange-500" /> High Risk
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-blue-500" /> Standard
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Profile list */}
+              <div className="space-y-2">
+                {profiles.map((p) => (
+                  <Card key={p.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{p.userName}</span>
+                            {p.userEmail && <span className="text-xs text-muted-foreground">{p.userEmail}</span>}
+                            {riskBadge(p.riskLevel)}
+                          </div>
+                          <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
+                            <span className="flex items-center gap-1">
+                              <Target className="h-3 w-3" /> Blast Radius: {riskMeter(p.blastRadiusScore || 0)}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Server className="h-3 w-3" /> {p.accessibleSystems || 0} systems
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Network className="h-3 w-3" /> {p.lateralMovementPaths || 0} paths
+                            </span>
+                            {p.canReachCritical && (
+                              <Badge variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/30">
+                                Can reach critical
+                              </Badge>
+                            )}
+                            {p.isStale && (
+                              <Badge
+                                variant="outline"
+                                className="text-xs bg-orange-500/10 text-orange-400 border-orange-500/30"
+                              >
+                                Stale ({p.daysSinceActivity}d)
+                              </Badge>
+                            )}
+                            {!p.mfaEnabled && (
+                              <Badge
+                                variant="outline"
+                                className="text-xs bg-yellow-500/10 text-yellow-400 border-yellow-500/30"
+                              >
+                                No MFA
+                              </Badge>
+                            )}
+                            {p.hasExcessivePermissions && (
+                              <Badge variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/30">
+                                Excessive perms
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right ml-4">
+                          <div className="text-lg font-bold">{p.riskScore}</div>
+                          <div className="text-xs text-muted-foreground">Risk Score</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -1502,7 +1522,7 @@ function OrphanedAccountsTab() {
 }
 
 function LateralMovementTab() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["/api/identity/access-graph"],
     queryFn: () => apiRequest("GET", "/api/identity/access-graph").then((r) => r.json()),
   });
@@ -1520,137 +1540,154 @@ function LateralMovementTab() {
         <p className="text-sm text-muted-foreground">Map which identities can pivot to which systems</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {isError ? (
         <Card>
-          <CardContent className="p-4 text-center">
-            <Users className="h-6 w-6 mx-auto text-blue-400 mb-2" />
-            <p className="text-2xl font-bold">{data?.totalUsers || 0}</p>
-            <p className="text-xs text-muted-foreground">Identities</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <Server className="h-6 w-6 mx-auto text-green-400 mb-2" />
-            <p className="text-2xl font-bold">{data?.totalSystems || 0}</p>
-            <p className="text-xs text-muted-foreground">Systems</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <Network className="h-6 w-6 mx-auto text-amber-400 mb-2" />
-            <p className="text-2xl font-bold">{data?.totalEdges || 0}</p>
-            <p className="text-xs text-muted-foreground">Access Paths</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {isLoading ? (
-        <div className="text-center py-8 text-muted-foreground">Loading access graph...</div>
-      ) : edges.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Network className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No Access Graph Data</h3>
-            <p className="text-sm text-muted-foreground">
-              Add access graph entries to visualize lateral movement risk paths.
-            </p>
+          <CardContent>
+            <ErrorState
+              title="Access graph unavailable"
+              message="We couldn't retrieve the lateral-movement graph. An empty graph cannot be shown until the service responds."
+              onRetry={() => refetch()}
+              compact
+            />
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* User nodes */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Users className="h-4 w-4" /> Identity Nodes
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 max-h-80 overflow-y-auto">
-                {userNodes.map((node: any) => {
-                  const userEdges = edges.filter((e: any) => e.source === node.id);
-                  const hasAdmin = userEdges.some((e: any) => ["admin", "superadmin"].includes(e.permissionLevel));
-                  return (
-                    <div key={node.id} className="p-2 bg-muted/30 rounded-lg flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Shield className={`h-4 w-4 ${hasAdmin ? "text-red-400" : "text-blue-400"}`} />
-                        <span className="text-sm">{node.name}</span>
-                      </div>
-                      <Badge variant="outline" className="text-xs">
-                        {userEdges.length} path{userEdges.length !== 1 ? "s" : ""}
-                      </Badge>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardContent className="p-4 text-center">
+                <Users className="h-6 w-6 mx-auto text-blue-400 mb-2" />
+                <p className="text-2xl font-bold">{data?.totalUsers || 0}</p>
+                <p className="text-xs text-muted-foreground">Identities</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <Server className="h-6 w-6 mx-auto text-green-400 mb-2" />
+                <p className="text-2xl font-bold">{data?.totalSystems || 0}</p>
+                <p className="text-xs text-muted-foreground">Systems</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <Network className="h-6 w-6 mx-auto text-amber-400 mb-2" />
+                <p className="text-2xl font-bold">{data?.totalEdges || 0}</p>
+                <p className="text-xs text-muted-foreground">Access Paths</p>
+              </CardContent>
+            </Card>
+          </div>
 
-          {/* System nodes */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Server className="h-4 w-4" /> System Nodes
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 max-h-80 overflow-y-auto">
-                {systemNodes.map((node: any) => {
-                  const systemEdges = edges.filter((e: any) => e.target === node.id);
-                  const hasAdmin = systemEdges.some((e: any) => ["admin", "superadmin"].includes(e.permissionLevel));
-                  return (
-                    <div key={node.id} className="p-2 bg-muted/30 rounded-lg flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Server className={`h-4 w-4 ${hasAdmin ? "text-red-400" : "text-green-400"}`} />
-                        <span className="text-sm font-mono">{node.name}</span>
-                      </div>
-                      <Badge variant="outline" className="text-xs">
-                        {systemEdges.length} accessor{systemEdges.length !== 1 ? "s" : ""}
-                      </Badge>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">Loading access graph...</div>
+          ) : edges.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Network className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No Access Graph Data</h3>
+                <p className="text-sm text-muted-foreground">
+                  Add access graph entries to visualize lateral movement risk paths.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* User nodes */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Users className="h-4 w-4" /> Identity Nodes
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                    {userNodes.map((node: any) => {
+                      const userEdges = edges.filter((e: any) => e.source === node.id);
+                      const hasAdmin = userEdges.some((e: any) => ["admin", "superadmin"].includes(e.permissionLevel));
+                      return (
+                        <div key={node.id} className="p-2 bg-muted/30 rounded-lg flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Shield className={`h-4 w-4 ${hasAdmin ? "text-red-400" : "text-blue-400"}`} />
+                            <span className="text-sm">{node.name}</span>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {userEdges.length} path{userEdges.length !== 1 ? "s" : ""}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
 
-          {/* Edge list */}
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Network className="h-4 w-4" /> Access Paths (sorted by risk weight)
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {edges.map((edge: any) => {
-                  const sourceNode = userNodes.find((n: any) => n.id === edge.source);
-                  return (
-                    <div key={edge.id} className="flex items-center justify-between p-2 bg-muted/30 rounded-lg">
-                      <div className="flex items-center gap-2 text-sm">
-                        <span>{sourceNode?.name || edge.source}</span>
-                        <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                        <span className="font-mono">{edge.target}</span>
-                        <Badge variant="outline" className="text-xs">
-                          {edge.permissionLevel}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          {edge.accessType}
-                        </Badge>
-                        {edge.grantedVia && (
-                          <span className="text-xs text-muted-foreground">via {edge.grantedVia}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Risk: {edge.riskWeight}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              {/* System nodes */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Server className="h-4 w-4" /> System Nodes
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                    {systemNodes.map((node: any) => {
+                      const systemEdges = edges.filter((e: any) => e.target === node.id);
+                      const hasAdmin = systemEdges.some((e: any) =>
+                        ["admin", "superadmin"].includes(e.permissionLevel),
+                      );
+                      return (
+                        <div key={node.id} className="p-2 bg-muted/30 rounded-lg flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Server className={`h-4 w-4 ${hasAdmin ? "text-red-400" : "text-green-400"}`} />
+                            <span className="text-sm font-mono">{node.name}</span>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {systemEdges.length} accessor{systemEdges.length !== 1 ? "s" : ""}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Edge list */}
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Network className="h-4 w-4" /> Access Paths (sorted by risk weight)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {edges.map((edge: any) => {
+                      const sourceNode = userNodes.find((n: any) => n.id === edge.source);
+                      return (
+                        <div key={edge.id} className="flex items-center justify-between p-2 bg-muted/30 rounded-lg">
+                          <div className="flex items-center gap-2 text-sm">
+                            <span>{sourceNode?.name || edge.source}</span>
+                            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                            <span className="font-mono">{edge.target}</span>
+                            <Badge variant="outline" className="text-xs">
+                              {edge.permissionLevel}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {edge.accessType}
+                            </Badge>
+                            {edge.grantedVia && (
+                              <span className="text-xs text-muted-foreground">via {edge.grantedVia}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">Risk: {edge.riskWeight}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

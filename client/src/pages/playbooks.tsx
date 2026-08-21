@@ -1251,7 +1251,12 @@ export default function PlaybooksPage() {
   });
 
   // ─── 20.7 Execution Analytics ──────────────────────────────────────────────
-  const { data: analyticsData, isLoading: analyticsLoading } = useQuery<any>({
+  const {
+    data: analyticsData,
+    isLoading: analyticsLoading,
+    isError: analyticsError,
+    refetch: refetchAnalytics,
+  } = useQuery<any>({
     queryKey: ["/api/playbook-analytics"],
     queryFn: async () => {
       const r = await apiRequest("GET", "/api/playbook-analytics");
@@ -1447,6 +1452,7 @@ export default function PlaybooksPage() {
     data: runbookAnalytics,
     isLoading: runbookAnalyticsLoading,
     isError: runbookAnalyticsError,
+    refetch: refetchRunbookAnalytics,
   } = useQuery<any>({
     queryKey: ["/api/playbooks/runbook-analytics"],
   });
@@ -2544,7 +2550,9 @@ export default function PlaybooksPage() {
                           <CardContent className="p-4">
                             <div className="text-xs text-muted-foreground">Success Rate</div>
                             <div className="text-2xl font-bold text-green-400">
-                              {execDashboard.summary.successRate}%
+                              {execDashboard.summary.successRate == null
+                                ? "Not yet measured"
+                                : `${execDashboard.summary.successRate}%`}
                             </div>
                           </CardContent>
                         </Card>
@@ -3105,6 +3113,17 @@ export default function PlaybooksPage() {
                 </Card>
               ))}
             </div>
+          ) : analyticsError ? (
+            <Card>
+              <CardContent>
+                <ErrorState
+                  title="Execution analytics unavailable"
+                  message="We couldn't retrieve persisted playbook executions. Empty execution history is not shown as a measured zero."
+                  onRetry={() => refetchAnalytics()}
+                  compact
+                />
+              </CardContent>
+            </Card>
           ) : analyticsData ? (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3114,7 +3133,11 @@ export default function PlaybooksPage() {
                     <CheckCircle className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{analyticsData.overview?.successRate ?? 0}%</div>
+                    <div className="text-2xl font-bold">
+                      {analyticsData.overview?.successRate == null
+                        ? "Not yet measured"
+                        : `${analyticsData.overview.successRate}%`}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {analyticsData.overview?.completedExecutions ?? 0} completed
                     </p>
@@ -3126,7 +3149,11 @@ export default function PlaybooksPage() {
                     <XCircle className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{analyticsData.overview?.failureRate ?? 0}%</div>
+                    <div className="text-2xl font-bold">
+                      {analyticsData.overview?.failureRate == null
+                        ? "Not yet measured"
+                        : `${analyticsData.overview.failureRate}%`}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {analyticsData.overview?.failedExecutions ?? 0} failed
                     </p>
@@ -3907,12 +3934,13 @@ export default function PlaybooksPage() {
             </div>
           ) : runbookAnalyticsError ? (
             <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <PieChart className="h-10 w-10 text-muted-foreground mb-3" />
-                <p className="text-sm font-medium text-destructive">Runbook analytics are unavailable</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  The server returned an error while loading persisted execution data.
-                </p>
+              <CardContent>
+                <ErrorState
+                  title="Runbook analytics unavailable"
+                  message="The server returned an error while loading persisted execution data."
+                  onRetry={() => refetchRunbookAnalytics()}
+                  compact
+                />
               </CardContent>
             </Card>
           ) : runbookAnalytics ? (
@@ -3939,7 +3967,11 @@ export default function PlaybooksPage() {
                     <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
                       Completion Rate
                     </p>
-                    <p className="text-2xl font-bold mt-1">{runbookAnalytics.overallCompletionRate}%</p>
+                    <p className="text-2xl font-bold mt-1">
+                      {runbookAnalytics.overallCompletionRate == null
+                        ? "Not yet measured"
+                        : `${runbookAnalytics.overallCompletionRate}%`}
+                    </p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -3948,7 +3980,7 @@ export default function PlaybooksPage() {
                       Avg Completion Time
                     </p>
                     <p className="text-2xl font-bold mt-1">
-                      {runbookAnalytics.avgCompletionTimeMs > 0
+                      {runbookAnalytics.avgCompletionTimeMs != null && runbookAnalytics.avgCompletionTimeMs > 0
                         ? `${Math.round(runbookAnalytics.avgCompletionTimeMs / 1000)}s`
                         : "N/A"}
                     </p>

@@ -42,6 +42,7 @@ import {
   BadgeCheck,
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/page-skeleton";
+import { ErrorState } from "@/components/empty-state";
 
 const apiRequest = async (url: string, options?: RequestInit) => {
   const csrfMeta = document.querySelector('meta[name="csrf-token"]');
@@ -86,12 +87,21 @@ function OverviewTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: config, isLoading } = useQuery({
+  const {
+    data: config,
+    isLoading,
+    isError: configError,
+    refetch: refetchConfig,
+  } = useQuery({
     queryKey: ["/api/data-residency/config"],
     queryFn: () => apiRequest("/api/data-residency/config").then((r) => r.data || r),
   });
 
-  const { data: summary } = useQuery({
+  const {
+    data: summary,
+    isError: summaryError,
+    refetch: refetchSummary,
+  } = useQuery({
     queryKey: ["/api/data-residency/compliance-summary"],
     queryFn: () => apiRequest("/api/data-residency/compliance-summary").then((r) => r.data || r),
   });
@@ -119,8 +129,21 @@ function OverviewTab() {
     );
   }
 
+  if (configError || summaryError) {
+    return (
+      <ErrorState
+        title="Data residency summary unavailable"
+        message="We couldn't retrieve the tenant's residency configuration and compliance summary. No compliance score or permissive default is shown."
+        onRetry={() => {
+          void refetchConfig();
+          void refetchSummary();
+        }}
+      />
+    );
+  }
+
   const region = config?.dataRegion || "US";
-  const score = summary?.complianceScore || 0;
+  const score = summary?.complianceScore ?? null;
 
   return (
     <div className="space-y-6">
@@ -156,13 +179,13 @@ function OverviewTab() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Compliance Score</CardDescription>
-            <CardTitle className="text-2xl">{score}%</CardTitle>
+            <CardTitle className="text-2xl">{score === null ? "Unavailable" : `${score}%`}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="w-full bg-secondary rounded-full h-2">
               <div
-                className={`h-2 rounded-full ${score >= 80 ? "bg-green-500" : score >= 50 ? "bg-yellow-500" : "bg-red-500"}`}
-                style={{ width: `${score}%` }}
+                className={`h-2 rounded-full ${score === null ? "bg-muted" : score >= 80 ? "bg-green-500" : score >= 50 ? "bg-yellow-500" : "bg-red-500"}`}
+                style={{ width: score === null ? "0%" : `${score}%` }}
               />
             </div>
           </CardContent>
@@ -170,7 +193,7 @@ function OverviewTab() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>BYOK Keys</CardDescription>
-            <CardTitle className="text-2xl">{summary?.activeKeyCount || 0}</CardTitle>
+            <CardTitle className="text-2xl">{summary?.activeKeyCount ?? "Unavailable"}</CardTitle>
           </CardHeader>
           <CardContent>
             <Badge variant={summary?.byokEnabled ? "default" : "outline"} className="gap-1">
@@ -189,10 +212,10 @@ function OverviewTab() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Flow Control</CardDescription>
-            <CardTitle className="text-2xl capitalize">{summary?.flowControlMode || "Permissive"}</CardTitle>
+            <CardTitle className="text-2xl capitalize">{summary?.flowControlMode ?? "Unavailable"}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-xs text-muted-foreground">{summary?.activeRuleCount || 0} active rules</p>
+            <p className="text-xs text-muted-foreground">{summary?.activeRuleCount ?? "Unavailable"} active rules</p>
           </CardContent>
         </Card>
       </div>
