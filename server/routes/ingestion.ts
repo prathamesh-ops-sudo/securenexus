@@ -28,7 +28,10 @@ import { SOURCE_KEYS, normalizeAlert, toInsertAlert } from "../normalizer";
 import { evaluateSuppression } from "../suppression-engine";
 import { CACHE_TTL, buildCacheKey, cacheGetOrLoad, cacheInvalidate } from "../query-cache";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { planAwareRateLimit } from "../middleware/plan-enforcement-enhanced";
 import { parseSyslog, syslogToEvent, normalizeWebhookPayload } from "../integrations/syslog-ingest";
+
+const programmaticApiRateLimit = planAwareRateLimit();
 
 export function registerIngestionRoutes(app: Express): void {
   // API Key Management (authenticated user routes)
@@ -278,6 +281,7 @@ export function registerIngestionRoutes(app: Express): void {
   app.post(
     "/api/ingest/:source",
     apiKeyAuth,
+    programmaticApiRateLimit,
     requireScope("ingest:write"),
     verifyWebhookSignature,
     idempotencyCheck,
@@ -458,6 +462,7 @@ export function registerIngestionRoutes(app: Express): void {
   app.post(
     "/api/ingest/:source/bulk",
     apiKeyAuth,
+    programmaticApiRateLimit,
     requireScope("ingest:write"),
     verifyWebhookSignature,
     idempotencyCheck,
@@ -947,6 +952,7 @@ export function registerIngestionRoutes(app: Express): void {
   app.post(
     "/api/ingestion/syslog",
     apiKeyAuth,
+    programmaticApiRateLimit,
     requireScope("ingest:write"),
     ingestionLimiter,
     async (req: Request, res: Response) => {
@@ -1045,6 +1051,7 @@ export function registerIngestionRoutes(app: Express): void {
   app.post(
     "/api/ingestion/webhook/:source",
     apiKeyAuth,
+    programmaticApiRateLimit,
     requireScope("ingest:write"),
     ingestionLimiter,
     async (req: Request, res: Response) => {

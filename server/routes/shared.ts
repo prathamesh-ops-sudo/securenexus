@@ -26,6 +26,25 @@ import {
 
 const log = logger.child("routes-shared");
 
+export const AUTHENTICATED_API_LIMIT = 600;
+export const UNAUTHENTICATED_API_LIMIT = 200;
+const API_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+
+export function isAuthenticatedSession(req: Request): boolean {
+  return !!(req.isAuthenticated?.() && (req.user as { id?: string } | undefined)?.id);
+}
+
+export function getApiRateLimitKey(req: Request): string {
+  if (isAuthenticatedSession(req)) {
+    return `user:${(req.user as { id: string }).id}`;
+  }
+  return `ip:${req.ip || req.socket.remoteAddress || "unknown"}`;
+}
+
+export function getApiRateLimit(req: Request): number {
+  return isAuthenticatedSession(req) ? AUTHENTICATED_API_LIMIT : UNAUTHENTICATED_API_LIMIT;
+}
+
 export {
   storage,
   logger,
@@ -40,8 +59,9 @@ export {
 export type { ApiMeta };
 
 export const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
+  windowMs: API_LIMIT_WINDOW_MS,
+  limit: getApiRateLimit,
+  keyGenerator: getApiRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
   handler: (_req, res) => replyRateLimit(res),

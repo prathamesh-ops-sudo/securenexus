@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import type { UsageRecord } from "../../shared/schema";
 import { storage } from "../storage";
 import { logger } from "../logger";
+import { replyRateLimit } from "../api-response";
 
 const log = logger.child("plan-enforcement");
 
@@ -308,10 +309,16 @@ export function planAwareRateLimit() {
 
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // Session traffic is protected by the interactive user limiter. This quota is
+      // reserved for authenticated API-key and bearer-token traffic.
+      if (!(req as any).apiKey) {
+        return next();
+      }
+
       const orgId = (req as any).orgId || (req as any).user?.orgId;
 
       if (!orgId) {
-        return next(); // No org context, skip rate limiting
+        return next();
       }
 
       const now = Date.now();
@@ -344,13 +351,13 @@ export function planAwareRateLimit() {
           limit: rateLimit,
         });
 
-        return res.status(429).json({
-          error: "Rate limit exceeded",
-          code: "RATE_LIMIT_EXCEEDED",
-          message: `You've exceeded your API rate limit (${rateLimit} requests per hour). Upgrade your plan for higher limits.`,
-          retryAfter: Math.ceil((usage.resetAt - now) / 1000),
-          upgradeUrl: "/billing",
-        });
+        const retryAfter = Math.max(1, Math.ceil((usage.resetAt - now) / 1000));
+        res.setHeader("Retry-After", String(retryAfter));
+        return replyRateLimit(
+          res,
+          `You've exceeded your API rate limit (${rateLimit} requests per hour). Upgrade your plan for higher limits.`,
+          "RATE_LIMIT_EXCEEDED",
+        );
       }
 
       next();
