@@ -219,9 +219,7 @@ export default function RollbackHistoryPage() {
           <CardContent className="pt-4 flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5 text-green-500" />
             <div>
-              <p className="text-2xl font-bold">
-                {list.filter((e: RollbackEntry) => e.status === "executed" || e.status === "completed").length}
-              </p>
+              <p className="text-2xl font-bold">{list.filter((e: RollbackEntry) => e.status === "completed").length}</p>
               <p className="text-xs text-muted-foreground">Agent completed</p>
             </div>
           </CardContent>

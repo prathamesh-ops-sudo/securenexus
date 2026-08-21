@@ -4,7 +4,7 @@ import { logger } from "./logger";
 import { registerShutdownHandler } from "./scaling-state";
 
 const log = logger.child("response-action-timeouts");
-const TIMEOUT_SWEEP_INTERVAL_MS = 5_000;
+const TIMEOUT_SWEEP_INTERVAL_MS = 30_000;
 
 interface TimedOutResponseActionRow {
   id: string;

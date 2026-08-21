@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { AuthenticatedUser } from "@shared/models/auth";
-import { extractApiError, clearCsrfTokenCache } from "../lib/queryClient";
+import { extractApiError, clearCsrfTokenCache, fetchCsrfToken } from "../lib/queryClient";
 
 async function fetchUser(): Promise<AuthenticatedUser | null> {
   const response = await fetch("/api/auth/user", {
@@ -55,7 +55,12 @@ async function registerFn(data: {
 }
 
 async function logoutFn(): Promise<void> {
-  const response = await fetch("/api/logout", { method: "POST", credentials: "include" });
+  const csrfToken = await fetchCsrfToken();
+  const response = await fetch("/api/logout", {
+    method: "POST",
+    headers: csrfToken ? { "X-CSRF-Token": csrfToken } : undefined,
+    credentials: "include",
+  });
   if (!response.ok) {
     throw new Error("Unable to sign out. Please try again.");
   }

@@ -1,5 +1,5 @@
-import { Switch, Route, useLocation } from "wouter";
-import { createContext, useContext, lazy, Suspense, useEffect } from "react";
+import { Switch, Route, useLocation, useSearch } from "wouter";
+import { createContext, useContext, lazy, Suspense, useEffect, useState } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -26,7 +26,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { LoadingScreen } from "@/components/loading-screen";
 import { Button } from "@/components/ui/button";
 import { getOrglessDestination } from "@/lib/org-routing";
-import { getAuthenticatedRouteDestination } from "@/lib/auth-routing";
+import { getAuthenticatedRouteDestination, hasPasswordResetToken, isPasswordRecoveryRoute } from "@/lib/auth-routing";
 
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const AlertsPage = lazy(() => import("@/pages/alerts"));
@@ -420,6 +420,8 @@ function AuthenticatedApp() {
                       <Route path="/billing" component={BillingPage} />
                       <Route path="/org-settings" component={OrgSettingsPage} />
                       <Route path="/accept-invitation" component={AcceptInvitationPage} />
+                      <Route path="/forgot-password" component={ForgotPasswordPage} />
+                      <Route path="/reset-password" component={ResetPasswordPage} />
                       <Route path="/change-password" component={ForcedPasswordChangePage} />
                       <Route path="/platform-admin" component={PlatformAdminPage} />
                       <Route path="/dev-portal" component={DevPortalPage} />
@@ -560,8 +562,12 @@ function AuthenticatedApp() {
 
 function AppContent() {
   usePageTracking();
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, logoutAsync } = useAuth();
   const [location, setLocation] = useLocation();
+  const search = useSearch();
+  const currentRoute = search ? `${location}?${search}` : location;
+  const resetLinkRoute = hasPasswordResetToken(currentRoute);
+  const [resetSessionError, setResetSessionError] = useState<{ route: string; message: string } | null>(null);
 
   useEffect(() => {
     if (!user || isLoading) return;
@@ -574,17 +580,50 @@ function AppContent() {
 
   useEffect(() => {
     if (!user || isLoading) return;
-    const destination = getAuthenticatedRouteDestination(location);
+    const destination = getAuthenticatedRouteDestination(currentRoute);
     if (destination && location !== destination) setLocation(destination);
-  }, [location, setLocation, user, isLoading]);
+  }, [currentRoute, location, setLocation, user, isLoading]);
 
   useEffect(() => {
-    if (user?.passwordChangeRequired && location !== "/change-password") {
+    if (user?.passwordChangeRequired && !isPasswordRecoveryRoute(currentRoute) && location !== "/change-password") {
       setLocation("/change-password");
     }
-  }, [location, setLocation, user?.passwordChangeRequired]);
+  }, [currentRoute, location, setLocation, user?.passwordChangeRequired]);
+
+  useEffect(() => {
+    if (!resetLinkRoute || !user || isLoading) return;
+
+    let cancelled = false;
+    void logoutAsync().catch((error) => {
+      if (!cancelled) {
+        setResetSessionError({
+          route: currentRoute,
+          message: error instanceof Error ? error.message : "Unable to start password reset.",
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentRoute, isLoading, logoutAsync, resetLinkRoute, user]);
 
   if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  if (resetLinkRoute && user) {
+    const sessionError = resetSessionError?.route === currentRoute ? resetSessionError.message : null;
+    if (sessionError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="max-w-md space-y-3 text-center">
+            <p className="text-sm text-destructive">{sessionError}</p>
+            <Button onClick={() => window.location.reload()}>Retry</Button>
+          </div>
+        </div>
+      );
+    }
     return <LoadingScreen />;
   }
 
@@ -612,7 +651,7 @@ function AppContent() {
     );
   }
 
-  if (user.passwordChangeRequired) {
+  if (user.passwordChangeRequired && !isPasswordRecoveryRoute(currentRoute)) {
     return (
       <Suspense fallback={<LoadingScreen />}>
         <ForcedPasswordChangePage />

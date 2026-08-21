@@ -6,7 +6,7 @@ import { requirePermission } from "../rbac";
 import { logger, getOrgId } from "./shared";
 import { db } from "../db";
 import { sql, eq, and, desc, ilike, or } from "drizzle-orm";
-import { agentResponseActions, nativeSensors, AGENT_ACTION_TYPES } from "../../shared/schema";
+import { agentResponseActions, nativeSensors, integrationConfigs, AGENT_ACTION_TYPES } from "../../shared/schema";
 import { expireTimedOutResponseActions } from "../response-action-timeouts";
 
 const log = logger.child("agent-response");
@@ -1451,17 +1451,15 @@ export function registerAgentResponseRoutes(app: Express): void {
         const orgId = getOrgId(req);
 
         // Check which integrations the org has configured
-        const integrations = await db.execute(sql`
-          SELECT id, type, name, status, config
-          FROM integrations
-          WHERE org_id = ${orgId} AND status = 'active'
-        `);
-        const activeIntegrations = ((integrations as any).rows || []) as Array<{
-          id: string;
-          type: string;
-          name: string;
-          status: string;
-        }>;
+        const activeIntegrations = await db
+          .select({
+            id: integrationConfigs.id,
+            type: integrationConfigs.type,
+            name: integrationConfigs.name,
+            status: integrationConfigs.status,
+          })
+          .from(integrationConfigs)
+          .where(and(eq(integrationConfigs.orgId, orgId), eq(integrationConfigs.status, "active")));
 
         // Map action types to their connector status
         const connectorStatus = Object.entries(CONNECTOR_REGISTRY).map(([actionType, info]) => {
@@ -1595,7 +1593,7 @@ export function registerAgentResponseRoutes(app: Express): void {
           .values({
             orgId,
             sensorId: action.sensorId,
-            actionType: `rollback_${action.actionType}`,
+            actionType: rollbackAction,
             riskLevel: action.riskLevel,
             status: "approved",
             targetIp: action.targetIp,

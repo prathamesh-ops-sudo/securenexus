@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -407,7 +408,12 @@ export default function AgentResponsePage() {
   });
 
   // ─── 21.7 Connector Status ────────────────────────────────────────────────
-  const { data: connectorData } = useQuery<any>({
+  const {
+    data: connectorData,
+    isLoading: connectorLoading,
+    isError: connectorError,
+    refetch: refetchConnectorStatus,
+  } = useQuery<any>({
     queryKey: ["/api/native/response/connector-status"],
     queryFn: () => apiFetch("/api/native/response/connector-status"),
   });
@@ -1108,87 +1114,129 @@ export default function AgentResponsePage() {
 
         {/* 21.7 CONNECTORS TAB */}
         <TabsContent value="connectors" className="mt-4 space-y-4">
-          {connectorData?.summary && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <Card className="bg-zinc-900/50 border-zinc-800">
-                <CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground">Action Types</div>
-                  <div className="text-2xl font-semibold mt-1">{connectorData.summary.totalActionTypes}</div>
-                </CardContent>
-              </Card>
-              <Card className="bg-zinc-900/50 border-green-500/20 border">
-                <CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground">Configured metadata</div>
-                  <div className="text-2xl font-semibold mt-1 text-green-400">
-                    {connectorData.summary.configuredActionTypes}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="bg-zinc-900/50 border-zinc-800">
-                <CardContent className="p-4">
-                  <div className="text-xs text-yellow-400">Unavailable adapters</div>
-                  <div className="text-2xl font-semibold mt-1 text-yellow-400">
-                    {connectorData.summary.unavailableActionTypes}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="bg-zinc-900/50 border-zinc-800">
-                <CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground">Active Integrations</div>
-                  <div className="text-2xl font-semibold mt-1">{connectorData.summary.activeIntegrations}</div>
-                </CardContent>
-              </Card>
+          {connectorLoading ? (
+            <div className="space-y-3" role="status" aria-label="Loading connector status">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <Card key={index} className="bg-zinc-900/50 border-zinc-800">
+                  <CardContent className="p-4 space-y-3">
+                    <Skeleton className="h-5 w-48" />
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-2/3" />
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-          )}
-
-          <div className="space-y-3">
-            {(connectorData?.connectorStatus || []).map((connector: any) => (
-              <Card key={connector.actionType} className="bg-zinc-900/50 border-zinc-800">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-zinc-800">
-                        {actionIcons[connector.actionType] || <Terminal className="h-4 w-4" />}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">
-                            {actionLabels[connector.actionType] || connector.actionType}
-                          </span>
-                          <Badge variant="outline" className={"bg-yellow-500/20 text-yellow-400 border-yellow-500/30"}>
-                            Unavailable
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">{connector.executionMethod}</p>
-                      </div>
+          ) : connectorError ? (
+            <Card className="bg-zinc-900/50 border-zinc-800">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center gap-3">
+                <AlertTriangle className="h-8 w-8 text-yellow-400" />
+                <p className="text-sm text-muted-foreground">Unable to load connector availability</p>
+                <Button variant="outline" onClick={() => refetchConnectorStatus()}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Retry
+                </Button>
+              </CardContent>
+            </Card>
+          ) : connectorData?.summary ? (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Card className="bg-zinc-900/50 border-zinc-800">
+                  <CardContent className="p-4">
+                    <div className="text-xs text-muted-foreground">Action Types</div>
+                    <div className="text-2xl font-semibold mt-1">{connectorData.summary.totalActionTypes}</div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-zinc-900/50 border-green-500/20 border">
+                  <CardContent className="p-4">
+                    <div className="text-xs text-muted-foreground">Configured metadata</div>
+                    <div className="text-2xl font-semibold mt-1 text-green-400">
+                      {connectorData.summary.configuredActionTypes}
                     </div>
-                    <div className="text-right">
-                      {connector.connectedPlatforms?.length > 0 ? (
-                        <div className="flex gap-1 flex-wrap justify-end">
-                          {connector.connectedPlatforms.map((p: any) => (
-                            <Badge
-                              key={p.id}
-                              variant="outline"
-                              className="text-[10px] bg-green-500/10 text-green-400 border-green-500/20"
-                            >
-                              {p.name}
-                            </Badge>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">No integration connected</span>
-                      )}
+                  </CardContent>
+                </Card>
+                <Card className="bg-zinc-900/50 border-zinc-800">
+                  <CardContent className="p-4">
+                    <div className="text-xs text-yellow-400">Unavailable adapters</div>
+                    <div className="text-2xl font-semibold mt-1 text-yellow-400">
+                      {connectorData.summary.unavailableActionTypes}
                     </div>
-                  </div>
-                  <div className="mt-2">
-                    <p className="text-xs text-muted-foreground">
-                      Supported: {connector.supportedPlatforms?.join(", ")}
-                    </p>
-                  </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-zinc-900/50 border-zinc-800">
+                  <CardContent className="p-4">
+                    <div className="text-xs text-muted-foreground">Active Integrations</div>
+                    <div className="text-2xl font-semibold mt-1">{connectorData.summary.activeIntegrations}</div>
+                  </CardContent>
+                </Card>
+              </div>
+              <Card className="bg-yellow-500/10 border-yellow-500/30">
+                <CardContent className="p-4 text-sm text-yellow-200">
+                  Connector execution is unavailable. Provider adapters and credentials are not configured; matching
+                  integration metadata does not prove execution.
                 </CardContent>
               </Card>
-            ))}
-          </div>
+
+              <div className="space-y-3">
+                {(connectorData.connectorStatus || []).map((connector: any) => (
+                  <Card key={connector.actionType} className="bg-zinc-900/50 border-zinc-800">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-zinc-800">
+                            {actionIcons[connector.actionType] || <Terminal className="h-4 w-4" />}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">
+                                {actionLabels[connector.actionType] || connector.actionType}
+                              </span>
+                              <Badge
+                                variant="outline"
+                                className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                              >
+                                Unavailable
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">{connector.executionMethod}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          {connector.connectedPlatforms?.length > 0 ? (
+                            <div className="flex gap-1 flex-wrap justify-end">
+                              {connector.connectedPlatforms.map((p: any) => (
+                                <Badge
+                                  key={p.id}
+                                  variant="outline"
+                                  className="text-[10px] bg-green-500/10 text-green-400 border-green-500/20"
+                                >
+                                  {p.name}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">No integration connected</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-2">
+                        <p className="text-xs text-muted-foreground">
+                          Supported: {connector.supportedPlatforms?.join(", ")}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </>
+          ) : (
+            <Card className="bg-zinc-900/50 border-zinc-800">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <Plug className="h-10 w-10 text-muted-foreground mb-3" />
+                <p className="text-sm font-medium text-muted-foreground">No connector metadata available</p>
+                <p className="text-xs text-muted-foreground mt-1">Connector execution remains unavailable.</p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* 21.6 AUTOMATION TAB */}

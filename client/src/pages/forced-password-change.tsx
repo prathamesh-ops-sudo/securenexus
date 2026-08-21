@@ -203,6 +203,9 @@ export default function ForcedPasswordChangePage() {
             </form>
           )}
           <div className="mt-6 space-y-2 border-t border-slate-200 pt-4 dark:border-slate-700">
+            <Button type="button" variant="outline" className="w-full" onClick={() => setLocation("/forgot-password")}>
+              I forgot my current password
+            </Button>
             <Button
               type="button"
               variant="ghost"

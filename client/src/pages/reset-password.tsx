@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
 import { Lock, ArrowLeft, CheckCircle2, Loader2, AlertTriangle, Eye, EyeOff } from "lucide-react";
-import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -128,9 +127,11 @@ export default function ResetPasswordPage() {
             <div className="flex items-center gap-3 p-4 rounded-xl border-2 border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10">
               <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
               <div>
-                <p className="text-sm font-bold text-amber-700 dark:text-amber-300">Invalid or expired link</p>
+                <p className="text-sm font-bold text-amber-700 dark:text-amber-300">
+                  Reset link expired or already used
+                </p>
                 <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                  This password reset link is invalid or has expired. Please request a new one.
+                  This password reset link has expired or is no longer usable. Request a new link to continue.
                 </p>
               </div>
             </div>
