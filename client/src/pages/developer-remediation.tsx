@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ApiQueryError } from "@/components/api-query-state";
+import { apiQuery, hasObjectKeys, isArrayOf } from "@/lib/queryClient";
 import {
   Shield,
   GitPullRequest,
@@ -84,8 +86,6 @@ interface RemediationStats {
   inProgressFixes: number;
   byPriority: Record<RemediationPriority, number>;
   byType: Record<RemediationType, number>;
-  topOwners: { owner: CodeOwner; fixCount: number }[];
-  meanTimeToRemediate: string;
   coveragePercent: number;
 }
 
@@ -384,15 +384,45 @@ export default function DeveloperRemediationPage() {
   const [filterType, setFilterType] = useState<RemediationType | "all">("all");
   const [filterStatus, setFilterStatus] = useState<RemediationStatus | "all">("all");
 
-  const { data: fixes, isLoading: fixesLoading } = useQuery<RemediationFix[]>({
+  const {
+    data: fixes,
+    isLoading: fixesLoading,
+    error: fixesError,
+  } = useQuery<RemediationFix[]>({
     queryKey: ["/api/remediation/fixes"],
+    queryFn: () =>
+      apiQuery("/api/remediation/fixes", (value): value is RemediationFix[] =>
+        isArrayOf(value, (fix) =>
+          hasObjectKeys(fix, ["id", "type", "title", "description", "priority", "status", "finding"]),
+        ),
+      ),
   });
 
-  const { data: stats, isLoading: statsLoading } = useQuery<RemediationStats>({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    error: statsError,
+  } = useQuery<RemediationStats>({
     queryKey: ["/api/remediation/stats"],
+    queryFn: () =>
+      apiQuery("/api/remediation/stats", (value): value is RemediationStats =>
+        hasObjectKeys(value, [
+          "totalFindings",
+          "suggestedFixes",
+          "appliedFixes",
+          "dismissedFixes",
+          "inProgressFixes",
+          "byPriority",
+          "byType",
+          "coveragePercent",
+        ]),
+      ),
   });
 
-  const filteredFixes = (fixes ?? []).filter((f) => {
+  if (fixesError) return <ApiQueryError error={fixesError} label="remediation fixes" />;
+  if (statsError) return <ApiQueryError error={statsError} label="remediation statistics" />;
+
+  const filteredFixes = (fixes || []).filter((f) => {
     if (filterPriority !== "all" && f.priority !== filterPriority) return false;
     if (filterType !== "all" && f.type !== filterType) return false;
     if (filterStatus !== "all" && f.status !== filterStatus) return false;
@@ -435,8 +465,8 @@ export default function DeveloperRemediationPage() {
             color="bg-blue-500/20 text-blue-400"
           />
           <StatCard
-            label="Mean Time to Remediate"
-            value={stats.meanTimeToRemediate}
+            label="Suggested Fixes"
+            value={stats.suggestedFixes}
             icon={Clock}
             color="bg-purple-500/20 text-purple-400"
           />
@@ -565,13 +595,9 @@ export default function DeveloperRemediationPage() {
               <CardTitle className="text-sm">Top Code Owners</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {stats && stats.topOwners.length > 0 ? (
-                stats.topOwners.map((entry) => (
-                  <OwnerCard key={entry.owner.id} owner={entry.owner} fixCount={entry.fixCount} />
-                ))
-              ) : (
-                <p className="text-xs text-muted-foreground">No owner data available</p>
-              )}
+              <p className="text-xs text-muted-foreground">
+                Owner ranking is unavailable because remediation statistics do not persist owner aggregates.
+              </p>
             </CardContent>
           </Card>
         </div>

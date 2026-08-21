@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ApiQueryError } from "@/components/api-query-state";
+import { apiQuery, hasObjectKeys, isArrayOf } from "@/lib/queryClient";
 import {
   Shield,
   ShieldCheck,
@@ -121,19 +123,10 @@ interface EmergencyOverride {
 
 interface GuardrailStats {
   totalPolicies: number;
-  activePolicies: number;
-  dryRunPolicies: number;
-  disabledPolicies: number;
-  decisionsToday: number;
-  allowedToday: number;
-  deniedToday: number;
-  quarantinedToday: number;
-  avgLatencyMs: number;
-  simulationsRun: number;
-  activeOverrides: number;
-  byScope: Record<string, number>;
-  byAction: Record<string, number>;
-  topBlockedActions: { action: string; count: number }[];
+  totalDecisions: number;
+  totalOverrides: number;
+  pendingOverrides: number;
+  approvedOverrides: number;
 }
 
 const MODE_CONFIG: Record<string, { label: string; color: string; icon: typeof Shield }> = {
@@ -635,28 +628,90 @@ export default function RuntimeGuardrailsPage() {
   const [scopeFilter, setScopeFilter] = useState<string>("all");
   const [verdictFilter, setVerdictFilter] = useState<string>("all");
 
-  const { data: policies, isLoading: policiesLoading } = useQuery<PolicyRule[]>({
+  const {
+    data: policies,
+    isLoading: policiesLoading,
+    error: policiesError,
+  } = useQuery<PolicyRule[]>({
     queryKey: ["/api/runtime-guardrails/policies"],
+    queryFn: () =>
+      apiQuery("/api/runtime-guardrails/policies", (value): value is PolicyRule[] =>
+        isArrayOf(value, (policy) =>
+          hasObjectKeys(policy, ["id", "name", "scope", "actions", "mode", "priority", "conditions"]),
+        ),
+      ),
   });
 
-  const { data: stats, isLoading: statsLoading } = useQuery<GuardrailStats>({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    error: statsError,
+  } = useQuery<GuardrailStats>({
     queryKey: ["/api/runtime-guardrails/stats"],
+    queryFn: () =>
+      apiQuery("/api/runtime-guardrails/stats", (value): value is GuardrailStats =>
+        hasObjectKeys(value, ["totalPolicies", "totalDecisions", "totalOverrides", "pendingOverrides"]),
+      ),
   });
 
-  const { data: decisions, isLoading: decisionsLoading } = useQuery<PolicyDecision[]>({
+  const {
+    data: decisions,
+    isLoading: decisionsLoading,
+    error: decisionsError,
+  } = useQuery<PolicyDecision[]>({
     queryKey: ["/api/runtime-guardrails/decisions"],
+    queryFn: () =>
+      apiQuery("/api/runtime-guardrails/decisions", (value): value is PolicyDecision[] =>
+        isArrayOf(value, (decision) =>
+          hasObjectKeys(decision, ["id", "policyId", "policyName", "action", "verdict", "latencyMs", "timestamp"]),
+        ),
+      ),
     enabled: activeTab === "decisions",
   });
 
-  const { data: simulations, isLoading: simulationsLoading } = useQuery<PolicySimulation[]>({
+  const {
+    data: simulations,
+    isLoading: simulationsLoading,
+    error: simulationsError,
+  } = useQuery<PolicySimulation[]>({
     queryKey: ["/api/runtime-guardrails/simulations"],
+    queryFn: () =>
+      apiQuery("/api/runtime-guardrails/simulations", (value): value is PolicySimulation[] =>
+        isArrayOf(value, (simulation) =>
+          hasObjectKeys(simulation, [
+            "id",
+            "policyId",
+            "policyName",
+            "simulatedAction",
+            "expectedVerdict",
+            "actualVerdict",
+            "blastRadius",
+          ]),
+        ),
+      ),
     enabled: activeTab === "simulations",
   });
 
-  const { data: overrides, isLoading: overridesLoading } = useQuery<EmergencyOverride[]>({
+  const {
+    data: overrides,
+    isLoading: overridesLoading,
+    error: overridesError,
+  } = useQuery<EmergencyOverride[]>({
     queryKey: ["/api/runtime-guardrails/overrides"],
+    queryFn: () =>
+      apiQuery("/api/runtime-guardrails/overrides", (value): value is EmergencyOverride[] =>
+        isArrayOf(value, (override) =>
+          hasObjectKeys(override, ["id", "policyId", "policyName", "requestedBy", "requestedAt", "reason", "status"]),
+        ),
+      ),
     enabled: activeTab === "overrides",
   });
+
+  if (policiesError) return <ApiQueryError error={policiesError} label="runtime guardrail policies" />;
+  if (statsError) return <ApiQueryError error={statsError} label="runtime guardrail statistics" />;
+  if (decisionsError) return <ApiQueryError error={decisionsError} label="runtime guardrail decisions" />;
+  if (simulationsError) return <ApiQueryError error={simulationsError} label="runtime guardrail simulations" />;
+  if (overridesError) return <ApiQueryError error={overridesError} label="runtime guardrail overrides" />;
 
   const togglePolicy = (id: string) => {
     setExpandedPolicies((prev) => {
@@ -724,16 +779,15 @@ export default function RuntimeGuardrailsPage() {
       ) : stats ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <StatCard label="Total Policies" value={stats.totalPolicies} icon={Shield} />
+          <StatCard label="Total Decisions" value={stats.totalDecisions} icon={Activity} accent="bg-blue-500/10" />
+          <StatCard label="Total Overrides" value={stats.totalOverrides} icon={Unlock} accent="bg-amber-500/10" />
+          <StatCard label="Pending Overrides" value={stats.pendingOverrides} icon={Timer} accent="bg-yellow-500/10" />
           <StatCard
-            label="Active Enforcing"
-            value={stats.activePolicies}
+            label="Approved Overrides"
+            value={stats.approvedOverrides}
             icon={ShieldCheck}
             accent="bg-emerald-500/10"
           />
-          <StatCard label="Decisions Today" value={stats.decisionsToday} icon={Activity} accent="bg-blue-500/10" />
-          <StatCard label="Denied Today" value={stats.deniedToday} icon={XCircle} accent="bg-red-500/10" />
-          <StatCard label="Avg Latency" value={`${stats.avgLatencyMs}ms`} icon={Timer} accent="bg-purple-500/10" />
-          <StatCard label="Active Overrides" value={stats.activeOverrides} icon={Unlock} accent="bg-amber-500/10" />
         </div>
       ) : null}
 
@@ -908,8 +962,12 @@ export default function RuntimeGuardrailsPage() {
         </div>
 
         <div className="space-y-3">
-          {stats && <ScopeBreakdown byScope={stats.byScope} />}
-          {stats && <TopBlockedActions actions={stats.topBlockedActions} />}
+          <Card className="glass-card border-white/5">
+            <CardContent className="p-3 text-xs text-muted-foreground">
+              Scope and blocked-action breakdowns are unavailable because this endpoint currently persists aggregate
+              guardrail counts only.
+            </CardContent>
+          </Card>
 
           <Card className="glass-card border-white/5">
             <CardHeader className="p-3 pb-2">
@@ -923,29 +981,24 @@ export default function RuntimeGuardrailsPage() {
                 <>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
-                    <span className="text-[10px] flex-1">Allowed</span>
-                    <span className="text-xs font-bold text-emerald-400">{stats.allowedToday}</span>
+                    <span className="text-[10px] flex-1">Total decisions</span>
+                    <span className="text-xs font-bold text-emerald-400">{stats.totalDecisions}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <XCircle className="h-3.5 w-3.5 text-red-400" aria-hidden="true" />
-                    <span className="text-[10px] flex-1">Denied</span>
-                    <span className="text-xs font-bold text-red-400">{stats.deniedToday}</span>
+                    <span className="text-[10px] flex-1">Pending overrides</span>
+                    <span className="text-xs font-bold text-red-400">{stats.pendingOverrides}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Lock className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
-                    <span className="text-[10px] flex-1">Quarantined</span>
-                    <span className="text-xs font-bold text-amber-400">{stats.quarantinedToday}</span>
+                    <span className="text-[10px] flex-1">Approved overrides</span>
+                    <span className="text-xs font-bold text-amber-400">{stats.approvedOverrides}</span>
                   </div>
                   <div className="border-t border-white/5 pt-2 mt-2">
                     <div className="flex items-center gap-2">
                       <Play className="h-3.5 w-3.5 text-blue-400" aria-hidden="true" />
-                      <span className="text-[10px] flex-1">Dry-Run Policies</span>
-                      <span className="text-xs font-bold text-blue-400">{stats.dryRunPolicies}</span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <FlaskConical className="h-3.5 w-3.5 text-purple-400" aria-hidden="true" />
-                      <span className="text-[10px] flex-1">Simulations Run</span>
-                      <span className="text-xs font-bold text-purple-400">{stats.simulationsRun}</span>
+                      <span className="text-[10px] flex-1">Total overrides</span>
+                      <span className="text-xs font-bold text-blue-400">{stats.totalOverrides}</span>
                     </div>
                   </div>
                 </>
@@ -966,20 +1019,20 @@ export default function RuntimeGuardrailsPage() {
               {stats ? (
                 <div className="space-y-1.5 text-[10px]">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Enforcing</span>
-                    <span className="font-medium text-emerald-400">{stats.activePolicies}</span>
+                    <span className="text-muted-foreground">Policies</span>
+                    <span className="font-medium text-emerald-400">{stats.totalPolicies}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Dry Run</span>
-                    <span className="font-medium text-yellow-400">{stats.dryRunPolicies}</span>
+                    <span className="text-muted-foreground">Decisions</span>
+                    <span className="font-medium text-yellow-400">{stats.totalDecisions}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Disabled</span>
-                    <span className="font-medium text-zinc-400">{stats.disabledPolicies}</span>
+                    <span className="text-muted-foreground">Pending overrides</span>
+                    <span className="font-medium text-zinc-400">{stats.pendingOverrides}</span>
                   </div>
                   <div className="flex justify-between border-t border-white/5 pt-1.5">
-                    <span className="text-muted-foreground">Active Overrides</span>
-                    <span className="font-medium text-amber-400">{stats.activeOverrides}</span>
+                    <span className="text-muted-foreground">Approved overrides</span>
+                    <span className="font-medium text-amber-400">{stats.approvedOverrides}</span>
                   </div>
                 </div>
               ) : (

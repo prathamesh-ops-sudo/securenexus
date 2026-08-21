@@ -1550,6 +1550,69 @@ export function registerEndpointsRoutes(app: Express): void {
   );
 
   app.get(
+    "/api/endpoints/dashboard",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const assets = await storage.getEndpointAssets(orgId);
+        const total = assets.length;
+        const online = assets.filter((asset: any) => asset.agentStatus === "online").length;
+        const offline = assets.filter((asset: any) => asset.agentStatus === "offline").length;
+        const degraded = assets.filter((asset: any) => asset.agentStatus === "degraded").length;
+        const outdatedAgents = assets.filter((asset: any) => {
+          if (!asset.agentVersion) return true;
+          const version = parseFloat(asset.agentVersion.replace(/[^0-9.]/g, ""));
+          return Number.isNaN(version) || version < 2;
+        }).length;
+        const criticalVulnEndpoints = assets.filter((asset: any) => (asset.riskScore ?? 0) > 70).length;
+        const complianceFailures = assets.filter((asset: any) => (asset.riskScore ?? 0) > 50).length;
+        const osDistribution: Record<string, number> = {};
+        for (const asset of assets) {
+          const os = asset.os || "Unknown";
+          osDistribution[os] = (osDistribution[os] || 0) + 1;
+        }
+        const riskDistribution = {
+          critical: criticalVulnEndpoints,
+          high: assets.filter((asset: any) => (asset.riskScore ?? 0) > 50 && (asset.riskScore ?? 0) <= 70).length,
+          medium: assets.filter((asset: any) => (asset.riskScore ?? 0) > 30 && (asset.riskScore ?? 0) <= 50).length,
+          low: assets.filter((asset: any) => (asset.riskScore ?? 0) <= 30).length,
+        };
+        const now = Date.now();
+        const recentCheckIns = assets.filter(
+          (asset: any) => asset.lastSeenAt && now - new Date(asset.lastSeenAt).getTime() < 86400000,
+        ).length;
+        const staleEndpoints = assets.filter(
+          (asset: any) => !asset.lastSeenAt || now - new Date(asset.lastSeenAt).getTime() > 604800000,
+        ).length;
+        res.json({
+          total,
+          online,
+          offline,
+          degraded,
+          outdatedAgents,
+          criticalVulnEndpoints,
+          complianceFailures,
+          osDistribution,
+          riskDistribution,
+          recentCheckIns,
+          staleEndpoints,
+          avgRiskScore:
+            total > 0
+              ? Math.round(assets.reduce((sum: number, asset: any) => sum + (asset.riskScore ?? 0), 0) / total)
+              : 0,
+        });
+      } catch (error) {
+        logger.child("routes").error("Endpoint dashboard error", { error: String(error) });
+        res.status(500).json({ message: "Failed to fetch endpoint dashboard" });
+      }
+    },
+  );
+
+  app.get(
     "/api/endpoints/:id",
     isAuthenticated,
     resolveOrgContext,
@@ -1945,87 +2008,6 @@ export function registerEndpointsRoutes(app: Express): void {
       } catch (error) {
         logger.child("routes").error("Endpoint detail error", { error: String(error) });
         res.status(500).json({ message: "Failed to fetch endpoint detail" });
-      }
-    },
-  );
-
-  // ─── 26.2 Endpoint Status At-a-Glance Dashboard ───────────────────────────
-
-  app.get(
-    "/api/endpoints/dashboard",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    requireMinRole("analyst"),
-    async (req, res) => {
-      try {
-        const orgId = getOrgId(req);
-        const assets = await storage.getEndpointAssets(orgId);
-
-        const total = assets.length;
-        const online = assets.filter((a: any) => a.agentStatus === "online").length;
-        const offline = assets.filter((a: any) => a.agentStatus === "offline").length;
-        const degraded = assets.filter((a: any) => a.agentStatus === "degraded").length;
-
-        // Outdated agents: agent version older than "2.0"
-        const outdatedAgents = assets.filter((a: any) => {
-          if (!a.agentVersion) return true;
-          const ver = parseFloat(a.agentVersion.replace(/[^0-9.]/g, ""));
-          return isNaN(ver) || ver < 2.0;
-        }).length;
-
-        // Critical vulnerabilities: risk score > 70
-        const criticalVulnEndpoints = assets.filter((a: any) => (a.riskScore ?? 0) > 70).length;
-
-        // Compliance failures: risk score > 50
-        const complianceFailures = assets.filter((a: any) => (a.riskScore ?? 0) > 50).length;
-
-        // OS distribution
-        const osDistribution: Record<string, number> = {};
-        for (const a of assets) {
-          const os = (a as any).os || "Unknown";
-          osDistribution[os] = (osDistribution[os] || 0) + 1;
-        }
-
-        // Risk distribution
-        const riskDistribution = {
-          critical: assets.filter((a: any) => (a.riskScore ?? 0) > 70).length,
-          high: assets.filter((a: any) => (a.riskScore ?? 0) > 50 && (a.riskScore ?? 0) <= 70).length,
-          medium: assets.filter((a: any) => (a.riskScore ?? 0) > 30 && (a.riskScore ?? 0) <= 50).length,
-          low: assets.filter((a: any) => (a.riskScore ?? 0) <= 30).length,
-        };
-
-        // Recent check-ins (last 24h)
-        const now = Date.now();
-        const recentCheckIns = assets.filter((a: any) => {
-          if (!a.lastSeenAt) return false;
-          return now - new Date(a.lastSeenAt).getTime() < 86400000;
-        }).length;
-
-        // Stale endpoints (no check-in in 7 days)
-        const staleEndpoints = assets.filter((a: any) => {
-          if (!a.lastSeenAt) return true;
-          return now - new Date(a.lastSeenAt).getTime() > 604800000;
-        }).length;
-
-        res.json({
-          total,
-          online,
-          offline,
-          degraded,
-          outdatedAgents,
-          criticalVulnEndpoints,
-          complianceFailures,
-          osDistribution,
-          riskDistribution,
-          recentCheckIns,
-          staleEndpoints,
-          avgRiskScore:
-            total > 0 ? Math.round(assets.reduce((sum: number, a: any) => sum + (a.riskScore ?? 0), 0) / total) : 0,
-        });
-      } catch (error) {
-        logger.child("routes").error("Endpoint dashboard error", { error: String(error) });
-        res.status(500).json({ message: "Failed to fetch endpoint dashboard" });
       }
     },
   );

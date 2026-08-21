@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { ApiQueryError } from "@/components/api-query-state";
+import { apiQuery, apiRequest, hasObjectKeys, isArrayOf } from "@/lib/queryClient";
 import {
   Shield,
   ShieldCheck,
@@ -135,21 +136,11 @@ interface TrustBoundaryRule {
 }
 
 interface AgentToolStats {
-  totalTools: number;
-  verifiedTools: number;
-  unverifiedTools: number;
   totalInvocations: number;
-  allowedCount: number;
-  deniedCount: number;
-  throttledCount: number;
-  flaggedCount: number;
   totalAnomalies: number;
-  unresolvedAnomalies: number;
-  activePolicies: number;
-  boundaryRules: number;
-  avgRiskScore: number;
-  invocationsByTool: Record<string, { total: number; allowed: number; denied: number }>;
-  anomaliesByType: Record<string, number>;
+  unacknowledgedAnomalies: number;
+  totalPolicies: number;
+  totalBoundaryRules: number;
 }
 
 const RISK_CONFIG: Record<string, { label: string; color: string }> = {
@@ -234,8 +225,17 @@ function ToolManifestCard({
 
   return (
     <Card className="glass-card border-white/5 hover:border-cyan-500/20 transition-colors">
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onToggle}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onToggle();
+          }
+        }}
+        aria-expanded={isExpanded}
         className="w-full text-left p-4 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 rounded-lg"
       >
         <div className="flex items-start justify-between gap-3">
@@ -311,7 +311,7 @@ function ToolManifestCard({
             )}
           </div>
         </div>
-      </button>
+      </div>
       {isExpanded && (
         <div className="px-4 pb-4 pt-1 border-t border-white/5 space-y-3">
           <div>
@@ -770,52 +770,109 @@ export default function AgentToolSecurityPage() {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [verdictFilter, setVerdictFilter] = useState<string>("all");
 
-  const { data: stats, isLoading: statsLoading } = useQuery<AgentToolStats>({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    error: statsError,
+  } = useQuery<AgentToolStats>({
     queryKey: ["/api/agent-tool-security/stats"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/agent-tool-security/stats");
-      return res.json();
-    },
+    queryFn: () =>
+      apiQuery("/api/agent-tool-security/stats", (value): value is AgentToolStats =>
+        hasObjectKeys(value, [
+          "totalInvocations",
+          "totalAnomalies",
+          "unacknowledgedAnomalies",
+          "totalPolicies",
+          "totalBoundaryRules",
+        ]),
+      ),
   });
 
-  const { data: tools, isLoading: toolsLoading } = useQuery<ToolManifest[]>({
+  const {
+    data: tools,
+    isLoading: toolsLoading,
+    error: toolsError,
+  } = useQuery<ToolManifest[]>({
     queryKey: ["/api/agent-tool-security/tools"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/agent-tool-security/tools");
-      return res.json();
-    },
+    queryFn: () =>
+      apiQuery("/api/agent-tool-security/tools", (value): value is ToolManifest[] =>
+        isArrayOf(value, (tool) =>
+          hasObjectKeys(tool, [
+            "id",
+            "name",
+            "version",
+            "description",
+            "scopes",
+            "riskLevel",
+            "signatureHash",
+            "verified",
+          ]),
+        ),
+      ),
   });
 
-  const { data: invocations, isLoading: invocationsLoading } = useQuery<ToolInvocation[]>({
+  const {
+    data: invocations,
+    isLoading: invocationsLoading,
+    error: invocationsError,
+  } = useQuery<ToolInvocation[]>({
     queryKey: ["/api/agent-tool-security/invocations"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/agent-tool-security/invocations");
-      return res.json();
-    },
+    queryFn: () =>
+      apiQuery("/api/agent-tool-security/invocations", (value): value is ToolInvocation[] =>
+        isArrayOf(value, (invocation) =>
+          hasObjectKeys(invocation, [
+            "id",
+            "agentName",
+            "toolName",
+            "destination",
+            "verdict",
+            "verdictReason",
+            "riskScore",
+          ]),
+        ),
+      ),
   });
 
-  const { data: anomalies, isLoading: anomaliesLoading } = useQuery<AnomalyDetection[]>({
+  const {
+    data: anomalies,
+    isLoading: anomaliesLoading,
+    error: anomaliesError,
+  } = useQuery<AnomalyDetection[]>({
     queryKey: ["/api/agent-tool-security/anomalies"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/agent-tool-security/anomalies");
-      return res.json();
-    },
+    queryFn: () =>
+      apiQuery("/api/agent-tool-security/anomalies", (value): value is AnomalyDetection[] =>
+        isArrayOf(value, (anomaly) =>
+          hasObjectKeys(anomaly, ["id", "type", "severity", "agentName", "toolName", "description", "detectedAt"]),
+        ),
+      ),
   });
 
-  const { data: policies, isLoading: policiesLoading } = useQuery<ToolPolicy[]>({
+  const {
+    data: policies,
+    isLoading: policiesLoading,
+    error: policiesError,
+  } = useQuery<ToolPolicy[]>({
     queryKey: ["/api/agent-tool-security/policies"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/agent-tool-security/policies");
-      return res.json();
-    },
+    queryFn: () =>
+      apiQuery("/api/agent-tool-security/policies", (value): value is ToolPolicy[] =>
+        isArrayOf(value, (policy) =>
+          hasObjectKeys(policy, ["id", "toolId", "toolName", "maxRate", "ratePeriod", "allowedScopes", "enabled"]),
+        ),
+      ),
   });
 
-  const { data: boundaryRules, isLoading: boundaryRulesLoading } = useQuery<TrustBoundaryRule[]>({
+  const {
+    data: boundaryRules,
+    isLoading: boundaryRulesLoading,
+    error: boundaryRulesError,
+  } = useQuery<TrustBoundaryRule[]>({
     queryKey: ["/api/agent-tool-security/boundary-rules"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/agent-tool-security/boundary-rules");
-      return res.json();
-    },
+    queryFn: () =>
+      apiQuery("/api/agent-tool-security/boundary-rules", (value): value is TrustBoundaryRule[] =>
+        isArrayOf(value, (rule) =>
+          hasObjectKeys(rule, ["id", "name", "description", "sourceBoundary", "targetBoundary", "action", "enabled"]),
+        ),
+      ),
   });
 
   const verifyToolMutation = useMutation({
@@ -857,6 +914,13 @@ export default function AgentToolSecurityPage() {
     },
   });
 
+  if (statsError) return <ApiQueryError error={statsError} label="agent-tool security statistics" />;
+  if (toolsError) return <ApiQueryError error={toolsError} label="agent tool catalog" />;
+  if (invocationsError) return <ApiQueryError error={invocationsError} label="agent tool invocations" />;
+  if (anomaliesError) return <ApiQueryError error={anomaliesError} label="agent tool anomalies" />;
+  if (policiesError) return <ApiQueryError error={policiesError} label="agent tool policies" />;
+  if (boundaryRulesError) return <ApiQueryError error={boundaryRulesError} label="agent trust boundary rules" />;
+
   const toggleToolExpand = (id: string) => {
     setExpandedTools((prev) => {
       const next = new Set(prev);
@@ -896,8 +960,8 @@ export default function AgentToolSecurityPage() {
   const tabs: { id: TabId; label: string; icon: typeof Shield; count?: number }[] = [
     { id: "manifests", label: "Tool Manifests", icon: Terminal, count: tools?.length },
     { id: "invocations", label: "Invocation Trace", icon: Activity, count: invocations?.length },
-    { id: "anomalies", label: "Anomalies", icon: AlertTriangle, count: stats?.unresolvedAnomalies },
-    { id: "policies", label: "Policies", icon: Settings, count: stats?.activePolicies },
+    { id: "anomalies", label: "Anomalies", icon: AlertTriangle, count: stats?.unacknowledgedAnomalies },
+    { id: "policies", label: "Policies", icon: Settings, count: stats?.totalPolicies },
     { id: "boundaries", label: "Trust Boundaries", icon: Layers, count: boundaryRules?.length },
   ];
 
@@ -923,24 +987,30 @@ export default function AgentToolSecurityPage() {
         </div>
       ) : stats ? (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          <StatCard label="Total Tools" value={stats.totalTools} icon={Terminal} />
-          <StatCard label="Verified" value={stats.verifiedTools} icon={ShieldCheck} accent="bg-emerald-500/10" />
           <StatCard label="Invocations" value={stats.totalInvocations} icon={Activity} />
-          <StatCard label="Denied" value={stats.deniedCount} icon={Ban} accent="bg-red-500/10" />
           <StatCard
-            label="Anomalies"
-            value={stats.unresolvedAnomalies}
+            label="Total Anomalies"
+            value={stats.totalAnomalies}
             icon={AlertTriangle}
             accent="bg-orange-500/10"
           />
-          <StatCard label="Avg Risk" value={stats.avgRiskScore} icon={BarChart3} />
+          <StatCard
+            label="Unacknowledged"
+            value={stats.unacknowledgedAnomalies}
+            icon={ShieldAlert}
+            accent="bg-red-500/10"
+          />
+          <StatCard label="Policies" value={stats.totalPolicies} icon={Settings} />
+          <StatCard label="Boundary Rules" value={stats.totalBoundaryRules} icon={Layers} />
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {stats && <InvocationByToolChart data={stats.invocationsByTool} />}
-        {stats && <AnomalyByTypeChart data={stats.anomaliesByType} />}
-      </div>
+      <Card className="border-white/5">
+        <CardContent className="p-4 text-xs text-muted-foreground">
+          Invocation-by-tool and anomaly-type breakdowns are unavailable because the statistics endpoint currently
+          exposes aggregate tenant counts only.
+        </CardContent>
+      </Card>
 
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm">

@@ -25,7 +25,8 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { apiRequest, fetchCsrfToken, queryClient } from "@/lib/queryClient";
+import { ApiQueryError } from "@/components/api-query-state";
+import { apiQuery, apiRequest, fetchCsrfToken, isArrayOf, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
@@ -98,16 +99,16 @@ export function FileManager({ prefix, title, compact }: { prefix?: string; title
   const [deleteTarget, setDeleteTarget] = useState<FileEntry | null>(null);
 
   const queryPrefix = prefix || "uploads/";
-  const { data: files, isLoading } = useQuery<FileEntry[]>({
+  const {
+    data: files,
+    isLoading,
+    error,
+  } = useQuery<FileEntry[]>({
     queryKey: ["/api/files", queryPrefix],
-    queryFn: async () => {
-      const res = await apiRequest("GET", `/api/files?prefix=${encodeURIComponent(queryPrefix)}`);
-      const body = await res.json();
-      if (body && typeof body === "object" && "data" in body) {
-        return (body as { data: FileEntry[] }).data;
-      }
-      return Array.isArray(body) ? body : [];
-    },
+    queryFn: () =>
+      apiQuery(`/api/files?prefix=${encodeURIComponent(queryPrefix)}`, (value): value is FileEntry[] =>
+        isArrayOf(value),
+      ),
   });
 
   const uploadMutation = useMutation({
@@ -238,6 +239,8 @@ export function FileManager({ prefix, title, compact }: { prefix?: string; title
   );
 
   const fileCount = files?.length || 0;
+
+  if (error) return <ApiQueryError error={error} label="files" />;
 
   return (
     <>

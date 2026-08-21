@@ -5,6 +5,8 @@ import { CACHE_TTL, buildCacheKey, cacheGetOrLoad } from "../query-cache";
 import { resolveOrgContext, requireOrgId } from "../rbac";
 import { pool } from "../db";
 import { logger } from "../logger";
+import { isDashboardRole } from "./dashboard-role";
+export { isDashboardRole } from "./dashboard-role";
 
 const log = logger.child("dashboard-routes");
 
@@ -137,73 +139,86 @@ export function registerDashboardRoutes(app: Express): void {
     },
   );
 
-  app.get("/api/dashboard/:role", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    const user = req.user as { orgId?: string; role?: string };
-    const role = p(req.params.role);
-    if (!["ciso", "soc_manager", "analyst"].includes(role)) {
-      return res.status(400).json({ message: "Invalid role. Must be ciso, soc_manager, or analyst" });
-    }
-    try {
-      const stats = await storage.getDashboardStats(user?.orgId);
-      const analytics = await storage.getDashboardAnalytics(user?.orgId);
-      const allIncidents = await storage.getIncidents(user?.orgId);
-
-      if (role === "ciso") {
-        res.json({
-          role: "ciso",
-          title: "CISO Executive Dashboard",
-          kpis: {
-            totalAlerts: stats.totalAlerts,
-            openIncidents: stats.openIncidents,
-            criticalAlerts: stats.criticalAlerts,
-            mttrHours: analytics.mttrHours,
-            escalatedIncidents: stats.escalatedIncidents,
-          },
-          riskPosture: analytics.severityDistribution,
-          topMitreTactics: analytics.topMitreTactics,
-          recentCriticalIncidents: allIncidents.filter((i) => i.severity === "critical").slice(0, 5),
-          connectorHealth: analytics.connectorHealth,
-          alertTrend: analytics.alertTrend,
-        });
-      } else if (role === "soc_manager") {
-        res.json({
-          role: "soc_manager",
-          title: "SOC Manager Dashboard",
-          kpis: {
-            totalAlerts: stats.totalAlerts,
-            openIncidents: stats.openIncidents,
-            newAlertsToday: stats.newAlertsToday,
-            resolvedIncidents: stats.resolvedIncidents,
-            mttrHours: analytics.mttrHours,
-          },
-          severityDistribution: analytics.severityDistribution,
-          sourceDistribution: analytics.sourceDistribution,
-          categoryDistribution: analytics.categoryDistribution,
-          statusDistribution: analytics.statusDistribution,
-          alertTrend: analytics.alertTrend,
-          ingestionRate: analytics.ingestionRate,
-          connectorHealth: analytics.connectorHealth,
-          recentIncidents: allIncidents.slice(0, 10),
-        });
-      } else {
-        res.json({
-          role: "analyst",
-          title: "Analyst Dashboard",
-          kpis: {
-            totalAlerts: stats.totalAlerts,
-            openIncidents: stats.openIncidents,
-            criticalAlerts: stats.criticalAlerts,
-            newAlertsToday: stats.newAlertsToday,
-          },
-          severityDistribution: analytics.severityDistribution,
-          categoryDistribution: analytics.categoryDistribution,
-          topMitreTactics: analytics.topMitreTactics,
-          alertTrend: analytics.alertTrend,
-          recentIncidents: allIncidents.filter((i) => ["open", "investigating"].includes(i.status || "")).slice(0, 10),
-        });
+  app.get(
+    "/api/dashboard/:role",
+    (req, res, next) => {
+      const roleParam = typeof req.params.role === "string" ? req.params.role : "";
+      if (!isDashboardRole(roleParam)) {
+        next("route");
+        return;
       }
-    } catch (err: unknown) {
-      res.status(500).json({ message: err instanceof Error ? err.message : "Internal error" });
-    }
-  });
+      next();
+    },
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    async (req, res) => {
+      const user = req.user as { orgId?: string; role?: string };
+      const role = p(req.params.role);
+      try {
+        const stats = await storage.getDashboardStats(user?.orgId);
+        const analytics = await storage.getDashboardAnalytics(user?.orgId);
+        const allIncidents = await storage.getIncidents(user?.orgId);
+
+        if (role === "ciso") {
+          res.json({
+            role: "ciso",
+            title: "CISO Executive Dashboard",
+            kpis: {
+              totalAlerts: stats.totalAlerts,
+              openIncidents: stats.openIncidents,
+              criticalAlerts: stats.criticalAlerts,
+              mttrHours: analytics.mttrHours,
+              escalatedIncidents: stats.escalatedIncidents,
+            },
+            riskPosture: analytics.severityDistribution,
+            topMitreTactics: analytics.topMitreTactics,
+            recentCriticalIncidents: allIncidents.filter((i) => i.severity === "critical").slice(0, 5),
+            connectorHealth: analytics.connectorHealth,
+            alertTrend: analytics.alertTrend,
+          });
+        } else if (role === "soc_manager") {
+          res.json({
+            role: "soc_manager",
+            title: "SOC Manager Dashboard",
+            kpis: {
+              totalAlerts: stats.totalAlerts,
+              openIncidents: stats.openIncidents,
+              newAlertsToday: stats.newAlertsToday,
+              resolvedIncidents: stats.resolvedIncidents,
+              mttrHours: analytics.mttrHours,
+            },
+            severityDistribution: analytics.severityDistribution,
+            sourceDistribution: analytics.sourceDistribution,
+            categoryDistribution: analytics.categoryDistribution,
+            statusDistribution: analytics.statusDistribution,
+            alertTrend: analytics.alertTrend,
+            ingestionRate: analytics.ingestionRate,
+            connectorHealth: analytics.connectorHealth,
+            recentIncidents: allIncidents.slice(0, 10),
+          });
+        } else {
+          res.json({
+            role: "analyst",
+            title: "Analyst Dashboard",
+            kpis: {
+              totalAlerts: stats.totalAlerts,
+              openIncidents: stats.openIncidents,
+              criticalAlerts: stats.criticalAlerts,
+              newAlertsToday: stats.newAlertsToday,
+            },
+            severityDistribution: analytics.severityDistribution,
+            categoryDistribution: analytics.categoryDistribution,
+            topMitreTactics: analytics.topMitreTactics,
+            alertTrend: analytics.alertTrend,
+            recentIncidents: allIncidents
+              .filter((i) => ["open", "investigating"].includes(i.status || ""))
+              .slice(0, 10),
+          });
+        }
+      } catch (err: unknown) {
+        res.status(500).json({ message: err instanceof Error ? err.message : "Internal error" });
+      }
+    },
+  );
 }

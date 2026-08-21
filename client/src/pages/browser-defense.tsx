@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { ApiQueryError } from "@/components/api-query-state";
+import { apiQuery, apiRequest, hasObjectKeys, isArrayOf } from "@/lib/queryClient";
 import {
   Shield,
   ShieldAlert,
@@ -136,23 +137,8 @@ interface InjectionPattern {
 interface BrowserDefenseStats {
   totalSessions: number;
   activeSessions: number;
-  isolatedSessions: number;
-  terminatedSessions: number;
-  totalDomEvents: number;
-  blockedEvents: number;
-  challengedEvents: number;
-  allowedEvents: number;
   totalEgressRules: number;
-  activeEgressRules: number;
-  egressViolations: number;
   totalTrustedPaths: number;
-  activeTrustedPaths: number;
-  pathDeviations: number;
-  totalInjectionPatterns: number;
-  activeInjectionPatterns: number;
-  injectionDetections: number;
-  threatsByCategory: Record<string, number>;
-  eventsBySeverity: Record<string, number>;
 }
 
 const SEVERITY_CONFIG: Record<string, { label: string; color: string }> = {
@@ -788,28 +774,120 @@ export default function BrowserDefensePage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: stats, isLoading: statsLoading } = useQuery<BrowserDefenseStats>({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    error: statsError,
+  } = useQuery<BrowserDefenseStats>({
     queryKey: ["/api/browser-defense/stats"],
+    queryFn: () =>
+      apiQuery("/api/browser-defense/stats", (value): value is BrowserDefenseStats =>
+        hasObjectKeys(value, ["totalSessions", "activeSessions", "totalEgressRules", "totalTrustedPaths"]),
+      ),
   });
 
-  const { data: sessions, isLoading: sessionsLoading } = useQuery<BrowserSession[]>({
+  const {
+    data: sessions,
+    isLoading: sessionsLoading,
+    error: sessionsError,
+  } = useQuery<BrowserSession[]>({
     queryKey: ["/api/browser-defense/sessions"],
+    queryFn: () =>
+      apiQuery("/api/browser-defense/sessions", (value): value is BrowserSession[] =>
+        isArrayOf(value, (session) =>
+          hasObjectKeys(session, [
+            "id",
+            "agentName",
+            "contextId",
+            "originUrl",
+            "state",
+            "isolationLevel",
+            "lastActivityAt",
+          ]),
+        ),
+      ),
   });
 
-  const { data: domEvents, isLoading: eventsLoading } = useQuery<DomEvent[]>({
+  const {
+    data: domEvents,
+    isLoading: eventsLoading,
+    error: eventsError,
+  } = useQuery<DomEvent[]>({
     queryKey: ["/api/browser-defense/dom-events"],
+    queryFn: () =>
+      apiQuery("/api/browser-defense/dom-events", (value): value is DomEvent[] =>
+        isArrayOf(value, (event) =>
+          hasObjectKeys(event, [
+            "id",
+            "sessionId",
+            "eventType",
+            "targetSelector",
+            "actionClassification",
+            "severity",
+            "verdict",
+          ]),
+        ),
+      ),
   });
 
-  const { data: egressRules, isLoading: egressLoading } = useQuery<EgressRule[]>({
+  const {
+    data: egressRules,
+    isLoading: egressLoading,
+    error: egressError,
+  } = useQuery<EgressRule[]>({
     queryKey: ["/api/browser-defense/egress-rules"],
+    queryFn: () =>
+      apiQuery("/api/browser-defense/egress-rules", (value): value is EgressRule[] =>
+        isArrayOf(value, (rule) =>
+          hasObjectKeys(rule, [
+            "id",
+            "name",
+            "description",
+            "direction",
+            "domainPattern",
+            "action",
+            "enabled",
+            "hitCount",
+          ]),
+        ),
+      ),
   });
 
-  const { data: trustedPaths, isLoading: pathsLoading } = useQuery<TrustedPath[]>({
+  const {
+    data: trustedPaths,
+    isLoading: pathsLoading,
+    error: pathsError,
+  } = useQuery<TrustedPath[]>({
     queryKey: ["/api/browser-defense/trusted-paths"],
+    queryFn: () =>
+      apiQuery("/api/browser-defense/trusted-paths", (value): value is TrustedPath[] =>
+        isArrayOf(value, (path) =>
+          hasObjectKeys(path, [
+            "id",
+            "name",
+            "description",
+            "steps",
+            "enforceOrder",
+            "maxDurationMs",
+            "failAction",
+            "enabled",
+          ]),
+        ),
+      ),
   });
 
-  const { data: injectionPatterns, isLoading: patternsLoading } = useQuery<InjectionPattern[]>({
+  const {
+    data: injectionPatterns,
+    isLoading: patternsLoading,
+    error: patternsError,
+  } = useQuery<InjectionPattern[]>({
     queryKey: ["/api/browser-defense/injection-patterns"],
+    queryFn: () =>
+      apiQuery("/api/browser-defense/injection-patterns", (value): value is InjectionPattern[] =>
+        isArrayOf(value, (pattern) =>
+          hasObjectKeys(pattern, ["id", "name", "category", "pattern", "severity", "action", "description", "enabled"]),
+        ),
+      ),
   });
 
   const isolateMutation = useMutation({
@@ -867,6 +945,13 @@ export default function BrowserDefensePage() {
       queryClient.invalidateQueries({ queryKey: ["/api/browser-defense/injection-patterns"] });
     },
   });
+
+  if (statsError) return <ApiQueryError error={statsError} label="browser defense statistics" />;
+  if (sessionsError) return <ApiQueryError error={sessionsError} label="browser sessions" />;
+  if (eventsError) return <ApiQueryError error={eventsError} label="browser DOM events" />;
+  if (egressError) return <ApiQueryError error={egressError} label="browser egress rules" />;
+  if (pathsError) return <ApiQueryError error={pathsError} label="browser trusted paths" />;
+  if (patternsError) return <ApiQueryError error={patternsError} label="browser injection patterns" />;
 
   const filteredSessions = (sessions || []).filter(
     (s) =>
@@ -937,7 +1022,7 @@ export default function BrowserDefensePage() {
       </div>
 
       {statsLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-20 rounded-xl" />
           ))}
@@ -950,32 +1035,20 @@ export default function BrowserDefensePage() {
             icon={MonitorSmartphone}
             accent="bg-emerald-500/10"
           />
-          <StatCard label="Isolated" value={stats.isolatedSessions} icon={Lock} accent="bg-amber-500/10" />
-          <StatCard label="Events Blocked" value={stats.blockedEvents} icon={ShieldBan} accent="bg-red-500/10" />
-          <StatCard
-            label="Step-Up Challenges"
-            value={stats.challengedEvents}
-            icon={Fingerprint}
-            accent="bg-amber-500/10"
-          />
-          <StatCard
-            label="Injection Detections"
-            value={stats.injectionDetections}
-            icon={Bug}
-            accent="bg-purple-500/10"
-          />
-          <StatCard label="Path Deviations" value={stats.pathDeviations} icon={Route} accent="bg-orange-500/10" />
+          <StatCard label="Total Sessions" value={stats.totalSessions} icon={MonitorSmartphone} />
+          <StatCard label="Egress Rules" value={stats.totalEgressRules} icon={Route} accent="bg-amber-500/10" />
+          <StatCard label="Trusted Paths" value={stats.totalTrustedPaths} icon={Lock} accent="bg-purple-500/10" />
         </div>
       ) : (
         <div className="text-center py-8 text-sm text-muted-foreground">No stats available</div>
       )}
 
-      {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ThreatCategoryChart data={stats.threatsByCategory} />
-          <SeverityChart data={stats.eventsBySeverity} />
-        </div>
-      )}
+      <Card className="border-white/5">
+        <CardContent className="p-4 text-xs text-muted-foreground">
+          Event severity and threat-category breakdowns are unavailable because the browser-defense statistics endpoint
+          currently exposes aggregate session, rule, and path counts only.
+        </CardContent>
+      </Card>
 
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex gap-1 bg-white/5 rounded-lg p-1">

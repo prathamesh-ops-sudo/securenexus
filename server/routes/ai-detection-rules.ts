@@ -945,7 +945,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
             COUNT(*) FILTER (WHERE status = 'failed') AS failed_jobs,
             COUNT(*) FILTER (WHERE status = 'generating') AS in_progress_jobs,
             ROUND(AVG(quality_score) FILTER (WHERE status = 'completed'))::int AS avg_quality_score,
-            ROUND(AVG(estimated_fp_rate) FILTER (WHERE status = 'completed'), 3)::float AS avg_fp_rate,
+            ROUND((AVG(estimated_fp_rate) FILTER (WHERE status = 'completed'))::numeric, 3)::float AS avg_fp_rate,
             COALESCE(SUM(cost_usd) FILTER (WHERE status = 'completed'), 0)::float AS total_cost
           FROM rule_generation_jobs
           WHERE org_id = ${orgId}
@@ -965,7 +965,7 @@ export function registerAiDetectionRulesRoutes(app: Express): void {
           SELECT
             COUNT(*) AS published_count,
             COALESCE(SUM(downloads), 0) AS total_downloads,
-            ROUND(AVG(rating), 1)::float AS avg_rating
+            ROUND((AVG(rating))::numeric, 1)::float AS avg_rating
           FROM rule_marketplace
           WHERE org_id = ${orgId} AND status = 'published'
         `);

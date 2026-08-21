@@ -140,12 +140,10 @@ interface DeadLetterEntry {
 }
 
 interface MarketplaceStats {
-  totalAvailable: number;
-  installed: number;
-  active: number;
-  degraded: number;
-  errors: number;
-  categoryCounts: Record<string, number>;
+  totalInstances: number;
+  activeInstances: number;
+  errorInstances: number;
+  totalConnectors: number;
 }
 
 interface IntegrationDetail {
@@ -258,37 +256,37 @@ function StatsBar({ stats }: { stats: MarketplaceStats }) {
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
       <Card className="border-border/40 bg-card/50">
         <CardContent className="p-3 text-center">
-          <div className="text-2xl font-bold text-foreground">{stats.totalAvailable}</div>
+          <div className="text-2xl font-bold text-foreground">{stats.totalConnectors}</div>
           <div className="text-xs text-muted-foreground">Available</div>
         </CardContent>
       </Card>
       <Card className="border-border/40 bg-card/50">
         <CardContent className="p-3 text-center">
-          <div className="text-2xl font-bold text-blue-400">{stats.installed}</div>
+          <div className="text-2xl font-bold text-blue-400">{stats.totalInstances}</div>
           <div className="text-xs text-muted-foreground">Installed</div>
         </CardContent>
       </Card>
       <Card className="border-border/40 bg-card/50">
         <CardContent className="p-3 text-center">
-          <div className="text-2xl font-bold text-emerald-400">{stats.active}</div>
+          <div className="text-2xl font-bold text-emerald-400">{stats.activeInstances}</div>
           <div className="text-xs text-muted-foreground">Active</div>
         </CardContent>
       </Card>
       <Card className="border-border/40 bg-card/50">
         <CardContent className="p-3 text-center">
-          <div className="text-2xl font-bold text-yellow-400">{stats.degraded}</div>
+          <div className="text-2xl font-bold text-yellow-400">—</div>
           <div className="text-xs text-muted-foreground">Degraded</div>
         </CardContent>
       </Card>
       <Card className="border-border/40 bg-card/50">
         <CardContent className="p-3 text-center">
-          <div className="text-2xl font-bold text-red-400">{stats.errors}</div>
+          <div className="text-2xl font-bold text-red-400">{stats.errorInstances}</div>
           <div className="text-xs text-muted-foreground">Errors</div>
         </CardContent>
       </Card>
       <Card className="border-border/40 bg-card/50">
         <CardContent className="p-3 text-center">
-          <div className="text-2xl font-bold text-foreground">{Object.keys(stats.categoryCounts).length}</div>
+          <div className="text-2xl font-bold text-foreground">—</div>
           <div className="text-xs text-muted-foreground">Categories</div>
         </CardContent>
       </Card>

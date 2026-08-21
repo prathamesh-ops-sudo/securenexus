@@ -1,4 +1,4 @@
-import { randomUUID, randomInt, createSign, createVerify, createHash, generateKeyPairSync } from "crypto";
+import { randomUUID, randomInt, sign, verify, createHash, generateKeyPairSync } from "crypto";
 
 export type ToolRiskLevel = "low" | "medium" | "high" | "critical";
 export type TrustBoundary = "internal" | "external" | "privileged" | "sandboxed";
@@ -143,9 +143,7 @@ const { publicKey: SIGNING_PUBLIC_KEY, privateKey: SIGNING_PRIVATE_KEY } = gener
 
 function signManifest(manifest: { name: string; version: string; scopes: string[] }): string {
   const payload = JSON.stringify({ name: manifest.name, version: manifest.version, scopes: manifest.scopes });
-  const signer = createSign("SHA256");
-  signer.update(payload);
-  return signer.sign(SIGNING_PRIVATE_KEY, "hex");
+  return sign(null, Buffer.from(payload), SIGNING_PRIVATE_KEY).toString("hex");
 }
 
 function verifyManifestSignature(
@@ -153,10 +151,8 @@ function verifyManifestSignature(
   signatureHex: string,
 ): boolean {
   const payload = JSON.stringify({ name: manifest.name, version: manifest.version, scopes: manifest.scopes });
-  const verifier = createVerify("SHA256");
-  verifier.update(payload);
   try {
-    return verifier.verify(SIGNING_PUBLIC_KEY, signatureHex, "hex");
+    return verify(null, Buffer.from(payload), SIGNING_PUBLIC_KEY, Buffer.from(signatureHex, "hex"));
   } catch {
     return false;
   }

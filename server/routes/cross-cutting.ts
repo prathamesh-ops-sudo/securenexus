@@ -4,6 +4,7 @@ import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 
 import { storage } from "../storage";
+import { reply } from "../api-response";
 import {
   getKillSwitchesList,
   getKillSwitchById,
@@ -55,13 +56,10 @@ export function registerCrossCuttingRoutes(app: Express): void {
         storage.countCrossCuttingDrift(orgId),
         storage.countCrossCuttingOverrides(orgId),
       ]);
-      res.json({
-        ok: true,
-        data: {
-          totalEvidence: evidenceCount,
-          totalDrift: driftCount,
-          totalOverrides: overrideCount,
-        },
+      reply(res, {
+        totalEvidence: evidenceCount,
+        totalDrift: driftCount,
+        totalOverrides: overrideCount,
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -76,7 +74,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
       const orgId = getOrgId(req);
       const evidenceType = typeof req.query.type === "string" ? req.query.type : undefined;
       const evidence = await storage.getCrossCuttingEvidenceList(orgId, evidenceType);
-      res.json({ ok: true, data: evidence });
+      reply(res, evidence);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       log.error(`GET /api/cross-cutting/evidence failed: ${message}`);
@@ -93,7 +91,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
         res.status(404).json({ ok: false, error: "Evidence record not found" });
         return;
       }
-      res.json({ ok: true, data: record });
+      reply(res, record);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       log.error(`GET /api/cross-cutting/evidence/:id failed: ${message}`);
@@ -108,7 +106,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
       // Chain by resourceId — all evidence for the same resource forms a chain
       const all = await storage.getCrossCuttingEvidenceList(orgId);
       const chain = all.filter((e) => e.resourceId === traceId);
-      res.json({ ok: true, data: chain });
+      reply(res, chain);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       log.error(`GET /api/cross-cutting/evidence/chain/:traceId failed: ${message}`);
@@ -161,7 +159,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
           status: "open",
           metadata: { actorId, actorType, tags: tags || [] },
         });
-        res.status(201).json({ ok: true, data: record });
+        reply(res, record, {}, 201);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         log.error(`POST /api/cross-cutting/evidence failed: ${message}`);
@@ -179,7 +177,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
       if (statusFilter) {
         overrides = overrides.filter((o) => o.status === statusFilter);
       }
-      res.json({ ok: true, data: overrides });
+      reply(res, overrides);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       log.error(`GET /api/cross-cutting/overrides failed: ${message}`);
@@ -192,7 +190,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
       const orgId = getOrgId(req);
       const overrides = await storage.getCrossCuttingOverrides(orgId);
       const pending = overrides.filter((o) => o.status === "active" && !o.approvedBy);
-      res.json({ ok: true, data: pending });
+      reply(res, pending);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       log.error(`GET /api/cross-cutting/overrides/pending failed: ${message}`);
@@ -241,7 +239,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
           status: "active",
           metadata: { requestedBy, riskLevel: riskLevel || "medium" },
         });
-        res.status(201).json({ ok: true, data: override });
+        reply(res, override, {}, 201);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         log.error(`POST /api/cross-cutting/overrides failed: ${message}`);
@@ -289,7 +287,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
             approvedAt: new Date().toISOString(),
           },
         });
-        res.json({ ok: true, data: updated });
+        reply(res, updated);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         log.error(`POST /api/cross-cutting/overrides/:id/approve failed: ${message}`);
@@ -338,7 +336,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
             rejectedAt: new Date().toISOString(),
           },
         });
-        res.json({ ok: true, data: updated });
+        reply(res, updated);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         log.error(`POST /api/cross-cutting/overrides/:id/reject failed: ${message}`);
@@ -356,7 +354,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
       if (activeOnly) {
         signals = signals.filter((s) => s.status === "detected" || s.status === "acknowledged");
       }
-      res.json({ ok: true, data: signals });
+      reply(res, signals);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       log.error(`GET /api/cross-cutting/drift failed: ${message}`);
@@ -386,7 +384,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
           status: "detected",
           remediationAction: null,
         });
-        res.json({ ok: true, data: { scanId: newDrift.id, status: "completed", driftsDetected: 0 } });
+        reply(res, { scanId: newDrift.id, status: "completed", driftsDetected: 0 });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         log.error(`POST /api/cross-cutting/drift/scan failed: ${message}`);
@@ -418,7 +416,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
         const updated = await storage.updateCrossCuttingDriftRecord(paramId, orgId, {
           status: "acknowledged",
         });
-        res.json({ ok: true, data: updated });
+        reply(res, updated);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         log.error(`POST /api/cross-cutting/drift/:id/acknowledge failed: ${message}`);
@@ -446,7 +444,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
           status: "remediated",
           remediatedAt: new Date(),
         });
-        res.json({ ok: true, data: updated });
+        reply(res, updated);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         log.error(`POST /api/cross-cutting/drift/:id/resolve failed: ${message}`);
@@ -460,7 +458,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const killSwitches = await getKillSwitchesList(orgId);
-      res.json({ ok: true, data: killSwitches });
+      reply(res, killSwitches);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       log.error(`GET /api/cross-cutting/reliability failed: ${message}`);
@@ -503,7 +501,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
           triggeredBy: state === "triggered" ? actor : existing.triggeredBy,
           triggerReason: state === "triggered" ? reason || null : existing.triggerReason,
         });
-        res.json({ ok: true, data: ks });
+        reply(res, ks);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         if (message.includes("not found")) {
@@ -521,7 +519,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
     try {
       const orgId = getOrgId(req);
       const milestones = await getTtvMilestones(orgId);
-      res.json({ ok: true, data: milestones });
+      reply(res, milestones);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       log.error(`GET /api/cross-cutting/time-to-value failed: ${message}`);
@@ -585,7 +583,7 @@ export function registerCrossCuttingRoutes(app: Express): void {
             triggeredByActor: actor,
           });
         }
-        res.json({ ok: true, data: milestone });
+        reply(res, milestone);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         if (message.includes("not found") || message.includes("already achieved")) {

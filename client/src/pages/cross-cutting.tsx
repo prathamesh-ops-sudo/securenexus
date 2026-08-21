@@ -36,7 +36,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { apiRequest } from "@/lib/queryClient";
+import { apiQuery, apiRequest, hasObjectKeys, isArrayOf } from "@/lib/queryClient";
+import { ApiQueryError } from "@/components/api-query-state";
 import { useToast } from "@/hooks/use-toast";
 
 interface EvidenceRecord {
@@ -117,19 +118,38 @@ interface TimeToValueMilestone {
 }
 
 interface CrossCuttingStats {
-  evidenceCount: number;
-  evidenceBySource: Record<string, number>;
-  pendingOverrides: number;
-  approvedOverridesLast24h: number;
-  rejectedOverridesLast24h: number;
-  activeDriftSignals: number;
-  driftByCategory: Record<string, number>;
-  killSwitchesArmed: number;
-  killSwitchesTriggered: number;
-  milestonesAchieved: number;
-  milestonesRemaining: number;
-  avgConfidence: number;
+  totalEvidence: number;
+  totalDrift: number;
+  totalOverrides: number;
 }
+
+const isEvidenceRecord = (value: unknown): value is EvidenceRecord =>
+  hasObjectKeys(value, ["id", "sourceType", "severity", "summary", "details", "timestamp", "tags"]);
+const isOverrideRequest = (value: unknown): value is HumanOverrideRequest =>
+  hasObjectKeys(value, ["id", "evidenceId", "featureDomain", "actionDescription", "riskLevel", "status", "auditTrail"]);
+const isDriftSignal = (value: unknown): value is DriftSignal =>
+  hasObjectKeys(value, [
+    "id",
+    "category",
+    "severity",
+    "sourceEngine",
+    "entity",
+    "expectedState",
+    "actualState",
+    "delta",
+  ]);
+const isKillSwitch = (value: unknown): value is KillSwitch =>
+  hasObjectKeys(value, [
+    "id",
+    "featureName",
+    "engineName",
+    "state",
+    "confidenceThreshold",
+    "currentConfidence",
+    "updatedAt",
+  ]);
+const isTimeToValueMilestone = (value: unknown): value is TimeToValueMilestone =>
+  hasObjectKeys(value, ["id", "kind", "label", "achievedAt", "durationFromSignupMs"]);
 
 function severityColor(severity: string): string {
   switch (severity) {
@@ -258,7 +278,7 @@ function StatsOverview({ stats }: { stats: CrossCuttingStats }) {
             <FileText className="w-4 h-4 text-cyan-400" />
             <span className="text-xs text-slate-400">Evidence Records</span>
           </div>
-          <p className="text-2xl font-bold text-white">{stats.evidenceCount}</p>
+          <p className="text-2xl font-bold text-white">{stats.totalEvidence}</p>
         </CardContent>
       </Card>
       <Card className="bg-slate-900/50 border-slate-700/50">
@@ -267,7 +287,7 @@ function StatsOverview({ stats }: { stats: CrossCuttingStats }) {
             <Clock className="w-4 h-4 text-yellow-400" />
             <span className="text-xs text-slate-400">Pending Approvals</span>
           </div>
-          <p className="text-2xl font-bold text-yellow-400">{stats.pendingOverrides}</p>
+          <p className="text-2xl font-bold text-yellow-400">{stats.totalOverrides}</p>
         </CardContent>
       </Card>
       <Card className="bg-slate-900/50 border-slate-700/50">
@@ -276,7 +296,7 @@ function StatsOverview({ stats }: { stats: CrossCuttingStats }) {
             <AlertTriangle className="w-4 h-4 text-orange-400" />
             <span className="text-xs text-slate-400">Active Drift</span>
           </div>
-          <p className="text-2xl font-bold text-orange-400">{stats.activeDriftSignals}</p>
+          <p className="text-2xl font-bold text-orange-400">{stats.totalDrift}</p>
         </CardContent>
       </Card>
       <Card className="bg-slate-900/50 border-slate-700/50">
@@ -285,7 +305,7 @@ function StatsOverview({ stats }: { stats: CrossCuttingStats }) {
             <Shield className="w-4 h-4 text-green-400" />
             <span className="text-xs text-slate-400">Kill Switches Armed</span>
           </div>
-          <p className="text-2xl font-bold text-green-400">{stats.killSwitchesArmed}</p>
+          <p className="text-2xl font-bold text-green-400">—</p>
         </CardContent>
       </Card>
       <Card className="bg-slate-900/50 border-slate-700/50">
@@ -294,7 +314,7 @@ function StatsOverview({ stats }: { stats: CrossCuttingStats }) {
             <Zap className="w-4 h-4 text-red-400" />
             <span className="text-xs text-slate-400">Kill Switches Triggered</span>
           </div>
-          <p className="text-2xl font-bold text-red-400">{stats.killSwitchesTriggered}</p>
+          <p className="text-2xl font-bold text-red-400">—</p>
         </CardContent>
       </Card>
       <Card className="bg-slate-900/50 border-slate-700/50">
@@ -303,7 +323,7 @@ function StatsOverview({ stats }: { stats: CrossCuttingStats }) {
             <Target className="w-4 h-4 text-cyan-400" />
             <span className="text-xs text-slate-400">Avg Confidence</span>
           </div>
-          <p className="text-2xl font-bold text-white">{(stats.avgConfidence * 100).toFixed(0)}%</p>
+          <p className="text-2xl font-bold text-white">—</p>
         </CardContent>
       </Card>
     </div>
@@ -314,9 +334,13 @@ function EvidenceTab() {
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const { data: evidence, isLoading } = useQuery<EvidenceRecord[]>({
+  const {
+    data: evidence,
+    isLoading,
+    error,
+  } = useQuery<EvidenceRecord[]>({
     queryKey: ["/api/cross-cutting/evidence"],
-    queryFn: () => apiRequest("GET", "/api/cross-cutting/evidence").then((r) => r.json()),
+    queryFn: () => apiQuery("/api/cross-cutting/evidence", (value) => isArrayOf(value, isEvidenceRecord)),
   });
 
   if (isLoading)
@@ -327,6 +351,7 @@ function EvidenceTab() {
         ))}
       </div>
     );
+  if (error) return <ApiQueryError error={error} label="evidence records" />;
 
   const filtered = (evidence ?? []).filter(
     (e) =>
@@ -450,9 +475,13 @@ function OverridesTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: overrides, isLoading } = useQuery<HumanOverrideRequest[]>({
+  const {
+    data: overrides,
+    isLoading,
+    error,
+  } = useQuery<HumanOverrideRequest[]>({
     queryKey: ["/api/cross-cutting/overrides"],
-    queryFn: () => apiRequest("GET", "/api/cross-cutting/overrides").then((r) => r.json()),
+    queryFn: () => apiQuery("/api/cross-cutting/overrides", (value) => isArrayOf(value, isOverrideRequest)),
   });
 
   const approveMutation = useMutation({
@@ -491,6 +520,7 @@ function OverridesTab() {
         ))}
       </div>
     );
+  if (error) return <ApiQueryError error={error} label="override requests" />;
 
   const filtered = (overrides ?? []).filter((o) => statusFilter === "all" || o.status === statusFilter);
 
@@ -626,10 +656,16 @@ function DriftTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: drift, isLoading } = useQuery<DriftSignal[]>({
+  const {
+    data: drift,
+    isLoading,
+    error,
+  } = useQuery<DriftSignal[]>({
     queryKey: ["/api/cross-cutting/drift", activeOnly ? "active=true" : ""],
     queryFn: () =>
-      apiRequest("GET", `/api/cross-cutting/drift${activeOnly ? "?active=true" : ""}`).then((r) => r.json()),
+      apiQuery(`/api/cross-cutting/drift${activeOnly ? "?active=true" : ""}`, (value): value is DriftSignal[] =>
+        isArrayOf(value, isDriftSignal),
+      ),
   });
 
   const scanMutation = useMutation({
@@ -674,6 +710,7 @@ function DriftTab() {
         ))}
       </div>
     );
+  if (error) return <ApiQueryError error={error} label="drift signals" />;
 
   return (
     <div className="space-y-4">
@@ -809,9 +846,13 @@ function ReliabilityTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: killSwitches, isLoading } = useQuery<KillSwitch[]>({
+  const {
+    data: killSwitches,
+    isLoading,
+    error,
+  } = useQuery<KillSwitch[]>({
     queryKey: ["/api/cross-cutting/reliability"],
-    queryFn: () => apiRequest("GET", "/api/cross-cutting/reliability").then((r) => r.json()),
+    queryFn: () => apiQuery("/api/cross-cutting/reliability", (value) => isArrayOf(value, isKillSwitch)),
   });
 
   const toggleMutation = useMutation({
@@ -837,6 +878,7 @@ function ReliabilityTab() {
         ))}
       </div>
     );
+  if (error) return <ApiQueryError error={error} label="reliability controls" />;
 
   return (
     <div className="space-y-4">
@@ -937,9 +979,13 @@ function ReliabilityTab() {
 }
 
 function TimeToValueTab() {
-  const { data: milestones, isLoading } = useQuery<TimeToValueMilestone[]>({
+  const {
+    data: milestones,
+    isLoading,
+    error,
+  } = useQuery<TimeToValueMilestone[]>({
     queryKey: ["/api/cross-cutting/time-to-value"],
-    queryFn: () => apiRequest("GET", "/api/cross-cutting/time-to-value").then((r) => r.json()),
+    queryFn: () => apiQuery("/api/cross-cutting/time-to-value", (value) => isArrayOf(value, isTimeToValueMilestone)),
   });
 
   if (isLoading)
@@ -950,6 +996,7 @@ function TimeToValueTab() {
         ))}
       </div>
     );
+  if (error) return <ApiQueryError error={error} label="time-to-value milestones" />;
 
   const achieved = (milestones ?? []).filter((m) => m.achievedAt !== null);
   const remaining = (milestones ?? []).filter((m) => m.achievedAt === null);
@@ -1011,13 +1058,21 @@ function TimeToValueTab() {
 }
 
 export default function CrossCuttingPage() {
-  const { data: stats, isLoading: statsLoading } = useQuery<CrossCuttingStats>({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    error: statsError,
+  } = useQuery<CrossCuttingStats>({
     queryKey: ["/api/cross-cutting/stats"],
-    queryFn: () => apiRequest("GET", "/api/cross-cutting/stats").then((r) => r.json()),
+    queryFn: () =>
+      apiQuery("/api/cross-cutting/stats", (value): value is CrossCuttingStats =>
+        hasObjectKeys(value, ["totalEvidence", "totalDrift", "totalOverrides"]),
+      ),
   });
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
+      {statsError ? <ApiQueryError error={statsError} label="cross-cutting statistics" /> : null}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">

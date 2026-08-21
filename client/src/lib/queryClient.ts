@@ -30,7 +30,7 @@ export async function fetchCsrfToken(): Promise<string | null> {
 // ─── Envelope-aware helpers ──────────────────────────────────────────────────
 // Every API response is now wrapped: { data, meta, errors }.
 
-interface ApiEnvelope<T = unknown> {
+export interface ApiEnvelope<T = unknown> {
   data: T | null;
   meta: Record<string, unknown>;
   errors: { code: string; message: string; field?: string; details?: unknown }[] | null;
@@ -45,6 +45,16 @@ export class ApiRequestError extends Error {
     this.name = "ApiRequestError";
     this.status = status;
     this.code = code;
+  }
+}
+
+export class ApiShapeError extends Error {
+  readonly endpoint: string;
+
+  constructor(endpoint: string, message: string) {
+    super(`${endpoint}: ${message}`);
+    this.name = "ApiShapeError";
+    this.endpoint = endpoint;
   }
 }
 
@@ -84,6 +94,57 @@ function unwrapEnvelope<T>(body: unknown): T {
   }
   return body as T;
 }
+
+export type ApiShapeValidator<T> = (value: unknown) => value is T;
+
+/**
+ * Validate the payload returned by an API request before it reaches a
+ * component. `apiRequest` unwraps canonical envelopes for callers, while this
+ * function also accepts a raw envelope so it can be tested independently.
+ */
+export function parseApiData<T>(body: unknown, validate: ApiShapeValidator<T>, endpoint: string): T {
+  const payload = isEnvelope(body) ? body.data : body;
+  if (!validate(payload)) {
+    throw new ApiShapeError(endpoint, "returned an unexpected response shape");
+  }
+  return payload;
+}
+
+export async function apiQuery<T>(
+  endpoint: string,
+  validate: ApiShapeValidator<T>,
+  options?: { method?: string; data?: unknown },
+): Promise<T> {
+  const response = await apiRequest(options?.method ?? "GET", endpoint, options?.data);
+  const body = await response.json();
+  return parseApiData(body, validate, endpoint);
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function isArrayOf<T>(
+  value: unknown,
+  itemValidator: ApiShapeValidator<T> = (_value): _value is T => true,
+): value is T[] {
+  return Array.isArray(value) && value.every(itemValidator);
+}
+
+export function isObjectWith<T extends Record<string, unknown>>(
+  value: unknown,
+  fields: { [K in keyof T]: ApiShapeValidator<T[K]> },
+): value is T {
+  if (!isRecord(value)) return false;
+  return Object.entries(fields).every(([key, validator]) => validator(value[key]));
+}
+
+export function hasObjectKeys(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
+  return isRecord(value) && keys.every((key) => key in value);
+}
+
+export const isNumber: ApiShapeValidator<number> = (value): value is number => typeof value === "number";
+export const isString: ApiShapeValidator<string> = (value): value is string => typeof value === "string";
 
 /**
  * Safely extract an array from a value that may be a raw array, an envelope

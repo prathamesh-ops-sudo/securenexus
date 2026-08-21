@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiQuery, apiRequest, isArrayOf, isRecord } from "@/lib/queryClient";
+import { ApiQueryError } from "@/components/api-query-state";
 import {
   Shield,
   TrendingDown,
@@ -27,13 +28,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-
-function unwrap(data: unknown): unknown {
-  if (data && typeof data === "object" && "data" in data) {
-    return (data as Record<string, unknown>).data;
-  }
-  return data;
-}
 
 type TrendDirection = "improving" | "stable" | "degrading";
 type RiskSeverity = "critical" | "high" | "medium" | "low" | "info";
@@ -173,6 +167,185 @@ interface ExecutiveDashboard {
   automationSavings: AutomationSavings;
   actionMetrics: ActionMetric[];
   riskPosture: RiskPostureSnapshot;
+}
+
+const isNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+const isString = (value: unknown): value is string => typeof value === "string";
+const isTrend = (value: unknown): value is TrendDirection =>
+  value === "improving" || value === "stable" || value === "degrading";
+const hasFields = (value: unknown, fields: readonly string[]): value is Record<string, unknown> =>
+  isRecord(value) && fields.every((field) => field in value);
+const hasNumberFields = (value: unknown, fields: readonly string[]): boolean =>
+  hasFields(value, fields) && fields.every((field) => isNumber(value[field]));
+
+function isMttrMetric(value: unknown): value is MttrMetric {
+  return (
+    hasNumberFields(value, ["overall", "previousPeriod", "changePercent"]) &&
+    hasFields(value, ["unit", "trend", "bySeverity"]) &&
+    isString((value as Record<string, unknown>).unit) &&
+    isTrend((value as Record<string, unknown>).trend) &&
+    isRecord((value as Record<string, unknown>).bySeverity) &&
+    ["critical", "high", "medium", "low", "info"].every((severity) =>
+      isNumber(((value as Record<string, unknown>).bySeverity as Record<string, unknown>)[severity]),
+    )
+  );
+}
+
+function isRiskBurndownEntry(value: unknown): value is RiskBurndownEntry {
+  return (
+    hasNumberFields(value, ["critical", "high", "medium", "low", "total"]) &&
+    hasFields(value, ["date"]) &&
+    isString((value as Record<string, unknown>).date)
+  );
+}
+
+function isExploitabilityExposure(value: unknown): value is ExploitabilityExposure {
+  return (
+    hasNumberFields(value, [
+      "totalFindings",
+      "exploitable",
+      "exploitablePercent",
+      "weaponized",
+      "weaponizedPercent",
+      "epssAboveThreshold",
+      "epssThreshold",
+      "exposureScore",
+      "previousScore",
+      "changePercent",
+    ]) && isTrend((value as Record<string, unknown>).trend)
+  );
+}
+
+function isRemediationThroughput(value: unknown): value is RemediationThroughput {
+  return (
+    hasNumberFields(value, [
+      "resolvedThisPeriod",
+      "openedThisPeriod",
+      "netChange",
+      "resolvedPerDay",
+      "averageResolutionDays",
+      "backlogSize",
+      "previousThroughput",
+      "changePercent",
+    ]) &&
+    isTrend((value as Record<string, unknown>).trend) &&
+    isRecord((value as Record<string, unknown>).backlogBySeverity)
+  );
+}
+
+function isAutomationSavings(value: unknown): value is AutomationSavings {
+  return (
+    hasNumberFields(value, [
+      "totalHoursSaved",
+      "incidentsAutoTriaged",
+      "alertsAutoCorrelated",
+      "playbooksAutoExecuted",
+      "falsePositivesSuppressed",
+      "estimatedCostSavings",
+      "costPerAnalystHour",
+      "automationCoveragePercent",
+      "previousHoursSaved",
+      "changePercent",
+    ]) && isTrend((value as Record<string, unknown>).trend)
+  );
+}
+
+function isActionMetric(value: unknown): value is ActionMetric {
+  return (
+    hasFields(value, [
+      "id",
+      "name",
+      "description",
+      "category",
+      "value",
+      "unit",
+      "trend",
+      "changePercent",
+      "target",
+      "targetMet",
+      "sparkline",
+    ]) &&
+    isString((value as Record<string, unknown>).id) &&
+    isString((value as Record<string, unknown>).name) &&
+    isString((value as Record<string, unknown>).description) &&
+    ((value as Record<string, unknown>).category === "action" ||
+      (value as Record<string, unknown>).category === "vanity") &&
+    isNumber((value as Record<string, unknown>).value) &&
+    isString((value as Record<string, unknown>).unit) &&
+    isTrend((value as Record<string, unknown>).trend) &&
+    isNumber((value as Record<string, unknown>).changePercent) &&
+    ((value as Record<string, unknown>).target === null || isNumber((value as Record<string, unknown>).target)) &&
+    typeof (value as Record<string, unknown>).targetMet === "boolean" &&
+    isArrayOf((value as Record<string, unknown>).sparkline, isNumber)
+  );
+}
+
+function isRiskPostureSnapshot(value: unknown): value is RiskPostureSnapshot {
+  return (
+    hasNumberFields(value, ["overallScore", "previousScore", "maxScore"]) &&
+    hasFields(value, ["grade", "previousGrade", "dimensions"]) &&
+    isString((value as Record<string, unknown>).grade) &&
+    isString((value as Record<string, unknown>).previousGrade) &&
+    isArrayOf(
+      (value as Record<string, unknown>).dimensions,
+      (dimension): dimension is PostureDimension =>
+        hasNumberFields(dimension, ["score", "maxScore", "weight"]) &&
+        hasFields(dimension, ["name"]) &&
+        isString((dimension as Record<string, unknown>).name),
+    )
+  );
+}
+
+function isExecutiveDashboard(value: unknown): value is ExecutiveDashboard {
+  return (
+    hasFields(value, [
+      "mttr",
+      "riskBurndown",
+      "exploitability",
+      "remediationThroughput",
+      "automationSavings",
+      "actionMetrics",
+      "riskPosture",
+    ]) &&
+    isMttrMetric(value.mttr) &&
+    isArrayOf(value.riskBurndown, isRiskBurndownEntry) &&
+    isExploitabilityExposure(value.exploitability) &&
+    isRemediationThroughput(value.remediationThroughput) &&
+    isAutomationSavings(value.automationSavings) &&
+    isArrayOf(value.actionMetrics, isActionMetric) &&
+    isRiskPostureSnapshot(value.riskPosture)
+  );
+}
+
+function isBoardSummary(value: unknown): value is BoardSummary {
+  return (
+    hasFields(value, [
+      "id",
+      "title",
+      "generatedAt",
+      "executiveSynopsis",
+      "keyFindings",
+      "recommendations",
+      "mttr",
+      "exploitability",
+      "remediationThroughput",
+      "automationSavings",
+      "riskPosture",
+    ]) &&
+    isString(value.id) &&
+    isString(value.title) &&
+    isString(value.generatedAt) &&
+    isString(value.executiveSynopsis) &&
+    isArrayOf(value.keyFindings, (finding) => hasFields(finding, ["id", "title", "severity", "description"])) &&
+    isArrayOf(value.recommendations, (recommendation) =>
+      hasFields(recommendation, ["id", "priority", "title", "description"]),
+    ) &&
+    isMttrMetric(value.mttr) &&
+    isExploitabilityExposure(value.exploitability) &&
+    isRemediationThroughput(value.remediationThroughput) &&
+    isAutomationSavings(value.automationSavings) &&
+    isRiskPostureSnapshot(value.riskPosture)
+  );
 }
 
 const TABS = [
@@ -982,14 +1155,23 @@ export default function ExecutiveRiskPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: dashboardRaw, isLoading: dashLoading } = useQuery({
+  const {
+    data: dashboardRaw,
+    isLoading: dashLoading,
+    error: dashError,
+  } = useQuery({
     queryKey: ["/api/executive-risk/dashboard"],
-    queryFn: () => apiRequest("GET", "/api/executive-risk/dashboard").then((r) => r.json()),
+    queryFn: () => apiQuery("/api/executive-risk/dashboard", isExecutiveDashboard),
   });
 
-  const { data: summariesRaw, isLoading: summLoading } = useQuery({
+  const {
+    data: summariesRaw,
+    isLoading: summLoading,
+    error: summariesError,
+  } = useQuery({
     queryKey: ["/api/executive-risk/summaries"],
-    queryFn: () => apiRequest("GET", "/api/executive-risk/summaries").then((r) => r.json()),
+    queryFn: () =>
+      apiQuery("/api/executive-risk/summaries", (value): value is BoardSummary[] => isArrayOf(value, isBoardSummary)),
   });
 
   const generateMutation = useMutation({
@@ -1002,9 +1184,6 @@ export default function ExecutiveRiskPage() {
       toast({ title: "Generation failed", description: "Could not generate board summary", variant: "destructive" });
     },
   });
-
-  const dashboard = unwrap(dashboardRaw) as ExecutiveDashboard | undefined;
-  const summaries = (unwrap(summariesRaw) as BoardSummary[] | undefined) || [];
 
   if (dashLoading) {
     return (
@@ -1021,6 +1200,17 @@ export default function ExecutiveRiskPage() {
       </div>
     );
   }
+
+  if (dashError) return <ApiQueryError error={dashError} label="executive risk dashboard" />;
+  if (summariesError) return <ApiQueryError error={summariesError} label="executive risk summaries" />;
+  if (!dashboardRaw || !summariesRaw) {
+    return (
+      <ApiQueryError error={new Error("Required executive risk data is unavailable")} label="executive risk data" />
+    );
+  }
+  const dashboard = dashboardRaw;
+  const actionMetrics = dashboard.actionMetrics;
+  const summaries = summariesRaw;
 
   return (
     <div className="p-6 space-y-6">
@@ -1056,7 +1246,7 @@ export default function ExecutiveRiskPage() {
       </div>
 
       {activeTab === "overview" && dashboard && <OverviewTab dashboard={dashboard} />}
-      {activeTab === "metrics" && dashboard && <MetricsTab metrics={dashboard.actionMetrics} />}
+      {activeTab === "metrics" && <MetricsTab metrics={actionMetrics} />}
       {activeTab === "burndown" && dashboard && <BurndownTab burndown={dashboard.riskBurndown} />}
       {activeTab === "summaries" && (
         <SummariesTab

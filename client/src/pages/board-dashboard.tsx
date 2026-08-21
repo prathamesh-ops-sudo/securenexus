@@ -30,20 +30,12 @@ import {
 } from "lucide-react";
 import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { DashboardSkeleton } from "@/components/page-skeleton";
+import { apiQuery } from "@/lib/queryClient";
 
-function apiFetch(url: string, options?: RequestInit) {
-  return fetch(url, {
-    ...options,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
-  }).then(async (r) => {
-    const data = await r.json();
-    if (!r.ok) throw new Error(data?.error || r.statusText);
-    return data;
-  });
+function apiFetch<T = any>(url: string, options?: RequestInit): Promise<T> {
+  let data: unknown;
+  if (options?.body) data = typeof options.body === "string" ? JSON.parse(options.body) : options.body;
+  return apiQuery(url, (_value): _value is T => true, { method: options?.method ?? "GET", data });
 }
 
 function formatMinutes(minutes: number): string {

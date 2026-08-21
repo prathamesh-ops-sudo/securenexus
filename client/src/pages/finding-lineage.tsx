@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ApiQueryError } from "@/components/api-query-state";
+import { apiQuery, hasObjectKeys, isArrayOf } from "@/lib/queryClient";
 import {
   Shield,
   AlertTriangle,
@@ -148,18 +150,11 @@ interface FindingLineage {
 }
 
 interface LineageStats {
-  totalFindings: number;
-  openFindings: number;
-  remediatedFindings: number;
-  suppressedFindings: number;
+  total: number;
   bySeverity: Record<FindingSeverity, number>;
   bySource: Record<string, number>;
-  byEnvironment: Record<string, number>;
-  meanTimeToRemediate: string;
-  slaBreaches: number;
-  patchReadySuggestions: number;
-  avgConfidenceScore: number;
-  topOwners: { owner: OwnerInfo; findingCount: number }[];
+  byStatus: Record<string, number>;
+  avgRiskScore: number;
 }
 
 const SEVERITY_COLORS: Record<FindingSeverity, string> = {
@@ -789,15 +784,36 @@ export default function FindingLineagePage() {
   const [filterEnv, setFilterEnv] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
 
-  const { data: findings, isLoading: findingsLoading } = useQuery<FindingLineage[]>({
+  const {
+    data: findings,
+    isLoading: findingsLoading,
+    error: findingsError,
+  } = useQuery<FindingLineage[]>({
     queryKey: ["/api/finding-lineage"],
+    queryFn: () =>
+      apiQuery("/api/finding-lineage", (value): value is FindingLineage[] =>
+        isArrayOf(value, (finding) =>
+          hasObjectKeys(finding, ["id", "title", "description", "severity", "source", "status", "deployedAsset"]),
+        ),
+      ),
   });
 
-  const { data: stats, isLoading: statsLoading } = useQuery<LineageStats>({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    error: statsError,
+  } = useQuery<LineageStats>({
     queryKey: ["/api/finding-lineage/stats"],
+    queryFn: () =>
+      apiQuery("/api/finding-lineage/stats", (value): value is LineageStats =>
+        hasObjectKeys(value, ["total", "bySeverity", "byStatus", "bySource", "avgRiskScore"]),
+      ),
   });
 
-  const filteredFindings = (findings ?? []).filter((f) => {
+  if (findingsError) return <ApiQueryError error={findingsError} label="finding lineage" />;
+  if (statsError) return <ApiQueryError error={statsError} label="finding lineage statistics" />;
+
+  const filteredFindings = (findings || []).filter((f) => {
     if (filterSeverity !== "all" && f.severity !== filterSeverity) return false;
     if (filterSource !== "all" && f.source !== filterSource) return false;
     if (filterStatus !== "all" && f.status !== filterStatus) return false;
@@ -835,34 +851,34 @@ export default function FindingLineagePage() {
         </div>
       ) : stats ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <StatCard label="Total Findings" value={stats.total} icon={Shield} color="bg-cyan-500/20 text-cyan-400" />
           <StatCard
-            label="Total Findings"
-            value={stats.totalFindings}
-            icon={Shield}
-            color="bg-cyan-500/20 text-cyan-400"
+            label="Open"
+            value={stats.byStatus.open ?? 0}
+            icon={AlertTriangle}
+            color="bg-red-500/20 text-red-400"
           />
-          <StatCard label="Open" value={stats.openFindings} icon={AlertTriangle} color="bg-red-500/20 text-red-400" />
           <StatCard
             label="Remediated"
-            value={stats.remediatedFindings}
+            value={stats.byStatus.remediated ?? 0}
             icon={CheckCircle2}
             color="bg-green-500/20 text-green-400"
           />
           <StatCard
-            label="SLA Breaches"
-            value={stats.slaBreaches}
+            label="Sources"
+            value={Object.keys(stats.bySource).length}
             icon={Clock}
             color="bg-orange-500/20 text-orange-400"
           />
           <StatCard
-            label="PR-Ready Patches"
-            value={stats.patchReadySuggestions}
+            label="Risk Score"
+            value={stats.avgRiskScore}
             icon={GitPullRequest}
             color="bg-blue-500/20 text-blue-400"
           />
           <StatCard
-            label="Mean Remediation"
-            value={stats.meanTimeToRemediate}
+            label="Status Groups"
+            value={Object.keys(stats.byStatus).length}
             icon={BarChart3}
             color="bg-purple-500/20 text-purple-400"
           />
@@ -968,7 +984,12 @@ export default function FindingLineagePage() {
         </div>
 
         <div className="space-y-4">
-          {stats && stats.topOwners.length > 0 && <TopOwnersPanel topOwners={stats.topOwners} />}
+          <Card className="glass-card border-border/30">
+            <CardContent className="p-4 text-xs text-muted-foreground">
+              Owner, SLA, and remediation-suggestion metrics are unavailable because the lineage statistics endpoint
+              currently provides severity, status, source, and aggregate risk data only.
+            </CardContent>
+          </Card>
 
           {stats && (
             <Card className="glass-card border-border/30">
@@ -981,7 +1002,7 @@ export default function FindingLineagePage() {
               <CardContent className="space-y-2">
                 {(["critical", "high", "medium", "low", "info"] as const).map((sev) => {
                   const count = stats.bySeverity[sev] || 0;
-                  const total = stats.totalFindings || 1;
+                  const total = stats.total || 1;
                   return (
                     <div key={sev} className="space-y-1">
                       <div className="flex items-center justify-between">
@@ -1023,14 +1044,12 @@ export default function FindingLineagePage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-3">
-                  <div className="text-3xl font-bold">{Math.round(stats.avgConfidenceScore * 100)}%</div>
+                  <div className="text-3xl font-bold">{stats.avgRiskScore}</div>
                   <div className="flex-1">
-                    <RiskScoreBar score={stats.avgConfidenceScore} />
+                    <RiskScoreBar score={stats.avgRiskScore} />
                   </div>
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-2">
-                  Average confidence score across all remediation suggestions
-                </p>
+                <p className="text-[10px] text-muted-foreground mt-2">Average risk score across all findings</p>
               </CardContent>
             </Card>
           )}

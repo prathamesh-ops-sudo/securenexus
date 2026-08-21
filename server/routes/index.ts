@@ -114,7 +114,6 @@ export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
 
   registerHealthRoutes(app);
-  registerDashboardRoutes(app);
   registerAlertsRoutes(app);
   registerOnboardingRoutes(app);
   registerIncidentsRoutes(app);
@@ -176,6 +175,7 @@ export function registerAllDomainRoutes(app: Express): void {
   registerStunningDashboardRoutes(app);
   registerPhase2FeatureRoutes(app);
   registerPhase2Routes(app);
+  registerDashboardRoutes(app);
   registerMfaRoutes(app);
   registerTenantDataRoutes(app);
   registerWarRoomRoutes(app);

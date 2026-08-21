@@ -54,6 +54,7 @@ import {
 } from "lucide-react";
 import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { DashboardSkeleton } from "@/components/page-skeleton";
+import { apiQuery } from "@/lib/queryClient";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -187,17 +188,10 @@ interface PostureSummary {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-async function apiFetch(url: string, options?: RequestInit) {
-  const res = await fetch(url, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    credentials: "include",
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ message: `API error: ${res.status}` }));
-    throw new Error(body.message || `API error: ${res.status}`);
-  }
-  return res.json();
+async function apiFetch<T = any>(url: string, options?: RequestInit): Promise<T> {
+  let data: unknown;
+  if (options?.body) data = typeof options.body === "string" ? JSON.parse(options.body) : options.body;
+  return apiQuery(url, (_value): _value is T => true, { method: options?.method ?? "GET", data });
 }
 
 function formatDate(d: string | null | undefined): string {
@@ -946,12 +940,14 @@ export default function PostureTrustCenterPage() {
                   </p>
                 </CardHeader>
                 <CardContent>
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    Domain-level peer scores are unavailable because the benchmark endpoint only persists the overall
+                    peer aggregate.
+                  </p>
                   <div className="space-y-3">
                     {["identity", "endpoint", "cloud", "network", "application", "data"].map((domain) => {
                       const latestObj: Record<string, unknown> = { ...benchmarkData.latest };
                       const yourScore = (latestObj[`${domain}Score`] as number) || 0;
-                      const peerAvg = Math.round(benchmarkData.latest.overallScore * 0.85 + Math.random() * 15);
-                      const diff = yourScore - peerAvg;
                       return (
                         <div key={domain} className="flex items-center gap-4">
                           <div className="w-28 flex items-center gap-2">
@@ -969,13 +965,7 @@ export default function PostureTrustCenterPage() {
                           <span className={`text-sm font-mono w-8 text-right ${scoreColor(yourScore)}`}>
                             {yourScore}
                           </span>
-                          <span
-                            className={`text-[10px] font-mono w-12 text-right ${
-                              diff > 0 ? "text-green-400" : diff < 0 ? "text-red-400" : "text-muted-foreground"
-                            }`}
-                          >
-                            {diff > 0 ? `+${diff}` : diff === 0 ? "=" : String(diff)}
-                          </span>
+                          <span className="text-[10px] font-mono w-12 text-right text-muted-foreground">—</span>
                         </div>
                       );
                     })}

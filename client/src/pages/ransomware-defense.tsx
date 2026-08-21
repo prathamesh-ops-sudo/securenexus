@@ -57,6 +57,8 @@ import {
 import { DownloadDoneIcon } from "@/components/ui/animated-state-icons";
 import { EmptyState } from "@/components/empty-state";
 import { TablePageSkeleton } from "@/components/page-skeleton";
+import { ApiQueryError } from "@/components/api-query-state";
+import { apiQuery, hasObjectKeys, isArrayOf, isRecord } from "@/lib/queryClient";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -212,19 +214,168 @@ interface DefenseSummary {
   readiness: { score: number; grade: string; recommendations: string[] };
 }
 
+const isRequiredRecord = (value: unknown, fields: readonly string[]): boolean => hasObjectKeys(value, fields);
+
+const isKillSwitchEvent = (value: unknown): value is KillSwitchEvent =>
+  isRequiredRecord(value, [
+    "id",
+    "status",
+    "triggeredBy",
+    "triggeredByName",
+    "reason",
+    "totalSensors",
+    "isolatedCount",
+    "failedCount",
+    "skippedCount",
+    "rollbackAt",
+    "rollbackBy",
+    "completedAt",
+    "incidentId",
+    "createdAt",
+  ]);
+const isCanaryFile = (value: unknown): value is CanaryFile =>
+  isRequiredRecord(value, [
+    "id",
+    "fileName",
+    "filePath",
+    "fileType",
+    "fileHash",
+    "deployedToHost",
+    "status",
+    "triggeredAt",
+    "triggerType",
+    "alertSent",
+    "createdAt",
+  ]);
+const isCanaryTemplate = (value: unknown): value is CanaryTemplate =>
+  isRequiredRecord(value, ["fileName", "fileType", "description", "contentHint"]);
+const isRansomwareGroup = (value: unknown): value is RansomwareGroup =>
+  isRequiredRecord(value, [
+    "id",
+    "name",
+    "aliases",
+    "threatLevel",
+    "isActive",
+    "firstSeen",
+    "lastActive",
+    "description",
+    "ttps",
+    "targetIndustries",
+    "targetRegions",
+    "ransomwareVariants",
+    "knownPaymentAddresses",
+    "avgRansomDemandUsd",
+    "decryptorAvailable",
+    "decryptorSource",
+    "iocIndicators",
+    "referenceUrls",
+    "createdAt",
+  ]);
+const isRecoveryRunbook = (value: unknown): value is RecoveryRunbook =>
+  isRequiredRecord(value, [
+    "id",
+    "title",
+    "incidentId",
+    "status",
+    "scenario",
+    "affectedSystems",
+    "affectedDataTypes",
+    "ransomwareVariant",
+    "estimatedDowntimeHours",
+    "estimatedRecoveryCostUsd",
+    "steps",
+    "priorityActions",
+    "communicationPlan",
+    "legalRequirements",
+    "generatedBy",
+    "createdAt",
+  ]);
+const isTabletopExercise = (value: unknown): value is TabletopExercise =>
+  isRequiredRecord(value, [
+    "id",
+    "title",
+    "description",
+    "status",
+    "scenarioType",
+    "difficulty",
+    "ransomwareGroup",
+    "scenario",
+    "injects",
+    "participants",
+    "findings",
+    "score",
+    "scheduledAt",
+    "startedAt",
+    "completedAt",
+    "durationMinutes",
+    "createdAt",
+  ]);
+const isTabletopTemplate = (value: unknown): value is TabletopTemplate =>
+  isRequiredRecord(value, ["title", "scenarioType", "difficulty", "description", "durationMinutes"]);
+const isBackupVerification = (value: unknown): value is BackupVerification =>
+  isRequiredRecord(value, [
+    "id",
+    "backupName",
+    "backupType",
+    "backupLocation",
+    "status",
+    "integrityCheckResult",
+    "restoreTestResult",
+    "backupSizeBytes",
+    "encryptionStatus",
+    "lastVerifiedAt",
+    "nextScheduledVerification",
+    "verificationDurationSeconds",
+    "issues",
+    "coveredSystems",
+    "rpoHours",
+    "rtoHours",
+    "createdAt",
+  ]);
+
+function isDefenseSummary(value: unknown): value is DefenseSummary {
+  if (!isRecord(value)) return false;
+  return (
+    isRecord(value.killSwitch) &&
+    isRequiredRecord(value.killSwitch, ["totalEvents", "lastEvent"]) &&
+    typeof value.killSwitch.totalEvents === "number" &&
+    (value.killSwitch.lastEvent === null || isKillSwitchEvent(value.killSwitch.lastEvent)) &&
+    isRecord(value.canaryFiles) &&
+    isRequiredRecord(value.canaryFiles, ["total", "active", "triggered"]) &&
+    ["total", "active", "triggered"].every(
+      (field) => typeof (value.canaryFiles as Record<string, unknown>)[field] === "number",
+    ) &&
+    isRecord(value.ransomwareGroups) &&
+    typeof value.ransomwareGroups.tracked === "number" &&
+    isRecord(value.recoveryRunbooks) &&
+    typeof value.recoveryRunbooks.total === "number" &&
+    isRecord(value.tabletopExercises) &&
+    ["total", "completed"].every(
+      (field) => typeof (value.tabletopExercises as Record<string, unknown>)[field] === "number",
+    ) &&
+    (value.tabletopExercises.lastCompleted === null || isTabletopExercise(value.tabletopExercises.lastCompleted)) &&
+    isRecord(value.backupVerifications) &&
+    ["total", "passed", "failed"].every(
+      (field) => typeof (value.backupVerifications as Record<string, unknown>)[field] === "number",
+    ) &&
+    isRecord(value.readiness) &&
+    typeof value.readiness.score === "number" &&
+    typeof value.readiness.grade === "string" &&
+    isArrayOf(value.readiness.recommendations, (recommendation) => typeof recommendation === "string")
+  );
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-async function apiFetch(url: string, options?: RequestInit) {
-  const res = await fetch(url, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    credentials: "include",
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ message: `API error: ${res.status}` }));
-    throw new Error(body.message || `API error: ${res.status}`);
+async function apiFetch<T = any>(url: string, options?: RequestInit): Promise<T> {
+  let data: unknown;
+  if (options?.body) {
+    data = typeof options.body === "string" ? JSON.parse(options.body) : options.body;
   }
-  return res.json();
+  return apiQuery(url, (_value): _value is T => true, {
+    method: options?.method ?? "GET",
+    data,
+  });
 }
 
 function formatDate(d: string | null | undefined): string {
@@ -283,6 +434,7 @@ function gradeColor(grade: string): string {
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function RansomwareDefensePage() {
+  const [currentTime] = useState(() => Date.now());
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState("dashboard");
@@ -329,49 +481,95 @@ export default function RansomwareDefensePage() {
 
   // ── Queries ─────────────────────────────────────────────────────────────
 
-  const { data: summary, isLoading } = useQuery<DefenseSummary>({
+  const {
+    data: summary,
+    isLoading,
+    error: summaryError,
+  } = useQuery<DefenseSummary>({
     queryKey: ["/api/ransomware-defense/summary"],
-    queryFn: () => apiFetch("/api/ransomware-defense/summary"),
+    queryFn: () => apiQuery("/api/ransomware-defense/summary", isDefenseSummary),
   });
 
-  const { data: killSwitchEvents } = useQuery<KillSwitchEvent[]>({
+  const {
+    data: killSwitchEvents,
+    isLoading: killSwitchLoading,
+    error: killSwitchError,
+  } = useQuery<KillSwitchEvent[]>({
     queryKey: ["/api/ransomware-defense/kill-switch"],
-    queryFn: () => apiFetch("/api/ransomware-defense/kill-switch"),
+    queryFn: () => apiQuery("/api/ransomware-defense/kill-switch", (value) => isArrayOf(value, isKillSwitchEvent)),
   });
 
-  const { data: canaryFiles } = useQuery<CanaryFile[]>({
+  const {
+    data: canaryFiles,
+    isLoading: canaryFilesLoading,
+    error: canaryFilesError,
+  } = useQuery<CanaryFile[]>({
     queryKey: ["/api/ransomware-defense/canary-files"],
-    queryFn: () => apiFetch("/api/ransomware-defense/canary-files"),
+    queryFn: () => apiQuery("/api/ransomware-defense/canary-files", (value) => isArrayOf(value, isCanaryFile)),
   });
 
-  const { data: canaryTemplates } = useQuery<CanaryTemplate[]>({
+  const {
+    data: canaryTemplates,
+    isLoading: canaryTemplatesLoading,
+    error: canaryTemplatesError,
+  } = useQuery<CanaryTemplate[]>({
     queryKey: ["/api/ransomware-defense/canary-files/templates"],
-    queryFn: () => apiFetch("/api/ransomware-defense/canary-files/templates"),
+    queryFn: () =>
+      apiQuery("/api/ransomware-defense/canary-files/templates", (value) => isArrayOf(value, isCanaryTemplate)),
   });
 
-  const { data: groupsData } = useQuery<{ groups: RansomwareGroup[]; seedGroups: unknown[] }>({
+  const {
+    data: groupsData,
+    isLoading: groupsLoading,
+    error: groupsError,
+  } = useQuery<{
+    groups: RansomwareGroup[];
+    seedGroups: unknown[];
+  }>({
     queryKey: ["/api/ransomware-defense/groups"],
-    queryFn: () => apiFetch("/api/ransomware-defense/groups"),
+    queryFn: () =>
+      apiQuery(
+        "/api/ransomware-defense/groups",
+        (value): value is { groups: RansomwareGroup[]; seedGroups: unknown[] } =>
+          isRecord(value) && isArrayOf(value.groups, isRansomwareGroup) && isArrayOf(value.seedGroups),
+      ),
   });
 
-  const { data: runbooks } = useQuery<RecoveryRunbook[]>({
+  const {
+    data: runbooks,
+    isLoading: runbooksLoading,
+    error: runbooksError,
+  } = useQuery<RecoveryRunbook[]>({
     queryKey: ["/api/ransomware-defense/runbooks"],
-    queryFn: () => apiFetch("/api/ransomware-defense/runbooks"),
+    queryFn: () => apiQuery("/api/ransomware-defense/runbooks", (value) => isArrayOf(value, isRecoveryRunbook)),
   });
 
-  const { data: exercises } = useQuery<TabletopExercise[]>({
+  const {
+    data: exercises,
+    isLoading: exercisesLoading,
+    error: exercisesError,
+  } = useQuery<TabletopExercise[]>({
     queryKey: ["/api/ransomware-defense/exercises"],
-    queryFn: () => apiFetch("/api/ransomware-defense/exercises"),
+    queryFn: () => apiQuery("/api/ransomware-defense/exercises", (value) => isArrayOf(value, isTabletopExercise)),
   });
 
-  const { data: exerciseTemplates } = useQuery<TabletopTemplate[]>({
+  const {
+    data: exerciseTemplates,
+    isLoading: exerciseTemplatesLoading,
+    error: exerciseTemplatesError,
+  } = useQuery<TabletopTemplate[]>({
     queryKey: ["/api/ransomware-defense/exercises/templates"],
-    queryFn: () => apiFetch("/api/ransomware-defense/exercises/templates"),
+    queryFn: () =>
+      apiQuery("/api/ransomware-defense/exercises/templates", (value) => isArrayOf(value, isTabletopTemplate)),
   });
 
-  const { data: backups } = useQuery<BackupVerification[]>({
+  const {
+    data: backups,
+    isLoading: backupsLoading,
+    error: backupsError,
+  } = useQuery<BackupVerification[]>({
     queryKey: ["/api/ransomware-defense/backups"],
-    queryFn: () => apiFetch("/api/ransomware-defense/backups"),
+    queryFn: () => apiQuery("/api/ransomware-defense/backups", (value) => isArrayOf(value, isBackupVerification)),
   });
 
   // ── Mutations ───────────────────────────────────────────────────────────
@@ -549,9 +747,40 @@ export default function RansomwareDefensePage() {
   // ── Render ──────────────────────────────────────────────────────────────
 
   const readiness = summary?.readiness;
-  const groups = groupsData?.groups || [];
+  const groups = groupsData?.groups;
 
-  if (isLoading) return <TablePageSkeleton />;
+  if (
+    isLoading ||
+    killSwitchLoading ||
+    canaryFilesLoading ||
+    canaryTemplatesLoading ||
+    groupsLoading ||
+    runbooksLoading ||
+    exercisesLoading ||
+    exerciseTemplatesLoading ||
+    backupsLoading
+  ) {
+    return <TablePageSkeleton />;
+  }
+  const queryError =
+    summaryError ||
+    killSwitchError ||
+    canaryFilesError ||
+    canaryTemplatesError ||
+    groupsError ||
+    runbooksError ||
+    exercisesError ||
+    exerciseTemplatesError ||
+    backupsError;
+  if (queryError) return <ApiQueryError error={queryError} label="ransomware defense data" />;
+  if (!summary || !groups) {
+    return (
+      <ApiQueryError
+        error={new Error("Required ransomware defense data is unavailable")}
+        label="ransomware defense data"
+      />
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -739,7 +968,7 @@ export default function RansomwareDefensePage() {
                       {backups
                         ? backups.filter((b) => {
                             if (!b.lastVerifiedAt) return false;
-                            const d = Date.now() - new Date(b.lastVerifiedAt).getTime();
+                            const d = currentTime - new Date(b.lastVerifiedAt).getTime();
                             return d < 7 * 24 * 60 * 60 * 1000;
                           }).length
                         : 0}
@@ -1297,7 +1526,7 @@ export default function RansomwareDefensePage() {
             (() => {
               const completed = exercises.filter((e) => e.status === "completed");
               const scheduled = exercises.filter((e) => e.scheduledAt && e.status !== "completed");
-              const now = Date.now();
+              const now = currentTime;
               const last90d = completed.filter(
                 (e) => e.completedAt && now - new Date(e.completedAt).getTime() < 90 * 24 * 60 * 60 * 1000,
               ).length;

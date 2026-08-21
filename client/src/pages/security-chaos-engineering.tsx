@@ -46,30 +46,14 @@ import {
 } from "lucide-react";
 import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { DashboardSkeleton } from "@/components/page-skeleton";
+import { apiQuery } from "@/lib/queryClient";
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 
-async function apiFetch(url: string, options?: RequestInit) {
-  const csrfToken = document.cookie
-    .split("; ")
-    .find((c) => c.startsWith("XSRF-TOKEN="))
-    ?.split("=")[1];
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(csrfToken ? { "x-csrf-token": decodeURIComponent(csrfToken) } : {}),
-  };
-
-  const res = await fetch(url, {
-    ...options,
-    headers: { ...((options?.headers as Record<string, string>) || {}), ...headers },
-    credentials: "include",
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(body.message || res.statusText);
-  }
-  return res.json();
+async function apiFetch<T = any>(url: string, options?: RequestInit): Promise<T> {
+  let data: unknown;
+  if (options?.body) data = typeof options.body === "string" ? JSON.parse(options.body) : options.body;
+  return apiQuery(url, (_value): _value is T => true, { method: options?.method ?? "GET", data });
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────

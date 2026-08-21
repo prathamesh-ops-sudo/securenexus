@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { apiQuery } from "@/lib/queryClient";
 import {
   Package,
   Shield,
@@ -176,17 +177,10 @@ const findingTypeIcons: Record<string, typeof Bug> = {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-async function apiFetch(url: string, options?: RequestInit) {
-  const res = await fetch(url, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    credentials: "include",
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ message: `API error: ${res.status}` }));
-    throw new Error(body.message || `API error: ${res.status}`);
-  }
-  return res.json();
+async function apiFetch<T = any>(url: string, options?: RequestInit): Promise<T> {
+  let data: unknown;
+  if (options?.body) data = typeof options.body === "string" ? JSON.parse(options.body) : options.body;
+  return apiQuery(url, (_value): _value is T => true, { method: options?.method ?? "GET", data });
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -194,6 +188,7 @@ async function apiFetch(url: string, options?: RequestInit) {
 export default function SupplyChainPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [currentTime] = useState(() => Date.now());
   const [tab, setTab] = useState("overview");
   const [findingTypeFilter, setFindingTypeFilter] = useState("all");
   const [severityFilter, setSeverityFilter] = useState("all");
@@ -1255,7 +1250,7 @@ export default function SupplyChainPage() {
                   {(sbomDashboardData?.sboms ?? sbomsData?.sboms ?? []).map(
                     (s: SbomArtifact & { freshnessDays?: number; vulnExposure?: number }) => {
                       const freshness =
-                        s.freshnessDays ?? Math.floor((Date.now() - new Date(s.createdAt).getTime()) / 86400000);
+                        s.freshnessDays ?? Math.floor((currentTime - new Date(s.createdAt).getTime()) / 86400000);
                       const vulnExposure =
                         s.vulnExposure ??
                         (s.componentCount > 0 ? Math.round((s.vulnerabilityCount / s.componentCount) * 100) : 0);

@@ -4,9 +4,28 @@ import { getOrgId, logger } from "./shared";
 import { isAuthenticated } from "../auth";
 import { deleteFile, getSignedUrl, listFiles, uploadFile } from "../s3";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
+import { config } from "../config";
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_SIZE_BYTES } });
+
+const STORAGE_UNAVAILABLE_CODES = new Set([
+  "CredentialsProviderError",
+  "CredentialProviderError",
+  "InvalidAccessKeyId",
+  "MissingCredentials",
+  "NoSuchBucket",
+  "NoSuchBucketException",
+]);
+
+function isStorageUnavailableError(error: unknown): boolean {
+  if (!config.aws.s3BucketName) return true;
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { name?: unknown; Code?: unknown; code?: unknown };
+  return [candidate.name, candidate.Code, candidate.code].some(
+    (value) => typeof value === "string" && STORAGE_UNAVAILABLE_CODES.has(value),
+  );
+}
 
 // Magic byte signatures for dangerous file types
 const DANGEROUS_MAGIC_BYTES: Array<{ bytes: number[]; offset?: number; description: string }> = [
@@ -164,7 +183,16 @@ export function registerFilesRoutes(app: Express): void {
         const files = await listFiles(prefix);
         res.json(files);
       } catch (error) {
-        res.status(500).json({ message: "Failed to list files" });
+        const message = error instanceof Error ? error.message : String(error);
+        logger.child("routes").error("File listing failed", {
+          error: message,
+          orgId: getOrgId(req),
+          prefix: req.query.prefix,
+        });
+        const unavailable = isStorageUnavailableError(error);
+        res.status(unavailable ? 503 : 500).json({
+          message: unavailable ? "File storage is unavailable for this environment." : "Failed to list files",
+        });
       }
     },
   );

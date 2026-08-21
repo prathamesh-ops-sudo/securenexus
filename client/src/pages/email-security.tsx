@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { fetchCsrfToken } from "@/lib/queryClient";
+import { apiQuery } from "@/lib/queryClient";
+import { ApiQueryError } from "@/components/api-query-state";
 import {
   Mail,
   Shield,
@@ -35,30 +36,10 @@ import {
 import { SuccessIcon } from "@/components/ui/animated-state-icons";
 import { DashboardSkeleton } from "@/components/page-skeleton";
 
-async function apiFetch(url: string, options?: RequestInit) {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options?.headers as Record<string, string>),
-  };
-  const method = options?.method || "GET";
-  if (method !== "GET" && method !== "HEAD") {
-    const csrfToken = await fetchCsrfToken();
-    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
-  }
-  try {
-    const activeOrgId = localStorage.getItem("securenexus.activeOrgId");
-    if (activeOrgId) headers["X-Org-Id"] = activeOrgId;
-  } catch {
-    /* SSR / privacy mode */
-  }
-  const res = await fetch(url, {
-    ...options,
-    credentials: "include",
-    headers,
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || res.statusText);
-  return data;
+async function apiFetch<T = any>(url: string, options?: RequestInit): Promise<T> {
+  let data: unknown;
+  if (options?.body) data = typeof options.body === "string" ? JSON.parse(options.body) : options.body;
+  return apiQuery(url, (_value): _value is T => true, { method: options?.method ?? "GET", data });
 }
 
 function severityColor(severity: string) {
@@ -1156,13 +1137,18 @@ function AnalysisToolsTab() {
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export default function EmailSecurityPage() {
-  const { data: stats, isLoading } = useQuery({
+  const {
+    data: stats,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ["/api/email-security/dashboard"],
-    queryFn: () => apiFetch("/api/email-security/dashboard").catch(() => null),
+    queryFn: () => apiFetch("/api/email-security/dashboard"),
     retry: false,
   });
 
   if (isLoading) return <DashboardSkeleton />;
+  if (error) return <ApiQueryError error={error} label="email security dashboard" />;
 
   return (
     <div className="p-6 space-y-6">
