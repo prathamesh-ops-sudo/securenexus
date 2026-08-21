@@ -11,6 +11,7 @@ import { validatePasswordComplexity } from "../middleware/security-policy-enforc
 
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 const RESET_TOKEN_EXPIRY_MINUTES = 60;
+const log = logger.child("password-reset");
 
 const PASSWORD_MIN_LENGTH = 8;
 const EMAIL_MAX_LENGTH = 254;
@@ -39,23 +40,17 @@ export function registerPasswordResetRoutes(app: Express): void {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    reply(res, {
-      message:
-        "If an account with that email exists, password reset instructions will be sent if delivery is available.",
-    });
+    reply(res, { message: "If an account with that email exists, a password reset link has been sent." });
 
     (async () => {
       try {
         const user = await authStorage.getUserByEmail(normalizedEmail);
         if (!user) {
-          logger.child("password-reset").info("Forgot-password reset skipped", { reason: "account_not_found" });
+          log.info("Forgot-password reset skipped", { reason: "account_not_found" });
           return;
         }
         if (!user.passwordHash) {
-          logger.child("password-reset").info("Forgot-password reset skipped", {
-            userId: user.id,
-            reason: "no_local_password",
-          });
+          log.info("Forgot-password reset skipped", { userId: user.id, reason: "no_local_password" });
           return;
         }
 
@@ -67,7 +62,7 @@ export function registerPasswordResetRoutes(app: Express): void {
           token,
           expiresAt,
         });
-        logger.child("password-reset").info("Forgot-password reset token persisted", {
+        log.info("Forgot-password reset token persisted", {
           userId: user.id,
           email: normalizedEmail,
           expiresAt: expiresAt.toISOString(),
@@ -82,7 +77,7 @@ export function registerPasswordResetRoutes(app: Express): void {
           expiresInMinutes: RESET_TOKEN_EXPIRY_MINUTES,
         });
 
-        logger.child("password-reset").info("Forgot-password email delivery started", {
+        log.info("Forgot-password email delivery started", {
           userId: user.id,
           email: normalizedEmail,
         });
@@ -94,19 +89,19 @@ export function registerPasswordResetRoutes(app: Express): void {
         });
 
         if (delivery.accepted) {
-          logger.child("password-reset").info("Password reset email accepted", {
+          log.info("Password reset email accepted", {
             userId: user.id,
             email: normalizedEmail,
           });
         } else {
-          logger.child("password-reset").error("Forgot-password email delivery failed", {
+          log.error("Forgot-password email delivery failed", {
             userId: user.id,
             email: normalizedEmail,
             status: delivery.status,
           });
         }
       } catch (error) {
-        logger.child("password-reset").error("Background forgot-password failed", { error: String(error) });
+        log.error("Background forgot-password failed", { error: String(error) });
       }
     })();
   });

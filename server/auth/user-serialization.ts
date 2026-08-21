@@ -1,11 +1,20 @@
-import type { AuthenticatedUser } from "@shared/models/auth";
-import type { User } from "@shared/models/auth";
+import type { AuthenticatedUser, User } from "@shared/models/auth";
+
+export type OrganizationMemberUser = Pick<User, "firstName" | "lastName" | "email">;
 
 export interface UserSerializationOptions {
   orgId?: string | null;
   role?: string | null;
   mfaRequired?: boolean;
   passwordExpired?: boolean;
+}
+
+export function serializeUserForMember(user: User): OrganizationMemberUser {
+  return {
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+  };
 }
 
 /**

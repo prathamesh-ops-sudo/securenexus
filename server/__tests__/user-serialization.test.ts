@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { User } from "@shared/models/auth";
-import { serializeUser } from "../auth/user-serialization";
+import { serializeUser, serializeUserForMember } from "../auth/user-serialization";
 
 describe("serializeUser", () => {
   it("returns only the allowlisted client-safe fields", () => {
@@ -67,5 +67,28 @@ describe("serializeUser", () => {
       "mfaRequired",
       "passwordExpired",
     ]);
+  });
+
+  it("returns only the minimal peer-visible member fields", () => {
+    const user = {
+      firstName: "Test",
+      lastName: "User",
+      email: "user@example.com",
+      isSuperAdmin: true,
+      lastLoginAt: new Date(),
+      passwordChangeRequired: true,
+      mfaEnabled: true,
+      mfaVerifiedAt: new Date(),
+      passwordHash: "password-hash",
+      mfaSecret: "totp-secret",
+      failedLoginCount: 4,
+      lockedUntil: new Date(),
+    } as User;
+
+    expect(serializeUserForMember(user)).toEqual({
+      firstName: "Test",
+      lastName: "User",
+      email: "user@example.com",
+    });
   });
 });

@@ -4,6 +4,7 @@ vi.mock("../storage", () => ({
   storage: {
     getUserMemberships: vi.fn(),
     getOrganization: vi.fn(),
+    getOrgMemberships: vi.fn(),
     getPendingInvitationsByEmail: vi.fn(),
     getOrgInvitationByToken: vi.fn(),
     getOrgMembership: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock("../routes/shared", () => ({
   storage: {
     getUserMemberships: vi.fn(),
     getOrganization: vi.fn(),
+    getOrgMemberships: vi.fn(),
     getPendingInvitationsByEmail: vi.fn(),
     getOrgInvitationByToken: vi.fn(),
     getOrgMembership: vi.fn(),
@@ -60,6 +62,7 @@ vi.mock("../logger", () => ({
 }));
 
 import { storage } from "../routes/shared";
+import { authStorage } from "../auth/storage";
 import { registerOrgsRoutes } from "../routes/orgs";
 
 type Handler = (req: any, res: any, next?: () => void) => Promise<unknown> | unknown;
@@ -151,5 +154,62 @@ describe("pre-organization route authorization", () => {
         details: expect.objectContaining({ reason: "email_mismatch" }),
       }),
     );
+  });
+
+  it("keeps peer member listings limited to identity fields", async () => {
+    const routes = captureRoutes();
+    const handlers = routes.get("GET /api/orgs/:orgId/members");
+    expect(handlers).toBeDefined();
+
+    (storage.getOrgMemberships as any).mockResolvedValue([
+      {
+        id: "membership-1",
+        orgId: "org-1",
+        userId: "user-1",
+        role: "analyst",
+        status: "active",
+      },
+    ]);
+    (authStorage.getUser as any).mockResolvedValue({
+      id: "user-1",
+      email: "member@example.com",
+      firstName: "Member",
+      lastName: "User",
+      isSuperAdmin: true,
+      lastLoginAt: new Date(),
+      passwordChangeRequired: true,
+      mfaEnabled: true,
+      mfaVerifiedAt: new Date(),
+      passwordHash: "password-hash",
+      mfaSecret: "totp-secret",
+      failedLoginCount: 4,
+      lockedUntil: new Date(),
+    });
+
+    const res = response();
+    await handlers![3]({ params: { orgId: "org-1" }, orgId: "org-1" }, res);
+
+    expect(res.json).toHaveBeenCalledWith([
+      {
+        id: "membership-1",
+        orgId: "org-1",
+        userId: "user-1",
+        role: "analyst",
+        status: "active",
+        user: {
+          firstName: "Member",
+          lastName: "User",
+          email: "member@example.com",
+        },
+        email: "member@example.com",
+      },
+    ]);
+    const member = res.json.mock.calls[0][0][0].user;
+    expect(member).not.toHaveProperty("isSuperAdmin");
+    expect(member).not.toHaveProperty("lastLoginAt");
+    expect(member).not.toHaveProperty("passwordChangeRequired");
+    expect(member).not.toHaveProperty("mfaEnabled");
+    expect(member).not.toHaveProperty("mfaVerifiedAt");
+    expect(member).not.toHaveProperty("hasLocalPassword");
   });
 });

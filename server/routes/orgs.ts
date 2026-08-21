@@ -8,7 +8,7 @@ import { uploadFile, getSignedUrl, deleteFile } from "../s3";
 import { sendEmail } from "../email-service";
 import { invitationEmail, memberSuspendedEmail, memberRoleChangedEmail } from "../email-templates";
 import { authStorage } from "../auth/storage";
-import { serializeUser } from "../auth/user-serialization";
+import { serializeUserForMember } from "../auth/user-serialization";
 import { invalidateDeserializeCache, invalidateUserSessions } from "../auth/session";
 
 const LOGO_MAX_SIZE = 2 * 1024 * 1024;
@@ -105,7 +105,7 @@ export function registerOrgsRoutes(app: Express): void {
             const user = await authStorage.getUser(m.userId);
             return {
               ...m,
-              user: user ? serializeUser(user) : null,
+              user: user ? serializeUserForMember(user) : null,
               email: user?.email || null,
             };
           } catch {

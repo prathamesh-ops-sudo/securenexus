@@ -98,8 +98,7 @@ describe("forgot-password observability", () => {
 
     expect(res.json).toHaveBeenCalledWith({
       data: {
-        message:
-          "If an account with that email exists, password reset instructions will be sent if delivery is available.",
+        message: "If an account with that email exists, a password reset link has been sent.",
       },
     });
     await vi.waitFor(() => {
