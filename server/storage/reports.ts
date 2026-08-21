@@ -23,8 +23,15 @@ export async function getReportTemplates(orgId: string): Promise<ReportTemplate[
     .orderBy(desc(reportTemplates.createdAt));
 }
 
-export async function getReportTemplate(id: string): Promise<ReportTemplate | undefined> {
-  const [t] = await db.select().from(reportTemplates).where(eq(reportTemplates.id, id));
+export async function getReportTemplate(id: string, orgId?: string): Promise<ReportTemplate | undefined> {
+  const conditions = [eq(reportTemplates.id, id)];
+  if (orgId) {
+    conditions.push(or(eq(reportTemplates.orgId, orgId), isNull(reportTemplates.orgId)) as never);
+  }
+  const [t] = await db
+    .select()
+    .from(reportTemplates)
+    .where(and(...conditions));
   return t;
 }
 

@@ -71,6 +71,13 @@
       "when": 1787345004780,
       "tag": "0009_organization_module_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787348483391,
+      "tag": "0010_aromatic_wolverine",
+      "breakpoints": true
     }
   ]
 }

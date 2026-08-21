@@ -728,7 +728,7 @@ export interface IStorage {
 
   // Reports
   getReportTemplates(orgId: string): Promise<ReportTemplate[]>;
-  getReportTemplate(id: string): Promise<ReportTemplate | undefined>;
+  getReportTemplate(id: string, orgId?: string): Promise<ReportTemplate | undefined>;
   createReportTemplate(template: InsertReportTemplate): Promise<ReportTemplate>;
   updateReportTemplate(id: string, data: Partial<ReportTemplate>): Promise<ReportTemplate | undefined>;
   deleteReportTemplate(id: string): Promise<boolean>;
