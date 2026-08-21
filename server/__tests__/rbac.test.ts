@@ -178,6 +178,7 @@ describe("RBAC", () => {
       (storage.getOrganization as any).mockResolvedValue({ id: "org-selected", name: "Selected Org", deletedAt: null });
       const req = mockReq({
         user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+        sessionID: "session-selected",
         headers: { "x-org-id": "org-selected" },
         path: "/api/alerts",
       });
@@ -206,11 +207,72 @@ describe("RBAC", () => {
       );
     });
 
+    it("audits a read-only tenant context once across repeated requests in one session", async () => {
+      (storage.getUserMemberships as any).mockResolvedValue([]);
+      (storage.getOrganization as any).mockResolvedValue({ id: "org-selected", deletedAt: null });
+      const session = {};
+      const firstReq = mockReq({
+        user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+        sessionID: "session-repeated",
+        session,
+        headers: { "x-org-id": "org-selected" },
+        path: "/api/alerts",
+      });
+      const secondReq = mockReq({
+        user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+        sessionID: "session-repeated",
+        session,
+        headers: { "x-org-id": "org-selected" },
+        path: "/api/incidents",
+      });
+      const firstRes = mockRes();
+      const secondRes = mockRes();
+
+      await resolveOrgContext(firstReq, firstRes, vi.fn());
+      await resolveOrgContext(secondReq, secondRes, vi.fn());
+
+      expect(storage.createAuditLog).toHaveBeenCalledTimes(1);
+      expect(storage.createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          details: expect.objectContaining({ route: "/api/alerts" }),
+        }),
+      );
+      expect((session as any).platformAdminReadOnlyOrganizations).toEqual({ "org-selected": true });
+    });
+
+    it("audits each selected organization once within the same session", async () => {
+      (storage.getUserMemberships as any).mockResolvedValue([]);
+      (storage.getOrganization as any).mockImplementation(async (id: string) => ({ id, deletedAt: null }));
+      const session = {};
+      const firstReq = mockReq({
+        user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+        sessionID: "session-multiple-orgs",
+        session,
+        headers: { "x-org-id": "org-one" },
+      });
+      const secondReq = mockReq({
+        user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+        sessionID: "session-multiple-orgs",
+        session,
+        headers: { "x-org-id": "org-two" },
+      });
+
+      await resolveOrgContext(firstReq, mockRes(), vi.fn());
+      await resolveOrgContext(secondReq, mockRes(), vi.fn());
+
+      expect(storage.createAuditLog).toHaveBeenCalledTimes(2);
+      expect((session as any).platformAdminReadOnlyOrganizations).toEqual({
+        "org-one": true,
+        "org-two": true,
+      });
+    });
+
     it("refuses writes in a membership-less super-admin read-only context", async () => {
       (storage.getUserMemberships as any).mockResolvedValue([]);
       (storage.getOrganization as any).mockResolvedValue({ id: "org-selected", deletedAt: null });
       const req = mockReq({
         user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+        sessionID: "session-write",
         headers: { "x-org-id": "org-selected" },
         method: "POST",
       });
@@ -234,6 +296,8 @@ describe("RBAC", () => {
       (storage.createAuditLog as any).mockRejectedValueOnce(new Error("audit unavailable"));
       const req = mockReq({
         user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+        sessionID: "session-audit-failure",
+        session: {},
         headers: { "x-org-id": "org-selected" },
       });
       const res = mockRes();
@@ -248,6 +312,21 @@ describe("RBAC", () => {
           errors: [expect.objectContaining({ code: "INTERNAL_ERROR" })],
         }),
       );
+
+      const retryReq = mockReq({
+        user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+        sessionID: "session-audit-failure",
+        session: (req as any).session,
+        headers: { "x-org-id": "org-selected" },
+      });
+      const retryRes = mockRes();
+      const retryNext = vi.fn();
+
+      await resolveOrgContext(retryReq, retryRes, retryNext);
+
+      expect(retryNext).toHaveBeenCalled();
+      expect(storage.createAuditLog).toHaveBeenCalledTimes(2);
+      expect((retryReq as any).orgReadOnly).toBe(true);
     });
 
     it("keeps owner role for a super-admin who is an active member", async () => {
@@ -293,6 +372,7 @@ describe("RBAC", () => {
       for (const orgId of ["org-missing", "org-deleted"]) {
         const req = mockReq({
           user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+          sessionID: `session-${orgId}`,
           headers: { "x-org-id": orgId },
         });
         const res = mockRes();

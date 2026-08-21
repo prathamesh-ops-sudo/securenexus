@@ -14,6 +14,112 @@ const ROLE_HIERARCHY: Record<string, number> = {
 };
 
 const READ_ONLY_ALLOWED_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const READ_ONLY_AUDIT_SESSION_KEY = "platformAdminReadOnlyOrganizations";
+const READ_ONLY_AUDIT_DEDUPE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const READ_ONLY_AUDIT_DEDUPE_MAX = 10_000;
+
+const readOnlyAuditInFlight = new Map<string, Promise<void>>();
+const readOnlyAuditDedupe = new Map<string, number>();
+
+function readOnlyAuditKey(req: Request, orgId: string): string | null {
+  const sessionId = (req as any).sessionID;
+  return typeof sessionId === "string" && sessionId ? `${sessionId}:${orgId}` : null;
+}
+
+function pruneReadOnlyAuditDedupe(now: number): void {
+  for (const [key, expiresAt] of Array.from(readOnlyAuditDedupe.entries())) {
+    if (expiresAt <= now) readOnlyAuditDedupe.delete(key);
+  }
+  if (readOnlyAuditDedupe.size <= READ_ONLY_AUDIT_DEDUPE_MAX) return;
+  const oldest = Array.from(readOnlyAuditDedupe.entries()).sort((a, b) => a[1] - b[1]);
+  for (const [key] of oldest.slice(0, readOnlyAuditDedupe.size - READ_ONLY_AUDIT_DEDUPE_MAX)) {
+    readOnlyAuditDedupe.delete(key);
+  }
+}
+
+function markReadOnlyAuditRecorded(req: Request, userId: string, orgId: string): void {
+  const session = (req as any).session;
+  if (session) {
+    const recordedOrganizations = session[READ_ONLY_AUDIT_SESSION_KEY] || {};
+    recordedOrganizations[orgId] = true;
+    session[READ_ONLY_AUDIT_SESSION_KEY] = recordedOrganizations;
+  }
+  const now = Date.now();
+  pruneReadOnlyAuditDedupe(now);
+  const key = readOnlyAuditKey(req, orgId);
+  if (key) readOnlyAuditDedupe.set(key, now + READ_ONLY_AUDIT_DEDUPE_TTL_MS);
+}
+
+function hasReadOnlyAuditRecorded(req: Request, orgId: string): boolean {
+  const session = (req as any).session;
+  if (session?.[READ_ONLY_AUDIT_SESSION_KEY]?.[orgId]) return true;
+  const key = readOnlyAuditKey(req, orgId);
+  if (!key) return false;
+  const expiresAt = readOnlyAuditDedupe.get(key);
+  if (!expiresAt) return false;
+  if (expiresAt <= Date.now()) {
+    readOnlyAuditDedupe.delete(key);
+    return false;
+  }
+  return true;
+}
+
+async function auditReadOnlyPlatformContext(
+  req: Request,
+  userId: string,
+  userName: string,
+  orgId: string,
+): Promise<void> {
+  if (hasReadOnlyAuditRecorded(req, orgId)) return;
+
+  const key = readOnlyAuditKey(req, orgId);
+  if (!key) {
+    await storage.createAuditLog({
+      userId,
+      userName,
+      action: "platform_admin_read_only_org_context",
+      resourceType: "organization",
+      resourceId: orgId,
+      orgId,
+      details: {
+        route: req.path,
+        method: req.method,
+        selectedWithoutMembership: true,
+        readOnly: true,
+      },
+    });
+    return;
+  }
+  let auditPromise = readOnlyAuditInFlight.get(key);
+  if (!auditPromise) {
+    auditPromise = storage
+      .createAuditLog({
+        userId,
+        userName,
+        action: "platform_admin_read_only_org_context",
+        resourceType: "organization",
+        resourceId: orgId,
+        orgId,
+        details: {
+          route: req.path,
+          method: req.method,
+          selectedWithoutMembership: true,
+          readOnly: true,
+        },
+      })
+      .then(() => undefined);
+    readOnlyAuditInFlight.set(key, auditPromise);
+  }
+
+  try {
+    await auditPromise;
+    markReadOnlyAuditRecorded(req, userId, orgId);
+  } finally {
+    if (readOnlyAuditInFlight.get(key) === auditPromise) {
+      readOnlyAuditInFlight.delete(key);
+    }
+  }
+}
 
 export async function resolveOrgContext(req: Request, res: Response, next: NextFunction) {
   const user = (req as any).user;
@@ -76,20 +182,7 @@ export async function resolveOrgContext(req: Request, res: Response, next: NextF
             method: req.method,
           });
           try {
-            await storage.createAuditLog({
-              userId,
-              userName: user.email || "unknown",
-              action: "platform_admin_read_only_org_context",
-              resourceType: "organization",
-              resourceId: requestedOrgId,
-              orgId: requestedOrgId,
-              details: {
-                route: req.path,
-                method: req.method,
-                selectedWithoutMembership: true,
-                readOnly: true,
-              },
-            });
+            await auditReadOnlyPlatformContext(req, userId, user.email || "unknown", requestedOrgId);
           } catch (err) {
             log.error("Failed to audit platform admin read-only org context", { error: String(err) });
             return replyInternal(res, "Unable to establish an auditable organization context");
