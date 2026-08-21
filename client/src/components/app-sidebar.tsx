@@ -20,8 +20,6 @@ import {
   History,
   CreditCard,
   Building2,
-  Check,
-  ChevronsUpDown,
   ShieldCheck,
   Code2,
   Mail,
@@ -42,19 +40,12 @@ import { useLocation, Link } from "wouter";
 import { filterNavItems } from "./sidebar-nav";
 import { useAuth } from "@/hooks/use-auth";
 import { useOrgContext } from "@/hooks/use-org-context";
+import { PlatformTenantPicker } from "@/components/platform-tenant-picker";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 import { useState, useEffect, useMemo, useCallback, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EventStreamContext } from "@/App";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   Sidebar,
@@ -362,7 +353,14 @@ function LiveAlertBadge() {
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
-  const { currentOrg, currentOrgId, memberships, switchOrg, currentRole, isLoading: orgLoading } = useOrgContext();
+  const {
+    currentOrgId,
+    memberships,
+    currentRole,
+    hasTenantContext,
+    isPlatformAdminReadOnly,
+    isLoading: orgLoading,
+  } = useOrgContext();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const recentPages = useRecentPages(location);
   const [enabledModules, setEnabledModules] = useState<Set<string>>(loadEnabledModules);
@@ -370,8 +368,8 @@ export function AppSidebar() {
 
   /** Which nav groups to actually render (core groups + user-enabled groups) */
   const visibleNavGroups = useMemo(
-    () => navGroups.filter((g) => g.core || enabledModules.has(g.label)),
-    [enabledModules],
+    () => (hasTenantContext ? navGroups.filter((g) => g.core || enabledModules.has(g.label)) : []),
+    [enabledModules, hasTenantContext],
   );
 
   /** Advanced (non-core) groups the user can toggle on/off */
@@ -433,7 +431,13 @@ export function AppSidebar() {
 
   // Don't default to "analyst" while org context is still loading — this causes
   // a visible flicker ("Analyst" → "Owner") once the real role arrives.
-  const userRole = orgLoading ? null : user?.isSuperAdmin ? "super_admin" : currentRole;
+  const userRole = orgLoading
+    ? null
+    : user?.isSuperAdmin
+      ? isPlatformAdminReadOnly
+        ? "read_only"
+        : "super_admin"
+      : currentRole;
   const roleLabel = !userRole
     ? "No organization"
     : userRole === "super_admin"
@@ -446,7 +450,7 @@ export function AppSidebar() {
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.email || "Signed-in user";
 
   function filterItems(items: NavItem[]) {
-    return filterNavItems(items, userRole);
+    return filterNavItems(items, userRole, hasTenantContext);
   }
 
   function renderItem(item: NavItem) {
@@ -541,32 +545,7 @@ export function AppSidebar() {
           </div>
         </Link>
 
-        {memberships.length > 0 && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="mt-2 w-full flex items-center gap-2 px-2 py-1.5 rounded-md bg-sidebar-accent/30 border border-sidebar-border/50 hover:bg-sidebar-accent/50 hover:border-sidebar-border transition-all duration-200 text-left">
-                <Building2 className="h-3.5 w-3.5 text-cyan-400/70 shrink-0" aria-hidden="true" />
-                <span className="text-[11px] font-medium truncate flex-1">{currentOrg?.name || "Select org"}</span>
-                <ChevronsUpDown className="h-3 w-3 text-muted-foreground/40 shrink-0" aria-hidden="true" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56" sideOffset={4}>
-              <DropdownMenuLabel className="text-[10px] text-muted-foreground">Organizations</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {memberships.map((m) => (
-                <DropdownMenuItem
-                  key={m.orgId}
-                  onClick={() => switchOrg(m.orgId)}
-                  className="flex items-center gap-2 text-xs"
-                >
-                  <Building2 className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate flex-1">{m.organization?.name || m.orgId}</span>
-                  {m.orgId === currentOrgId && <Check className="h-3.5 w-3.5 text-cyan-400 shrink-0" />}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        {(user?.isSuperAdmin || memberships.length > 0) && <PlatformTenantPicker className="mt-2 w-full" />}
 
         <button
           type="button"
@@ -600,28 +579,29 @@ export function AppSidebar() {
         <SidebarGroup className="px-2 py-1.5">
           <SidebarGroupContent>
             <SidebarMenu className="space-y-0.5">
-              {coreItems.map((item) => {
-                const isActive = item.url === "/" ? location === "/" : location.startsWith(item.url);
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActive}
-                      aria-label={`Navigate to ${item.title}`}
-                      className="h-8 text-[13px] font-medium rounded-md transition-all duration-150"
-                    >
-                      <Link href={item.url}>
-                        <item.icon
-                          className={`h-4 w-4 shrink-0 ${isActive ? "text-cyan-400" : "opacity-60"}`}
-                          aria-hidden="true"
-                        />
-                        <span className="truncate">{item.title}</span>
-                        {item.url === "/alerts" && <LiveAlertBadge />}
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {hasTenantContext &&
+                coreItems.map((item) => {
+                  const isActive = item.url === "/" ? location === "/" : location.startsWith(item.url);
+                  return (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isActive}
+                        aria-label={`Navigate to ${item.title}`}
+                        className="h-8 text-[13px] font-medium rounded-md transition-all duration-150"
+                      >
+                        <Link href={item.url}>
+                          <item.icon
+                            className={`h-4 w-4 shrink-0 ${isActive ? "text-cyan-400" : "opacity-60"}`}
+                            aria-hidden="true"
+                          />
+                          <span className="truncate">{item.title}</span>
+                          {item.url === "/alerts" && <LiveAlertBadge />}
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -637,28 +617,30 @@ export function AppSidebar() {
         </SidebarGroup>
 
         {/* Module manager toggle */}
-        <div className="px-3 py-1.5">
-          <button
-            type="button"
-            onClick={() => setShowModuleManager((v) => !v)}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[11px] font-medium text-muted-foreground/60 hover:text-muted-foreground hover:bg-sidebar-accent/30 border border-dashed border-sidebar-border/40 hover:border-sidebar-border/60 transition-all duration-200"
-          >
-            <Layers className="h-3.5 w-3.5 shrink-0" />
-            <span>Manage Modules</span>
-            {advancedGroups.length -
-              Array.from(enabledModules).filter((m) => advancedGroups.some((g) => g.label === m)).length >
-              0 && (
-              <span className="ml-auto text-[9px] bg-blue-500/15 text-blue-400 rounded-full px-1.5 py-0.5 tabular-nums">
-                +
-                {advancedGroups.length -
-                  Array.from(enabledModules).filter((m) => advancedGroups.some((g) => g.label === m)).length}{" "}
-                hidden
-              </span>
-            )}
-          </button>
-        </div>
+        {hasTenantContext && (
+          <div className="px-3 py-1.5">
+            <button
+              type="button"
+              onClick={() => setShowModuleManager((v) => !v)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[11px] font-medium text-muted-foreground/60 hover:text-muted-foreground hover:bg-sidebar-accent/30 border border-dashed border-sidebar-border/40 hover:border-sidebar-border/60 transition-all duration-200"
+            >
+              <Layers className="h-3.5 w-3.5 shrink-0" />
+              <span>Manage Modules</span>
+              {advancedGroups.length -
+                Array.from(enabledModules).filter((m) => advancedGroups.some((g) => g.label === m)).length >
+                0 && (
+                <span className="ml-auto text-[9px] bg-blue-500/15 text-blue-400 rounded-full px-1.5 py-0.5 tabular-nums">
+                  +
+                  {advancedGroups.length -
+                    Array.from(enabledModules).filter((m) => advancedGroups.some((g) => g.label === m)).length}{" "}
+                  hidden
+                </span>
+              )}
+            </button>
+          </div>
+        )}
 
-        {showModuleManager && (
+        {hasTenantContext && showModuleManager && (
           <div className="px-3 pb-2 animate-fade-in">
             <div className="rounded-lg border border-sidebar-border/60 bg-sidebar-accent/20 p-3 space-y-3">
               <div className="flex items-center justify-between">
@@ -728,11 +710,13 @@ export function AppSidebar() {
           <div className="h-px bg-sidebar-border/60" />
         </div>
 
-        <SidebarGroup className="px-2 py-0.5">
-          <SidebarGroupContent>
-            <SidebarMenu className="space-y-0">{renderCollapsibleGroup(adminGroup)}</SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {hasTenantContext && (
+          <SidebarGroup className="px-2 py-0.5">
+            <SidebarGroupContent>
+              <SidebarMenu className="space-y-0">{renderCollapsibleGroup(adminGroup)}</SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {user?.isSuperAdmin && (
           <>
@@ -777,7 +761,7 @@ export function AppSidebar() {
           </>
         )}
 
-        {recentPages.length > 0 && (
+        {recentPages.length > 0 && hasTenantContext && (
           <>
             <div className="px-3 py-1">
               <div className="h-px bg-sidebar-border/60" />
@@ -794,6 +778,7 @@ export function AppSidebar() {
                     </div>
                   </SidebarMenuItem>
                   {recentPages.map((path) => {
+                    if (!hasTenantContext) return null;
                     const item = ALL_NAV_ITEMS.find((i) => i.url === path);
                     if (!item) return null;
                     return renderItem(item);

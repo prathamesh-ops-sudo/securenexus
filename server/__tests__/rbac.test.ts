@@ -5,6 +5,7 @@ import type { Request, Response } from "express";
 vi.mock("../storage", () => ({
   storage: {
     getUserMemberships: vi.fn(),
+    getOrganization: vi.fn(),
     createAuditLog: vi.fn().mockResolvedValue({}),
   },
 }));
@@ -26,9 +27,14 @@ vi.mock("../api-response", () => ({
     res.json({ data: null, errors: [{ code: "UNAUTHENTICATED", message: "Authentication required" }] });
     return res;
   }),
-  replyForbidden: vi.fn().mockImplementation((res: any, message: string) => {
+  replyForbidden: vi.fn().mockImplementation((res: any, message: string, code = "FORBIDDEN") => {
     res.status(403);
-    res.json({ data: null, errors: [{ code: "FORBIDDEN", message }] });
+    res.json({ data: null, errors: [{ code, message }] });
+    return res;
+  }),
+  replyInternal: vi.fn().mockImplementation((res: any, message: string) => {
+    res.status(500);
+    res.json({ data: null, errors: [{ code: "INTERNAL_ERROR", message }] });
     return res;
   }),
   ERROR_CODES: {
@@ -37,6 +43,7 @@ vi.mock("../api-response", () => ({
     PERMISSION_DENIED: "PERMISSION_DENIED",
     ORG_ACCESS_DENIED: "ORG_ACCESS_DENIED",
     ORG_MEMBERSHIP_REQUIRED: "ORG_MEMBERSHIP_REQUIRED",
+    READ_ONLY_CONTEXT: "READ_ONLY_CONTEXT",
   },
 }));
 
@@ -141,6 +148,163 @@ describe("RBAC", () => {
       expect((req as any).membership).toBeNull();
     });
 
+    it("rejects malformed organization selectors instead of falling back to another organization", async () => {
+      (storage.getUserMemberships as any).mockResolvedValue([{ orgId: "org-member", role: "owner", status: "active" }]);
+      const req = mockReq({
+        headers: { "x-org-id": ["org-one", "org-two"] },
+      });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await resolveOrgContext(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errors: [expect.objectContaining({ code: "ORG_ACCESS_DENIED" })],
+        }),
+      );
+      expect((storage.createAuditLog as any).mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          action: "org_access_denied",
+          details: expect.objectContaining({ reason: "invalid_org_selector" }),
+        }),
+      );
+    });
+
+    it("resolves a selected organization for a membership-less super-admin as read-only and audits it", async () => {
+      (storage.getUserMemberships as any).mockResolvedValue([]);
+      (storage.getOrganization as any).mockResolvedValue({ id: "org-selected", name: "Selected Org", deletedAt: null });
+      const req = mockReq({
+        user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+        headers: { "x-org-id": "org-selected" },
+        path: "/api/alerts",
+      });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await resolveOrgContext(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect((req as any).orgId).toBe("org-selected");
+      expect((req as any).orgRole).toBe("read_only");
+      expect((req as any).membership).toBeNull();
+      expect((req as any).orgReadOnly).toBe(true);
+      expect(storage.createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "platform_admin_read_only_org_context",
+          userId: "super-admin",
+          orgId: "org-selected",
+          resourceId: "org-selected",
+          details: expect.objectContaining({
+            route: "/api/alerts",
+            method: "GET",
+            selectedWithoutMembership: true,
+          }),
+        }),
+      );
+    });
+
+    it("refuses writes in a membership-less super-admin read-only context", async () => {
+      (storage.getUserMemberships as any).mockResolvedValue([]);
+      (storage.getOrganization as any).mockResolvedValue({ id: "org-selected", deletedAt: null });
+      const req = mockReq({
+        user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+        headers: { "x-org-id": "org-selected" },
+        method: "POST",
+      });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await resolveOrgContext(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errors: [expect.objectContaining({ code: "READ_ONLY_CONTEXT" })],
+        }),
+      );
+    });
+
+    it("fails closed when read-only context auditing fails", async () => {
+      (storage.getUserMemberships as any).mockResolvedValue([]);
+      (storage.getOrganization as any).mockResolvedValue({ id: "org-selected", deletedAt: null });
+      (storage.createAuditLog as any).mockRejectedValueOnce(new Error("audit unavailable"));
+      const req = mockReq({
+        user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+        headers: { "x-org-id": "org-selected" },
+      });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await resolveOrgContext(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errors: [expect.objectContaining({ code: "INTERNAL_ERROR" })],
+        }),
+      );
+    });
+
+    it("keeps owner role for a super-admin who is an active member", async () => {
+      (storage.getUserMemberships as any).mockResolvedValue([
+        { orgId: "org-member", role: "analyst", status: "active" },
+      ]);
+      const req = mockReq({
+        user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+        headers: { "x-org-id": "org-member" },
+      });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await resolveOrgContext(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect((req as any).orgRole).toBe("owner");
+      expect((req as any).orgReadOnly).toBe(false);
+    });
+
+    it("denies membership-less non-super-admin access to a selected organization", async () => {
+      (storage.getUserMemberships as any).mockResolvedValue([]);
+      const req = mockReq({
+        user: { id: "user-1", email: "user@example.com" },
+        headers: { "x-org-id": "org-other" },
+      });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await resolveOrgContext(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(storage.getOrganization).not.toHaveBeenCalled();
+    });
+
+    it("denies a super-admin selecting a missing or deleted organization", async () => {
+      (storage.getUserMemberships as any).mockResolvedValue([]);
+      (storage.getOrganization as any)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: "org-deleted", deletedAt: new Date() });
+
+      for (const orgId of ["org-missing", "org-deleted"]) {
+        const req = mockReq({
+          user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+          headers: { "x-org-id": orgId },
+        });
+        const res = mockRes();
+        const next = vi.fn();
+
+        await resolveOrgContext(req, res, next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(403);
+      }
+    });
+
     it("uses first active membership when no x-org-id header", async () => {
       (storage.getUserMemberships as any).mockResolvedValue([
         { orgId: "org-1", role: "admin", status: "active" },
@@ -219,6 +383,21 @@ describe("RBAC", () => {
   });
 
   describe("requireOrgId", () => {
+    it("refuses writes when a read-only context reaches the request guard", () => {
+      const req = mockReq({ orgId: "org-1", orgReadOnly: true, method: "PATCH" });
+      const res = mockRes();
+      const next = vi.fn();
+
+      requireOrgId(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errors: [expect.objectContaining({ code: "READ_ONLY_CONTEXT" })],
+        }),
+      );
+    });
+
     it("calls next when orgId is set", () => {
       const req = mockReq({ orgId: "org-1", user: { id: "u1" } });
       const res = mockRes();
