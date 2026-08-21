@@ -291,16 +291,40 @@ async function executeTicketing(
   context: ActionContext,
   executedAt: string,
 ): Promise<ActionResult> {
-  const ticketId = `${platform.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
   const summary = config?.summary || `Security Incident ${context.incidentId || "Unknown"}`;
   const priority = config?.priority || "high";
   const project = config?.project || config?.projectKey || "SEC";
 
-  // If a webhook URL is configured for the ticketing platform, call it
   const webhookUrl = config?.webhookUrl || config?.apiUrl;
-  let ticketUrl = `https://${platform}.example.com/browse/${ticketId}`;
-  let status: "completed" | "failed" = "completed";
-  let message = `Created ${platform} ticket ${ticketId}: "${summary}" (Priority: ${priority})`;
+  if (!webhookUrl) {
+    const result: ActionResult = {
+      actionType: `create_${platform}_ticket`,
+      status: "unavailable",
+      message: `${platform} ticketing is not configured. Configure a webhook or API URL before creating tickets.`,
+      details: { platform, summary, priority, project, notConfigured: true },
+      executedAt,
+    };
+    if (context.incidentId && context.storage) {
+      await context.storage.createResponseAction({
+        orgId: context.orgId,
+        actionType: `create_${platform}_ticket`,
+        incidentId: context.incidentId,
+        alertId: context.alertId,
+        targetType: "ticket",
+        targetValue: null,
+        status: "unavailable",
+        requestPayload: { platform, summary, priority, project },
+        responsePayload: { notConfigured: true },
+        executedBy: context.userId,
+      });
+    }
+    return result;
+  }
+
+  let ticketId: string | undefined;
+  let ticketUrl: string | undefined;
+  let status: "completed" | "failed" = "failed";
+  let message = `${platform} ticketing request failed`;
 
   if (webhookUrl) {
     const urlCheck = validateWebhookUrl(webhookUrl);
@@ -325,8 +349,12 @@ async function executeTicketing(
         if (response.ok) {
           const data = await response.json().catch(() => ({}));
           const ticketResponse = data as Record<string, unknown>;
-          ticketUrl = (ticketResponse.url as string) || (ticketResponse.ticketUrl as string) || ticketUrl;
-          message = `Created ${platform} ticket via API: "${summary}" (Priority: ${priority})`;
+          ticketId = (ticketResponse.id as string) || (ticketResponse.ticketId as string);
+          ticketUrl = (ticketResponse.url as string) || (ticketResponse.ticketUrl as string);
+          status = "completed";
+          message = ticketId
+            ? `Created ${platform} ticket ${ticketId} via API: "${summary}" (Priority: ${priority})`
+            : `Ticket request accepted by ${platform} API: "${summary}" (Priority: ${priority})`;
         } else {
           status = "failed";
           message = `${platform} API returned HTTP ${response.status}`;
@@ -357,7 +385,14 @@ async function executeTicketing(
     actionType: `create_${platform}_ticket`,
     status,
     message,
-    details: { ticketId, platform, summary, priority, project, ticketUrl },
+    details: {
+      ...(ticketId ? { ticketId } : {}),
+      ...(ticketUrl ? { ticketUrl } : {}),
+      platform,
+      summary,
+      priority,
+      project,
+    },
     executedAt,
   };
 }

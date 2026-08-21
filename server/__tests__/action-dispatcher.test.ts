@@ -309,6 +309,24 @@ describe("Native response dispatch truthfulness", () => {
   });
 });
 
+describe("Ticketing configuration truthfulness", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns unavailable without a synthetic ticket or completed action when unconfigured", async () => {
+    const result = await dispatchAction("create_jira_ticket", { summary: "Test incident" }, makeContext());
+
+    expect(result.status).toBe("unavailable");
+    expect(result.message).toContain("not configured");
+    expect(result.details?.ticketId).toBeUndefined();
+    expect(result.details?.ticketUrl).toBeUndefined();
+    expect(storage.createResponseAction).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "unavailable", targetValue: null }),
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
 // RESP-01 / RESP-05: Permission Checks (Gap Closure)
 // ---------------------------------------------------------------------------
