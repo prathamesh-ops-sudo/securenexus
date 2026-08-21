@@ -31,7 +31,6 @@ import {
   Bug,
   FileCode,
   Network,
-  Scan,
   Clock,
   ArrowUpDown,
   Gauge,
@@ -359,18 +358,6 @@ export default function ApiSecurityPage() {
     },
   });
 
-  const dastScan = useMutation({
-    mutationFn: (data: { apiId: string; scanType: string }) =>
-      apiFetch("/api/api-security/dast-scan", { method: "POST", body: JSON.stringify(data) }),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/api-security"] });
-      toast({ title: "DAST scan complete", description: `${result.findingsCount} findings` });
-    },
-    onError: (err: Error) => {
-      toast({ title: "DAST scan failed", description: err.message, variant: "destructive" });
-    },
-  });
-
   const handleImport = () => {
     if (!specHost.trim()) {
       toast({ title: "Host is required", variant: "destructive" });
@@ -411,7 +398,7 @@ export default function ApiSecurityPage() {
             API Security
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            API inventory discovery, schema validation, abuse detection, sensitive data scanning, DAST testing
+            API inventory discovery, schema validation, abuse detection, sensitive data scanning, and traffic analysis
           </p>
         </div>
         <div className="flex gap-2">
@@ -659,7 +646,7 @@ export default function ApiSecurityPage() {
                   </Table>
                 ) : (
                   <div className="text-center py-8 text-muted-foreground text-sm">
-                    No findings yet. Import an OpenAPI spec or run a DAST scan.
+                    No findings yet. Import an OpenAPI spec or connect a supported finding provider.
                   </div>
                 )}
               </CardContent>
@@ -797,15 +784,6 @@ export default function ApiSecurityPage() {
                       <TableCell className="text-[11px] text-muted-foreground">{formatDate(api.lastSeenAt)}</TableCell>
                       <TableCell>
                         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0"
-                            onClick={() => dastScan.mutate({ apiId: api.id, scanType: "quick" })}
-                            title="Run DAST scan"
-                          >
-                            <Scan className="h-3.5 w-3.5 text-indigo-400" />
-                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -983,7 +961,7 @@ export default function ApiSecurityPage() {
           ) : (
             <Card className="bg-zinc-900/50 border-zinc-800">
               <CardContent className="py-12 text-center text-muted-foreground text-sm">
-                No findings. Import an OpenAPI spec and run a DAST scan to detect vulnerabilities.
+                No findings. Import an OpenAPI spec or connect a supported finding provider.
               </CardContent>
             </Card>
           )}
@@ -1124,7 +1102,7 @@ export default function ApiSecurityPage() {
                   if (abuseFindings.length === 0) {
                     return (
                       <div className="text-center py-8 text-muted-foreground text-sm">
-                        No abuse events detected. Run a DAST scan to discover potential abuse patterns.
+                        No abuse events detected. Abuse testing requires a configured provider.
                       </div>
                     );
                   }
@@ -1241,7 +1219,7 @@ export default function ApiSecurityPage() {
                 })()
               ) : (
                 <div className="text-center py-8 text-muted-foreground text-sm">
-                  No abuse events detected. Run a DAST scan to discover potential abuse patterns.
+                  No abuse events detected. Abuse testing requires a configured provider.
                 </div>
               )}
             </CardContent>
@@ -1734,16 +1712,10 @@ export default function ApiSecurityPage() {
                     ))}
                 </div>
                 <div className="flex gap-2 pt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5 border-zinc-700"
-                    onClick={() => dastScan.mutate({ apiId: selectedApi.id, scanType: "full" })}
-                    disabled={dastScan.isPending}
-                  >
-                    <Scan className="h-3.5 w-3.5" />
-                    {dastScan.isPending ? "Scanning..." : "Full DAST Scan"}
-                  </Button>
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                    Dynamic scanning is unavailable. Connect a supported DAST provider to perform runtime tests; this
+                    page currently reports inventory and static API observations only.
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"

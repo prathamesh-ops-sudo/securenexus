@@ -6,6 +6,7 @@ import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { storage, logger, getOrgId, sendEnvelope } from "./shared";
 import { db } from "../db";
 import { sql, eq, desc, and, ilike, or, count } from "drizzle-orm";
+import { assetReferencesMatch } from "../asset-linkage";
 import { z } from "zod";
 import {
   assetInventory,
@@ -31,39 +32,93 @@ import {
 
 const log = logger.child("standalone-platform");
 
+const ASSET_ALERT_HISTORY_LIMIT = 100;
+const ASSET_INCIDENT_HISTORY_LIMIT = 100;
+
+type AssetSecurityHistory = {
+  linkedAlerts: (typeof alerts.$inferSelect)[];
+  linkedIncidents: (typeof incidents.$inferSelect)[];
+  alertsTruncated: boolean;
+  incidentsTruncated: boolean;
+};
+
 async function getAssetSecurityHistory(orgId: string, asset: typeof assetInventory.$inferSelect) {
-  const identifiers = [asset.hostname, asset.ipAddress, asset.fqdn].filter(
+  const identifiers = [asset.id, asset.hostname, asset.ipAddress, asset.fqdn].filter(
     (value): value is string => typeof value === "string" && value.length > 0,
   );
-  const linkedAlerts =
-    identifiers.length > 0
-      ? await db
-          .select()
-          .from(alerts)
-          .where(
-            and(
-              eq(alerts.orgId, orgId),
-              or(
-                ...identifiers.flatMap((value) => [
-                  eq(alerts.hostname, value),
-                  eq(alerts.sourceIp, value),
-                  eq(alerts.destIp, value),
-                ]),
-              ),
-            ),
-          )
-          .orderBy(desc(alerts.createdAt))
-      : [];
-  const linkedAlertIds = new Set(linkedAlerts.map((alert) => alert.id));
-  const organizationIncidents = await db.select().from(incidents).where(eq(incidents.orgId, orgId));
-  const linkedIncidents = organizationIncidents.filter((incident) => {
-    const affectedAssets = incident.affectedAssets;
-    const serialized = JSON.stringify(affectedAssets || []);
-    const referencesAsset = identifiers.some((value) => serialized.includes(value)) || serialized.includes(asset.id);
-    const referencesAlert = (incident.referencedAlertIds || []).some((id) => linkedAlertIds.has(id));
-    return referencesAsset || referencesAlert;
-  });
-  return { linkedAlerts, linkedIncidents };
+  if (identifiers.length === 0) {
+    return {
+      linkedAlerts: [],
+      linkedIncidents: [],
+      alertsTruncated: false,
+      incidentsTruncated: false,
+    } satisfies AssetSecurityHistory;
+  }
+
+  const normalizedIdentifiers = Array.from(new Set(identifiers.map((value) => value.trim().toLocaleLowerCase())));
+  const alertIdentifierConditions = normalizedIdentifiers.flatMap((value) => [
+    sql`lower(${alerts.hostname}) = ${value}`,
+    sql`lower(${alerts.sourceIp}) = ${value}`,
+    sql`lower(${alerts.destIp}) = ${value}`,
+  ]);
+  const alertRows = await db
+    .select()
+    .from(alerts)
+    .where(and(eq(alerts.orgId, orgId), or(...alertIdentifierConditions)))
+    .orderBy(desc(alerts.createdAt))
+    .limit(ASSET_ALERT_HISTORY_LIMIT + 1);
+  const alertsTruncated = alertRows.length > ASSET_ALERT_HISTORY_LIMIT;
+  const linkedAlerts = alertRows.slice(0, ASSET_ALERT_HISTORY_LIMIT);
+
+  const identifierSql = sql.join(
+    normalizedIdentifiers.map((value) => sql`${value}`),
+    sql`, `,
+  );
+  const affectedAssetCondition = sql`EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(
+      CASE
+        WHEN jsonb_typeof(${incidents.affectedAssets}) = 'array' THEN ${incidents.affectedAssets}
+        ELSE '[]'::jsonb
+      END
+    ) AS affected_asset
+    WHERE lower(trim(affected_asset #>> '{}')) IN (${identifierSql})
+      OR lower(trim(affected_asset->>'id')) IN (${identifierSql})
+      OR lower(trim(affected_asset->>'assetId')) IN (${identifierSql})
+      OR lower(trim(affected_asset->>'asset_id')) IN (${identifierSql})
+      OR lower(trim(affected_asset->>'hostname')) IN (${identifierSql})
+      OR lower(trim(affected_asset->>'fqdn')) IN (${identifierSql})
+      OR lower(trim(affected_asset->>'ip')) IN (${identifierSql})
+      OR lower(trim(affected_asset->>'ipAddress')) IN (${identifierSql})
+      OR lower(trim(affected_asset->>'ip_address')) IN (${identifierSql})
+      OR lower(trim(affected_asset->>'name')) IN (${identifierSql})
+  )`;
+  const linkedAlertCondition = sql`EXISTS (
+    SELECT 1
+    FROM alerts AS linked_alert
+    WHERE linked_alert.org_id = ${orgId}
+      AND linked_alert.id = ANY(${incidents.referencedAlertIds})
+      AND (
+        lower(linked_alert.hostname) IN (${identifierSql})
+        OR lower(linked_alert.source_ip) IN (${identifierSql})
+        OR lower(linked_alert.dest_ip) IN (${identifierSql})
+      )
+  )`;
+  const incidentRows = await db
+    .select()
+    .from(incidents)
+    .where(and(eq(incidents.orgId, orgId), sql`(${affectedAssetCondition} OR ${linkedAlertCondition})`))
+    .orderBy(desc(incidents.createdAt))
+    .limit(ASSET_INCIDENT_HISTORY_LIMIT + 1);
+  const incidentsTruncated = incidentRows.length > ASSET_INCIDENT_HISTORY_LIMIT;
+  const linkedIncidents = incidentRows
+    .slice(0, ASSET_INCIDENT_HISTORY_LIMIT)
+    .filter(
+      (incident) =>
+        assetReferencesMatch(incident.affectedAssets, identifiers) || (incident.referencedAlertIds || []).length > 0,
+    );
+
+  return { linkedAlerts, linkedIncidents, alertsTruncated, incidentsTruncated } satisfies AssetSecurityHistory;
 }
 
 // ============================================================================
@@ -932,7 +987,10 @@ export function registerStandalonePlatformRoutes(app: Express): void {
       if (!asset) return res.status(404).json({ message: "Asset not found" });
 
       const softwareInventory = Array.isArray(asset.installedSoftware) ? asset.installedSoftware : [];
-      const { linkedAlerts, linkedIncidents } = await getAssetSecurityHistory(orgId, asset);
+      const { linkedAlerts, linkedIncidents, alertsTruncated, incidentsTruncated } = await getAssetSecurityHistory(
+        orgId,
+        asset,
+      );
 
       res.json({
         asset,
@@ -947,6 +1005,12 @@ export function registerStandalonePlatformRoutes(app: Express): void {
           reason: "No asset-scoped compliance assessment is persisted for this asset.",
         },
         alertHistory: linkedAlerts,
+        alertHistoryMeta: {
+          alertsLimit: ASSET_ALERT_HISTORY_LIMIT,
+          incidentsLimit: ASSET_INCIDENT_HISTORY_LIMIT,
+          alertsTruncated,
+          incidentsTruncated,
+        },
         vulnerabilityBreakdown: null,
         availability: {
           softwareInventory: {
@@ -970,6 +1034,8 @@ export function registerStandalonePlatformRoutes(app: Express): void {
               linkedAlerts.length > 0 || linkedIncidents.length > 0
                 ? null
                 : "No alerts or incidents matched this asset by persisted hostname, IP address, or incident references.",
+            alertsTruncated,
+            incidentsTruncated,
           },
           vulnerabilities: {
             available: asset.vulnerabilityCount > 0,
@@ -1202,7 +1268,10 @@ export function registerStandalonePlatformRoutes(app: Express): void {
         .from(assetInventory)
         .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
       if (!asset) return res.status(404).json({ message: "Asset not found" });
-      const { linkedAlerts, linkedIncidents } = await getAssetSecurityHistory(orgId, asset);
+      const { linkedAlerts, linkedIncidents, alertsTruncated, incidentsTruncated } = await getAssetSecurityHistory(
+        orgId,
+        asset,
+      );
       res.json({
         assetId: asset.id,
         assetName: asset.name,
@@ -1212,6 +1281,12 @@ export function registerStandalonePlatformRoutes(app: Express): void {
           totalAlerts: linkedAlerts.length,
           openAlerts: linkedAlerts.filter((alert) => alert.status === "open").length,
           totalIncidents: linkedIncidents.length,
+        },
+        limits: {
+          alerts: ASSET_ALERT_HISTORY_LIMIT,
+          incidents: ASSET_INCIDENT_HISTORY_LIMIT,
+          alertsTruncated,
+          incidentsTruncated,
         },
         available: linkedAlerts.length > 0 || linkedIncidents.length > 0,
         reason:

@@ -1356,6 +1356,11 @@ function LogSourceConfigPanel() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{
+    status: string;
+    message: string;
+    eventReceipt?: { eventsReceived: number; lastEventAt: string | null; everReceived: boolean };
+  } | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/native/log-sources"],
@@ -1401,8 +1406,14 @@ function LogSourceConfigPanel() {
       return res.json();
     },
     onSuccess: (data) => {
+      setTestResult(data);
       toast({
-        title: data.status === "success" ? "Test passed" : "Test failed",
+        title:
+          data.status === "success"
+            ? "CloudWatch probe passed"
+            : data.status === "unavailable"
+              ? "Verification unavailable"
+              : "Connection probe failed",
         description: data.message,
         variant: data.status === "success" ? "default" : "destructive",
       });
@@ -1483,7 +1494,10 @@ function LogSourceConfigPanel() {
               <Card
                 key={source.id}
                 className={`cursor-pointer transition-colors hover:bg-muted/50 ${selectedSource === source.id ? "ring-1 ring-primary" : ""}`}
-                onClick={() => setSelectedSource(selectedSource === source.id ? null : source.id)}
+                onClick={() => {
+                  setSelectedSource(selectedSource === source.id ? null : source.id);
+                  setTestResult(null);
+                }}
               >
                 <CardContent className="py-3 px-4">
                   <div className="flex items-center justify-between">
@@ -1578,6 +1592,34 @@ function LogSourceConfigPanel() {
             </div>
           </CardHeader>
           <CardContent>
+            {testResult && (
+              <div
+                className={`mb-4 rounded-md border px-3 py-2 text-sm ${
+                  testResult.status === "success"
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                    : testResult.status === "unavailable"
+                      ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                      : "border-red-500/30 bg-red-500/10 text-red-200"
+                }`}
+              >
+                <div className="font-medium">
+                  {testResult.status === "success"
+                    ? "Probe completed successfully"
+                    : testResult.status === "unavailable"
+                      ? "Cannot verify from this side"
+                      : "Probe failed"}
+                </div>
+                <div className="mt-1">{testResult.message}</div>
+                {testResult.eventReceipt && (
+                  <div className="mt-1 text-xs opacity-80">
+                    Events received: {testResult.eventReceipt.eventsReceived.toLocaleString()}
+                    {testResult.eventReceipt.lastEventAt
+                      ? ` · Last event ${timeAgo(testResult.eventReceipt.lastEventAt)}`
+                      : " · No event has arrived yet"}
+                  </div>
+                )}
+              </div>
+            )}
             <Tabs defaultValue="config">
               <TabsList>
                 <TabsTrigger value="config">Setup Instructions</TabsTrigger>

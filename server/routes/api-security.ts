@@ -974,70 +974,12 @@ export function registerApiSecurityRoutes(app: Express): void {
           return res.status(404).json({ message: "API endpoint not found" });
         }
 
-        // Simulate DAST scan results based on API characteristics
-        const scanFindings: Array<{ type: string; severity: string; title: string; cwe: string; remediation: string }> =
-          [];
-
-        // Check for no-auth endpoints
-        if (api.authType === "none") {
-          scanFindings.push({
-            type: "broken_auth",
-            severity: "critical",
-            title: `No authentication on ${api.method} ${api.path}`,
-            cwe: "CWE-306",
-            remediation: "Add authentication (OAuth2, API Key, or Bearer token) to this endpoint",
-          });
-        }
-
-        // Check for potential BOLA patterns (ID in path)
-        if (/\/:?[a-z]*id/i.test(api.path) || /\/\d+/.test(api.path)) {
-          scanFindings.push({
-            type: "bola",
-            severity: "high",
-            title: `Potential BOLA vulnerability on ${api.method} ${api.path}`,
-            cwe: "CWE-639",
-            remediation: "Ensure object-level authorization checks verify the requesting user owns the resource",
-          });
-        }
-
-        // Check for mutation endpoints without proper auth
-        if (
-          ["POST", "PUT", "PATCH", "DELETE"].includes(api.method) &&
-          api.authType !== "oauth2" &&
-          api.authType !== "mtls"
-        ) {
-          scanFindings.push({
-            type: "bfla",
-            severity: "medium",
-            title: `Mutation endpoint may lack function-level auth: ${api.method} ${api.path}`,
-            cwe: "CWE-285",
-            remediation: "Implement role-based access control on mutation endpoints",
-          });
-        }
-
-        // Create findings in DB
-        for (const sf of scanFindings) {
-          await db.insert(apiFindings).values({
-            orgId,
-            apiId,
-            findingType: sf.type,
-            severity: sf.severity,
-            title: sf.title,
-            description: `DAST scan (${scanType || "quick"}) detected: ${sf.title}`,
-            endpoint: `${api.method} ${api.path}`,
-            method: api.method,
-            cweId: sf.cwe,
-            owaspCategory: OWASP_CATEGORIES[sf.type] || null,
-            remediation: sf.remediation,
-            metadata: { scanType: scanType || "quick", scannedAt: new Date().toISOString() },
-          });
-        }
-
-        log.info(`DAST scan completed: ${scanFindings.length} findings`, { orgId, apiId });
-        res.json({
-          message: `DAST scan complete: ${scanFindings.length} findings`,
-          findingsCount: scanFindings.length,
-          findings: scanFindings,
+        return res.status(503).json({
+          status: "unavailable",
+          message: "Dynamic application security scanning is unavailable.",
+          reason:
+            "No DAST scanner or configured scanning provider is connected. Connect a supported DAST provider before requesting a dynamic scan.",
+          apiId: api.id,
         });
       } catch (error) {
         log.error("Failed to run DAST scan", { error: String(error) });
@@ -1166,15 +1108,10 @@ export function registerApiSecurityRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const { apiId, scanType, testCategories } = req.body;
+        const { apiId } = req.body;
 
         if (!apiId || typeof apiId !== "string") {
           return res.status(400).json({ message: "apiId is required" });
-        }
-
-        const validScanTypes = ["quick", "full", "auth_test", "injection_test", "comprehensive"];
-        if (scanType && !validScanTypes.includes(scanType)) {
-          return res.status(400).json({ message: `scanType must be one of: ${validScanTypes.join(", ")}` });
         }
 
         // Verify API belongs to org
@@ -1188,193 +1125,12 @@ export function registerApiSecurityRoutes(app: Express): void {
           return res.status(404).json({ message: "API endpoint not found" });
         }
 
-        // DAST test categories
-        const allCategories = [
-          {
-            category: "sql_injection",
-            label: "SQL Injection",
-            cwe: "CWE-89",
-            owasp: "API8:2023 Security Misconfiguration",
-            test: () => {
-              // Check for dynamic path segments that could be injectable
-              if (/\/:?\w*id/i.test(api.path) || /\/\d+/.test(api.path)) {
-                return {
-                  vulnerable: true,
-                  title: `Potential SQL injection on ${api.method} ${api.path}`,
-                  remediation:
-                    "Use parameterized queries. Validate and sanitize all user input. Implement input whitelisting.",
-                  severity: "critical" as const,
-                };
-              }
-              return null;
-            },
-          },
-          {
-            category: "xss",
-            label: "Cross-Site Scripting (XSS)",
-            cwe: "CWE-79",
-            owasp: "API8:2023 Security Misconfiguration",
-            test: () => {
-              if (["POST", "PUT", "PATCH"].includes(api.method)) {
-                return {
-                  vulnerable: true,
-                  title: `Potential reflected XSS on ${api.method} ${api.path}`,
-                  remediation:
-                    "Encode all output. Use Content-Security-Policy headers. Validate input against an allowlist.",
-                  severity: "high" as const,
-                };
-              }
-              return null;
-            },
-          },
-          {
-            category: "ssrf",
-            label: "Server-Side Request Forgery (SSRF)",
-            cwe: "CWE-918",
-            owasp: "API7:2023 Server Side Request Forgery",
-            test: () => {
-              if (/url|uri|link|redirect|callback|webhook/i.test(api.path)) {
-                return {
-                  vulnerable: true,
-                  title: `Potential SSRF on ${api.method} ${api.path}`,
-                  remediation:
-                    "Validate and sanitize all URLs. Use allowlists for permitted domains. Block internal IP ranges (10.x, 172.16-31.x, 192.168.x).",
-                  severity: "critical" as const,
-                };
-              }
-              return null;
-            },
-          },
-          {
-            category: "auth_bypass",
-            label: "Authentication Bypass",
-            cwe: "CWE-287",
-            owasp: "API2:2023 Broken Authentication",
-            test: () => {
-              if (api.authType === "none") {
-                return {
-                  vulnerable: true,
-                  title: `No authentication on ${api.method} ${api.path}`,
-                  remediation:
-                    "Add authentication (OAuth2, API Key, or Bearer token). Implement rate limiting. Use HTTPS only.",
-                  severity: "critical" as const,
-                };
-              }
-              if (api.authType === "api_key" && ["DELETE", "PUT", "PATCH"].includes(api.method)) {
-                return {
-                  vulnerable: true,
-                  title: `Weak auth (API key) on mutation endpoint ${api.method} ${api.path}`,
-                  remediation:
-                    "Upgrade to OAuth2 or mTLS for mutation endpoints. API keys should be used for read-only access.",
-                  severity: "medium" as const,
-                };
-              }
-              return null;
-            },
-          },
-          {
-            category: "authz_flaws",
-            label: "Authorization Flaws (BOLA/BFLA)",
-            cwe: "CWE-639",
-            owasp: "API1:2023 Broken Object Level Authorization",
-            test: () => {
-              const findings = [];
-              if (/\/:?[a-z]*id/i.test(api.path) || /\/\d+/.test(api.path)) {
-                findings.push({
-                  vulnerable: true,
-                  title: `Potential BOLA on ${api.method} ${api.path} — object ID in path`,
-                  remediation:
-                    "Implement object-level authorization. Verify the requesting user owns or has access to the resource.",
-                  severity: "high" as const,
-                });
-              }
-              if (
-                ["POST", "PUT", "PATCH", "DELETE"].includes(api.method) &&
-                api.authType !== "oauth2" &&
-                api.authType !== "mtls"
-              ) {
-                findings.push({
-                  vulnerable: true,
-                  title: `Potential BFLA on ${api.method} ${api.path} — mutation without strong auth`,
-                  remediation:
-                    "Implement function-level authorization with RBAC. Verify user roles before allowing mutations.",
-                  severity: "medium" as const,
-                });
-              }
-              return findings.length > 0 ? findings : null;
-            },
-          },
-        ];
-
-        // Filter categories if specified
-        const categoriesToRun =
-          testCategories && Array.isArray(testCategories)
-            ? allCategories.filter((c) => testCategories.includes(c.category))
-            : allCategories;
-
-        const scanResults: Array<{
-          category: string;
-          label: string;
-          cwe: string;
-          owasp: string;
-          severity: string;
-          title: string;
-          remediation: string;
-        }> = [];
-
-        for (const cat of categoriesToRun) {
-          const result = cat.test();
-          if (result) {
-            const items = Array.isArray(result) ? result : [result];
-            for (const item of items) {
-              if (item && item.vulnerable) {
-                scanResults.push({
-                  category: cat.category,
-                  label: cat.label,
-                  cwe: cat.cwe,
-                  owasp: cat.owasp,
-                  severity: item.severity,
-                  title: item.title,
-                  remediation: item.remediation,
-                });
-
-                // Persist finding to DB
-                await db.insert(apiFindings).values({
-                  orgId,
-                  apiId,
-                  findingType: cat.category === "authz_flaws" ? "bola" : cat.category,
-                  severity: item.severity,
-                  title: item.title,
-                  description: `DAST comprehensive scan (${scanType || "full"}) detected: ${item.title}`,
-                  endpoint: `${api.method} ${api.path}`,
-                  method: api.method,
-                  cweId: cat.cwe,
-                  owaspCategory: cat.owasp,
-                  remediation: item.remediation,
-                  metadata: {
-                    scanType: scanType || "full",
-                    category: cat.category,
-                    scannedAt: new Date().toISOString(),
-                  },
-                });
-              }
-            }
-          }
-        }
-
-        log.info(`DAST full scan completed: ${scanResults.length} findings`, { orgId, apiId });
-        res.json({
-          message: `DAST comprehensive scan complete: ${scanResults.length} findings`,
-          endpoint: `${api.method} ${api.path}`,
-          categoriesTested: categoriesToRun.map((c) => c.label),
-          findingsCount: scanResults.length,
-          findings: scanResults,
-          summary: {
-            critical: scanResults.filter((r) => r.severity === "critical").length,
-            high: scanResults.filter((r) => r.severity === "high").length,
-            medium: scanResults.filter((r) => r.severity === "medium").length,
-            low: scanResults.filter((r) => r.severity === "low").length,
-          },
+        return res.status(503).json({
+          status: "unavailable",
+          message: "Dynamic application security scanning is unavailable.",
+          reason:
+            "No DAST scanner or configured scanning provider is connected. Connect a supported DAST provider before requesting a dynamic scan.",
+          apiId: api.id,
         });
       } catch (error) {
         log.error("Failed to run DAST full scan", { error: String(error) });

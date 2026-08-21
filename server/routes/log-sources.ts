@@ -7,6 +7,8 @@ import { sql, eq, and, desc, count } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { logSources, sensorEvents, nativeSensors, LOG_SOURCE_TYPES, LOG_SOURCE_FORMATS } from "../../shared/schema";
 import { processEventBatch } from "../native-detections";
+import { buildHttpPushProbeResult, probeCloudWatchLogSource } from "../log-source-probe";
+import type { LogSourceProbeResult } from "../log-source-probe";
 
 const log = logger.child("log-sources");
 
@@ -389,41 +391,56 @@ export function registerLogSourceRoutes(app: Express): void {
           return res.status(404).json({ message: "Log source not found" });
         }
 
-        // Simulate connectivity test based on source type
-        const testResults: Record<string, unknown> = {
-          sourceType: source.sourceType,
-          tested: true,
-          timestamp: new Date().toISOString(),
-        };
-
+        let testResults: LogSourceProbeResult;
         switch (source.sourceType) {
           case "syslog":
-            testResults.status = "success";
-            testResults.message = `Syslog listener ready on ${source.listenAddress || "0.0.0.0"}:${source.listenPort || 514} (${source.protocol || "udp"})`;
+            testResults = {
+              sourceType: source.sourceType,
+              tested: false,
+              timestamp: new Date().toISOString(),
+              status: "unavailable",
+              reasonCode: "configuration",
+              message:
+                "This receiver-side syslog source cannot be verified from the platform. Send an event to confirm delivery.",
+            };
             break;
           case "windows_event_log":
-            testResults.status = "success";
-            testResults.message = `Windows Event Log collection configured for channels: ${(source.winEventChannels || []).join(", ") || "Security, System, Application"}`;
+            testResults = {
+              sourceType: source.sourceType,
+              tested: false,
+              timestamp: new Date().toISOString(),
+              status: "unavailable",
+              reasonCode: "configuration",
+              message:
+                "Windows Event Log collection cannot be verified from the platform. Connect a collector and send an event to confirm delivery.",
+            };
             break;
           case "http_push":
-            testResults.status = "success";
-            testResults.message = `HTTP push endpoint active at ${source.httpEndpoint || "/api/native/log-sources/ingest/..."}`;
-            testResults.endpoint = source.httpEndpoint;
+            testResults = buildHttpPushProbeResult(source);
             break;
           case "journald":
-            testResults.status = "success";
-            testResults.message = `journald collection configured for units: ${(source.journaldUnits || []).join(", ") || "all units"}`;
+            testResults = {
+              sourceType: source.sourceType,
+              tested: false,
+              timestamp: new Date().toISOString(),
+              status: "unavailable",
+              reasonCode: "configuration",
+              message:
+                "This receiver-side journald source cannot be verified from the platform. Connect a collector and send an event to confirm delivery.",
+            };
             break;
           case "cloudwatch":
-            testResults.status = source.cloudwatchRegion && source.cloudwatchLogGroup ? "success" : "error";
-            testResults.message =
-              source.cloudwatchRegion && source.cloudwatchLogGroup
-                ? `CloudWatch Logs connected: ${source.cloudwatchLogGroup} in ${source.cloudwatchRegion}`
-                : "Missing cloudwatchRegion or cloudwatchLogGroup configuration";
+            testResults = await probeCloudWatchLogSource(source);
             break;
           default:
-            testResults.status = "error";
-            testResults.message = "Unknown source type";
+            testResults = {
+              sourceType: source.sourceType,
+              tested: false,
+              timestamp: new Date().toISOString(),
+              status: "error",
+              reasonCode: "configuration",
+              message: "Unknown log source type.",
+            };
         }
 
         res.json(testResults);
