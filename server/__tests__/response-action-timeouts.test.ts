@@ -20,7 +20,7 @@ vi.mock("../scaling-state", () => ({
   registerShutdownHandler: vi.fn(),
 }));
 
-import { expireTimedOutResponseActions } from "../response-action-timeouts";
+import { expireTimedOutResponseActions, validateResponseActionTimeout } from "../response-action-timeouts";
 
 describe("response action timeout lifecycle", () => {
   beforeEach(() => {
@@ -49,5 +49,12 @@ describe("response action timeout lifecycle", () => {
     expect(result).toHaveLength(2);
     expect(result[0]).toMatchObject({ id: "approved-action", orgId: "org-1", status: "timed_out" });
     expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("rejects timeouts that can expire before the next sensor poll", () => {
+    expect(validateResponseActionTimeout(29)).toMatchObject({ valid: false });
+    expect(validateResponseActionTimeout(30)).toMatchObject({ valid: false });
+    expect(validateResponseActionTimeout(60)).toEqual({ valid: true, timeoutSeconds: 60 });
+    expect(validateResponseActionTimeout(undefined)).toEqual({ valid: true, timeoutSeconds: 300 });
   });
 });

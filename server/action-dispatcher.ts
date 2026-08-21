@@ -1,6 +1,7 @@
 import type { IStorage } from "./storage";
 import { db } from "./db";
 import { agentResponseActions, nativeSensors, ROLE_PERMISSIONS } from "../shared/schema";
+import { validateResponseActionTimeout } from "./response-action-timeouts";
 import { eq, and, or, ilike, type SQL } from "drizzle-orm";
 import { logger } from "./routes/shared";
 import { validateWebhookUrl } from "./outbound-security";
@@ -549,7 +550,17 @@ async function executeAgentResponseAction(
   // Determine risk level and initial status
   const riskLevel = determineRiskLevel(actionType);
   const initialStatus = determineInitialStatus(riskLevel);
-  const timeout = typeof config?.timeoutSeconds === "number" ? Math.min(config.timeoutSeconds, 3600) : 300;
+  const timeoutResult = validateResponseActionTimeout(config?.timeoutSeconds);
+  if (!timeoutResult.valid) {
+    log.warn("Native response action timeout is below the sensor dispatch cadence", {
+      actionType,
+      target,
+      timeoutSeconds: config?.timeoutSeconds,
+      error: timeoutResult.message,
+    });
+    return unavailableAgentResponse(actionType, target, timeoutResult.message, executedAt);
+  }
+  const timeout = timeoutResult.timeoutSeconds;
 
   try {
     const [action] = await db

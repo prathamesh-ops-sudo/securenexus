@@ -2,9 +2,43 @@ import { sql } from "drizzle-orm";
 import { db } from "./db";
 import { logger } from "./logger";
 import { registerShutdownHandler } from "./scaling-state";
+import {
+  DEFAULT_RESPONSE_ACTION_TIMEOUT_SECONDS,
+  MAX_RESPONSE_ACTION_TIMEOUT_SECONDS,
+  MIN_RESPONSE_ACTION_TIMEOUT_SECONDS,
+  RESPONSE_ACTION_DISPATCH_INTERVAL_SECONDS,
+} from "../shared/schema";
 
 const log = logger.child("response-action-timeouts");
-const TIMEOUT_SWEEP_INTERVAL_MS = 30_000;
+const TIMEOUT_SWEEP_INTERVAL_MS = RESPONSE_ACTION_DISPATCH_INTERVAL_SECONDS * 1000;
+
+export type ResponseActionTimeoutResult = { valid: true; timeoutSeconds: number } | { valid: false; message: string };
+
+export function validateResponseActionTimeout(value: unknown): ResponseActionTimeoutResult {
+  if (value === undefined || value === null || value === "") {
+    return { valid: true, timeoutSeconds: DEFAULT_RESPONSE_ACTION_TIMEOUT_SECONDS };
+  }
+
+  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value)) {
+    return { valid: false, message: "timeoutSeconds must be a whole number of seconds" };
+  }
+
+  if (value < MIN_RESPONSE_ACTION_TIMEOUT_SECONDS) {
+    return {
+      valid: false,
+      message: `timeoutSeconds must be at least ${MIN_RESPONSE_ACTION_TIMEOUT_SECONDS} seconds because sensors poll every ${RESPONSE_ACTION_DISPATCH_INTERVAL_SECONDS} seconds`,
+    };
+  }
+
+  if (value > MAX_RESPONSE_ACTION_TIMEOUT_SECONDS) {
+    return {
+      valid: false,
+      message: `timeoutSeconds cannot exceed ${MAX_RESPONSE_ACTION_TIMEOUT_SECONDS} seconds`,
+    };
+  }
+
+  return { valid: true, timeoutSeconds: value };
+}
 
 interface TimedOutResponseActionRow {
   id: string;

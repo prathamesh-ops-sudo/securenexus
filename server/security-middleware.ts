@@ -32,11 +32,7 @@ const CSRF_EXEMPT_PREFIXES = [
 ];
 
 function isApiKeyAuthenticated(req: Request): boolean {
-  return Boolean(
-    (req as any).apiKey ||
-    req.headers["x-api-key"] ||
-    (typeof req.headers.authorization === "string" && req.headers.authorization.startsWith("Bearer ")),
-  );
+  return !!(req as any).apiKey;
 }
 
 function isCsrfExempt(req: Request): boolean {

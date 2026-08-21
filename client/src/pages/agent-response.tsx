@@ -43,6 +43,11 @@ import {
   Info,
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/page-skeleton";
+import {
+  DEFAULT_RESPONSE_ACTION_TIMEOUT_SECONDS,
+  MAX_RESPONSE_ACTION_TIMEOUT_SECONDS,
+  MIN_RESPONSE_ACTION_TIMEOUT_SECONDS,
+} from "@shared/schema";
 
 interface ResponseAction {
   id: string;
@@ -229,6 +234,7 @@ export default function AgentResponsePage() {
     scriptContent: "",
     scriptType: "bash",
     reason: "",
+    timeoutSeconds: String(DEFAULT_RESPONSE_ACTION_TIMEOUT_SECONDS),
   });
 
   const {
@@ -283,6 +289,7 @@ export default function AgentResponsePage() {
         scriptContent: "",
         scriptType: "bash",
         reason: "",
+        timeoutSeconds: String(DEFAULT_RESPONSE_ACTION_TIMEOUT_SECONDS),
       });
       toast({
         title: data.needsApproval ? "Action queued for approval" : "Action approved",
@@ -454,6 +461,7 @@ export default function AgentResponsePage() {
     if (newAction.targetServiceName) body.targetServiceName = newAction.targetServiceName;
     if (newAction.scriptContent) body.scriptContent = newAction.scriptContent;
     if (newAction.scriptType) body.scriptType = newAction.scriptType;
+    body.timeoutSeconds = Number(newAction.timeoutSeconds);
     createAction.mutate(body);
   }
 
@@ -1596,6 +1604,24 @@ export default function AgentResponsePage() {
                 value={newAction.reason}
                 onChange={(e) => setNewAction({ ...newAction, reason: e.target.value })}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="response-action-timeout">Dispatch timeout (seconds)</Label>
+              <Input
+                id="response-action-timeout"
+                className="bg-zinc-900/50 border-zinc-800"
+                type="number"
+                min={MIN_RESPONSE_ACTION_TIMEOUT_SECONDS}
+                max={MAX_RESPONSE_ACTION_TIMEOUT_SECONDS}
+                step={1}
+                value={newAction.timeoutSeconds}
+                onChange={(e) => setNewAction({ ...newAction, timeoutSeconds: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Minimum {MIN_RESPONSE_ACTION_TIMEOUT_SECONDS}s because sensors poll every 30s. Maximum{" "}
+                {MAX_RESPONSE_ACTION_TIMEOUT_SECONDS}s.
+              </p>
             </div>
 
             {selectedActionType && (

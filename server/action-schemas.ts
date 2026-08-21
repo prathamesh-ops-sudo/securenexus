@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { logger } from "./routes/shared";
+import { MIN_RESPONSE_ACTION_TIMEOUT_SECONDS } from "../shared/schema";
 
 const log = logger.child("action-schemas");
 
@@ -11,7 +12,7 @@ export const isolateHostSchema = z
     target: z.string().min(1).optional(),
     sensorId: z.string().uuid().optional(),
     reason: z.string().optional(),
-    timeoutSeconds: z.number().int().min(1).max(3600).optional(),
+    timeoutSeconds: z.number().int().min(MIN_RESPONSE_ACTION_TIMEOUT_SECONDS).max(3600).optional(),
   })
   .refine((d) => d.hostname || d.ip || d.target || d.sensorId, {
     message: "At least one of hostname, ip, target, or sensorId is required",

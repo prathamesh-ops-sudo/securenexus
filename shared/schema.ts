@@ -6743,6 +6743,10 @@ export const AGENT_ACTION_TYPES = [
   "restore_file",
   "enable_user",
 ] as const;
+export const RESPONSE_ACTION_DISPATCH_INTERVAL_SECONDS = 30;
+export const MIN_RESPONSE_ACTION_TIMEOUT_SECONDS = RESPONSE_ACTION_DISPATCH_INTERVAL_SECONDS * 2;
+export const MAX_RESPONSE_ACTION_TIMEOUT_SECONDS = 3600;
+export const DEFAULT_RESPONSE_ACTION_TIMEOUT_SECONDS = 300;
 export const AGENT_ACTION_RISK_LEVELS = ["low", "medium", "high"] as const;
 export const AGENT_ACTION_STATUSES = [
   "pending_approval",

@@ -7,7 +7,7 @@ import { logger, getOrgId } from "./shared";
 import { db } from "../db";
 import { sql, eq, and, desc, ilike, or } from "drizzle-orm";
 import { agentResponseActions, nativeSensors, integrationConfigs, AGENT_ACTION_TYPES } from "../../shared/schema";
-import { expireTimedOutResponseActions } from "../response-action-timeouts";
+import { expireTimedOutResponseActions, validateResponseActionTimeout } from "../response-action-timeouts";
 
 const log = logger.child("agent-response");
 
@@ -86,7 +86,11 @@ export function registerAgentResponseRoutes(app: Express): void {
         const userId = (req as any).user?.id;
         const userName = (req as any).user?.firstName || (req as any).user?.email || "Unknown";
 
-        const timeout = typeof timeoutSeconds === "number" ? Math.min(timeoutSeconds, 3600) : 300;
+        const timeoutResult = validateResponseActionTimeout(timeoutSeconds);
+        if (!timeoutResult.valid) {
+          return res.status(400).json({ message: timeoutResult.message });
+        }
+        const timeout = timeoutResult.timeoutSeconds;
 
         const [action] = await db
           .insert(agentResponseActions)
@@ -1129,7 +1133,11 @@ export function registerAgentResponseRoutes(app: Express): void {
         const initialStatus = determineInitialStatus(riskLevelVal);
         const userId = (req as any).user?.id;
         const userName = (req as any).user?.firstName || (req as any).user?.email || "Unknown";
-        const timeout = typeof timeoutSeconds === "number" ? Math.min(timeoutSeconds, 3600) : 300;
+        const timeoutResult = validateResponseActionTimeout(timeoutSeconds);
+        if (!timeoutResult.valid) {
+          return res.status(400).json({ message: timeoutResult.message });
+        }
+        const timeout = timeoutResult.timeoutSeconds;
 
         const [action] = await db
           .insert(agentResponseActions)
