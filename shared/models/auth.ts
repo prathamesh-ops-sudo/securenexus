@@ -38,8 +38,28 @@ export const users = pgTable("users", {
 
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
-export type AuthenticatedUser = Omit<User, "passwordHash"> & {
+export type AuthenticatedUser = Pick<
+  User,
+  | "id"
+  | "email"
+  | "firstName"
+  | "lastName"
+  | "profileImageUrl"
+  | "isSuperAdmin"
+  | "disabledAt"
+  | "lastLoginAt"
+  | "passwordChangedAt"
+  | "passwordChangeRequired"
+  | "mfaEnabled"
+  | "mfaVerifiedAt"
+  | "createdAt"
+  | "updatedAt"
+> & {
   hasLocalPassword: boolean;
+  orgId?: string | null;
+  role?: string | null;
+  mfaRequired?: boolean;
+  passwordExpired?: boolean;
 };
 
 export const impersonationSessions = pgTable(

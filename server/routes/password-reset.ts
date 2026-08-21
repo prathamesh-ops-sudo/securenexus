@@ -3,7 +3,7 @@ import { randomBytes } from "crypto";
 import { logger, storage } from "./shared";
 import { authStorage } from "../auth/storage";
 import { hashPassword } from "../auth/session";
-import { sendEmail } from "../email-service";
+import { sendEmailWithStatus } from "../email-service";
 import { passwordResetEmail } from "../email-templates";
 import { reply, replyValidation, replyBadRequest, replyInternal } from "../api-response";
 import { forgotPasswordRateLimit } from "../middleware/auth-rate-limit";
@@ -39,12 +39,25 @@ export function registerPasswordResetRoutes(app: Express): void {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    reply(res, { message: "If an account with that email exists, a password reset link has been sent." });
+    reply(res, {
+      message:
+        "If an account with that email exists, password reset instructions will be sent if delivery is available.",
+    });
 
     (async () => {
       try {
         const user = await authStorage.getUserByEmail(normalizedEmail);
-        if (!user || !user.passwordHash) return;
+        if (!user) {
+          logger.child("password-reset").info("Forgot-password reset skipped", { reason: "account_not_found" });
+          return;
+        }
+        if (!user.passwordHash) {
+          logger.child("password-reset").info("Forgot-password reset skipped", {
+            userId: user.id,
+            reason: "no_local_password",
+          });
+          return;
+        }
 
         const token = randomBytes(32).toString("hex");
         const expiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRY_MS);
@@ -53,6 +66,11 @@ export function registerPasswordResetRoutes(app: Express): void {
           userId: user.id,
           token,
           expiresAt,
+        });
+        logger.child("password-reset").info("Forgot-password reset token persisted", {
+          userId: user.id,
+          email: normalizedEmail,
+          expiresAt: expiresAt.toISOString(),
         });
 
         const baseUrl = getAppBaseUrl();
@@ -64,17 +82,29 @@ export function registerPasswordResetRoutes(app: Express): void {
           expiresInMinutes: RESET_TOKEN_EXPIRY_MINUTES,
         });
 
-        await sendEmail({
+        logger.child("password-reset").info("Forgot-password email delivery started", {
+          userId: user.id,
+          email: normalizedEmail,
+        });
+        const delivery = await sendEmailWithStatus({
           to: normalizedEmail,
           subject: emailContent.subject,
           html: emailContent.html,
           text: emailContent.text,
         });
 
-        logger.child("password-reset").info("Password reset token created", {
-          userId: user.id,
-          email: normalizedEmail,
-        });
+        if (delivery.accepted) {
+          logger.child("password-reset").info("Password reset email accepted", {
+            userId: user.id,
+            email: normalizedEmail,
+          });
+        } else {
+          logger.child("password-reset").error("Forgot-password email delivery failed", {
+            userId: user.id,
+            email: normalizedEmail,
+            status: delivery.status,
+          });
+        }
       } catch (error) {
         logger.child("password-reset").error("Background forgot-password failed", { error: String(error) });
       }

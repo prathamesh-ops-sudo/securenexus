@@ -89,6 +89,9 @@ function setupProvisioningTransaction() {
     id: "user-1",
     email: "owner@example.com",
     passwordHash: null,
+    mfaSecret: "encrypted-totp-secret",
+    failedLoginCount: 3,
+    lockedUntil: new Date("2026-01-01T00:00:00.000Z"),
     firstName: "Owner",
     lastName: "One",
   };
@@ -162,6 +165,11 @@ describe("platform tenant provisioning", () => {
         }),
       }),
     );
+    const responseBody = (res.json as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
+    expect(responseBody.data.adminUser).not.toHaveProperty("passwordHash");
+    expect(responseBody.data.adminUser).not.toHaveProperty("mfaSecret");
+    expect(responseBody.data.adminUser).not.toHaveProperty("failedLoginCount");
+    expect(responseBody.data.adminUser).not.toHaveProperty("lockedUntil");
   });
 
   it.each([

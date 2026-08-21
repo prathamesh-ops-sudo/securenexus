@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireSuperAdmin } from "../middleware/super-admin";
-import { hashPassword, invalidateDeserializeCache } from "../auth/session";
+import { hashPassword, invalidateDeserializeCache, type SessionUser } from "../auth/session";
 import { db } from "../db";
 import {
   users,
@@ -24,6 +24,7 @@ import { pool, getPoolHealth, checkPoolConnectivity } from "../db";
 import { logger } from "../logger";
 import { randomBytes } from "crypto";
 import { authStorage } from "../auth/storage";
+import { serializeUser } from "../auth/user-serialization";
 import { sendEmailWithStatus } from "../email-service";
 import type { EmailDeliveryResult } from "../email-service";
 import { passwordResetEmail, welcomeEmail } from "../email-templates";
@@ -40,18 +41,9 @@ const log = logger.child("platform-admin");
 
 const IMPERSONATION_TTL_MS = 60 * 60 * 1000;
 
-/** Authenticated user attached to the request by passport. */
-interface ReqUser {
-  id: string;
-  email: string;
-  firstName?: string | null;
-  lastName?: string | null;
-  isSuperAdmin?: boolean;
-}
-
 /** Extract the authenticated user from a request (passport attaches it as req.user). */
-function getReqUser(req: Request): ReqUser {
-  return (req as Request & { user: ReqUser }).user;
+function getReqUser(req: Request): SessionUser {
+  return (req as Request & { user: SessionUser }).user;
 }
 
 export function getRequiredAppBaseUrl(): string {
@@ -231,7 +223,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
           ...org,
           members: members.map((m) => ({
             ...m.membership,
-            user: { id: m.user.id, email: m.user.email, firstName: m.user.firstName, lastName: m.user.lastName },
+            user: serializeUser(m.user),
           })),
           subscription: sub[0] || null,
           plan: plan[0] || null,
@@ -436,15 +428,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
             .where(eq(organizationMemberships.userId, user.id));
 
           return {
-            id: user.id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            profileImageUrl: user.profileImageUrl,
-            isSuperAdmin: user.isSuperAdmin,
-            disabledAt: user.disabledAt,
-            lastLoginAt: user.lastLoginAt,
-            createdAt: user.createdAt,
+            ...serializeUser(user),
             organizations: memberships.map((m) => ({
               orgId: m.org.id,
               orgName: m.org.name,
@@ -495,16 +479,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
         .where(eq(organizationMemberships.userId, userId));
 
       return sendEnvelope(res, {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        profileImageUrl: user.profileImageUrl,
-        isSuperAdmin: user.isSuperAdmin,
-        disabledAt: user.disabledAt,
-        lastLoginAt: user.lastLoginAt,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
+        ...serializeUser(user),
         organizations: memberships.map((m) => ({
           ...m.membership,
           orgName: m.org.name,
@@ -572,7 +547,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
         });
 
         invalidateDeserializeCache(userId);
-        return sendEnvelope(res, { id: updated.id, email: updated.email, disabledAt: updated.disabledAt });
+        return sendEnvelope(res, serializeUser(updated));
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return sendEnvelope(res, null, {
@@ -620,7 +595,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
         });
 
         invalidateDeserializeCache(userId);
-        return sendEnvelope(res, { id: updated.id, email: updated.email, disabledAt: null });
+        return sendEnvelope(res, serializeUser(updated));
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return sendEnvelope(res, null, {
@@ -938,14 +913,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
 
         return sendEnvelope(res, {
           valid: true,
-          targetUser: targetUser
-            ? {
-                id: targetUser.id,
-                email: targetUser.email,
-                firstName: targetUser.firstName,
-                lastName: targetUser.lastName,
-              }
-            : null,
+          targetUser: targetUser ? serializeUser(targetUser) : null,
           expiresAt: session.expiresAt,
         });
       } catch (error: unknown) {
@@ -1038,12 +1006,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
 
         return sendEnvelope(res, {
           impersonationToken: sessionSid,
-          targetUser: {
-            id: targetUser.id,
-            email: targetUser.email,
-            firstName: targetUser.firstName,
-            lastName: targetUser.lastName,
-          },
+          targetUser: serializeUser(targetUser),
           expiresAt: expiresAt.toISOString(),
         });
       } catch (error: unknown) {
@@ -1059,13 +1022,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
   app.get("/api/platform-admin/me", isAuthenticated, requireSuperAdmin, async (req: Request, res: Response) => {
     try {
       const user = getReqUser(req);
-      return sendEnvelope(res, {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        isSuperAdmin: user.isSuperAdmin,
-      });
+      return sendEnvelope(res, serializeUser(user));
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       return sendEnvelope(res, null, {
@@ -1127,7 +1084,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
         });
 
         invalidateDeserializeCache(targetId);
-        return sendEnvelope(res, { id: updated.id, email: updated.email, isSuperAdmin: true });
+        return sendEnvelope(res, serializeUser(updated));
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return sendEnvelope(res, null, {
@@ -1198,7 +1155,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
         });
 
         invalidateDeserializeCache(targetId);
-        return sendEnvelope(res, { id: updated.id, email: updated.email, isSuperAdmin: false });
+        return sendEnvelope(res, serializeUser(updated));
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return sendEnvelope(res, null, {
@@ -1437,7 +1394,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
 
         invalidateDeserializeCache(userId);
         log.info("User promoted to super admin", { promotedBy: getReqUser(req).id, targetUserId: userId });
-        return sendEnvelope(res, { id: target.id, email: target.email, isSuperAdmin: true });
+        return sendEnvelope(res, { ...serializeUser(target), isSuperAdmin: true });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return sendEnvelope(res, null, {
@@ -1497,7 +1454,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
 
         invalidateDeserializeCache(userId);
         log.info("User demoted from super admin", { demotedBy: getReqUser(req).id, targetUserId: userId });
-        return sendEnvelope(res, { id: target.id, email: target.email, isSuperAdmin: false });
+        return sendEnvelope(res, { ...serializeUser(target), isSuperAdmin: false });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return sendEnvelope(res, null, {
@@ -1653,10 +1610,7 @@ export function registerPlatformAdminRoutes(app: Express): void {
         {
           organization: org,
           adminUser: {
-            id: adminUser.id,
-            email: adminUser.email,
-            firstName: adminUser.firstName,
-            lastName: adminUser.lastName,
+            ...serializeUser(adminUser),
             isNewUser,
             setPasswordUrl: setPasswordToken ? `${appBaseUrl}/reset-password?token=${setPasswordToken}` : null,
             setPasswordExpiresAt: setPasswordExpiresAt?.toISOString() ?? null,
@@ -1862,8 +1816,8 @@ export function registerPlatformAdminRoutes(app: Express): void {
           {
             success: true,
             organization: { id: org.id, name: org.name, slug: org.slug },
-            superadmin: { id: superadminUser.id, email: caller.email, role: "owner" },
-            testUser: { id: testUser.id, email: testEmail, role: "analyst" },
+            superadmin: { ...serializeUser(superadminUser), isSuperAdmin: true, role: "owner" },
+            testUser: { ...serializeUser(testUser), role: "analyst" },
             message:
               "Platform seeded successfully. Log out and log back in via Google OAuth to pick up the new org context.",
           },

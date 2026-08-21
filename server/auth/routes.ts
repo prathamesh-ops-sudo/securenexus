@@ -9,6 +9,7 @@ import {
   type SessionUser,
 } from "./session";
 import { checkAndPromoteSuperAdmin } from "../bootstrap-super-admin";
+import { serializeUser } from "./user-serialization";
 import { storage } from "../storage";
 import { config } from "../config";
 import {
@@ -196,13 +197,13 @@ export function registerAuthRoutes(app: Express): void {
           invalidateDeserializeCache(user.id);
         }
       }
-      const { passwordHash, ...safeUser } = user;
-      return reply(res, {
-        ...safeUser,
-        hasLocalPassword: Boolean(passwordHash),
-        orgId: reqUser.orgId ?? null,
-        role: reqUser.orgRole ?? null,
-      });
+      return reply(
+        res,
+        serializeUser(user, {
+          orgId: reqUser.orgId ?? null,
+          role: reqUser.orgRole ?? null,
+        }),
+      );
     } catch (error) {
       logger.child("routes").error("Error fetching user", { error: String(error) });
       return replyInternal(res, "Failed to fetch user");
@@ -280,13 +281,13 @@ export function registerAuthRoutes(app: Express): void {
             await enforceMaxConcurrentSessions(user.id, userOrgId);
           }
 
-          const { passwordHash, ...safeUser } = user;
-          return reply(res, {
-            ...safeUser,
-            hasLocalPassword: Boolean(passwordHash),
-            mfaRequired: policyResult.mfaRequired || false,
-            passwordExpired: policyResult.passwordExpired || false,
-          });
+          return reply(
+            res,
+            serializeUser(user, {
+              mfaRequired: policyResult.mfaRequired || false,
+              passwordExpired: policyResult.passwordExpired || false,
+            }),
+          );
         });
       },
     )(req, res, next);
