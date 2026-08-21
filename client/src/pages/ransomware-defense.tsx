@@ -727,8 +727,11 @@ export default function RansomwareDefensePage() {
       queryClient.invalidateQueries({ queryKey: ["/api/ransomware-defense"] });
       const issues = result.verification?.issues?.length || 0;
       toast({
-        title: `Verification ${result.verification?.result}`,
-        description: issues > 0 ? `${issues} issue(s) found` : "All checks passed",
+        title: "Backup metadata checked",
+        description:
+          issues > 0
+            ? `${issues} metadata issue(s) found. Restorability remains unverified.`
+            : "Metadata checks completed. No integrity or restore test was run, so restorability remains unverified.",
       });
     },
     onError: (err: Error) => {
@@ -1757,8 +1760,8 @@ export default function RansomwareDefensePage() {
                       <TableHead className="text-zinc-400">Location</TableHead>
                       <TableHead className="text-zinc-400">Encryption</TableHead>
                       <TableHead className="text-zinc-400">Status</TableHead>
-                      <TableHead className="text-zinc-400">Integrity</TableHead>
-                      <TableHead className="text-zinc-400">Last Verified</TableHead>
+                      <TableHead className="text-zinc-400">Metadata Check</TableHead>
+                      <TableHead className="text-zinc-400">Restorability</TableHead>
                       <TableHead className="text-zinc-400">Issues</TableHead>
                       <TableHead className="text-zinc-400">Actions</TableHead>
                     </TableRow>
@@ -1793,23 +1796,27 @@ export default function RansomwareDefensePage() {
                           {b.integrityCheckResult ? (
                             <Badge
                               className={
-                                b.integrityCheckResult === "passed"
+                                b.integrityCheckResult === "metadata_checked"
                                   ? "bg-green-500/20 text-green-400"
                                   : "bg-red-500/20 text-red-400"
                               }
                             >
-                              {b.integrityCheckResult}
+                              {b.integrityCheckResult === "metadata_checked" ? "Metadata checked" : "Metadata issues"}
                             </Badge>
                           ) : (
                             "—"
                           )}
                         </TableCell>
-                        <TableCell className="text-zinc-500 text-xs">{formatDate(b.lastVerifiedAt)}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-amber-400 border-amber-500/30 text-xs">
+                            Unverified
+                          </Badge>
+                        </TableCell>
                         <TableCell>
                           {b.issues && (b.issues as unknown[]).length > 0 ? (
                             <span className="text-red-400 text-xs">{(b.issues as unknown[]).length} issues</span>
                           ) : b.integrityCheckResult ? (
-                            <span className="text-green-400 text-xs">None</span>
+                            <span className="text-zinc-400 text-xs">Metadata only</span>
                           ) : (
                             "—"
                           )}

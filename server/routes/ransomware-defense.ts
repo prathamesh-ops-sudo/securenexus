@@ -33,6 +33,83 @@ import {
 
 const log = logger.child("ransomware-defense");
 
+export function evaluateBackupMetadata(
+  backup: {
+    encryptionStatus?: string | null;
+    retentionDays?: number | null;
+    rpoHours?: number | null;
+    rtoHours?: number | null;
+    backupCreatedAt?: Date | string | null;
+    backupSizeBytes?: number | null;
+  },
+  includeExtendedChecks = false,
+): {
+  status: "metadata_checked" | "metadata_issues";
+  issues: { type: string; description: string; severity: string }[];
+  restoreTestResult: "not_tested";
+  nextScheduledVerification: null;
+  verificationDurationSeconds: null;
+  restorability: "unverified";
+} {
+  const issues: { type: string; description: string; severity: string }[] = [];
+
+  if (backup.encryptionStatus !== "encrypted") {
+    issues.push({
+      type: "encryption",
+      description: "Backup is not encrypted — vulnerable to tampering",
+      severity: "high",
+    });
+  }
+  if (!backup.retentionDays || backup.retentionDays < 30) {
+    issues.push({
+      type: "retention",
+      description: "Retention period is less than 30 days — insufficient for ransomware recovery",
+      severity: "medium",
+    });
+  }
+  if (!backup.rpoHours || backup.rpoHours > 24) {
+    issues.push({
+      type: "rpo",
+      description: "RPO exceeds 24 hours — significant data loss risk in a ransomware event",
+      severity: "medium",
+    });
+  }
+
+  if (includeExtendedChecks) {
+    if (!backup.rtoHours || backup.rtoHours > 8) {
+      issues.push({ type: "rto", description: "RTO exceeds 8 hours — slow recovery time", severity: "low" });
+    }
+    if (backup.backupCreatedAt) {
+      const ageHours = (Date.now() - new Date(backup.backupCreatedAt).getTime()) / (1000 * 60 * 60);
+      if (ageHours > 168) {
+        issues.push({
+          type: "staleness",
+          description: "Backup data is over 7 days old — consider more frequent backups",
+          severity: "medium",
+        });
+      }
+    }
+    if (backup.backupSizeBytes != null && backup.backupSizeBytes === 0) {
+      issues.push({
+        type: "integrity",
+        description: "Backup file is 0 bytes — likely corrupt or empty",
+        severity: "critical",
+      });
+    }
+  }
+
+  return {
+    status: issues.some((issue) => issue.severity === "critical" || issue.severity === "high")
+      ? "metadata_issues"
+      : "metadata_checked",
+    issues,
+    restoreTestResult: "not_tested",
+    nextScheduledVerification: null,
+    verificationDurationSeconds: null,
+    restorability: "unverified",
+  };
+}
+
 export function registerRansomwareDefenseRoutes(app: Express): void {
   // ==========================================================================
   // SUMMARY — dashboard overview
@@ -1402,7 +1479,7 @@ export function registerRansomwareDefenseRoutes(app: Express): void {
     },
   );
 
-  // Run backup verification (simulated)
+  // Check backup metadata without claiming restorability
   app.post(
     "/api/ransomware-defense/backups/:id/verify",
     isAuthenticated,
@@ -1423,52 +1500,23 @@ export function registerRansomwareDefenseRoutes(app: Express): void {
           return res.status(404).json({ message: "Backup not found" });
         }
 
-        // Simulate verification process
-        // In production, this would connect to backup infrastructure
-        const isEncrypted = backup.encryptionStatus === "encrypted";
-        const issues: { type: string; description: string; severity: string }[] = [];
-
-        if (!isEncrypted) {
-          issues.push({
-            type: "encryption",
-            description: "Backup is not encrypted — vulnerable to tampering",
-            severity: "high",
-          });
-        }
-
-        if (!backup.retentionDays || backup.retentionDays < 30) {
-          issues.push({
-            type: "retention",
-            description: "Retention period is less than 30 days — insufficient for ransomware recovery",
-            severity: "medium",
-          });
-        }
-
-        if (!backup.rpoHours || backup.rpoHours > 24) {
-          issues.push({
-            type: "rpo",
-            description: "RPO exceeds 24 hours — significant data loss risk in a ransomware event",
-            severity: "medium",
-          });
-        }
-
-        const verificationResult = issues.some((i) => i.severity === "high") ? "failed" : "passed";
-        const restoreTestResult = "passed"; // Simulated
-
-        const startTime = Date.now();
-        // Estimate verification duration based on number of issues found
-        const durationSeconds = 30 + issues.length * 15;
+        const metadata = evaluateBackupMetadata(backup);
 
         const [updated] = await db
           .update(backupVerifications)
           .set({
-            status: verificationResult === "passed" ? "passed" : "failed",
-            integrityCheckResult: verificationResult,
-            restoreTestResult,
-            lastVerifiedAt: new Date(),
-            nextScheduledVerification: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-            verificationDurationSeconds: durationSeconds,
-            issues: issues.length > 0 ? issues : null,
+            status: metadata.status,
+            integrityCheckResult: metadata.status,
+            restoreTestResult: metadata.restoreTestResult,
+            lastVerifiedAt: null,
+            nextScheduledVerification: metadata.nextScheduledVerification,
+            verificationDurationSeconds: metadata.verificationDurationSeconds,
+            issues: metadata.issues.length > 0 ? metadata.issues : null,
+            metadata: {
+              checkedAt: new Date().toISOString(),
+              checks: ["backup metadata", "retention", "encryption", "rpo"],
+              restorability: metadata.restorability,
+            },
             updatedAt: new Date(),
           })
           .where(eq(backupVerifications.id, id))
@@ -1477,10 +1525,12 @@ export function registerRansomwareDefenseRoutes(app: Express): void {
         res.json({
           backup: updated,
           verification: {
-            result: verificationResult,
-            restoreTest: restoreTestResult,
-            durationSeconds,
-            issues,
+            result: metadata.status,
+            restoreTest: metadata.restoreTestResult,
+            restorability: metadata.restorability,
+            issues: metadata.issues,
+            message:
+              "Backup metadata was checked. Restorability remains unverified because no integrity or restore test was run.",
           },
         });
       } catch (error) {
@@ -1571,76 +1621,23 @@ export function registerRansomwareDefenseRoutes(app: Express): void {
             }
           }
 
-          const issues: { type: string; description: string; severity: string }[] = [];
-
-          // Encryption check
-          if (backup.encryptionStatus !== "encrypted") {
-            issues.push({
-              type: "encryption",
-              description: "Backup is not encrypted — vulnerable to tampering",
-              severity: "high",
-            });
-          }
-
-          // Retention check
-          if (!backup.retentionDays || backup.retentionDays < 30) {
-            issues.push({
-              type: "retention",
-              description: "Retention period is less than 30 days — insufficient for ransomware recovery",
-              severity: "medium",
-            });
-          }
-
-          // RPO check
-          if (!backup.rpoHours || backup.rpoHours > 24) {
-            issues.push({
-              type: "rpo",
-              description: "RPO exceeds 24 hours — significant data loss risk",
-              severity: "medium",
-            });
-          }
-
-          // RTO check
-          if (!backup.rtoHours || backup.rtoHours > 8) {
-            issues.push({ type: "rto", description: "RTO exceeds 8 hours — slow recovery time", severity: "low" });
-          }
-
-          // Staleness check — backup data age
-          if (backup.backupCreatedAt) {
-            const ageHours = (Date.now() - new Date(backup.backupCreatedAt).getTime()) / (1000 * 60 * 60);
-            if (ageHours > 168) {
-              issues.push({
-                type: "staleness",
-                description: "Backup data is over 7 days old — consider more frequent backups",
-                severity: "medium",
-              });
-            }
-          }
-
-          // Size check — zero-byte backup
-          if (backup.backupSizeBytes != null && backup.backupSizeBytes === 0) {
-            issues.push({
-              type: "integrity",
-              description: "Backup file is 0 bytes — likely corrupt or empty",
-              severity: "critical",
-            });
-          }
-
-          const verificationResult = issues.some((i) => i.severity === "critical" || i.severity === "high")
-            ? "failed"
-            : "passed";
-          const durationSeconds = 30 + issues.length * 15;
+          const metadata = evaluateBackupMetadata(backup, true);
 
           await db
             .update(backupVerifications)
             .set({
-              status: verificationResult === "passed" ? "passed" : "failed",
-              integrityCheckResult: verificationResult,
-              restoreTestResult: verificationResult === "passed" ? "passed" : "failed",
-              lastVerifiedAt: new Date(),
-              nextScheduledVerification: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-              verificationDurationSeconds: durationSeconds,
-              issues: issues.length > 0 ? issues : null,
+              status: metadata.status,
+              integrityCheckResult: metadata.status,
+              restoreTestResult: metadata.restoreTestResult,
+              lastVerifiedAt: null,
+              nextScheduledVerification: metadata.nextScheduledVerification,
+              verificationDurationSeconds: metadata.verificationDurationSeconds,
+              issues: metadata.issues.length > 0 ? metadata.issues : null,
+              metadata: {
+                checkedAt: new Date().toISOString(),
+                checks: ["backup metadata", "retention", "encryption", "rpo", "rto", "age"],
+                restorability: metadata.restorability,
+              },
               updatedAt: new Date(),
             })
             .where(eq(backupVerifications.id, backup.id));
@@ -1649,21 +1646,26 @@ export function registerRansomwareDefenseRoutes(app: Express): void {
             backupId: backup.id,
             backupName: backup.backupName,
             previousStatus: backup.status,
-            newStatus: verificationResult,
-            issues,
-            durationSeconds,
+            newStatus: metadata.status,
+            issues: metadata.issues,
+            durationSeconds: 0,
           });
         }
 
-        const passed = results.filter((r) => r.newStatus === "passed").length;
-        const failed = results.filter((r) => r.newStatus === "failed").length;
+        const metadataChecked = results.filter((r) => r.newStatus === "metadata_checked").length;
+        const metadataIssues = results.filter((r) => r.newStatus === "metadata_issues").length;
         const skipped = results.filter((r) => r.durationSeconds === 0).length;
 
-        log.info("Automated backup verification completed", { total: results.length, passed, failed, skipped });
+        log.info("Automated backup metadata checks completed", {
+          total: results.length,
+          metadataChecked,
+          metadataIssues,
+          skipped,
+        });
         res.json({
-          message: `Verified ${results.length} backups: ${passed} passed, ${failed} failed, ${skipped} skipped (recently verified)`,
+          message: `Checked metadata for ${results.length} backups: ${metadataChecked} without metadata issues, ${metadataIssues} with metadata issues, ${skipped} skipped (recently checked)`,
           results,
-          summary: { total: results.length, passed, failed, skipped },
+          summary: { total: results.length, metadataChecked, metadataIssues, skipped, restorability: "unverified" },
         });
       } catch (error) {
         log.error("Failed to run automated backup verification", { error: String(error) });
