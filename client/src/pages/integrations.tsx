@@ -1054,6 +1054,13 @@ function ResponseActionsTab() {
             Executing
           </Badge>
         );
+      case "unavailable":
+        return (
+          <Badge variant="outline" className="border-yellow-500/30 text-yellow-400">
+            <AlertTriangle className="h-3 w-3 mr-1" />
+            Not configured
+          </Badge>
+        );
       default:
         return <Badge variant="outline">{status}</Badge>;
     }

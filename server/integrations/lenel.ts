@@ -139,22 +139,23 @@ export async function fetchBadgeEvents(config: ControllerConfig, since: Date): P
 /**
  * Test connectivity to a controller.
  */
-export async function testControllerConnection(
+export async function validateControllerConfiguration(
   config: ControllerConfig,
-): Promise<{ success: boolean; message: string }> {
-  log.info("Testing controller connection", { type: config.type, endpoint: config.apiEndpoint });
+): Promise<{ status: "configuration_valid" | "invalid"; message: string }> {
+  log.info("Validating controller configuration", { type: config.type, endpoint: config.apiEndpoint });
 
   try {
-    // In production: attempt a health check call to the controller API
-    // For now, validate the config shape
     if (!config.apiEndpoint) {
-      return { success: false, message: "API endpoint is required" };
+      return { status: "invalid", message: "API endpoint is required" };
     }
     if (!config.type) {
-      return { success: false, message: "Controller type is required" };
+      return { status: "invalid", message: "Controller type is required" };
     }
-    return { success: true, message: `Connection to ${config.name} (${config.type}) configured successfully` };
+    return {
+      status: "configuration_valid",
+      message: `Configuration for ${config.name} (${config.type}) is valid. Reachability was not tested.`,
+    };
   } catch (err) {
-    return { success: false, message: `Connection failed: ${String(err)}` };
+    return { status: "invalid", message: `Configuration validation failed: ${String(err)}` };
   }
 }

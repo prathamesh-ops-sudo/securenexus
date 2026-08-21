@@ -93,6 +93,14 @@ export async function getPolicyCheck(id: string): Promise<PolicyCheck | undefine
   return check;
 }
 
+export async function getPolicyCheckForOrg(id: string, orgId: string): Promise<PolicyCheck | undefined> {
+  const [check] = await db
+    .select()
+    .from(policyChecks)
+    .where(and(eq(policyChecks.id, id), eq(policyChecks.orgId, orgId)));
+  return check;
+}
+
 export async function createPolicyCheck(check: InsertPolicyCheck): Promise<PolicyCheck> {
   const [created] = await db.insert(policyChecks).values(check).returning();
   return created;
@@ -151,7 +159,10 @@ export async function createComplianceControls(controls: InsertComplianceControl
   return db.insert(complianceControls).values(controls).returning();
 }
 
-export async function updateComplianceControl(id: string, data: Partial<ComplianceControl>): Promise<ComplianceControl | undefined> {
+export async function updateComplianceControl(
+  id: string,
+  data: Partial<ComplianceControl>,
+): Promise<ComplianceControl | undefined> {
   const [updated] = await db.update(complianceControls).set(data).where(eq(complianceControls.id, id)).returning();
   return updated;
 }
@@ -161,7 +172,10 @@ export async function deleteComplianceControl(id: string): Promise<boolean> {
   return !!deleted;
 }
 
-export async function getComplianceControlMappings(orgId: string, controlId?: string): Promise<ComplianceControlMapping[]> {
+export async function getComplianceControlMappings(
+  orgId: string,
+  controlId?: string,
+): Promise<ComplianceControlMapping[]> {
   const conditions = [eq(complianceControlMappings.orgId, orgId)];
   if (controlId) {
     conditions.push(eq(complianceControlMappings.controlId, controlId));
@@ -172,7 +186,9 @@ export async function getComplianceControlMappings(orgId: string, controlId?: st
     .where(and(...conditions));
 }
 
-export async function createComplianceControlMapping(mapping: InsertComplianceControlMapping): Promise<ComplianceControlMapping> {
+export async function createComplianceControlMapping(
+  mapping: InsertComplianceControlMapping,
+): Promise<ComplianceControlMapping> {
   const [created] = await db.insert(complianceControlMappings).values(mapping).returning();
   return created;
 }
@@ -300,7 +316,10 @@ export async function deleteEvidenceAttachment(id: string): Promise<boolean> {
 // 8.4 — Compliance Control Helpers
 // ==========================================
 
-export async function getComplianceControlHelpers(orgId: string, helperType?: string): Promise<ComplianceControlHelper[]> {
+export async function getComplianceControlHelpers(
+  orgId: string,
+  helperType?: string,
+): Promise<ComplianceControlHelper[]> {
   const conditions = [eq(complianceControlHelpers.orgId, orgId)];
   if (helperType) {
     conditions.push(eq(complianceControlHelpers.helperType, helperType));
@@ -317,7 +336,9 @@ export async function getComplianceControlHelper(id: string): Promise<Compliance
   return row;
 }
 
-export async function createComplianceControlHelper(helper: InsertComplianceControlHelper): Promise<ComplianceControlHelper> {
+export async function createComplianceControlHelper(
+  helper: InsertComplianceControlHelper,
+): Promise<ComplianceControlHelper> {
   const [created] = await db.insert(complianceControlHelpers).values(helper).returning();
   return created;
 }

@@ -93,6 +93,72 @@ const VERSION_STATUS_COLORS: Record<string, string> = {
   archived: "border-gray-500/30 text-gray-400",
 };
 
+function reportGenerationLabel(status: string | null | undefined): string {
+  switch (status) {
+    case "completed":
+    case "generated":
+      return "Generated";
+    case "failed":
+      return "Generation failed";
+    case "pending":
+      return "Generation pending";
+    default:
+      return status ? status.replace(/_/g, " ") : "Not generated";
+  }
+}
+
+function reportDeliveryLabel(status: string | null | undefined): string {
+  switch (status) {
+    case "delivered":
+      return "Delivered";
+    case "partial":
+      return "Partially delivered";
+    case "failed":
+      return "Not delivered";
+    case "not_attempted":
+      return "Delivery not attempted";
+    case "pending":
+      return "Delivery pending";
+    default:
+      return status ? status.replace(/_/g, " ") : "Delivery not recorded";
+  }
+}
+
+function ReportRunStatus({ run }: { run: any }) {
+  const generationStatus = run.generationStatus || (run.status === "failed" ? "failed" : run.status);
+  const deliveryStatus = run.deliveryStatus || (run.status === "completed" ? "delivered" : run.status);
+  const generationSucceeded = generationStatus === "completed" || generationStatus === "generated";
+  const deliverySucceeded = deliveryStatus === "delivered";
+
+  return (
+    <div className="space-y-1.5 min-w-[190px]">
+      <div className="flex items-center gap-1.5">
+        {generationSucceeded ? (
+          <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+        ) : generationStatus === "failed" ? (
+          <XCircle className="h-3 w-3 text-red-500" />
+        ) : (
+          <Loader2 className="h-3 w-3 text-muted-foreground" />
+        )}
+        <span className="text-xs">Generation: {reportGenerationLabel(generationStatus)}</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        {deliverySucceeded ? (
+          <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+        ) : deliveryStatus === "partial" || deliveryStatus === "failed" || deliveryStatus === "not_attempted" ? (
+          <AlertTriangle className="h-3 w-3 text-yellow-500" />
+        ) : (
+          <Clock className="h-3 w-3 text-muted-foreground" />
+        )}
+        <span className={deliverySucceeded ? "text-xs" : "text-xs text-yellow-500"}>
+          Delivery: {reportDeliveryLabel(deliveryStatus)}
+        </span>
+      </div>
+      {run.deliveryReason && <p className="text-[11px] text-muted-foreground">{run.deliveryReason}</p>}
+    </div>
+  );
+}
+
 export default function ReportsPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("templates");
@@ -599,7 +665,7 @@ export default function ReportsPage() {
                       <tr className="border-b">
                         <th className="text-left p-3 font-medium text-muted-foreground">Report</th>
                         <th className="text-left p-3 font-medium text-muted-foreground">Format</th>
-                        <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground">Generation / Delivery</th>
                         <th className="text-left p-3 font-medium text-muted-foreground">Started</th>
                         <th className="text-left p-3 font-medium text-muted-foreground">Completed</th>
                         <th className="text-left p-3 font-medium text-muted-foreground">Size</th>
@@ -620,38 +686,13 @@ export default function ReportsPage() {
                               </Badge>
                             </td>
                             <td className="p-3">
-                              {r.status === "completed" ? (
-                                <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 no-default-hover-elevate no-default-active-elevate">
-                                  <CheckCircle2 className="h-3 w-3 text-green-500" />
-                                  Completed
-                                </Badge>
-                              ) : r.status === "failed" ? (
-                                <Badge
-                                  variant="destructive"
-                                  className="no-default-hover-elevate no-default-active-elevate"
-                                >
-                                  <XCircle className="h-3 w-3 mr-1" />
-                                  Failed
-                                </Badge>
-                              ) : r.status === "running" ? (
-                                <Badge className="no-default-hover-elevate no-default-active-elevate">
-                                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                  Running
-                                </Badge>
-                              ) : (
-                                <Badge
-                                  variant="secondary"
-                                  className="no-default-hover-elevate no-default-active-elevate"
-                                >
-                                  {r.status}
-                                </Badge>
-                              )}
+                              <ReportRunStatus run={r} />
                             </td>
                             <td className="p-3 text-muted-foreground text-xs">{formatDate(r.startedAt)}</td>
                             <td className="p-3 text-muted-foreground text-xs">{formatDate(r.completedAt)}</td>
                             <td className="p-3 text-muted-foreground text-xs">{formatFileSize(r.fileSize)}</td>
                             <td className="p-3">
-                              {r.status === "completed" && (
+                              {(r.status === "completed" || r.deliveryStatus === "delivered") && (
                                 <Button
                                   size="sm"
                                   variant="ghost"

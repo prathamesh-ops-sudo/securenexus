@@ -22,6 +22,7 @@ import {
   computeOverallScore,
   computePercentileRank,
   generateDomainScores,
+  getPostureEvidenceAvailability,
   generateScoreTrend,
   getAvailableIndustries,
   getAvailableCompanySizes,
@@ -227,8 +228,8 @@ export function registerPostureTrustRoutes(app: Express): void {
   app.get("/api/posture-trust/latest", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const evidence = await generateDomainScores(orgId);
-      if (evidence.status === "unavailable") {
+      const evidence = await getPostureEvidenceAvailability(orgId);
+      if (!evidence.available) {
         return res.json({
           score: null,
           subScores: [],
@@ -248,7 +249,14 @@ export function registerPostureTrustRoutes(app: Express): void {
         .limit(1);
 
       if (!latestScore) {
-        return res.json(null);
+        return res.json({
+          score: null,
+          subScores: [],
+          benchmark: null,
+          domainMeta: DOMAIN_META,
+          available: false,
+          reason: "No calculated posture score is available for the measured evidence.",
+        });
       }
 
       // Get sub-scores for this calculation
@@ -910,7 +918,7 @@ export function registerPostureTrustRoutes(app: Express): void {
   app.get("/api/posture-trust/summary", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const evidence = await generateDomainScores(orgId);
+      const evidence = await getPostureEvidenceAvailability(orgId);
 
       // Latest score
       const [latestScore] = await db
@@ -921,20 +929,23 @@ export function registerPostureTrustRoutes(app: Express): void {
         .limit(1);
 
       // Sub-scores
-      const subScores = latestScore
-        ? await db
-            .select()
-            .from(postureSubScores)
-            .where(and(eq(postureSubScores.orgId, orgId), eq(postureSubScores.postureScoreId, latestScore.id)))
-        : [];
+      const subScores =
+        evidence.available && latestScore
+          ? await db
+              .select()
+              .from(postureSubScores)
+              .where(and(eq(postureSubScores.orgId, orgId), eq(postureSubScores.postureScoreId, latestScore.id)))
+          : [];
 
       // Latest benchmark
-      const [benchmark] = await db
-        .select()
-        .from(peerBenchmarks)
-        .where(eq(peerBenchmarks.orgId, orgId))
-        .orderBy(desc(peerBenchmarks.calculatedAt))
-        .limit(1);
+      const [benchmark] = evidence.available
+        ? await db
+            .select()
+            .from(peerBenchmarks)
+            .where(eq(peerBenchmarks.orgId, orgId))
+            .orderBy(desc(peerBenchmarks.calculatedAt))
+            .limit(1)
+        : [];
 
       // Trust page
       const [trustPage] = await db.select().from(publicTrustPages).where(eq(publicTrustPages.orgId, orgId));
@@ -962,13 +973,13 @@ export function registerPostureTrustRoutes(app: Express): void {
         .where(eq(postureScoreHistory.orgId, orgId));
 
       res.json({
-        overallScore: evidence.status === "completed" && latestScore ? latestScore.overallScore : null,
-        available: evidence.status === "completed" && Boolean(latestScore),
+        overallScore: evidence.available && latestScore ? latestScore.overallScore : null,
+        available: evidence.available && Boolean(latestScore),
         reason:
-          evidence.status === "completed" && latestScore
+          evidence.available && latestScore
             ? null
             : evidence.reason || "No posture evidence has been measured for this organization.",
-        lastCalculated: evidence.status === "completed" ? latestScore?.generatedAt || null : null,
+        lastCalculated: evidence.available ? latestScore?.generatedAt || null : null,
         subScores: subScores.map((s) => ({
           domain: s.domain,
           score: s.score,

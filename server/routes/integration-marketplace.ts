@@ -111,7 +111,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
           authMethod: parsed.data.authMethod,
           syncDirection: parsed.data.syncDirection,
           config: parsed.data.config,
-          status: "active",
+          status: "pending",
           permissionMode: "read_only",
         });
         res.status(201).json(instance);
@@ -255,14 +255,10 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
           orgId,
           instanceId,
           syncType: "manual",
-          status: "success",
-          eventsIngested: 0,
-          durationMs: 250,
-        });
-
-        await storage.updateMarketplaceInstance(instanceId, orgId, {
-          lastSyncAt: new Date(),
-          lastSyncStatus: "success",
+          status: "not_run",
+          eventsIngested: null,
+          durationMs: null,
+          errorMessage: "No marketplace connector operation is implemented for this instance.",
         });
 
         res.json(entry);
@@ -322,7 +318,7 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
           available: totalSyncs > 0,
           reason:
             totalSyncs > 0 ? "Uptime events are not persisted." : "No sync history is available for this integration.",
-          avgDurationMs: Math.round(avgDuration),
+          avgDurationMs: totalSyncs > 0 ? Math.round(avgDuration) : null,
         });
       } catch (err) {
         log.error("Quality score error", { error: String(err) });
@@ -503,11 +499,12 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
 
         res.json({
           instanceId,
-          status: instance.status === "active" ? "healthy" : "unhealthy",
-          latencyMs: 45,
-          credentialStatus: "valid",
-          driftDetected: false,
-          checkedAt: new Date().toISOString(),
+          status: "not_checked",
+          latencyMs: null,
+          credentialStatus: "not_checked",
+          driftDetected: null,
+          reason: "No validated outbound connector health check is implemented for this instance.",
+          checkedAt: null,
         });
       } catch (err) {
         log.error("Health check error", { error: String(err) });
@@ -609,11 +606,12 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
           status: inst.status,
           lastSyncAt: inst.lastSyncAt,
           lastSyncStatus: inst.lastSyncStatus,
-          healthStatus: inst.status === "active" ? "healthy" : "unhealthy",
-          latencyMs: 45,
-          credentialStatus: "valid",
-          driftDetected: false,
-          alertLevel: inst.status === "error" ? "critical" : inst.status === "degraded" ? "warning" : "ok",
+          healthStatus: "not_checked",
+          latencyMs: null,
+          credentialStatus: "not_checked",
+          driftDetected: null,
+          reason: "No validated outbound connector health evidence is available.",
+          alertLevel: "not_checked",
         }));
         res.json(summary);
       } catch (err) {

@@ -10,6 +10,7 @@ import { calculatePostureScore } from "../posture-engine";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import * as endpointStorage from "../storage/endpoint-extras";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { replyNotImplemented } from "../api-response";
 
 export function registerEndpointsRoutes(app: Express): void {
   // ── CSPM Routes ──
@@ -1538,8 +1539,8 @@ export function registerEndpointsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const check = await storage.getPolicyCheck(p(req.params.id));
-        if (!check || check.orgId !== orgId) return res.status(404).json({ message: "Policy check not found" });
+        const check = await storage.getPolicyCheckForOrg(p(req.params.id), orgId);
+        if (!check) return res.status(404).json({ message: "Policy check not found" });
         await storage.deletePolicyCheck(p(req.params.id));
         res.json({ message: "Policy check deleted" });
       } catch (error) {
@@ -1557,11 +1558,13 @@ export function registerEndpointsRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const check = await storage.getPolicyCheck(p(req.params.id));
-        if (!check || check.orgId !== orgId) return res.status(404).json({ message: "Policy check not found" });
-        // Simulated policy evaluation
-        await storage.updatePolicyCheck(p(req.params.id), { lastRunAt: new Date().toISOString() } as any);
-        res.json({ message: "Policy check executed", status: "completed" });
+        if (!(await storage.getPolicyCheckForOrg(p(req.params.id), orgId))) {
+          return res.status(404).json({ message: "Policy check not found" });
+        }
+        return replyNotImplemented(
+          res,
+          "The legacy CSPM policy-check route is no longer supported. Use POST /api/policy-checks/:id/run.",
+        );
       } catch (error) {
         res.status(500).json({ message: "Failed to run policy check" });
       }

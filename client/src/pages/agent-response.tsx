@@ -116,6 +116,7 @@ const statusColors: Record<string, string> = {
   timed_out: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   cancelled: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
   simulated: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  unavailable: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
 };
 
 const riskColors: Record<string, string> = {
@@ -175,6 +176,7 @@ function getStatusLabel(status: string): string {
     rejected: "Rejected",
     cancelled: "Cancelled",
     simulated: "Unavailable (legacy simulated state)",
+    unavailable: "Not configured",
   };
   return labels[status] || status.replace(/_/g, " ");
 }
@@ -1061,6 +1063,9 @@ export default function AgentResponsePage() {
                             <Badge variant="outline" className={statusColors[entry.status] || ""}>
                               {getStatusLabel(entry.status)}
                             </Badge>
+                            {entry.status === "unavailable" && entry.message && (
+                              <span className="text-xs text-yellow-400">{entry.message}</span>
+                            )}
                             <Badge variant="outline" className={riskColors[entry.riskLevel] || ""}>
                               {entry.riskLevel}
                             </Badge>

@@ -805,6 +805,7 @@ export interface IStorage {
 
   getPolicyChecks(orgId: string): Promise<PolicyCheck[]>;
   getPolicyCheck(id: string): Promise<PolicyCheck | undefined>;
+  getPolicyCheckForOrg(id: string, orgId: string): Promise<PolicyCheck | undefined>;
   createPolicyCheck(check: InsertPolicyCheck): Promise<PolicyCheck>;
   updatePolicyCheck(id: string, data: Partial<PolicyCheck>): Promise<PolicyCheck | undefined>;
   deletePolicyCheck(id: string): Promise<boolean>;
@@ -896,6 +897,7 @@ export interface IStorage {
   // DR Runbooks
   getDrRunbooks(orgId: string): Promise<DrRunbook[]>;
   getDrRunbook(id: string): Promise<DrRunbook | undefined>;
+  getDrRunbookForOrg(id: string, orgId: string): Promise<DrRunbook | undefined>;
   createDrRunbook(runbook: InsertDrRunbook): Promise<DrRunbook>;
   updateDrRunbook(id: string, data: Partial<DrRunbook>): Promise<DrRunbook | undefined>;
   deleteDrRunbook(id: string): Promise<boolean>;

@@ -2961,15 +2961,15 @@ export default function IncidentDetailPage() {
                           <span className="text-sm font-medium">{approval.actionDescription}</span>
                           <Badge
                             variant={
-                              approval.status === "pending"
+                              approval.status === "pending" || approval.status === "unavailable"
                                 ? "outline"
                                 : approval.status === "approved"
                                   ? "default"
                                   : "destructive"
                             }
-                            className={`text-[9px] no-default-hover-elevate no-default-active-elevate ${approval.status === "approved" ? "bg-green-500/15 text-green-500 border-green-500/30" : ""}`}
+                            className={`text-[9px] no-default-hover-elevate no-default-active-elevate ${approval.status === "approved" ? "bg-green-500/15 text-green-500 border-green-500/30" : approval.status === "unavailable" ? "text-yellow-400 border-yellow-500/30" : ""}`}
                           >
-                            {approval.status}
+                            {approval.status === "unavailable" ? "Not configured" : approval.status}
                           </Badge>
                           <Badge
                             variant="outline"
@@ -2981,6 +2981,9 @@ export default function IncidentDetailPage() {
                         <div className="text-xs text-muted-foreground mt-1">
                           Action: {approval.actionType.replace(/_/g, " ")}
                         </div>
+                        {approval.status === "unavailable" && approval.decisionNote && (
+                          <div className="text-xs text-yellow-400 mt-1">{approval.decisionNote}</div>
+                        )}
                         <div className="text-[10px] text-muted-foreground flex items-center gap-2 flex-wrap mt-1">
                           <span>Requested by {approval.requestedByName || "Unknown"}</span>
                           <span>{formatTimestamp(approval.requestedAt)}</span>

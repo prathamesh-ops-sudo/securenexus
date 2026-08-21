@@ -6,8 +6,8 @@
  * auto-answer templates, and score trend analysis.
  */
 
-import { eq } from "drizzle-orm";
-import { identityRiskProfiles } from "@shared/schema";
+import { and, count, eq, isNotNull } from "drizzle-orm";
+import { compliancePolicies, cspmScans, endpointAssets, identityRiskProfiles } from "@shared/schema";
 import { db } from "./db";
 import { storage } from "./storage";
 
@@ -811,6 +811,50 @@ export interface PostureEvidenceResult {
   measuredDomains: string[];
   reason?: string;
   requiredEvidence?: string[];
+}
+
+export interface PostureEvidenceAvailability {
+  available: boolean;
+  measuredDomains: string[];
+  reason: string;
+  requiredEvidence: string[];
+}
+
+export async function getPostureEvidenceAvailability(orgId: string): Promise<PostureEvidenceAvailability> {
+  const [scanCount, endpointCount, identityCount, policyCount] = await Promise.all([
+    db
+      .select({ value: count() })
+      .from(cspmScans)
+      .where(and(eq(cspmScans.orgId, orgId), eq(cspmScans.status, "completed"))),
+    db
+      .select({ value: count() })
+      .from(endpointAssets)
+      .where(and(eq(endpointAssets.orgId, orgId), isNotNull(endpointAssets.riskScore))),
+    db
+      .select({ value: count() })
+      .from(identityRiskProfiles)
+      .where(and(eq(identityRiskProfiles.orgId, orgId), isNotNull(identityRiskProfiles.lastAssessedAt))),
+    db.select({ value: count() }).from(compliancePolicies).where(eq(compliancePolicies.orgId, orgId)),
+  ]);
+
+  const measuredDomains = [
+    Number(scanCount[0]?.value) > 0 ? "cloud" : null,
+    Number(endpointCount[0]?.value) > 0 ? "endpoint" : null,
+    Number(identityCount[0]?.value) > 0 ? "identity" : null,
+    Number(policyCount[0]?.value) > 0 ? "data" : null,
+  ].filter((domain): domain is string => domain !== null);
+
+  return {
+    available: measuredDomains.length > 0,
+    measuredDomains,
+    reason: "No completed posture evidence is available for this organization.",
+    requiredEvidence: [
+      "Connect an identity provider and complete an identity assessment.",
+      "Connect endpoint assets and collect endpoint risk telemetry.",
+      "Connect a cloud account and complete a CSPM scan.",
+      "Configure a compliance policy.",
+    ],
+  };
 }
 
 function scoreDomain(

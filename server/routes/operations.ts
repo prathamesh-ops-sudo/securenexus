@@ -330,9 +330,9 @@ export function registerOperationsRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/ops/dr-runbooks/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/ops/dr-runbooks/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
-      const runbook = await storage.getDrRunbook(p(req.params.id));
+      const runbook = await storage.getDrRunbookForOrg(p(req.params.id), getOrgId(req));
       if (!runbook) return res.status(404).json({ message: "Runbook not found" });
       res.json(runbook);
     } catch (error) {
@@ -1021,51 +1021,16 @@ export function registerOperationsRoutes(app: Express): void {
     resolveOrgContext,
     requireOrgId,
     requireMinRole("admin"),
-    async (req, res) => {
-      try {
-        const { runbookId, dryRun } = req.body;
-        if (!runbookId) {
-          return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "INVALID_REQUEST", message: "runbookId is required" }],
-          });
-        }
-        const runbook = await storage.getDrRunbook(runbookId);
-        if (!runbook)
-          return sendEnvelope(res, null, {
-            status: 404,
-            errors: [{ code: "NOT_FOUND", message: "Runbook not found" }],
-          });
-
-        const drillStart = Date.now();
-        const steps = Array.isArray(runbook.steps) ? (runbook.steps as Array<{ title: string; action: string }>) : [];
-        const stepResults = steps.map((step, idx) => ({
-          step: idx + 1,
-          title: step.title || `Step ${idx + 1}`,
-          status: dryRun ? "simulated" : "completed",
-          durationMs: dryRun ? 0 : (idx + 1) * 500,
-        }));
-
-        const drillResult = {
-          runbookId,
-          runbookTitle: runbook.title,
-          dryRun: !!dryRun,
-          rtoMinutes: runbook.rtoMinutes,
-          rpoMinutes: runbook.rpoMinutes,
-          totalDurationMs: Date.now() - drillStart,
-          steps: stepResults,
-          status: "completed",
-          ranAt: new Date().toISOString(),
-          ranBy: (req as any).user?.id,
-        };
-
-        return sendEnvelope(res, drillResult, { status: 201 });
-      } catch (error: any) {
-        return sendEnvelope(res, null, {
-          status: 500,
-          errors: [{ code: "DR_DRILL_FAILED", message: error?.message || "Failed to run DR drill" }],
-        });
-      }
+    async (_req, res) => {
+      return sendEnvelope(res, null, {
+        status: 501,
+        errors: [
+          {
+            code: "NOT_IMPLEMENTED",
+            message: "The legacy DR drill route is no longer supported. Use POST /api/v1/dr/run-drill-persisted.",
+          },
+        ],
+      });
     },
   );
 
@@ -1245,7 +1210,7 @@ export function registerOperationsRoutes(app: Express): void {
             errors: [{ code: "INVALID_REQUEST", message: "runbookId is required" }],
           });
         }
-        const runbook = await storage.getDrRunbook(runbookId);
+        const runbook = await storage.getDrRunbookForOrg(runbookId, getOrgId(req));
         if (!runbook) {
           return sendEnvelope(res, null, {
             status: 404,

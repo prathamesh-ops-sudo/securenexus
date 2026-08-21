@@ -20,7 +20,7 @@ import {
   createPhysicalIncidentsFromCorrelations,
   BUILT_IN_RULES,
 } from "../physical-correlation";
-import { testControllerConnection } from "../integrations/lenel";
+import { validateControllerConfiguration } from "../integrations/lenel";
 import type { ControllerConfig } from "../integrations/lenel";
 import { replyError } from "../api-response";
 
@@ -647,9 +647,9 @@ export function registerPhysicalSecurityRoutes(app: Express): void {
   // Controller Integration
   // ==========================================================================
 
-  // POST /api/physical-security/controllers/test
+  // POST /api/physical-security/controllers/validate-configuration
   app.post(
-    "/api/physical-security/controllers/test",
+    "/api/physical-security/controllers/validate-configuration",
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
@@ -657,11 +657,11 @@ export function registerPhysicalSecurityRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const config = req.body as ControllerConfig;
-        const result = await testControllerConnection(config);
+        const result = await validateControllerConfiguration(config);
         res.json(result);
       } catch (err) {
-        log.error("Failed to test controller", { error: String(err) });
-        res.status(500).json({ error: "Failed to test controller connection" });
+        log.error("Failed to validate controller configuration", { error: String(err) });
+        res.status(500).json({ error: "Failed to validate controller configuration" });
       }
     },
   );

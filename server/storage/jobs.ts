@@ -294,6 +294,14 @@ export async function getDrRunbook(id: string): Promise<DrRunbook | undefined> {
   return runbook;
 }
 
+export async function getDrRunbookForOrg(id: string, orgId: string): Promise<DrRunbook | undefined> {
+  const [runbook] = await db
+    .select()
+    .from(drRunbooks)
+    .where(and(eq(drRunbooks.id, id), eq(drRunbooks.orgId, orgId)));
+  return runbook;
+}
+
 export async function createDrRunbook(runbook: InsertDrRunbook): Promise<DrRunbook> {
   const [created] = await db.insert(drRunbooks).values(runbook).returning();
   return created;
@@ -313,7 +321,11 @@ export async function deleteDrRunbook(id: string): Promise<boolean> {
   return result.length > 0;
 }
 
-export async function getDrDrillResults(orgId?: string, runbookId?: string, limit: number = 50): Promise<DrDrillResult[]> {
+export async function getDrDrillResults(
+  orgId?: string,
+  runbookId?: string,
+  limit: number = 50,
+): Promise<DrDrillResult[]> {
   const conditions = [];
   if (orgId) conditions.push(eq(drDrillResults.orgId, orgId));
   if (runbookId) conditions.push(eq(drDrillResults.runbookId, runbookId));
@@ -335,7 +347,10 @@ export async function createDrDrillResult(result: InsertDrDrillResult): Promise<
   return created;
 }
 
-export async function updateDrDrillResult(id: string, data: Partial<DrDrillResult>): Promise<DrDrillResult | undefined> {
+export async function updateDrDrillResult(
+  id: string,
+  data: Partial<DrDrillResult>,
+): Promise<DrDrillResult | undefined> {
   const [updated] = await db.update(drDrillResults).set(data).where(eq(drDrillResults.id, id)).returning();
   return updated;
 }
@@ -361,7 +376,10 @@ export async function createTicketSyncJob(job: InsertTicketSyncJob): Promise<Tic
   return created;
 }
 
-export async function updateTicketSyncJob(id: string, data: Partial<TicketSyncJob>): Promise<TicketSyncJob | undefined> {
+export async function updateTicketSyncJob(
+  id: string,
+  data: Partial<TicketSyncJob>,
+): Promise<TicketSyncJob | undefined> {
   const [updated] = await db
     .update(ticketSyncJobs)
     .set({ ...data, updatedAt: new Date() })

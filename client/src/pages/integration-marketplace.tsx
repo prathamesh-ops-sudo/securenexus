@@ -106,11 +106,11 @@ interface SyncEvent {
   instanceId: string;
   direction: string;
   entity: string;
-  recordsProcessed: number;
-  recordsFailed: number;
-  durationMs: number;
+  recordsProcessed: number | null;
+  recordsFailed: number | null;
+  durationMs: number | null;
   status: string;
-  error: string | null;
+  errorMessage: string | null;
   startedAt: string;
   completedAt: string;
 }
@@ -119,12 +119,13 @@ interface HealthCheck {
   id: string;
   instanceId: string;
   status: string;
-  latencyMs: number;
+  latencyMs: number | null;
   credentialStatus: string;
   schemaVersion: string | null;
-  driftDetected: boolean;
+  driftDetected: boolean | null;
   driftDetails: string | null;
-  checkedAt: string;
+  checkedAt: string | null;
+  reason?: string;
 }
 
 interface DeadLetterEntry {
@@ -193,7 +194,8 @@ interface HealthSummaryEntry {
   healthStatus: string;
   latencyMs: number | null;
   credentialStatus: string;
-  driftDetected: boolean;
+  driftDetected: boolean | null;
+  reason?: string;
   reliabilityPercent: number | null;
   uptimePercent: number | null;
   successRate: number | null;
@@ -234,6 +236,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof
   degraded: { label: "Degraded", color: "bg-yellow-600/20 text-yellow-300", icon: AlertTriangle },
   error: { label: "Error", color: "bg-red-600/20 text-red-300", icon: XCircle },
   disabled: { label: "Disabled", color: "bg-slate-600/20 text-slate-400", icon: WifiOff },
+  pending: { label: "Pending validation", color: "bg-yellow-600/20 text-yellow-300", icon: Clock },
 };
 
 const HEALTH_CONFIG: Record<string, { label: string; color: string }> = {
@@ -241,6 +244,7 @@ const HEALTH_CONFIG: Record<string, { label: string; color: string }> = {
   degraded: { label: "Degraded", color: "text-yellow-400" },
   unhealthy: { label: "Unhealthy", color: "text-red-400" },
   unreachable: { label: "Unreachable", color: "text-slate-400" },
+  not_checked: { label: "Not checked", color: "text-slate-400" },
 };
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -448,7 +452,7 @@ function InstanceRow({
               <div>
                 <div className="text-xs text-muted-foreground mb-1">Last Sync</div>
                 <div className="text-sm text-foreground">
-                  {instance.lastSyncAt ? new Date(instance.lastSyncAt).toLocaleString() : "Never"}
+                  {instance.lastSyncAt ? new Date(instance.lastSyncAt).toLocaleString() : "Not run"}
                 </div>
               </div>
               <div>
@@ -615,11 +619,11 @@ function HealthDashboard({ instances }: { instances: ConnectorInstance[] }) {
                 </div>
                 <div className="flex items-center gap-3 text-xs">
                   {healthConfig && <span className={healthConfig.color}>{healthConfig.label}</span>}
-                  {latest && <span className="text-muted-foreground">{latest.latencyMs}ms</span>}
+                  {latest?.latencyMs != null && <span className="text-muted-foreground">{latest.latencyMs}ms</span>}
                   {latest?.credentialStatus && (
                     <Badge
                       variant="outline"
-                      className={`text-[10px] ${latest.credentialStatus === "valid" ? "text-emerald-400" : latest.credentialStatus === "expiring" ? "text-yellow-400" : "text-red-400"}`}
+                      className={`text-[10px] ${latest.credentialStatus === "valid" ? "text-emerald-400" : "text-muted-foreground"}`}
                     >
                       Creds: {latest.credentialStatus}
                     </Badge>
@@ -644,7 +648,7 @@ function HealthDashboard({ instances }: { instances: ConnectorInstance[] }) {
                     <div
                       key={check.id}
                       className={`h-3 w-3 rounded-sm ${check.status === "healthy" ? "bg-emerald-500/60" : check.status === "degraded" ? "bg-yellow-500/60" : "bg-red-500/60"}`}
-                      title={`${check.status} at ${new Date(check.checkedAt).toLocaleString()} (${check.latencyMs}ms)`}
+                      title={`${check.status}${check.checkedAt ? ` at ${new Date(check.checkedAt).toLocaleString()}` : ""}${check.latencyMs != null ? ` (${check.latencyMs}ms)` : ""}`}
                     />
                   ))}
                 </div>
@@ -1256,7 +1260,10 @@ export default function IntegrationMarketplacePage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/integration-marketplace"] });
-      toast({ title: "Connector installed (read-only mode)" });
+      toast({
+        title: "Connector configuration created",
+        description: "Pending validation; no remote connection was tested.",
+      });
       setInstallingSlug(null);
     },
     onError: (err: Error) => {
@@ -1274,8 +1281,9 @@ export default function IntegrationMarketplacePage() {
     onSuccess: (data: SyncEvent) => {
       queryClient.invalidateQueries({ queryKey: ["/api/integration-marketplace"] });
       toast({
-        title: "Sync completed",
-        description: `${data.recordsProcessed} records processed in ${data.durationMs}ms`,
+        title: data.status === "not_run" ? "Sync not run" : "Sync status: " + data.status,
+        description: data.errorMessage || "No remote connector operation was performed.",
+        variant: data.status === "not_run" ? "destructive" : "default",
       });
       setSyncingId(null);
     },
@@ -1294,8 +1302,9 @@ export default function IntegrationMarketplacePage() {
     onSuccess: (data: HealthCheck) => {
       queryClient.invalidateQueries({ queryKey: ["/api/integration-marketplace"] });
       toast({
-        title: "Health check: " + data.status,
-        description: `Latency: ${data.latencyMs}ms | Credentials: ${data.credentialStatus}`,
+        title: "Health: " + data.status.replace(/_/g, " "),
+        description: data.reason || "No validated health evidence is available.",
+        variant: data.status === "not_checked" ? "destructive" : "default",
       });
       setCheckingId(null);
     },

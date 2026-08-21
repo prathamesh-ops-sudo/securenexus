@@ -244,6 +244,7 @@ export class DatabaseStorage implements IStorage {
   updateDsarRequest = complianceFns.updateDsarRequest;
   getPolicyChecks = complianceFns.getPolicyChecks;
   getPolicyCheck = complianceFns.getPolicyCheck;
+  getPolicyCheckForOrg = complianceFns.getPolicyCheckForOrg;
   createPolicyCheck = complianceFns.createPolicyCheck;
   updatePolicyCheck = complianceFns.updatePolicyCheck;
   deletePolicyCheck = complianceFns.deletePolicyCheck;
@@ -426,6 +427,7 @@ export class DatabaseStorage implements IStorage {
   deleteSloTarget = jobsFns.deleteSloTarget;
   getDrRunbooks = jobsFns.getDrRunbooks;
   getDrRunbook = jobsFns.getDrRunbook;
+  getDrRunbookForOrg = jobsFns.getDrRunbookForOrg;
   createDrRunbook = jobsFns.createDrRunbook;
   updateDrRunbook = jobsFns.updateDrRunbook;
   deleteDrRunbook = jobsFns.deleteDrRunbook;

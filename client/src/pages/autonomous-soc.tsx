@@ -916,9 +916,12 @@ function TriageTab() {
                     <p key={i} className="text-sm">
                       {a.status === "completed" || a.status === "approved" ? (
                         <CheckCircle className="h-3 w-3 inline text-emerald-400 mr-1" />
+                      ) : a.status === "unavailable" ? (
+                        <AlertTriangle className="h-3 w-3 inline text-yellow-400 mr-1" />
                       ) : (
                         <XCircle className="h-3 w-3 inline text-red-400 mr-1" />
                       )}
+                      {a.status === "unavailable" ? "Not configured: " : ""}
                       {a.message}
                     </p>
                   ))}

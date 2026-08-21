@@ -238,6 +238,17 @@ function executionStatusBadge(status: string) {
           Failed
         </Badge>
       );
+    case "unavailable":
+      return (
+        <Badge
+          variant="outline"
+          className="no-default-hover-elevate no-default-active-elevate border-yellow-500/40 text-yellow-400"
+          data-testid={`badge-exec-status-${status}`}
+        >
+          <AlertTriangle className="h-3 w-3 mr-1" />
+          Not configured
+        </Badge>
+      );
     case "awaiting_approval":
       return (
         <Badge

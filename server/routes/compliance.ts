@@ -836,7 +836,10 @@ export function registerComplianceRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const check = await storage.updatePolicyCheck(p(req.params.id), req.body);
+        const orgId = getOrgId(req);
+        const existing = await storage.getPolicyCheckForOrg(p(req.params.id), orgId);
+        if (!existing) return res.status(404).json({ message: "Policy check not found" });
+        const check = await storage.updatePolicyCheck(existing.id, req.body);
         if (!check) return res.status(404).json({ message: "Policy check not found" });
         res.json(check);
       } catch (error) {
@@ -853,7 +856,10 @@ export function registerComplianceRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const deleted = await storage.deletePolicyCheck(p(req.params.id));
+        const orgId = getOrgId(req);
+        const existing = await storage.getPolicyCheckForOrg(p(req.params.id), orgId);
+        if (!existing) return res.status(404).json({ message: "Policy check not found" });
+        const deleted = await storage.deletePolicyCheck(existing.id);
         if (!deleted) return res.status(404).json({ message: "Policy check not found" });
         res.json({ message: "Policy check deleted" });
       } catch (error) {
@@ -871,7 +877,7 @@ export function registerComplianceRoutes(app: Express): void {
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
-        const check = await storage.getPolicyCheck(p(req.params.id));
+        const check = await storage.getPolicyCheckForOrg(p(req.params.id), orgId);
         if (!check) return res.status(404).json({ message: "Policy check not found" });
         const findings = await storage.getCspmFindings(orgId);
         const results: any[] = [];

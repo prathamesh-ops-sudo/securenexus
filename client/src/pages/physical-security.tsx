@@ -1123,8 +1123,11 @@ export default function PhysicalSecurityPage() {
                       <p className="text-sm font-medium">{ctrl.name}</p>
                     </div>
                     <p className="text-xs text-muted-foreground mb-3">{ctrl.desc}</p>
+                    <p className="text-xs text-yellow-500/90 mb-3">
+                      Configuration validation only; controller reachability is not tested.
+                    </p>
                     <Button variant="outline" size="sm" className="w-full" disabled>
-                      Configure
+                      Configuration validation
                     </Button>
                   </div>
                 ))}
