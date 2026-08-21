@@ -6,6 +6,7 @@ import { isAuthenticated } from "../../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../../rbac";
 import { validatePathId } from "../../request-validator";
 import { extractNodes } from "./utils";
+import { noDataReason, percentageOrNull } from "../../metric-availability";
 
 export function registerPlaybooksSchedulingRoutes(app: Express): void {
   // Runbook Execution Tracking
@@ -498,8 +499,7 @@ ${stepsHtml || "<p>No steps defined</p>"}
 
         const statsList: RunbookStat[] = [];
         statsMap.forEach((stat) => {
-          stat.completionRate =
-            stat.totalExecutions > 0 ? Math.round((stat.completedExecutions / stat.totalExecutions) * 100) : 0;
+          stat.completionRate = percentageOrNull(stat.completedExecutions, stat.totalExecutions) ?? 0;
           statsList.push(stat);
         });
 
@@ -536,16 +536,17 @@ ${stepsHtml || "<p>No steps defined</p>"}
         const avgCompletionTime =
           completionTimes.length > 0
             ? Math.round(completionTimes.reduce((a, b) => a + b, 0) / completionTimes.length)
-            : 0;
+            : null;
 
         res.json({
           totalRunbooks: allPlaybooks.length,
           totalExecutions: allExecutions.length,
           avgCompletionTimeMs: avgCompletionTime,
-          overallCompletionRate:
-            allExecutions.length > 0
-              ? Math.round((allExecutions.filter((e) => e.status === "completed").length / allExecutions.length) * 100)
-              : 0,
+          overallCompletionRate: percentageOrNull(
+            allExecutions.filter((e) => e.status === "completed").length,
+            allExecutions.length,
+          ),
+          noDataReason: noDataReason("playbook executions", allExecutions.length),
           perRunbook: statsList.sort((a, b) => b.totalExecutions - a.totalExecutions),
           mostSkippedSteps,
           longestSteps,

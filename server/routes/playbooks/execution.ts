@@ -6,6 +6,7 @@ import { querySchemas, validatePathId, validateQuery } from "../../request-valid
 import { dispatchAction, type ActionContext } from "../../action-dispatcher";
 import { canRollback, createRollbackRecord } from "../../rollback-engine";
 import { extractNodes } from "./utils";
+import { noDataReason, percentageOrNull } from "../../metric-availability";
 
 export function registerPlaybooksExecutionRoutes(app: Express): void {
   app.post(
@@ -416,8 +417,8 @@ export function registerPlaybooksExecutionRoutes(app: Express): void {
             ? Math.round(
                 completed.reduce((sum: number, e: any) => sum + (e.executionTimeMs || 0), 0) / completed.length,
               )
-            : 0;
-        const successRate = allExecs.length > 0 ? Math.round((completed.length / allExecs.length) * 100) : 0;
+            : null;
+        const successRate = percentageOrNull(completed.length, allExecs.length);
 
         // Build per-playbook stats
         const perPlaybook: Record<string, any> = {};
@@ -686,9 +687,9 @@ export function registerPlaybooksExecutionRoutes(app: Express): void {
         const completed = allExecs.filter((e: any) => e.status === "completed");
         const failed = allExecs.filter((e: any) => e.status === "failed");
         const totalExecutionTime = completed.reduce((sum: number, e: any) => sum + (e.executionTimeMs || 0), 0);
-        const avgExecutionTimeMs = completed.length > 0 ? Math.round(totalExecutionTime / completed.length) : 0;
-        const successRate = allExecs.length > 0 ? Math.round((completed.length / allExecs.length) * 100) : 0;
-        const failureRate = allExecs.length > 0 ? Math.round((failed.length / allExecs.length) * 100) : 0;
+        const avgExecutionTimeMs = completed.length > 0 ? Math.round(totalExecutionTime / completed.length) : null;
+        const successRate = percentageOrNull(completed.length, allExecs.length);
+        const failureRate = percentageOrNull(failed.length, allExecs.length);
 
         // Per-playbook analytics
         const perPlaybook: Record<string, any> = {};
@@ -804,6 +805,7 @@ export function registerPlaybooksExecutionRoutes(app: Express): void {
             avgExecutionTimeMs,
             successRate,
             failureRate,
+            noDataReason: noDataReason("playbook executions", allExecs.length),
           },
           mostTriggered,
           playbookStats,

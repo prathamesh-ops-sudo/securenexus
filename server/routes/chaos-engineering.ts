@@ -3,6 +3,7 @@ import { logger, getOrgId, reply, replyError } from "./shared";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { storage } from "../storage";
+import { noDataReason, percentageOrNull } from "../metric-availability";
 
 interface RequestWithUser extends Request {
   user?: { id?: string; orgId?: string; role?: string };
@@ -47,7 +48,10 @@ export function registerChaosEngineeringRoutes(app: Express): void {
         failed,
         running,
         pending: total - passed - failed - running,
-        coveragePercent: total > 0 ? Math.round((passed / total) * 100) : 0,
+        coveragePercent: percentageOrNull(passed, total),
+        bypassRate: percentageOrNull(failed, total),
+        avgControlEffectiveness: null,
+        noDataReason: noDataReason("chaos simulations", total),
         activeSchedules: schedules.filter((s) => s.enabled).length,
         purpleTeamExercises: simulations.filter((s) => s.trigger === "purple_team").length,
         byTactic,
@@ -661,7 +665,8 @@ export function registerChaosEngineeringRoutes(app: Express): void {
         }
 
         reply(res, {
-          currentCoverage: total > 0 ? Math.round((passed / total) * 100) : 0,
+          currentCoverage: percentageOrNull(passed, total),
+          noDataReason: noDataReason("chaos simulations", total),
           closedGaps: passed,
           remainingGaps: total - passed,
           totalTechniques: total,
