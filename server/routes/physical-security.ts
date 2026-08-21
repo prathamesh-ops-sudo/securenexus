@@ -22,6 +22,7 @@ import {
 } from "../physical-correlation";
 import { testControllerConnection } from "../integrations/lenel";
 import type { ControllerConfig } from "../integrations/lenel";
+import { replyError } from "../api-response";
 
 const log = logger.child("physical-security");
 
@@ -623,15 +624,18 @@ export function registerPhysicalSecurityRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const lookbackMinutes = Number(req.body.lookbackMinutes) || 60;
-        const results = await runCorrelationAnalysis(orgId, lookbackMinutes);
+        const analysis = await runCorrelationAnalysis(orgId, lookbackMinutes);
+        if (analysis.status === "failed") {
+          return replyError(res, 500, [{ code: "CORRELATION_ANALYSIS_FAILED", message: analysis.reason }]);
+        }
 
         // Auto-create incidents if configured
         let incidentsCreated = 0;
         if (req.body.autoCreateIncidents !== false) {
-          incidentsCreated = await createPhysicalIncidentsFromCorrelations(orgId, results);
+          incidentsCreated = await createPhysicalIncidentsFromCorrelations(orgId, analysis.correlations);
         }
 
-        res.json({ correlations: results, incidentsCreated });
+        res.json({ status: "completed", correlations: analysis.correlations, incidentsCreated });
       } catch (err) {
         log.error("Failed to run correlation", { error: String(err) });
         res.status(500).json({ error: "Failed to run correlation analysis" });

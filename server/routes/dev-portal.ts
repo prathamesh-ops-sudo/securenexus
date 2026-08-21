@@ -4,10 +4,12 @@ import { isAuthenticated } from "../auth";
 import { requireSuperAdmin } from "../middleware/super-admin";
 import { sendEnvelope } from "./shared";
 import { db, getPoolHealth, checkPoolConnectivity } from "../db";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { logger } from "../logger";
 import { config } from "../config";
 import { buildOpenApiSpec } from "../openapi";
+import { createAuditLog } from "../storage/audit";
+import { reply, replyBadRequest, replyInternal } from "../api-response";
 
 const log = logger.child("dev-portal");
 
@@ -44,6 +46,73 @@ const MAX_QUERY_ROWS = 500;
 const DEFAULT_QUERY_ROWS = 100;
 const MAX_WHERE_CLAUSES = 20;
 const MAX_IN_VALUES = 200;
+const DB_QUERY_TIMEOUT_MS = 5_000;
+const REDACTED_VALUE = "[REDACTED]";
+const SENSITIVE_COLUMN_NAMES = new Set([
+  "password",
+  "password_hash",
+  "passwd",
+  "mfa_secret",
+  "backup_codes",
+  "recovery_codes",
+  "private_key",
+  "key_hash",
+  "webhook_secret",
+  "client_secret",
+  "access_token",
+  "refresh_token",
+  "session_token",
+  "reset_token",
+  "invite_token",
+  "verification_token",
+  "bearer_token",
+  "bearer_token_hash",
+  "oauth_token",
+  "api_key",
+  "api_key_hash",
+  "secret",
+]);
+const SENSITIVE_TABLE_COLUMNS = new Set([
+  "connectors:config",
+  "api_keys:key",
+  "api_keys:secret",
+  "password_reset_tokens:token",
+  "sessions:sid",
+  "org_sso_configs:certificate",
+  "outbound_webhooks:headers",
+]);
+
+type FilterPrimitive = string | number | boolean;
+type RawFilterClause = {
+  column?: unknown;
+  op?: unknown;
+  value?: unknown;
+};
+
+function isSensitiveColumn(tableName: string, columnName: string): boolean {
+  const normalizedColumn = columnName.toLowerCase();
+  if (SENSITIVE_COLUMN_NAMES.has(normalizedColumn)) return true;
+  if (SENSITIVE_TABLE_COLUMNS.has(`${tableName}:${normalizedColumn}`)) return true;
+  return (
+    /(^|_)(password|passwd|pass_hash)(_|$)/i.test(normalizedColumn) ||
+    /(^|_)(mfa|backup|recovery)_(secret|code|codes?)(_|$)/i.test(normalizedColumn) ||
+    /(^|_)(credential|credentials|encrypted)(_|$)/i.test(normalizedColumn) ||
+    /(^|_)(token|token_hash)(_|$)/i.test(normalizedColumn) ||
+    /(^|_)(access|refresh|session|reset|invite|verification|bearer|oauth)_(token|secret)(_|$)/i.test(normalizedColumn)
+  );
+}
+
+function redactRows(rows: unknown[], tableName: string, redactedColumns: Set<string>): Record<string, unknown>[] {
+  return rows.map((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return { value: row };
+    return Object.fromEntries(
+      Object.entries(row).map(([column, value]) => [
+        column,
+        redactedColumns.has(column) || isSensitiveColumn(tableName, column) ? REDACTED_VALUE : value,
+      ]),
+    );
+  });
+}
 
 export function registerDevPortalRoutes(app: Express): void {
   app.get("/api/developer-portal/openapi", isAuthenticated, (_req: Request, res: Response) => {
@@ -511,42 +580,42 @@ export function registerDevPortalRoutes(app: Express): void {
       const validColumns = new Set(
         (columnsResult.rows || []).map((row) => String((row as { column_name: unknown }).column_name)),
       );
+      const redactedColumns = new Set(
+        Array.from(validColumns).filter((column) => isSensitiveColumn(tableName, column)),
+      );
 
       if (orderByColumn && !validColumns.has(orderByColumn)) {
-        return sendEnvelope(res, null, {
-          status: 400,
-          errors: [{ code: "INVALID_ORDER_BY", message: "Invalid orderBy column" }],
-        });
+        return replyBadRequest(res, "Invalid orderBy column.", "INVALID_ORDER_BY");
+      }
+      if (orderByColumn && redactedColumns.has(orderByColumn)) {
+        return replyBadRequest(res, "Ordering by a sensitive column is not permitted.", "SENSITIVE_COLUMN");
       }
 
       const whereClauses = Array.isArray(where) ? where : [];
       if (whereClauses.length > MAX_WHERE_CLAUSES) {
-        return sendEnvelope(res, null, {
-          status: 400,
-          errors: [{ code: "TOO_MANY_FILTERS", message: `Too many filters (max ${MAX_WHERE_CLAUSES})` }],
-        });
+        return replyBadRequest(res, `Too many filters (max ${MAX_WHERE_CLAUSES}).`, "TOO_MANY_FILTERS");
       }
 
-      const conditionSql: any[] = [];
+      const conditionSql: SQL[] = [];
+      const filterColumns: string[] = [];
 
-      for (const clause of whereClauses) {
+      for (const rawClause of whereClauses) {
+        const clause = rawClause as RawFilterClause;
         if (!clause || typeof clause !== "object") {
-          return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "INVALID_FILTER", message: "Invalid filter clause" }],
-          });
+          return replyBadRequest(res, "Invalid filter clause.", "INVALID_FILTER");
         }
 
-        const column = String((clause as any).column || "");
-        const op = String((clause as any).op || "=").toLowerCase();
-        const value = (clause as any).value as unknown;
+        const column = typeof clause.column === "string" ? clause.column : "";
+        const op = typeof clause.op === "string" ? clause.op.toLowerCase() : "=";
+        const value = clause.value;
 
         if (!column || !validColumns.has(column)) {
-          return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "INVALID_FILTER_COLUMN", message: "Invalid filter column" }],
-          });
+          return replyBadRequest(res, "Invalid filter column.", "INVALID_FILTER_COLUMN");
         }
+        if (redactedColumns.has(column)) {
+          return replyBadRequest(res, "Filtering by a sensitive column is not permitted.", "SENSITIVE_COLUMN");
+        }
+        filterColumns.push(column);
 
         const col = sql.identifier(column);
 
@@ -560,38 +629,33 @@ export function registerDevPortalRoutes(app: Express): void {
             continue;
           }
 
-          return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "INVALID_FILTER", message: "NULL filters only support = or !=" }],
-          });
+          return replyBadRequest(res, "NULL filters only support = or !=.", "INVALID_FILTER");
         }
 
         if (op === "in") {
           if (!Array.isArray(value) || value.length === 0 || value.length > MAX_IN_VALUES) {
-            return sendEnvelope(res, null, {
-              status: 400,
-              errors: [
-                { code: "INVALID_FILTER", message: `IN filters must be a non-empty array (max ${MAX_IN_VALUES})` },
-              ],
-            });
+            return replyBadRequest(
+              res,
+              `IN filters must be a non-empty array (max ${MAX_IN_VALUES}).`,
+              "INVALID_FILTER",
+            );
           }
 
-          if (value.some((v) => typeof v === "object")) {
-            return sendEnvelope(res, null, {
-              status: 400,
-              errors: [{ code: "INVALID_FILTER", message: "IN filter values must be primitives" }],
-            });
+          if (
+            value.some(
+              (item): item is object | null =>
+                item === null || (typeof item !== "string" && typeof item !== "number" && typeof item !== "boolean"),
+            )
+          ) {
+            return replyBadRequest(res, "IN filter values must be primitives.", "INVALID_FILTER");
           }
 
-          conditionSql.push(sql`${col} = ANY(${value as any})`);
+          conditionSql.push(sql`${col} = ANY(${value as FilterPrimitive[]})`);
           continue;
         }
 
-        if (typeof value === "object") {
-          return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "INVALID_FILTER", message: "Filter value must be a primitive" }],
-          });
+        if (value !== null && typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
+          return replyBadRequest(res, "Filter value must be a primitive.", "INVALID_FILTER");
         }
 
         if (op === "=" || op === "eq") {
@@ -611,10 +675,7 @@ export function registerDevPortalRoutes(app: Express): void {
         } else if (op === "ilike") {
           conditionSql.push(sql`${col} ILIKE ${String(value)}`);
         } else {
-          return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "INVALID_FILTER", message: `Unsupported operator: ${op}` }],
-          });
+          return replyBadRequest(res, `Unsupported operator: ${op}.`, "INVALID_FILTER");
         }
       }
 
@@ -623,8 +684,13 @@ export function registerDevPortalRoutes(app: Express): void {
         ? sql` ORDER BY ${sql.identifier(orderByColumn)} ${sql.raw(orderDirection)}`
         : sql``;
 
-      log.info("Dev portal DB query executed", {
-        userId: (req as any).user?.id,
+      const actor = req.user as { id?: unknown; email?: unknown } | undefined;
+      if (typeof actor?.id !== "string" || actor.id.length === 0) {
+        return replyInternal(res, "A resolved platform-admin actor is required.");
+      }
+
+      log.info("Dev portal DB query started", {
+        userId: actor.id,
         table: tableName,
         limit: limitNumber,
         offset: offsetNumber,
@@ -634,25 +700,50 @@ export function registerDevPortalRoutes(app: Express): void {
       });
 
       const startTime = Date.now();
-      const result = await db.execute(
-        sql`SELECT * FROM ${sql.identifier(tableName)}${whereSql}${orderSql} LIMIT ${limitNumber} OFFSET ${offsetNumber}`,
-      );
+      const result = await db.transaction(async (tx) => {
+        await tx.execute(sql.raw(`SET LOCAL statement_timeout = '${DB_QUERY_TIMEOUT_MS}ms'`));
+        return tx.execute(
+          sql`SELECT * FROM ${sql.identifier(tableName)}${whereSql}${orderSql} LIMIT ${limitNumber} OFFSET ${offsetNumber}`,
+        );
+      });
       const elapsed = Date.now() - startTime;
 
       const rows = result.rows || [];
+      const redactedRows = redactRows(rows, tableName, redactedColumns);
 
-      return sendEnvelope(res, {
-        rows,
-        rowCount: rows.length,
+      await createAuditLog({
+        userId: actor.id,
+        userName: typeof actor.email === "string" ? actor.email : "unknown",
+        orgId: (req as Request & { orgId?: string }).orgId ?? null,
+        action: "platform_db_query",
+        resourceType: "dev_portal_database",
+        resourceId: tableName,
+        details: {
+          actor: actor.id,
+          table: tableName,
+          filterColumns,
+          rowCount: redactedRows.length,
+          elapsed,
+        },
+      });
+
+      log.info("Dev portal DB query completed", {
+        userId: actor.id,
+        table: tableName,
+        rowCount: redactedRows.length,
         elapsed,
-        truncated: limitNumber === MAX_QUERY_ROWS && rows.length >= MAX_QUERY_ROWS,
+      });
+
+      return reply(res, {
+        rows: redactedRows,
+        rowCount: redactedRows.length,
+        elapsed,
+        truncated: limitNumber === MAX_QUERY_ROWS && redactedRows.length >= MAX_QUERY_ROWS,
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      return sendEnvelope(res, null, {
-        status: 400,
-        errors: [{ code: "QUERY_ERROR", message: message }],
-      });
+      log.error("Dev portal DB query failed", { error: message });
+      return replyInternal(res, "Database query failed.");
     }
   });
 

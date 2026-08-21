@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../db", () => ({
   db: {
@@ -37,6 +37,10 @@ import { runCorrelationAnalysis, BUILT_IN_RULES } from "../physical-correlation"
 describe("Physical Correlation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe("BUILT_IN_RULES", () => {
@@ -111,9 +115,10 @@ describe("Physical Correlation", () => {
 
       const results = await runCorrelationAnalysis("org-1", 120);
 
-      expect(results.length).toBeGreaterThanOrEqual(1);
-      expect(results[0].rule.name).toBe("After-Hours Access + Mass File Download");
-      expect(results[0].badgeEventId).toBe("badge-1");
+      expect(results.status).toBe("completed");
+      expect(results.correlations.length).toBeGreaterThanOrEqual(1);
+      expect(results.correlations[0].rule.name).toBe("After-Hours Access + Mass File Download");
+      expect(results.correlations[0].badgeEventId).toBe("badge-1");
     });
 
     it("returns empty array when no badge events exist", async () => {
@@ -128,7 +133,23 @@ describe("Physical Correlation", () => {
       });
 
       const results = await runCorrelationAnalysis("org-1", 60);
-      expect(results).toHaveLength(0);
+      expect(results.status).toBe("completed");
+      expect(results.correlations).toHaveLength(0);
+    });
+
+    it("returns an explicit failed status when analysis cannot query data", async () => {
+      (db.select as any).mockImplementation(() => {
+        throw new Error("database unavailable");
+      });
+
+      const results = await runCorrelationAnalysis("org-1", 60);
+
+      expect(results).toEqual({
+        status: "failed",
+        correlations: [],
+        eventsAnalyzed: 0,
+        reason: "Correlation analysis could not be completed. Try again later.",
+      });
     });
 
     it("detects tailgate events without needing digital alerts", async () => {
@@ -155,13 +176,19 @@ describe("Physical Correlation", () => {
 
       const results = await runCorrelationAnalysis("org-1", 60);
 
-      const tailgateCorrelations = results.filter((r) => r.rule.name.includes("Tailgate"));
+      expect(results.status).toBe("completed");
+      const tailgateCorrelations = results.correlations.filter((r) => r.rule.name.includes("Tailgate"));
       expect(tailgateCorrelations.length).toBeGreaterThanOrEqual(1);
       expect(tailgateCorrelations[0].badgeEventId).toBe("badge-tailgate");
     });
 
-    it("detects impossible travel when same badge used at distant locations", async () => {
-      const now = new Date();
+    it.each([
+      ["inside business hours", "2026-08-21T12:00:00.000Z"],
+      ["outside business hours", "2026-08-21T22:00:00.000Z"],
+    ])("detects impossible travel when same badge used at distant locations (%s)", async (_label, clockTime) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(clockTime));
+      const now = new Date(clockTime);
       const badgeEvents = [
         {
           id: "badge-travel-1",
@@ -191,13 +218,15 @@ describe("Physical Correlation", () => {
             orderBy: vi.fn().mockReturnValue({
               limit: vi.fn().mockResolvedValue(badgeEvents),
             }),
+            limit: vi.fn().mockResolvedValue([]),
           }),
         }),
       });
 
       const results = await runCorrelationAnalysis("org-1", 60);
 
-      const travelCorrelations = results.filter((r) => r.rule.name === "Badge Clone Detection");
+      expect(results.status).toBe("completed");
+      const travelCorrelations = results.correlations.filter((r) => r.rule.name === "Badge Clone Detection");
       expect(travelCorrelations.length).toBeGreaterThanOrEqual(1);
       expect(travelCorrelations[0].details).toContain("B003");
     });

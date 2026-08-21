@@ -380,7 +380,7 @@ export default function PhysicalSecurityPage() {
   const runCorrelationMutation = useMutation({
     mutationFn: () =>
       apiRequest("POST", "/api/physical-security/correlation/run", { lookbackMinutes: 60 }).then((r) => r.json()),
-    onSuccess: (data: { correlations: unknown[]; incidentsCreated: number }) => {
+    onSuccess: (data: { status: "completed"; correlations: unknown[]; incidentsCreated: number }) => {
       qc.invalidateQueries({ queryKey: ["/api/physical-security/incidents"] });
       qc.invalidateQueries({ queryKey: ["/api/physical-security/dashboard"] });
       toast({

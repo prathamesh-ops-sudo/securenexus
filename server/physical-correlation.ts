@@ -19,6 +19,17 @@ export interface CorrelationRule {
   windowMinutes: number;
 }
 
+export type CorrelationMatch = {
+  rule: CorrelationRule;
+  badgeEventId: string;
+  alertId?: string;
+  details: string;
+};
+
+export type CorrelationAnalysisResult =
+  | { status: "completed"; correlations: CorrelationMatch[]; eventsAnalyzed: number }
+  | { status: "failed"; correlations: []; eventsAnalyzed: number; reason: string };
+
 const BUILT_IN_RULES: CorrelationRule[] = [
   {
     name: "After-Hours Access + Mass File Download",
@@ -93,8 +104,8 @@ function isAfterHours(eventTime: Date, afterHoursStart: string = "20:00", afterH
 export async function runCorrelationAnalysis(
   orgId: string,
   lookbackMinutes: number = 60,
-): Promise<Array<{ rule: CorrelationRule; badgeEventId: string; alertId?: string; details: string }>> {
-  const correlations: Array<{ rule: CorrelationRule; badgeEventId: string; alertId?: string; details: string }> = [];
+): Promise<CorrelationAnalysisResult> {
+  const correlations: CorrelationMatch[] = [];
   const since = new Date(Date.now() - lookbackMinutes * 60 * 1000);
 
   try {
@@ -201,11 +212,16 @@ export async function runCorrelationAnalysis(
       eventsAnalyzed: recentBadgeEvents.length,
       correlationsFound: correlations.length,
     });
+    return { status: "completed", correlations, eventsAnalyzed: recentBadgeEvents.length };
   } catch (err) {
     log.error("Failed to run correlation analysis", { orgId, error: String(err) });
+    return {
+      status: "failed",
+      correlations: [],
+      eventsAnalyzed: 0,
+      reason: "Correlation analysis could not be completed. Try again later.",
+    };
   }
-
-  return correlations;
 }
 
 /**
@@ -213,7 +229,7 @@ export async function runCorrelationAnalysis(
  */
 export async function createPhysicalIncidentsFromCorrelations(
   orgId: string,
-  correlationResults: Array<{ rule: CorrelationRule; badgeEventId: string; alertId?: string; details: string }>,
+  correlationResults: CorrelationMatch[],
 ): Promise<number> {
   let created = 0;
 

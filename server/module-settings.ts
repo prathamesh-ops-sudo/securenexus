@@ -23,7 +23,7 @@ export async function getEnabledModuleKeys(orgId: string): Promise<string[]> {
     .select({ moduleKey: organizationModuleSettings.moduleKey })
     .from(organizationModuleSettings)
     .where(eq(organizationModuleSettings.orgId, orgId));
-  return [...getDefaultEnabledModules(), ...rows.map((row) => row.moduleKey)];
+  return Array.from(new Set([...getDefaultEnabledModules(), ...rows.map((row) => row.moduleKey)]));
 }
 
 export async function setModuleEnabled(
