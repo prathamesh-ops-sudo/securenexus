@@ -120,7 +120,7 @@ export async function persistHuntExecution(
         status: result.status,
         lastRunAt: now,
         lastRunDurationMs: result.executionDurationMs,
-        lastRunEventCount: 0,
+        lastRunEventCount: null,
         updatedAt: now,
       })
       .where(and(eq(threatHunts.id, hunt.id), eq(threatHunts.orgId, orgId)));

@@ -64,6 +64,13 @@
       "when": 1787220000000,
       "tag": "0008_ai_decision_safety_vetoes",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787345004780,
+      "tag": "0009_organization_module_settings",
+      "breakpoints": true
     }
   ]
 }

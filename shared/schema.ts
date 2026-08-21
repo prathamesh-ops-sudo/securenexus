@@ -260,6 +260,38 @@ export const organizations = pgTable("organizations", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const CORE_MODULES = ["Dashboard", "Alerts", "Incidents", "Assets", "Connectors"] as const;
+export const NAVIGATION_MODULES = [
+  ...CORE_MODULES,
+  "Threat Intelligence",
+  "Investigate",
+  "Respond",
+  "Posture",
+  "AI Analyst",
+  "Data & Integrations",
+  "Security Modules",
+  "Governance",
+] as const;
+
+export const organizationModuleSettings = pgTable(
+  "organization_module_settings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    moduleKey: text("module_key").notNull(),
+    enabledBy: varchar("enabled_by").notNull(),
+    enabledAt: timestamp("enabled_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_org_module_settings_org_module").on(table.orgId, table.moduleKey),
+    index("idx_org_module_settings_org").on(table.orgId),
+  ],
+);
+
 export const alerts = pgTable(
   "alerts",
   {

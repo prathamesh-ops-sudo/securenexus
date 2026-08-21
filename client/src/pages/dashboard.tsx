@@ -51,6 +51,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useOrgContext } from "@/hooks/use-org-context";
 import { GuidedWorkflowBanner } from "@/components/guided-workflow";
 import {
   ResponsiveContainer,
@@ -1246,6 +1247,16 @@ function AICircuitBreakerBanner() {
 export default function Dashboard() {
   usePageTitle("Security Dashboard — SecureNexus Agentic SOC", true);
   const { user } = useAuth();
+  const { hasTenantContext } = useOrgContext();
+  const { data: moduleSettings, isLoading: moduleSettingsLoading } = useQuery<{ enabledModules: string[] }>({
+    queryKey: ["/api/org/module-settings"],
+    enabled: hasTenantContext,
+    staleTime: 30_000,
+  });
+  const enabledModules = useMemo(
+    () => new Set(moduleSettings?.enabledModules ?? ["Dashboard", "Alerts", "Incidents", "Assets", "Connectors"]),
+    [moduleSettings],
+  );
   const [timeRange, setTimeRange] = useState<TimeRange>("24h");
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -1455,6 +1466,19 @@ export default function Dashboard() {
     [widgetConfig],
   );
 
+  const widgetModule = useCallback((id: WidgetId): string => {
+    switch (id) {
+      case "connectors":
+        return "Connectors";
+      case "ingestion":
+        return "Data & Integrations";
+      case "mitre":
+        return "Threat Intelligence";
+      default:
+        return "Dashboard";
+    }
+  }, []);
+
   // Contextual widget awareness: auto-hide widgets that have no data
   const widgetHasData = useCallback(
     (id: WidgetId): boolean => {
@@ -1487,18 +1511,32 @@ export default function Dashboard() {
   const visibleChartWidgets = useMemo(() => {
     const chartIds: WidgetId[] = ["severity", "sources", "trend"];
     return widgetConfig
-      .filter((w) => chartIds.includes(w.id) && w.visible && widgetHasData(w.id))
+      .filter(
+        (w) =>
+          chartIds.includes(w.id) &&
+          w.visible &&
+          widgetHasData(w.id) &&
+          !moduleSettingsLoading &&
+          enabledModules.has(widgetModule(w.id)),
+      )
       .sort((a, b) => a.order - b.order)
       .map((w) => w.id);
-  }, [widgetConfig, widgetHasData]);
+  }, [widgetConfig, widgetHasData, enabledModules, moduleSettingsLoading, widgetModule]);
 
   const visibleBottomWidgets = useMemo(() => {
     const bottomIds: WidgetId[] = ["mitre", "categories", "connectors", "ingestion", "whatChanged"];
     return widgetConfig
-      .filter((w) => bottomIds.includes(w.id) && w.visible && widgetHasData(w.id))
+      .filter(
+        (w) =>
+          bottomIds.includes(w.id) &&
+          w.visible &&
+          widgetHasData(w.id) &&
+          !moduleSettingsLoading &&
+          enabledModules.has(widgetModule(w.id)),
+      )
       .sort((a, b) => a.order - b.order)
       .map((w) => w.id);
-  }, [widgetConfig, widgetHasData]);
+  }, [widgetConfig, widgetHasData, enabledModules, moduleSettingsLoading, widgetModule]);
 
   const allVisibleWidgetIds = useMemo(
     () => [...visibleChartWidgets, ...visibleBottomWidgets],
@@ -1531,10 +1569,10 @@ export default function Dashboard() {
   return (
     <div className="flex flex-col min-h-[calc(100vh-2rem)]" aria-label="Security Operations Dashboard">
       <div className="flex-1 p-4 md:p-6 space-y-5 max-w-[1440px] mx-auto w-full">
-        <AnomalyBanners stats={stats} />
-        <AICircuitBreakerBanner />
-        <DeceptionHitsWidget />
-        <GuidedWorkflowBanner />
+        {!moduleSettingsLoading && enabledModules.has("Investigate") && <AnomalyBanners stats={stats} />}
+        {!moduleSettingsLoading && enabledModules.has("AI Analyst") && <AICircuitBreakerBanner />}
+        {!moduleSettingsLoading && enabledModules.has("Threat Intelligence") && <DeceptionHitsWidget />}
+        {!moduleSettingsLoading && enabledModules.has("Dashboard") && <GuidedWorkflowBanner />}
 
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>

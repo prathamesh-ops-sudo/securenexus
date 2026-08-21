@@ -109,6 +109,7 @@ import { registerDnsSecurityRoutes } from "./dns-security";
 import { registerEmailSecurityRoutes } from "./email-security";
 import { registerEntityGraphAdvancedRoutes } from "./entity-graph-advanced";
 import { registerAttackPathAdvancedRoutes } from "./attack-path-advanced";
+import { registerModuleSettingsRoutes } from "./module-settings";
 
 export function registerAllDomainRoutes(app: Express): void {
   app.use("/api/", generalLimiter);
@@ -222,4 +223,5 @@ export function registerAllDomainRoutes(app: Express): void {
   registerEmailSecurityRoutes(app);
   registerEntityGraphAdvancedRoutes(app);
   registerAttackPathAdvancedRoutes(app);
+  registerModuleSettingsRoutes(app);
 }

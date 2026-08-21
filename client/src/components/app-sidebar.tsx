@@ -43,9 +43,11 @@ import { useOrgContext } from "@/hooks/use-org-context";
 import { PlatformTenantPicker } from "@/components/platform-tenant-picker";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-import { useState, useEffect, useMemo, useCallback, useContext } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useMemo, useContext } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { EventStreamContext } from "@/App";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   Sidebar,
@@ -80,52 +82,21 @@ const coreItems: NavItem[] = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Alerts", url: "/alerts", icon: AlertTriangle },
   { title: "Incidents", url: "/incidents", icon: FileWarning },
+  { title: "Assets", url: "/asset-inventory", icon: Server },
+  { title: "Connectors", url: "/connectors", icon: Activity },
 ];
 
-/* ── Module visibility persistence ─────────────────────────────────── */
-const ENABLED_MODULES_KEY = "securenexus.enabledModules.v2";
-const ENABLED_MODULES_KEY_V1 = "securenexus.enabledModules.v1";
+const MODULE_CACHE_KEY = "securenexus.enabledModules.v3";
+const CORE_MODULES = new Set(["Dashboard", "Alerts", "Incidents", "Assets", "Connectors"]);
 
-/** Renames applied in v2 */
-const LABEL_MIGRATIONS: Record<string, string> = {
-  "Watch & Recon": "Threat Intelligence",
-  "Standalone Security": "Security Modules",
-};
-
-/** Groups shown by default for every new user */
-const DEFAULT_ENABLED_MODULES = new Set([
-  "Threat Intelligence",
-  "Investigate",
-  "Respond",
-  "Posture",
-  "Data & Integrations",
-]);
-
-function loadEnabledModules(): Set<string> {
+function loadCachedEnabledModules(): Set<string> {
   try {
-    // Try v2 first
-    const raw = localStorage.getItem(ENABLED_MODULES_KEY);
-    if (raw) return new Set(JSON.parse(raw) as string[]);
-
-    // Migrate from v1 if present
-    const v1 = localStorage.getItem(ENABLED_MODULES_KEY_V1);
-    if (v1) {
-      const oldSet = JSON.parse(v1) as string[];
-      const migrated = oldSet.map((label) => LABEL_MIGRATIONS[label] ?? label);
-      const result = new Set(migrated);
-      // Persist as v2 and clean up v1
-      localStorage.setItem(ENABLED_MODULES_KEY, JSON.stringify(Array.from(result)));
-      localStorage.removeItem(ENABLED_MODULES_KEY_V1);
-      return result;
-    }
+    const raw = localStorage.getItem(MODULE_CACHE_KEY);
+    if (raw) return new Set([...Array.from(CORE_MODULES), ...(JSON.parse(raw) as string[])]);
   } catch {
-    /* use defaults */
+    /* fall through to core-only pre-hydration state */
   }
-  return new Set(DEFAULT_ENABLED_MODULES);
-}
-
-function saveEnabledModules(modules: Set<string>) {
-  localStorage.setItem(ENABLED_MODULES_KEY, JSON.stringify(Array.from(modules)));
+  return new Set(CORE_MODULES);
 }
 
 const navGroups: NavGroup[] = [
@@ -133,7 +104,6 @@ const navGroups: NavGroup[] = [
     label: "Threat Intelligence",
     icon: Globe,
     color: "text-cyan-400",
-    core: true,
     sections: [
       {
         label: "Threat Intelligence",
@@ -145,7 +115,6 @@ const navGroups: NavGroup[] = [
     label: "Investigate",
     icon: Microscope,
     color: "text-violet-400",
-    core: true,
     sections: [
       {
         label: "Investigation Tools",
@@ -160,7 +129,6 @@ const navGroups: NavGroup[] = [
     label: "Respond",
     icon: Zap,
     color: "text-emerald-400",
-    core: true,
     sections: [
       {
         label: "Response",
@@ -172,7 +140,6 @@ const navGroups: NavGroup[] = [
     label: "Posture",
     icon: ShieldCheck,
     color: "text-blue-400",
-    core: true,
     sections: [
       {
         label: "Posture",
@@ -198,7 +165,6 @@ const navGroups: NavGroup[] = [
     label: "Data & Integrations",
     icon: Database,
     color: "text-sky-400",
-    core: true,
     sections: [
       {
         label: "Data Platform",
@@ -352,6 +318,8 @@ function LiveAlertBadge() {
 
 export function AppSidebar() {
   const [location] = useLocation();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { user } = useAuth();
   const {
     memberships,
@@ -362,38 +330,56 @@ export function AppSidebar() {
   } = useOrgContext();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const recentPages = useRecentPages(location);
-  const [enabledModules, setEnabledModules] = useState<Set<string>>(loadEnabledModules);
+  const [enabledModules, setEnabledModules] = useState<Set<string>>(loadCachedEnabledModules);
   const [showModuleManager, setShowModuleManager] = useState(false);
+  const {
+    data: moduleSettings,
+    isLoading: moduleSettingsLoading,
+    isError: moduleSettingsError,
+  } = useQuery<{
+    enabledModules: string[];
+    coreModules: string[];
+    canManage: boolean;
+    readOnly: boolean;
+  }>({
+    queryKey: ["/api/org/module-settings"],
+    enabled: hasTenantContext,
+    staleTime: 30_000,
+  });
+  const moduleMutation = useMutation({
+    mutationFn: (change: { moduleKey: string; enabled: boolean }) =>
+      apiRequest("PUT", "/api/org/module-settings", change).then((response) => response.json()),
+    onSuccess: (data: { enabledModules: string[] }) => {
+      setEnabledModules(new Set(data.enabledModules));
+      localStorage.setItem(MODULE_CACHE_KEY, JSON.stringify(data.enabledModules));
+      queryClient.invalidateQueries({ queryKey: ["/api/org/module-settings"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Module setting was not saved", description: error.message, variant: "destructive" });
+    },
+  });
+  const activeEnabledModules = useMemo(
+    () => new Set(moduleSettings?.enabledModules ?? enabledModules),
+    [moduleSettings, enabledModules],
+  );
 
   /** Which nav groups to actually render (core groups + user-enabled groups) */
   const visibleNavGroups = useMemo(
-    () => (hasTenantContext ? navGroups.filter((g) => g.core || enabledModules.has(g.label)) : []),
-    [enabledModules, hasTenantContext],
+    () =>
+      hasTenantContext
+        ? navGroups.filter(
+            (g) =>
+              activeEnabledModules.has(g.label) ||
+              g.sections.some((section) =>
+                section.items.some((item) => item.url !== "/" && location.startsWith(item.url)),
+              ),
+          )
+        : [],
+    [activeEnabledModules, hasTenantContext, location],
   );
 
   /** Advanced (non-core) groups the user can toggle on/off */
   const advancedGroups = useMemo(() => navGroups.filter((g) => !g.core), []);
-
-  const toggleModule = useCallback((label: string) => {
-    setEnabledModules((prev) => {
-      const next = new Set(prev);
-      if (next.has(label)) next.delete(label);
-      else next.add(label);
-      saveEnabledModules(next);
-      return next;
-    });
-  }, []);
-
-  const enableAllModules = useCallback(() => {
-    const all = new Set(navGroups.map((g) => g.label));
-    setEnabledModules(all);
-    saveEnabledModules(all);
-  }, []);
-
-  const resetModulesToDefault = useCallback(() => {
-    setEnabledModules(new Set(DEFAULT_ENABLED_MODULES));
-    saveEnabledModules(new Set(DEFAULT_ENABLED_MODULES));
-  }, []);
 
   useEffect(() => {
     const initial: Record<string, boolean> = {};
@@ -405,24 +391,6 @@ export function AppSidebar() {
     });
     setOpenGroups((prev) => ({ ...prev, ...initial }));
   }, []);
-
-  /* Auto-enable a module if the user navigates directly to one of its pages */
-  useEffect(() => {
-    for (const g of navGroups) {
-      if (g.core || enabledModules.has(g.label)) continue;
-      const flatItems = g.sections.flatMap((s) => s.items);
-      if (flatItems.some((i) => location.startsWith(i.url))) {
-        setEnabledModules((prev) => {
-          const next = new Set(prev);
-          next.add(g.label);
-          saveEnabledModules(next);
-          return next;
-        });
-        setOpenGroups((prev) => ({ ...prev, [g.label]: true }));
-        break;
-      }
-    }
-  }, [location, enabledModules]);
 
   const toggleGroup = (label: string) => {
     setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
@@ -626,12 +594,13 @@ export function AppSidebar() {
               <Layers className="h-3.5 w-3.5 shrink-0" />
               <span>Manage Modules</span>
               {advancedGroups.length -
-                Array.from(enabledModules).filter((m) => advancedGroups.some((g) => g.label === m)).length >
+                Array.from(activeEnabledModules).filter((m) => advancedGroups.some((g) => g.label === m)).length >
                 0 && (
                 <span className="ml-auto text-[9px] bg-blue-500/15 text-blue-400 rounded-full px-1.5 py-0.5 tabular-nums">
                   +
                   {advancedGroups.length -
-                    Array.from(enabledModules).filter((m) => advancedGroups.some((g) => g.label === m)).length}{" "}
+                    Array.from(activeEnabledModules).filter((m) => advancedGroups.some((g) => g.label === m))
+                      .length}{" "}
                   hidden
                 </span>
               )}
@@ -646,33 +615,25 @@ export function AppSidebar() {
                 <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                   Security Modules
                 </span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={enableAllModules}
-                    className="text-[9px] font-medium text-blue-400 hover:text-blue-300 transition-colors"
-                  >
-                    Enable all
-                  </button>
-                  <span className="text-muted-foreground/30">|</span>
-                  <button
-                    type="button"
-                    onClick={resetModulesToDefault}
-                    className="text-[9px] font-medium text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                  >
-                    Reset
-                  </button>
-                </div>
+                <span className="text-[9px] text-muted-foreground/50">
+                  {moduleSettingsLoading
+                    ? "Loading…"
+                    : `${Math.max(activeEnabledModules.size - CORE_MODULES.size, 0)} enabled`}
+                </span>
               </div>
+              {moduleSettingsError && (
+                <p className="text-[10px] text-red-400">Module settings could not be loaded. Try again later.</p>
+              )}
               <div className="space-y-1">
                 {advancedGroups.map((g) => {
                   const itemCount = g.sections.reduce((sum, s) => sum + s.items.length, 0);
-                  const enabled = enabledModules.has(g.label);
+                  const enabled = activeEnabledModules.has(g.label);
                   return (
                     <button
                       key={g.label}
                       type="button"
-                      onClick={() => toggleModule(g.label)}
+                      disabled={!moduleSettings?.canManage || moduleMutation.isPending}
+                      onClick={() => moduleMutation.mutate({ moduleKey: g.label, enabled: !enabled })}
                       className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[11px] transition-all duration-150 ${
                         enabled
                           ? "bg-sidebar-accent/40 text-sidebar-foreground"
@@ -697,10 +658,18 @@ export function AppSidebar() {
                   );
                 })}
               </div>
-              <p className="text-[9px] text-muted-foreground/40 leading-relaxed">
-                Enable modules as your team needs them. Core modules (Watch & Recon, Investigate, Respond, Posture, Data
-                & Integrations) are always visible.
-              </p>
+              {!moduleSettings?.canManage && !moduleSettingsLoading && (
+                <p className="text-[9px] text-muted-foreground/60 leading-relaxed">
+                  Only organization owners and admins can change module visibility.
+                  {moduleSettings?.readOnly ? " Platform-admin tenant views are read-only." : ""}
+                </p>
+              )}
+              {moduleSettings?.canManage && (
+                <p className="text-[9px] text-muted-foreground/40 leading-relaxed">
+                  Core navigation is always available. Optional modules appear for every organization member after an
+                  admin saves the setting.
+                </p>
+              )}
             </div>
           </div>
         )}

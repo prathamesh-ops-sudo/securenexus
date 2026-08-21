@@ -370,10 +370,17 @@ const MITRE_TACTICS = [
 function StatsCards({
   stats,
 }: {
-  stats: { totalHunts: number; totalExecutions: number; activeSchedules: number; totalPlaybooks: number };
+  stats: {
+    totalHunts: number;
+    totalExecutions: number;
+    activeSchedules: number;
+    totalPlaybooks: number;
+    huntsWithFailedLastRun: number;
+    nonExecutableHunts: number;
+  };
 }) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
       <Card>
         <CardContent className="pt-4 pb-3">
           <div className="flex items-center gap-2">
@@ -381,6 +388,24 @@ function StatsCards({
             <span className="text-xs text-muted-foreground">Total Hunts</span>
           </div>
           <p className="text-2xl font-bold mt-1">{stats.totalHunts}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-4 pb-3">
+          <div className="flex items-center gap-2">
+            <XCircle className="h-4 w-4 text-red-400" />
+            <span className="text-xs text-muted-foreground">Hunts with failed last run</span>
+          </div>
+          <p className="text-2xl font-bold mt-1">{stats.huntsWithFailedLastRun}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-4 pb-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-orange-400" />
+            <span className="text-xs text-muted-foreground">Non-executable hunts</span>
+          </div>
+          <p className="text-2xl font-bold mt-1">{stats.nonExecutableHunts}</p>
         </CardContent>
       </Card>
       <Card>
@@ -3853,11 +3878,20 @@ export default function ThreatHuntingPage() {
     totalExecutions: number;
     activeSchedules: number;
     totalPlaybooks: number;
+    huntsWithFailedLastRun: number;
+    nonExecutableHunts: number;
   }>({
     queryKey: ["/api/threat-hunting/stats"],
   });
 
-  const stats = statsData || { totalHunts: 0, totalExecutions: 0, activeSchedules: 0, totalPlaybooks: 0 };
+  const stats = statsData || {
+    totalHunts: 0,
+    totalExecutions: 0,
+    activeSchedules: 0,
+    totalPlaybooks: 0,
+    huntsWithFailedLastRun: 0,
+    nonExecutableHunts: 0,
+  };
 
   return (
     <div className="p-6 space-y-6">

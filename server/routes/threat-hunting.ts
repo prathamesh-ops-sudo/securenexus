@@ -882,8 +882,8 @@ export function registerThreatHuntingRoutes(app: Express): void {
       res.json({
         totalHunts: huntCount?.count || 0,
         totalExecutions: resultCount?.count || 0,
-        failedExecutions: failedHuntCount?.count || 0,
-        rejectedExecutions: rejectedHuntCount?.count || 0,
+        huntsWithFailedLastRun: failedHuntCount?.count || 0,
+        nonExecutableHunts: rejectedHuntCount?.count || 0,
         activeSchedules: scheduleCount?.count || 0,
         totalPlaybooks: playbookCount?.count || 0,
         recentResults,
