@@ -155,7 +155,9 @@ interface TrendEntry {
 }
 
 interface PostureSummary {
-  overallScore: number;
+  overallScore: number | null;
+  available: boolean;
+  reason: string | null;
   lastCalculated: string | null;
   subScores: Array<{
     domain: string;
@@ -435,7 +437,7 @@ export default function PostureTrustCenterPage() {
 
   // ── Render ──────────────────────────────────────────────────────────────
 
-  const overallScore = summary?.overallScore || 0;
+  const overallScore = summary?.overallScore ?? null;
   const domainMeta = summary?.domainMeta || {};
 
   if (isLoading) return <DashboardSkeleton />;
@@ -513,20 +515,41 @@ export default function PostureTrustCenterPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="md:col-span-1">
               <CardContent className="pt-6 flex flex-col items-center">
-                <div
-                  className={`relative w-40 h-40 rounded-full border-8 flex items-center justify-center ${scoreBgColor(overallScore)}`}
-                >
-                  <div className="text-center">
-                    <span className={`text-4xl font-bold ${scoreColor(overallScore)}`}>{overallScore}</span>
-                    <p className="text-xs text-muted-foreground mt-1">out of 100</p>
+                {overallScore === null ? (
+                  <div className="relative w-40 h-40 rounded-full border-8 border-amber-500/30 bg-amber-500/10 flex items-center justify-center">
+                    <div className="text-center">
+                      <span className="text-2xl font-bold text-amber-400">Unavailable</span>
+                      <p className="text-xs text-muted-foreground mt-1">No measured evidence</p>
+                    </div>
                   </div>
-                </div>
-                <Badge className={`mt-4 text-lg px-4 py-1 ${scoreBgColor(overallScore)}`}>
-                  Grade: {scoreGrade(overallScore)}
-                </Badge>
+                ) : (
+                  <div
+                    className={`relative w-40 h-40 rounded-full border-8 flex items-center justify-center ${scoreBgColor(overallScore)}`}
+                  >
+                    <div className="text-center">
+                      <span className={`text-4xl font-bold ${scoreColor(overallScore)}`}>{overallScore}</span>
+                      <p className="text-xs text-muted-foreground mt-1">out of 100</p>
+                    </div>
+                  </div>
+                )}
+                {overallScore === null ? (
+                  <Badge className="mt-4 text-lg px-4 py-1 bg-amber-500/10 text-amber-400 border-amber-500/20">
+                    Unavailable
+                  </Badge>
+                ) : (
+                  <Badge className={`mt-4 text-lg px-4 py-1 ${scoreBgColor(overallScore)}`}>
+                    Grade: {scoreGrade(overallScore)}
+                  </Badge>
+                )}
                 {summary?.lastCalculated && (
                   <p className="text-xs text-muted-foreground mt-2">
                     Last calculated: {formatDate(summary.lastCalculated)}
+                  </p>
+                )}
+                {overallScore === null && (
+                  <p className="text-xs text-muted-foreground mt-2 max-w-xs text-center">
+                    Connect a cloud account, endpoint telemetry, identity provider, or compliance policy to measure
+                    posture.
                   </p>
                 )}
               </CardContent>

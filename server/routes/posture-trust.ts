@@ -73,15 +73,21 @@ export function registerPostureTrustRoutes(app: Express): void {
         const { industry, companySize } = req.body;
 
         // Generate domain sub-scores
-        const domainScores = generateDomainScores(orgId);
-        const overallScore = computeOverallScore(domainScores);
+        const evidence = await generateDomainScores(orgId);
+        if (evidence.status === "unavailable" || evidence.overallScore === null) {
+          return res.status(422).json(evidence);
+        }
+        const { domainScores, overallScore } = evidence;
 
         // Compute peer benchmarking
-        const benchmarkResult = computePercentileRank(
-          overallScore,
-          typeof industry === "string" ? industry : "Technology",
-          typeof companySize === "string" ? companySize : "medium",
-        );
+        const hasCompleteDomainCoverage = domainScores.length === Object.keys(DOMAIN_WEIGHTS).length;
+        const benchmarkResult = hasCompleteDomainCoverage
+          ? computePercentileRank(
+              overallScore,
+              typeof industry === "string" ? industry : "Technology",
+              typeof companySize === "string" ? companySize : "medium",
+            )
+          : null;
 
         // Store main posture score
         const [score] = await db
@@ -89,10 +95,10 @@ export function registerPostureTrustRoutes(app: Express): void {
           .values({
             orgId,
             overallScore,
-            cspmScore: domainScores.find((d) => d.domain === "cloud")?.score || 0,
-            endpointScore: domainScores.find((d) => d.domain === "endpoint")?.score || 0,
-            incidentScore: domainScores.find((d) => d.domain === "network")?.score || 0,
-            complianceScore: domainScores.find((d) => d.domain === "data")?.score || 0,
+            cspmScore: domainScores.find((d) => d.domain === "cloud")?.score ?? null,
+            endpointScore: domainScores.find((d) => d.domain === "endpoint")?.score ?? null,
+            incidentScore: domainScores.find((d) => d.domain === "network")?.score ?? null,
+            complianceScore: domainScores.find((d) => d.domain === "data")?.score ?? null,
             breakdown: {
               domainScores: domainScores.map((d) => ({
                 domain: d.domain,
@@ -102,8 +108,8 @@ export function registerPostureTrustRoutes(app: Express): void {
                 controlsPassed: d.controlsPassed,
                 controlsFailed: d.controlsFailed,
               })),
-              percentile: benchmarkResult.percentile,
-              peerCount: benchmarkResult.peerCount,
+              percentile: benchmarkResult?.percentile ?? null,
+              peerCount: benchmarkResult?.peerCount ?? null,
             },
           })
           .returning();
@@ -125,29 +131,31 @@ export function registerPostureTrustRoutes(app: Express): void {
           });
         }
 
-        // Store peer benchmark
-        await db.insert(peerBenchmarks).values({
-          orgId,
-          industrySegment: typeof industry === "string" ? industry : "Technology",
-          companySize: typeof companySize === "string" ? companySize : "medium",
-          overallScore,
-          identityScore: domainScores.find((d) => d.domain === "identity")?.score || 0,
-          endpointScore: domainScores.find((d) => d.domain === "endpoint")?.score || 0,
-          cloudScore: domainScores.find((d) => d.domain === "cloud")?.score || 0,
-          networkScore: domainScores.find((d) => d.domain === "network")?.score || 0,
-          applicationScore: domainScores.find((d) => d.domain === "application")?.score || 0,
-          dataScore: domainScores.find((d) => d.domain === "data")?.score || 0,
-          percentileRank: benchmarkResult.percentile,
-          peerCount: benchmarkResult.peerCount,
-          topStrengths: domainScores
-            .filter((d) => d.score >= 80)
-            .map((d) => d.domain)
-            .slice(0, 3),
-          topWeaknesses: domainScores
-            .filter((d) => d.score < 60)
-            .map((d) => d.domain)
-            .slice(0, 3),
-        });
+        // Peer benchmarks require complete domain coverage; do not encode absent domains as zero.
+        if (hasCompleteDomainCoverage && benchmarkResult) {
+          await db.insert(peerBenchmarks).values({
+            orgId,
+            industrySegment: typeof industry === "string" ? industry : "Technology",
+            companySize: typeof companySize === "string" ? companySize : "medium",
+            overallScore,
+            identityScore: domainScores.find((d) => d.domain === "identity")?.score ?? null,
+            endpointScore: domainScores.find((d) => d.domain === "endpoint")?.score ?? null,
+            cloudScore: domainScores.find((d) => d.domain === "cloud")?.score ?? null,
+            networkScore: domainScores.find((d) => d.domain === "network")?.score ?? null,
+            applicationScore: domainScores.find((d) => d.domain === "application")?.score ?? null,
+            dataScore: domainScores.find((d) => d.domain === "data")?.score ?? null,
+            percentileRank: benchmarkResult.percentile,
+            peerCount: benchmarkResult.peerCount,
+            topStrengths: domainScores
+              .filter((d) => d.score >= 80)
+              .map((d) => d.domain)
+              .slice(0, 3),
+            topWeaknesses: domainScores
+              .filter((d) => d.score < 60)
+              .map((d) => d.domain)
+              .slice(0, 3),
+          });
+        }
 
         // Store history entry
         const now = new Date();
@@ -163,20 +171,22 @@ export function registerPostureTrustRoutes(app: Express): void {
 
         const changeFromPrevious = prevHistory ? overallScore - prevHistory.overallScore : 0;
 
-        await db.insert(postureScoreHistory).values({
-          orgId,
-          overallScore,
-          identityScore: domainScores.find((d) => d.domain === "identity")?.score || 0,
-          endpointScore: domainScores.find((d) => d.domain === "endpoint")?.score || 0,
-          cloudScore: domainScores.find((d) => d.domain === "cloud")?.score || 0,
-          networkScore: domainScores.find((d) => d.domain === "network")?.score || 0,
-          applicationScore: domainScores.find((d) => d.domain === "application")?.score || 0,
-          dataScore: domainScores.find((d) => d.domain === "data")?.score || 0,
-          percentileRank: benchmarkResult.percentile,
-          changeFromPrevious,
-          period,
-          periodType: "monthly",
-        });
+        if (hasCompleteDomainCoverage && benchmarkResult) {
+          await db.insert(postureScoreHistory).values({
+            orgId,
+            overallScore,
+            identityScore: domainScores.find((d) => d.domain === "identity")?.score ?? 0,
+            endpointScore: domainScores.find((d) => d.domain === "endpoint")?.score ?? 0,
+            cloudScore: domainScores.find((d) => d.domain === "cloud")?.score ?? 0,
+            networkScore: domainScores.find((d) => d.domain === "network")?.score ?? 0,
+            applicationScore: domainScores.find((d) => d.domain === "application")?.score ?? 0,
+            dataScore: domainScores.find((d) => d.domain === "data")?.score ?? 0,
+            percentileRank: benchmarkResult.percentile,
+            changeFromPrevious,
+            period,
+            periodType: "monthly",
+          });
+        }
 
         // Update trust page if published
         const [trustPage] = await db
@@ -204,6 +214,7 @@ export function registerPostureTrustRoutes(app: Express): void {
           domainScores,
           benchmark: benchmarkResult,
           changeFromPrevious,
+          measuredDomains: evidence.measuredDomains,
         });
       } catch (error) {
         log.error("Failed to calculate posture score", { error: String(error) });
@@ -216,6 +227,18 @@ export function registerPostureTrustRoutes(app: Express): void {
   app.get("/api/posture-trust/latest", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
+      const evidence = await generateDomainScores(orgId);
+      if (evidence.status === "unavailable") {
+        return res.json({
+          score: null,
+          subScores: [],
+          benchmark: null,
+          domainMeta: DOMAIN_META,
+          available: false,
+          reason: evidence.reason,
+          requiredEvidence: evidence.requiredEvidence,
+        });
+      }
 
       const [latestScore] = await db
         .select()
@@ -887,6 +910,7 @@ export function registerPostureTrustRoutes(app: Express): void {
   app.get("/api/posture-trust/summary", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
+      const evidence = await generateDomainScores(orgId);
 
       // Latest score
       const [latestScore] = await db
@@ -938,8 +962,13 @@ export function registerPostureTrustRoutes(app: Express): void {
         .where(eq(postureScoreHistory.orgId, orgId));
 
       res.json({
-        overallScore: latestScore?.overallScore || 0,
-        lastCalculated: latestScore?.generatedAt || null,
+        overallScore: evidence.status === "completed" && latestScore ? latestScore.overallScore : null,
+        available: evidence.status === "completed" && Boolean(latestScore),
+        reason:
+          evidence.status === "completed" && latestScore
+            ? null
+            : evidence.reason || "No posture evidence has been measured for this organization.",
+        lastCalculated: evidence.status === "completed" ? latestScore?.generatedAt || null : null,
         subScores: subScores.map((s) => ({
           domain: s.domain,
           score: s.score,
@@ -994,8 +1023,11 @@ export function registerPostureTrustRoutes(app: Express): void {
         const { trigger } = req.body as { trigger?: string };
 
         // Re-generate domain scores based on current state
-        const domainScores = generateDomainScores(orgId);
-        const overallScore = computeOverallScore(domainScores);
+        const evidence = await generateDomainScores(orgId);
+        if (evidence.status === "unavailable" || evidence.overallScore === null) {
+          return res.status(422).json(evidence);
+        }
+        const { domainScores, overallScore } = evidence;
 
         // Fetch previous score for comparison
         const [prevScore] = await db
@@ -1014,10 +1046,10 @@ export function registerPostureTrustRoutes(app: Express): void {
           .values({
             orgId,
             overallScore,
-            cspmScore: domainScores.find((d) => d.domain === "cloud")?.score || 0,
-            endpointScore: domainScores.find((d) => d.domain === "endpoint")?.score || 0,
-            incidentScore: domainScores.find((d) => d.domain === "network")?.score || 0,
-            complianceScore: domainScores.find((d) => d.domain === "data")?.score || 0,
+            cspmScore: domainScores.find((d) => d.domain === "cloud")?.score ?? null,
+            endpointScore: domainScores.find((d) => d.domain === "endpoint")?.score ?? null,
+            incidentScore: domainScores.find((d) => d.domain === "network")?.score ?? null,
+            complianceScore: domainScores.find((d) => d.domain === "data")?.score ?? null,
             breakdown: {
               domainScores: domainScores.map((d) => ({
                 domain: d.domain,

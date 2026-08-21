@@ -6,6 +6,11 @@
  * auto-answer templates, and score trend analysis.
  */
 
+import { eq } from "drizzle-orm";
+import { identityRiskProfiles } from "@shared/schema";
+import { db } from "./db";
+import { storage } from "./storage";
+
 // ── Domain Weights (must sum to 100) ──────────────────────────────────────────
 
 export const DOMAIN_WEIGHTS: Record<string, number> = {
@@ -764,7 +769,7 @@ export interface DomainScore {
   riskFactors: string[];
 }
 
-export function computeOverallScore(domainScores: DomainScore[]): number {
+export function computeOverallScore(domainScores: DomainScore[]): number | null {
   let totalWeight = 0;
   let weightedSum = 0;
 
@@ -774,7 +779,7 @@ export function computeOverallScore(domainScores: DomainScore[]): number {
     totalWeight += w;
   }
 
-  return totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
+  return totalWeight > 0 ? Math.round(weightedSum / totalWeight) : null;
 }
 
 export function computePercentileRank(
@@ -799,65 +804,148 @@ export function computePercentileRank(
   };
 }
 
-export function generateDomainScores(orgId: string): DomainScore[] {
-  let seed = 0;
-  for (let i = 0; i < orgId.length; i++) {
-    seed = ((seed << 5) - seed + orgId.charCodeAt(i)) | 0;
+export interface PostureEvidenceResult {
+  status: "completed" | "unavailable";
+  domainScores: DomainScore[];
+  overallScore: number | null;
+  measuredDomains: string[];
+  reason?: string;
+  requiredEvidence?: string[];
+}
+
+function scoreDomain(
+  domain: string,
+  score: number,
+  message: string,
+  passed: boolean,
+  recommendations: string[] = [],
+): DomainScore {
+  return {
+    domain,
+    score: Math.max(0, Math.min(100, Math.round(score))),
+    weight: DOMAIN_WEIGHTS[domain] || 16,
+    controlsEvaluated: 1,
+    controlsPassed: passed ? 1 : 0,
+    controlsFailed: passed ? 0 : 1,
+    findings: [
+      {
+        controlId: SCORING_CONTROLS.find((control) => control.domain === domain)?.id || `${domain}-evidence`,
+        status: passed ? "passed" : "failed",
+        message,
+      },
+    ],
+    recommendations,
+    riskFactors: passed ? [] : [message],
+  };
+}
+
+export async function generateDomainScores(orgId: string): Promise<PostureEvidenceResult> {
+  const [scans, findings, endpoints, policy, identityProfiles] = await Promise.all([
+    storage.getCspmScans(orgId),
+    storage.getCspmFindings(orgId),
+    storage.getEndpointAssets(orgId),
+    storage.getCompliancePolicy(orgId),
+    db.select().from(identityRiskProfiles).where(eq(identityRiskProfiles.orgId, orgId)),
+  ]);
+  const domainScores: DomainScore[] = [];
+  const completedScans = scans.filter((scan) => scan.status === "completed");
+
+  if (completedScans.length > 0) {
+    const completedScanIds = new Set(completedScans.map((scan) => scan.id));
+    const cloudFindings = findings.filter(
+      (finding) => completedScanIds.has(finding.scanId) && finding.status !== "resolved",
+    );
+    const penalty = cloudFindings.reduce((total, finding) => {
+      const penalties: Record<string, number> = { critical: 20, high: 10, medium: 4, low: 1 };
+      return total + (penalties[finding.severity] || 0);
+    }, 0);
+    domainScores.push(
+      scoreDomain(
+        "cloud",
+        100 - penalty,
+        cloudFindings.length > 0
+          ? `Completed CSPM scans found ${cloudFindings.length} unresolved finding(s).`
+          : "Completed CSPM scans reported no unresolved findings.",
+        cloudFindings.length === 0,
+        cloudFindings.length > 0 ? ["Review and remediate unresolved CSPM findings."] : [],
+      ),
+    );
   }
 
-  function seededRandom(): number {
-    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-    return (seed % 100) / 100;
+  const measuredEndpoints = endpoints.filter(
+    (endpoint) => endpoint.riskScore !== null && endpoint.riskScore !== undefined,
+  );
+  if (measuredEndpoints.length > 0) {
+    const endpointScore =
+      measuredEndpoints.reduce((total, endpoint) => total + (100 - (endpoint.riskScore || 0)), 0) /
+      measuredEndpoints.length;
+    domainScores.push(
+      scoreDomain(
+        "endpoint",
+        endpointScore,
+        `${measuredEndpoints.length} endpoint asset risk score(s) were measured.`,
+        endpointScore >= 70,
+        endpointScore < 70 ? ["Investigate elevated endpoint asset risk."] : [],
+      ),
+    );
   }
 
-  const domains = ["identity", "endpoint", "cloud", "network", "application", "data"];
-  const results: DomainScore[] = [];
-
-  for (const domain of domains) {
-    const controls = SCORING_CONTROLS.filter((c) => c.domain === domain);
-    let totalWeight = 0;
-    let passedWeight = 0;
-    const findings: Array<{ controlId: string; status: string; message: string }> = [];
-    const recommendations: string[] = [];
-    const riskFactors: string[] = [];
-    let passed = 0;
-    let failed = 0;
-
-    for (const control of controls) {
-      totalWeight += control.weight;
-      const rand = seededRandom();
-      if (rand > 0.3) {
-        passedWeight += control.weight;
-        passed++;
-        findings.push({ controlId: control.id, status: "passed", message: `${control.name}: Compliant` });
-      } else if (rand > 0.15) {
-        passedWeight += control.weight * 0.5;
-        findings.push({ controlId: control.id, status: "partial", message: `${control.name}: Partially implemented` });
-        recommendations.push(`Improve ${control.name}: ${control.description}`);
-      } else {
-        failed++;
-        findings.push({ controlId: control.id, status: "failed", message: `${control.name}: Not implemented` });
-        riskFactors.push(`Missing: ${control.name}`);
-        recommendations.push(`Implement ${control.name}: ${control.description}`);
-      }
-    }
-
-    const score = totalWeight > 0 ? Math.round((passedWeight / totalWeight) * 100) : 0;
-
-    results.push({
-      domain,
-      score,
-      weight: DOMAIN_WEIGHTS[domain] || 16,
-      controlsEvaluated: controls.length,
-      controlsPassed: passed,
-      controlsFailed: failed,
-      findings,
-      recommendations,
-      riskFactors,
-    });
+  const measuredIdentityProfiles = identityProfiles.filter((profile) => profile.lastAssessedAt !== null);
+  if (measuredIdentityProfiles.length > 0) {
+    const identityScore =
+      measuredIdentityProfiles.reduce((total, profile) => total + (100 - profile.riskScore), 0) /
+      measuredIdentityProfiles.length;
+    domainScores.push(
+      scoreDomain(
+        "identity",
+        identityScore,
+        `${measuredIdentityProfiles.length} assessed identity risk profile(s) were measured.`,
+        identityScore >= 70,
+        identityScore < 70 ? ["Review assessed identity risk profiles and privileged access."] : [],
+      ),
+    );
   }
 
-  return results;
+  if (policy) {
+    const hasFrameworks = Boolean(policy.enabledFrameworks?.length);
+    const hasPiiMasking = Boolean(policy.piiMaskingEnabled);
+    const hasPseudonymize = Boolean(policy.pseudonymizeExports);
+    const hasDpoEmail = Boolean(policy.dpoEmail);
+    const complianceScore =
+      (Number(hasFrameworks) + Number(hasPiiMasking) + Number(hasPseudonymize) + Number(hasDpoEmail)) * 25;
+    domainScores.push(
+      scoreDomain(
+        "data",
+        complianceScore,
+        "Organization compliance policy configuration was measured.",
+        complianceScore >= 70,
+        complianceScore < 70 ? ["Complete the configured compliance policy controls."] : [],
+      ),
+    );
+  }
+
+  const overallScore = computeOverallScore(domainScores);
+  if (overallScore === null) {
+    return {
+      status: "unavailable",
+      domainScores: [],
+      overallScore: null,
+      measuredDomains: [],
+      reason: "No completed posture evidence is available for this organization.",
+      requiredEvidence: [
+        "Connect an identity provider and complete an identity assessment.",
+        "Connect endpoint assets and collect endpoint risk telemetry.",
+        "Connect a cloud account and complete a CSPM scan.",
+        "Configure a compliance policy.",
+      ],
+    };
+  }
+  return {
+    status: "completed",
+    domainScores,
+    overallScore,
+    measuredDomains: domainScores.map((domain) => domain.domain),
+  };
 }
 
 export function generateScoreTrend(
