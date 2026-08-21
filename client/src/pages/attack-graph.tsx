@@ -33,6 +33,8 @@ import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ReadOnlyActionNotice } from "@/components/read-only-action-notice";
+import { useOrgContext } from "@/hooks/use-org-context";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -472,6 +474,7 @@ function RiskScoringTab() {
 // 12.2: What-If Simulation Tab
 // -----------------------------------------------------------------------
 function WhatIfSimulationTab() {
+  const { isPlatformAdminReadOnly } = useOrgContext();
   const [simType, setSimType] = useState<string>("remove_vulnerability");
   const [vulnId, setVulnId] = useState("");
   const [controlName, setControlName] = useState("");
@@ -610,7 +613,11 @@ function WhatIfSimulationTab() {
             )}
           </div>
 
-          <Button onClick={() => simMutation.mutate()} disabled={simMutation.isPending} className="w-full md:w-auto">
+          <Button
+            onClick={() => simMutation.mutate()}
+            disabled={simMutation.isPending || isPlatformAdminReadOnly}
+            className="w-full md:w-auto"
+          >
             {simMutation.isPending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
@@ -618,6 +625,7 @@ function WhatIfSimulationTab() {
             )}
             Run Simulation
           </Button>
+          <ReadOnlyActionNotice />
         </CardContent>
       </Card>
 

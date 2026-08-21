@@ -76,6 +76,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Progress } from "@/components/ui/progress";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { DashboardSkeleton } from "@/components/page-skeleton";
+import { ReadOnlyActionNotice } from "@/components/read-only-action-notice";
+import { useOrgContext } from "@/hooks/use-org-context";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -1470,6 +1472,7 @@ function HuntResultsTab() {
 // ─── Pivot Interface Tab ────────────────────────────────────────────────────
 
 function PivotTab() {
+  const { isPlatformAdminReadOnly } = useOrgContext();
   const { toast } = useToast();
   const [iocType, setIocType] = useState("ip");
   const [iocValue, setIocValue] = useState("");
@@ -1514,10 +1517,13 @@ function PivotTab() {
           placeholder="Enter IOC value..."
           className="flex-1"
           onKeyDown={(e) => {
-            if (e.key === "Enter" && iocValue) pivotMutation.mutate();
+            if (e.key === "Enter" && iocValue && !isPlatformAdminReadOnly) pivotMutation.mutate();
           }}
         />
-        <Button onClick={() => pivotMutation.mutate()} disabled={!iocValue || pivotMutation.isPending}>
+        <Button
+          onClick={() => pivotMutation.mutate()}
+          disabled={!iocValue || pivotMutation.isPending || isPlatformAdminReadOnly}
+        >
           {pivotMutation.isPending ? (
             <Loader2 className="h-4 w-4 animate-spin mr-1" />
           ) : (
@@ -1526,6 +1532,7 @@ function PivotTab() {
           Pivot
         </Button>
       </div>
+      <ReadOnlyActionNotice />
 
       {result && (
         <div className="space-y-4">

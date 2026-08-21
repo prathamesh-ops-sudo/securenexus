@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { fetchCsrfToken } from "@/lib/queryClient";
 import { DashboardSkeleton } from "@/components/page-skeleton";
+import { ReadOnlyActionNotice } from "@/components/read-only-action-notice";
+import { useOrgContext } from "@/hooks/use-org-context";
 
 async function apiFetch(url: string, options?: RequestInit) {
   const headers: Record<string, string> = {
@@ -599,6 +601,7 @@ function PassiveDnsTab() {
 }
 
 function AnalysisToolsTab() {
+  const { isPlatformAdminReadOnly } = useOrgContext();
   const { toast } = useToast();
   const [domain, setDomain] = useState("");
   const [dgaResult, setDgaResult] = useState<{
@@ -666,11 +669,12 @@ function AnalysisToolsTab() {
                 dgaMut.mutate(domain);
                 nrdMut.mutate(domain);
               }}
-              disabled={!domain || dgaMut.isPending}
+              disabled={!domain || dgaMut.isPending || isPlatformAdminReadOnly}
             >
               <Search className="h-4 w-4 mr-1" /> Analyze
             </Button>
           </div>
+          <ReadOnlyActionNotice />
           {/* 71.2 — DGA Detection Visualization with confidence, entropy, lexical breakdown */}
           {dgaResult && (
             <div className="p-3 border rounded-md text-sm space-y-2">
@@ -749,11 +753,12 @@ function AnalysisToolsTab() {
             <Button
               size="sm"
               onClick={() => tunnelingMut.mutate(tunnelingDomain)}
-              disabled={!tunnelingDomain || tunnelingMut.isPending}
+              disabled={!tunnelingDomain || tunnelingMut.isPending || isPlatformAdminReadOnly}
             >
               <Cpu className="h-4 w-4 mr-1" /> Check
             </Button>
           </div>
+          <ReadOnlyActionNotice />
           {/* 71.3 — DNS Tunneling Detection Visualization */}
           {tunnelingResult && (
             <div className="p-3 border rounded-md text-sm space-y-2">
@@ -805,10 +810,15 @@ function AnalysisToolsTab() {
         <CardContent className="space-y-3">
           <div className="flex gap-2">
             <Input placeholder="10.0.0.50" value={exfilIp} onChange={(e) => setExfilIp(e.target.value)} />
-            <Button size="sm" onClick={() => exfilMut.mutate(exfilIp)} disabled={!exfilIp || exfilMut.isPending}>
+            <Button
+              size="sm"
+              onClick={() => exfilMut.mutate(exfilIp)}
+              disabled={!exfilIp || exfilMut.isPending || isPlatformAdminReadOnly}
+            >
               <Zap className="h-4 w-4 mr-1" /> Analyze
             </Button>
           </div>
+          <ReadOnlyActionNotice />
           {exfilResult && (
             <div className="p-3 border rounded-md text-sm space-y-2">
               <Badge variant={exfilResult.isExfiltration ? "destructive" : "default"}>

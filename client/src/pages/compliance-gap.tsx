@@ -25,8 +25,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { ReadOnlyActionNotice } from "@/components/read-only-action-notice";
+import { useOrgContext } from "@/hooks/use-org-context";
 
 export default function ComplianceGapPage() {
+  const { isPlatformAdminReadOnly } = useOrgContext();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedAnalysis, setSelectedAnalysis] = useState<string | null>(null);
@@ -123,7 +126,7 @@ export default function ComplianceGapPage() {
               <Button
                 size="sm"
                 onClick={() => analyzeMutation.mutate(fw.id)}
-                disabled={analyzeMutation.isPending}
+                disabled={analyzeMutation.isPending || isPlatformAdminReadOnly}
                 className="w-full bg-amber-600 hover:bg-amber-700"
               >
                 {analyzeMutation.isPending ? (
@@ -133,6 +136,7 @@ export default function ComplianceGapPage() {
                 )}
                 Run Analysis
               </Button>
+              {isPlatformAdminReadOnly && <ReadOnlyActionNotice />}
             </CardContent>
           </Card>
         ))}

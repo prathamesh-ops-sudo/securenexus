@@ -55,6 +55,8 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/page-skeleton";
+import { ReadOnlyActionNotice } from "@/components/read-only-action-notice";
+import { useOrgContext } from "@/hooks/use-org-context";
 
 const apiRequest = async (url: string, options?: RequestInit) => {
   const csrfMeta = document.querySelector('meta[name="csrf-token"]');
@@ -1447,6 +1449,7 @@ function TierVisualizationTab() {
 // ─── 44.2 Query Cost Estimation ──────────────────────────────────────────────
 
 function QueryCostEstimationTab() {
+  const { isPlatformAdminReadOnly } = useOrgContext();
   const [query, setQuery] = useState("");
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [estimation, setEstimation] = useState<any>(null);
@@ -1499,7 +1502,7 @@ function QueryCostEstimationTab() {
             onClick={() =>
               estimateMutation.mutate({ query, dataTypes: selectedTypes.length > 0 ? selectedTypes : undefined })
             }
-            disabled={!query || estimateMutation.isPending}
+            disabled={!query || estimateMutation.isPending || isPlatformAdminReadOnly}
           >
             {estimateMutation.isPending ? (
               <>
@@ -1511,6 +1514,7 @@ function QueryCostEstimationTab() {
               </>
             )}
           </Button>
+          <ReadOnlyActionNotice />
         </CardContent>
       </Card>
 
