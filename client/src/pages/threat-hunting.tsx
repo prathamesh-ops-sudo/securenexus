@@ -292,6 +292,8 @@ function statusColor(status: string): string {
       return "bg-blue-500/10 text-blue-400 border-blue-500/20";
     case "failed":
       return "bg-red-500/10 text-red-400 border-red-500/20";
+    case "rejected":
+      return "bg-orange-500/10 text-orange-400 border-orange-500/20";
     case "ready":
       return "bg-cyan-500/10 text-cyan-400 border-cyan-500/20";
     case "draft":

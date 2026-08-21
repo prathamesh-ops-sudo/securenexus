@@ -1322,143 +1322,62 @@ export function registerEntityGraphAdvancedRoutes(app: Express): void {
 
         if (!entity) return res.status(404).json({ message: "Entity not found" });
 
-        // Build hunting queries based on entity type
+        // Emit only KQL supported by the hunt engine. The value is escaped for
+        // display; execution binds it through the compiler.
+        const escapedValue = entity.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
         const queries: { name: string; query: string; description: string; dataSource: string }[] = [];
+        const addAlertQuery = (name: string, field: string, description: string) => {
+          queries.push({
+            name,
+            query: `alerts | where ${field} == "${escapedValue}"`,
+            description,
+            dataSource: "alerts",
+          });
+        };
+        const addSensorQuery = (name: string, field: string, description: string) => {
+          queries.push({
+            name,
+            query: `sensor_events | where ${field} == "${escapedValue}"`,
+            description,
+            dataSource: "sensor_events",
+          });
+        };
 
-        switch (entity.type) {
-          case "user":
-            queries.push(
-              {
-                name: "All user activity",
-                query: `SELECT * FROM logs WHERE user = '${entity.value}' ORDER BY timestamp DESC LIMIT 1000`,
-                description: `Find all activity for user ${entity.value}`,
-                dataSource: "auth_logs",
-              },
-              {
-                name: "Failed logins",
-                query: `SELECT * FROM auth_logs WHERE user = '${entity.value}' AND action = 'login_failed' ORDER BY timestamp DESC`,
-                description: "Find failed authentication attempts",
-                dataSource: "auth_logs",
-              },
-              {
-                name: "Privilege escalation",
-                query: `SELECT * FROM logs WHERE user = '${entity.value}' AND (action LIKE '%admin%' OR action LIKE '%privilege%' OR action LIKE '%sudo%')`,
-                description: "Detect privilege escalation attempts",
-                dataSource: "all_logs",
-              },
-              {
-                name: "Off-hours activity",
-                query: `SELECT * FROM logs WHERE user = '${entity.value}' AND (EXTRACT(HOUR FROM timestamp) < 6 OR EXTRACT(HOUR FROM timestamp) > 22)`,
-                description: "Find activity outside business hours",
-                dataSource: "all_logs",
-              },
-            );
-            break;
-          case "ip":
-            queries.push(
-              {
-                name: "All connections",
-                query: `SELECT * FROM network_logs WHERE src_ip = '${entity.value}' OR dst_ip = '${entity.value}' ORDER BY timestamp DESC LIMIT 1000`,
-                description: `All network connections involving ${entity.value}`,
-                dataSource: "network_logs",
-              },
-              {
-                name: "Port scanning",
-                query: `SELECT dst_port, COUNT(*) as cnt FROM network_logs WHERE src_ip = '${entity.value}' GROUP BY dst_port HAVING cnt > 10 ORDER BY cnt DESC`,
-                description: "Detect port scanning behavior",
-                dataSource: "network_logs",
-              },
-              {
-                name: "Data exfiltration",
-                query: `SELECT * FROM network_logs WHERE src_ip = '${entity.value}' AND bytes_out > 10000000 ORDER BY bytes_out DESC`,
-                description: "Find large data transfers",
-                dataSource: "network_logs",
-              },
-              {
-                name: "C2 beaconing",
-                query: `SELECT dst_ip, COUNT(*) as cnt, AVG(EXTRACT(EPOCH FROM timestamp - LAG(timestamp) OVER(ORDER BY timestamp))) as avg_interval FROM network_logs WHERE src_ip = '${entity.value}' GROUP BY dst_ip HAVING cnt > 50`,
-                description: "Detect regular beaconing patterns",
-                dataSource: "network_logs",
-              },
-            );
-            break;
-          case "domain":
-            queries.push(
-              {
-                name: "DNS lookups",
-                query: `SELECT * FROM dns_logs WHERE query_name = '${entity.value}' OR query_name LIKE '%.${entity.value}' ORDER BY timestamp DESC LIMIT 1000`,
-                description: `All DNS queries for ${entity.value}`,
-                dataSource: "dns_logs",
-              },
-              {
-                name: "HTTP requests",
-                query: `SELECT * FROM proxy_logs WHERE host = '${entity.value}' ORDER BY timestamp DESC LIMIT 1000`,
-                description: "All HTTP/HTTPS traffic to this domain",
-                dataSource: "proxy_logs",
-              },
-              {
-                name: "Subdomain enumeration",
-                query: `SELECT DISTINCT query_name FROM dns_logs WHERE query_name LIKE '%.${entity.value}' ORDER BY query_name`,
-                description: "List all observed subdomains",
-                dataSource: "dns_logs",
-              },
-            );
-            break;
-          case "file_hash":
-            queries.push(
-              {
-                name: "File executions",
-                query: `SELECT * FROM process_logs WHERE file_hash = '${entity.value}' ORDER BY timestamp DESC`,
-                description: `All executions of file with hash ${entity.value.slice(0, 16)}...`,
-                dataSource: "endpoint_logs",
-              },
-              {
-                name: "File downloads",
-                query: `SELECT * FROM proxy_logs WHERE response_hash = '${entity.value}' ORDER BY timestamp DESC`,
-                description: "Find where this file was downloaded from",
-                dataSource: "proxy_logs",
-              },
-              {
-                name: "Lateral movement",
-                query: `SELECT DISTINCT hostname FROM process_logs WHERE file_hash = '${entity.value}'`,
-                description: "Find all hosts where this file appeared",
-                dataSource: "endpoint_logs",
-              },
-            );
-            break;
-          case "host":
-            queries.push(
-              {
-                name: "All host activity",
-                query: `SELECT * FROM logs WHERE hostname = '${entity.value}' ORDER BY timestamp DESC LIMIT 1000`,
-                description: `All activity on host ${entity.value}`,
-                dataSource: "all_logs",
-              },
-              {
-                name: "Process creation",
-                query: `SELECT * FROM process_logs WHERE hostname = '${entity.value}' AND event_type = 'process_create' ORDER BY timestamp DESC LIMIT 500`,
-                description: "Recent process creation events",
-                dataSource: "endpoint_logs",
-              },
-              {
-                name: "Network connections",
-                query: `SELECT * FROM network_logs WHERE hostname = '${entity.value}' ORDER BY timestamp DESC LIMIT 500`,
-                description: "Network connections from this host",
-                dataSource: "network_logs",
-              },
-            );
-            break;
-          default:
-            queries.push({
-              name: "Search all sources",
-              query: `SELECT * FROM logs WHERE value = '${entity.value}' ORDER BY timestamp DESC LIMIT 1000`,
-              description: `Search for ${entity.value} across all data sources`,
-              dataSource: "all_logs",
-            });
+        if (entity.type === "user") {
+          addAlertQuery("Alerts for user", "user_id", `Find persisted alerts associated with ${entity.value}`);
+          addSensorQuery("Sensor activity for user", "user_name", `Find persisted sensor events for ${entity.value}`);
+        } else if (entity.type === "ip") {
+          addAlertQuery("Alerts from source IP", "source_ip", `Find persisted alerts from ${entity.value}`);
+          addAlertQuery("Alerts to destination IP", "dest_ip", `Find persisted alerts targeting ${entity.value}`);
+          addSensorQuery("Sensor events from source IP", "src_ip", `Find persisted sensor events from ${entity.value}`);
+          addSensorQuery(
+            "Sensor events to destination IP",
+            "dst_ip",
+            `Find persisted sensor events targeting ${entity.value}`,
+          );
+        } else if (entity.type === "domain") {
+          addAlertQuery("Alerts for domain", "domain", `Find persisted alerts for ${entity.value}`);
+          addSensorQuery("DNS events for domain", "dns_query", `Find persisted sensor DNS events for ${entity.value}`);
+        } else if (entity.type === "file_hash") {
+          addAlertQuery("Alerts for file hash", "file_hash", `Find persisted alerts for ${entity.value}`);
+          addSensorQuery("Sensor file events", "file_hash", `Find persisted sensor events for ${entity.value}`);
+        } else if (entity.type === "host") {
+          addAlertQuery("Alerts for host", "hostname", `Find persisted alerts for ${entity.value}`);
+        } else {
+          addAlertQuery(
+            "Alerts containing entity value",
+            "payload",
+            `Find persisted alert payloads containing ${entity.value}`,
+          );
+          addSensorQuery(
+            "Sensor payloads containing entity value",
+            "payload",
+            `Find persisted sensor payloads containing ${entity.value}`,
+          );
         }
 
         // Also build a graph query
-        const graphQuery = `FIND ${entity.type.charAt(0).toUpperCase() + entity.type.slice(1)} WHERE value CONTAINS "${entity.value}"`;
+        const graphQuery = `FIND ${entity.type.charAt(0).toUpperCase() + entity.type.slice(1)} WHERE value CONTAINS "${escapedValue}"`;
 
         res.json({
           entityId: entity.id,

@@ -25,6 +25,8 @@ vi.mock("../rbac", () => ({
     req.user = { id: "user-1", orgId: "org-1", firstName: "Test", lastName: "User" };
     next();
   },
+  requireOrgId: (_req: any, _res: any, next: any) => next(),
+  requireMinRole: () => (_req: any, _res: any, next: any) => next(),
 }));
 
 vi.mock("../middleware/plan-enforcement", () => ({
@@ -121,10 +123,7 @@ describe("Async triage endpoint", () => {
       mockStorage.incrementUsage.mockResolvedValue(undefined);
 
       const app = createApp();
-      const res = await request(app)
-        .post("/api/ai/triage/alert-1")
-        .set("Content-Type", "application/json")
-        .send({});
+      const res = await request(app).post("/api/ai/triage/alert-1").set("Content-Type", "application/json").send({});
 
       expect(res.status).toBe(202);
       expect(res.body).toHaveProperty("jobId", "job-123");
@@ -136,9 +135,7 @@ describe("Async triage endpoint", () => {
       mockStorage.getAlert.mockResolvedValue(undefined);
 
       const app = createApp();
-      const res = await request(app)
-        .post("/api/ai/triage/nonexistent")
-        .send({});
+      const res = await request(app).post("/api/ai/triage/nonexistent").send({});
 
       expect(res.status).toBe(404);
     });
@@ -147,9 +144,7 @@ describe("Async triage endpoint", () => {
       mockStorage.getAlert.mockResolvedValue({ id: "alert-1", orgId: "other-org", title: "Test" });
 
       const app = createApp();
-      const res = await request(app)
-        .post("/api/ai/triage/alert-1")
-        .send({});
+      const res = await request(app).post("/api/ai/triage/alert-1").send({});
 
       expect(res.status).toBe(404);
     });

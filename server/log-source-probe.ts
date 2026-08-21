@@ -1,4 +1,9 @@
 import { CloudWatchLogsClient, DescribeLogGroupsCommand } from "@aws-sdk/client-cloudwatch-logs";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
+
+export const CLOUDWATCH_CONNECTION_TIMEOUT_MS = 5_000;
+export const CLOUDWATCH_SOCKET_TIMEOUT_MS = 5_000;
+export const CLOUDWATCH_OVERALL_TIMEOUT_MS = 10_000;
 
 export type LogSourceProbeResult = {
   sourceType: string;
@@ -42,27 +47,44 @@ export function mapCloudWatchProbeError(error: unknown): Pick<LogSourceProbeResu
   return { reasonCode: "unknown", message: `CloudWatch probe failed: ${message}` };
 }
 
-export function buildHttpPushProbeResult(source: {
+export function buildReceiverProbeResult(source: {
   sourceType: string;
-  httpEndpoint: string | null;
+  httpEndpoint?: string | null;
   eventsReceived: number;
   lastEventAt: Date | string | null;
 }): LogSourceProbeResult {
   const everReceived = source.eventsReceived > 0 || source.lastEventAt !== null;
+  const receiver = source.httpEndpoint || "the configured receiver";
   return {
     sourceType: source.sourceType,
     tested: false,
     timestamp: new Date().toISOString(),
     status: "unavailable",
     message: everReceived
-      ? `Cannot verify an HTTP push source from this side. The source must send an event to ${source.httpEndpoint || "the configured receiver"}; ${source.eventsReceived} event(s) have arrived, most recently ${String(source.lastEventAt)}.`
-      : `Cannot verify an HTTP push source from this side. The source must send an event to ${source.httpEndpoint || "the configured receiver"}; no events have been received yet.`,
+      ? `Cannot verify this receiver-side source from the platform. The source must send an event to ${receiver}; ${source.eventsReceived} event(s) have arrived, most recently ${String(source.lastEventAt)}.`
+      : `Cannot verify this receiver-side source from the platform. The source must send an event to ${receiver}; no events have been received yet.`,
     reasonCode: "configuration",
     eventReceipt: {
       eventsReceived: source.eventsReceived,
       lastEventAt: source.lastEventAt,
       everReceived,
     },
+  };
+}
+
+export function buildHttpPushProbeResult(source: {
+  sourceType: string;
+  httpEndpoint: string | null;
+  eventsReceived: number;
+  lastEventAt: Date | string | null;
+}): LogSourceProbeResult {
+  const result = buildReceiverProbeResult(source);
+  return {
+    ...result,
+    message: result.message.replace(
+      "Cannot verify this receiver-side source from the platform.",
+      "Cannot verify an HTTP push source from this side.",
+    ),
   };
 }
 
@@ -84,31 +106,53 @@ export async function probeCloudWatchLogSource(source: {
   }
 
   try {
-    const client = new CloudWatchLogsClient({ region: source.cloudwatchRegion });
-    const response = await client.send(
-      new DescribeLogGroupsCommand({
-        logGroupNamePrefix: source.cloudwatchLogGroup,
-        limit: 50,
+    const client = new CloudWatchLogsClient({
+      region: source.cloudwatchRegion,
+      requestHandler: new NodeHttpHandler({
+        connectionTimeout: CLOUDWATCH_CONNECTION_TIMEOUT_MS,
+        socketTimeout: CLOUDWATCH_SOCKET_TIMEOUT_MS,
       }),
-    );
-    const found = (response.logGroups || []).some((group) => group.logGroupName === source.cloudwatchLogGroup);
-    if (!found) {
+    });
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const request = client.send(
+        new DescribeLogGroupsCommand({
+          logGroupNamePrefix: source.cloudwatchLogGroup,
+          limit: 50,
+        }),
+      );
+      const timeout = new Promise<never>((_, reject) => {
+        deadline = setTimeout(() => {
+          const error = new Error(
+            `CloudWatch request exceeded the ${CLOUDWATCH_OVERALL_TIMEOUT_MS}ms overall deadline.`,
+          );
+          error.name = "TimeoutError";
+          reject(error);
+        }, CLOUDWATCH_OVERALL_TIMEOUT_MS);
+      });
+      const response = await Promise.race([request, timeout]);
+      const found = (response.logGroups || []).some((group) => group.logGroupName === source.cloudwatchLogGroup);
+      if (!found) {
+        return {
+          sourceType: source.sourceType,
+          tested: true,
+          timestamp,
+          status: "error",
+          message: `CloudWatch log group "${source.cloudwatchLogGroup}" was not found in ${source.cloudwatchRegion}.`,
+          reasonCode: "not_found",
+        };
+      }
       return {
         sourceType: source.sourceType,
         tested: true,
         timestamp,
-        status: "error",
-        message: `CloudWatch log group "${source.cloudwatchLogGroup}" was not found in ${source.cloudwatchRegion}.`,
-        reasonCode: "not_found",
+        status: "success",
+        message: `CloudWatch access verified for log group "${source.cloudwatchLogGroup}" in ${source.cloudwatchRegion}.`,
       };
+    } finally {
+      if (deadline) clearTimeout(deadline);
+      client.destroy();
     }
-    return {
-      sourceType: source.sourceType,
-      tested: true,
-      timestamp,
-      status: "success",
-      message: `CloudWatch access verified for log group "${source.cloudwatchLogGroup}" in ${source.cloudwatchRegion}.`,
-    };
   } catch (error) {
     const mapped = mapCloudWatchProbeError(error);
     return {

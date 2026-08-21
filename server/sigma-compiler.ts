@@ -1,357 +1,307 @@
 /**
- * Sigma Rule Compiler
+ * Compiles hunt languages into structured, bound conditions.
  *
- * Compiles Sigma detection rules, YARA rules, and KQL queries
- * into SQL-compatible filter expressions that can be executed
- * against the event store (alerts / ingestion_logs / sensor_events).
+ * No caller-controlled text is emitted as SQL. The hunt engine maps these
+ * allowlisted fields to real schema columns and binds every condition value.
  */
 
+export type HuntTable = "alerts" | "ingestion_logs" | "sensor_events";
+export type HuntOperator = "eq" | "neq" | "contains" | "startsWith" | "endsWith" | "gt" | "lt";
+
+export interface HuntCondition {
+  field: string;
+  operator: HuntOperator;
+  value: string | number | boolean;
+}
+
 export interface CompiledFilter {
-  /** SQL WHERE clause fragment (parameterised with $1, $2, ...) */
-  whereClause: string;
-  /** Ordered parameter values */
-  params: unknown[];
-  /** Human-readable explanation of what the compiled query matches */
+  conditions: HuntCondition[];
+  conditionLogic: "and" | "or";
   explanation: string;
-  /** Target table to query against */
-  targetTable: "alerts" | "ingestion_logs" | "sensor_events";
+  targetTable: HuntTable;
+  rejected?: boolean;
+  rejectionReason?: string;
 }
 
-// ─── Sigma Rule Compiler ────────────────────────────────────────────────────
-
-interface SigmaDetection {
-  [key: string]: Record<string, string | string[] | number | boolean> | string | string[];
+export class HuntQueryRejectedError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "HuntQueryRejectedError";
+  }
 }
 
-interface SigmaRule {
+const TABLES = new Set<HuntTable>(["alerts", "ingestion_logs", "sensor_events"]);
+const OPERATORS = new Set<HuntOperator>(["eq", "neq", "contains", "startsWith", "endsWith", "gt", "lt"]);
+
+const FIELD_ALIASES: Record<HuntTable, Record<string, string>> = {
+  alerts: {
+    title: "title",
+    description: "description",
+    severity: "severity",
+    status: "status",
+    source: "source",
+    category: "category",
+    source_ip: "sourceIp",
+    dest_ip: "destIp",
+    user_id: "userId",
+    hostname: "hostname",
+    file_hash: "fileHash",
+    url: "url",
+    domain: "domain",
+    payload: "payloadText",
+    raw_data: "payloadText",
+    commandline: "payloadText",
+    command_line: "payloadText",
+    image: "payloadText",
+    parentimage: "payloadText",
+    user: "payloadText",
+    process: "payloadText",
+  },
+  ingestion_logs: {
+    source: "source",
+    status: "status",
+    error_message: "errorMessage",
+    request_id: "requestId",
+    ip_address: "ipAddress",
+  },
+  sensor_events: {
+    event_type: "eventType",
+    process_name: "processName",
+    process_path: "processPath",
+    process_args: "processArgs",
+    parent_process: "parentProcess",
+    user_name: "userName",
+    src_ip: "srcIp",
+    dst_ip: "dstIp",
+    file_path: "filePath",
+    file_hash: "fileHash",
+    auth_action: "authAction",
+    auth_result: "authResult",
+    dns_query: "dnsQuery",
+    log_source: "logSource",
+    log_level: "logLevel",
+    log_message: "logMessage",
+    payload: "payloadText",
+    raw_data: "payloadText",
+    commandline: "payloadText",
+    command_line: "payloadText",
+    image: "payloadText",
+    parentimage: "payloadText",
+    user: "payloadText",
+    process: "payloadText",
+  },
+};
+
+function rejected(targetTable: HuntTable, reason: string): CompiledFilter {
+  return {
+    conditions: [],
+    conditionLogic: "and",
+    explanation: reason,
+    targetTable,
+    rejected: true,
+    rejectionReason: reason,
+  };
+}
+
+function normalizeField(table: HuntTable, field: string): string | null {
+  return FIELD_ALIASES[table][field.toLowerCase()] || null;
+}
+
+function condition(table: HuntTable, field: string, operator: HuntOperator, value: unknown): HuntCondition | null {
+  const normalizedField = normalizeField(table, field);
+  if (!normalizedField || !OPERATORS.has(operator)) return null;
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return null;
+  return { field: normalizedField, operator, value };
+}
+
+function parseSigmaYaml(text: string): {
   title?: string;
   description?: string;
   logsource?: { category?: string; product?: string; service?: string };
-  detection?: { condition?: string } & SigmaDetection;
-  level?: string;
-}
-
-function parseSigmaYaml(text: string): SigmaRule {
-  // Lightweight YAML-subset parser for Sigma rules
-  const rule: Record<string, unknown> = {};
-  const lines = text.split("\n");
-  let currentKey = "";
-  let currentBlock: Record<string, unknown> = {};
-  let inBlock = false;
-
-  for (const rawLine of lines) {
-    const line = rawLine.replace(/\r$/, "");
-    if (line.trim() === "" || line.trim().startsWith("#")) continue;
-
-    const topMatch = line.match(/^(\w[\w-]*):\s*(.*)/);
-    if (topMatch && !line.startsWith("  ")) {
-      if (inBlock && currentKey) {
-        rule[currentKey] = currentBlock;
-      }
-      currentKey = topMatch[1];
-      const val = topMatch[2].trim();
-      if (val) {
-        rule[currentKey] = val;
-        inBlock = false;
-      } else {
-        currentBlock = {};
-        inBlock = true;
-      }
+  detection?: Record<string, unknown>;
+} {
+  const result: Record<string, unknown> = {};
+  let section = "";
+  let subsection = "";
+  let lastDetectionField = "";
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+    const top = line.match(/^([A-Za-z][\w-]*):\s*(.*)$/);
+    if (top && !line.startsWith(" ")) {
+      section = top[1];
+      subsection = "";
+      result[section] = top[2] || {};
       continue;
     }
-
-    if (inBlock) {
-      const kvMatch = line.match(/^\s{2,}(\w[\w-|]*):\s*(.*)/);
-      if (kvMatch) {
-        const k = kvMatch[1];
-        let v: unknown = kvMatch[2].trim();
-        if (typeof v === "string" && v.startsWith("'") && v.endsWith("'")) v = v.slice(1, -1);
-        if (typeof v === "string" && v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
-        currentBlock[k] = v;
-      }
-      const listMatch = line.match(/^\s{4,}-\s+(.*)/);
-      if (listMatch) {
-        // Find the parent key
-        const parentKey = Object.keys(currentBlock).pop();
-        if (parentKey) {
-          const existing = currentBlock[parentKey];
-          if (Array.isArray(existing)) {
-            existing.push(listMatch[1].trim().replace(/^['"]|['"]$/g, ""));
-          } else {
-            currentBlock[parentKey] = [String(existing || ""), listMatch[1].trim().replace(/^['"]|['"]$/g, "")].filter(
-              Boolean,
-            );
-          }
-        }
-      }
+    const nested = line.match(/^\s{2}([\w-]+):\s*(.*)$/);
+    if (nested) {
+      const target = (result[section] as Record<string, unknown>) || {};
+      target[nested[1]] = nested[2].replace(/^['"]|['"]$/g, "");
+      result[section] = target;
+      subsection = nested[1];
+      continue;
+    }
+    const detectionField = line.match(/^\s{4}([\w-|]+):\s*(.*)$/);
+    if (detectionField && section === "detection" && subsection) {
+      const detection = result.detection as Record<string, unknown>;
+      const selection = (detection[subsection] as Record<string, unknown>) || {};
+      selection[detectionField[1]] = detectionField[2].replace(/^['"]|['"]$/g, "");
+      detection[subsection] = selection;
+      lastDetectionField = detectionField[1];
+      continue;
+    }
+    const list = line.match(/^\s{4,}-\s+(.+)$/);
+    if (list && section === "detection" && subsection && lastDetectionField) {
+      const target = result.detection as Record<string, unknown>;
+      const selection = (target[subsection] as Record<string, unknown>) || {};
+      const existing = selection[lastDetectionField];
+      selection[lastDetectionField] = Array.isArray(existing)
+        ? [...existing, list[1].replace(/^['"]|['"]$/g, "")]
+        : [list[1].replace(/^['"]|['"]$/g, "")];
+      target[subsection] = selection;
     }
   }
-  if (inBlock && currentKey) {
-    rule[currentKey] = currentBlock;
-  }
-  return rule as unknown as SigmaRule;
-}
-
-function sigmaDetectionToSql(detection: SigmaDetection): { where: string; params: unknown[] } {
-  const params: unknown[] = [];
-  const clauses: string[] = [];
-
-  for (const [key, value] of Object.entries(detection)) {
-    if (key === "condition") continue;
-    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      for (const [field, pattern] of Object.entries(value as Record<string, unknown>)) {
-        const cleanField = field.replace(/\|.*$/, ""); // strip modifiers like |contains
-        const modifier = field.includes("|") ? field.split("|").slice(1).join("|") : "";
-
-        if (Array.isArray(pattern)) {
-          const orClauses = pattern.map((p) => {
-            params.push(modifier.includes("contains") ? `%${p}%` : String(p));
-            return modifier.includes("contains")
-              ? `LOWER(raw_payload::text) LIKE LOWER($${params.length})`
-              : `raw_payload->>'${sanitizeFieldName(cleanField)}' = $${params.length}`;
-          });
-          clauses.push(`(${orClauses.join(" OR ")})`);
-        } else {
-          const strPattern = String(pattern);
-          if (modifier.includes("contains")) {
-            params.push(`%${strPattern}%`);
-            clauses.push(`LOWER(raw_payload::text) LIKE LOWER($${params.length})`);
-          } else if (modifier.includes("startswith")) {
-            params.push(`${strPattern}%`);
-            clauses.push(`raw_payload->>'${sanitizeFieldName(cleanField)}' LIKE $${params.length}`);
-          } else if (modifier.includes("endswith")) {
-            params.push(`%${strPattern}`);
-            clauses.push(`raw_payload->>'${sanitizeFieldName(cleanField)}' LIKE $${params.length}`);
-          } else {
-            params.push(strPattern);
-            clauses.push(`raw_payload->>'${sanitizeFieldName(cleanField)}' = $${params.length}`);
-          }
-        }
-      }
-    }
-  }
-
-  return { where: clauses.length > 0 ? clauses.join(" AND ") : "1=1", params };
-}
-
-function sanitizeFieldName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_.]/g, "");
+  return result as ReturnType<typeof parseSigmaYaml>;
 }
 
 export function compileSigmaRule(ruleText: string): CompiledFilter {
   const rule = parseSigmaYaml(ruleText);
+  const logsource = rule.logsource || {};
+  let targetTable: HuntTable = "alerts";
+  if (logsource.category === "process_creation" || logsource.product === "windows") targetTable = "sensor_events";
+  if (logsource.category === "firewall" || logsource.service === "syslog") targetTable = "ingestion_logs";
+
   const detection = rule.detection || {};
-  const { where, params } = sigmaDetectionToSql(detection);
-
-  // Determine target table based on logsource
-  let targetTable: CompiledFilter["targetTable"] = "alerts";
-  if (rule.logsource?.category === "process_creation" || rule.logsource?.product === "windows") {
-    targetTable = "sensor_events";
-  } else if (rule.logsource?.category === "firewall" || rule.logsource?.service === "syslog") {
-    targetTable = "ingestion_logs";
+  const conditions: HuntCondition[] = [];
+  for (const [selectionName, rawSelection] of Object.entries(detection)) {
+    if (selectionName === "condition" || typeof rawSelection !== "object" || rawSelection === null) continue;
+    for (const [rawField, rawValue] of Object.entries(rawSelection as Record<string, unknown>)) {
+      const [field, ...modifiers] = rawField.split("|");
+      const modifier = modifiers.join("|");
+      const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+      for (const value of values) {
+        const op: HuntOperator = modifier.includes("contains")
+          ? "contains"
+          : modifier.includes("startswith")
+            ? "startsWith"
+            : modifier.includes("endswith")
+              ? "endsWith"
+              : "eq";
+        const parsed = condition(targetTable, field, op, typeof value === "string" ? value : String(value));
+        if (!parsed) return rejected(targetTable, `Sigma field "${field}" is not supported for ${targetTable}.`);
+        conditions.push(parsed);
+      }
+    }
   }
-
   return {
-    whereClause: where,
-    params,
+    conditions,
+    conditionLogic: conditions.length > 1 ? "and" : "and",
     explanation: `Sigma rule "${rule.title || "Untitled"}": ${rule.description || "No description"}`,
     targetTable,
   };
 }
 
-// ─── YARA Rule Compiler ─────────────────────────────────────────────────────
-
 export function compileYaraRule(ruleText: string): CompiledFilter {
-  // Extract string patterns from YARA rules to search in event payloads
-  const stringMatches: string[] = [];
-  const stringBlock = ruleText.match(/strings:\s*\n([\s\S]*?)(?=condition:|$)/);
-
-  if (stringBlock) {
-    const lines = stringBlock[1].split("\n");
-    for (const line of lines) {
-      const match = line.match(/\$\w+\s*=\s*"([^"]+)"/);
-      if (match) {
-        stringMatches.push(match[1]);
-      }
-      // Hex patterns
-      const hexMatch = line.match(/\$\w+\s*=\s*\{([^}]+)\}/);
-      if (hexMatch) {
-        stringMatches.push(hexMatch[1].replace(/\s/g, ""));
-      }
-    }
+  const targetTable: HuntTable = "alerts";
+  const patterns: string[] = [];
+  const stringBlock = ruleText.match(/strings:\s*\n([\s\S]*?)(?=condition:|$)/i);
+  for (const line of stringBlock?.[1]?.split(/\r?\n/) || []) {
+    const stringMatch = line.match(/^\s*\$\w+\s*=\s*"([^"]+)"/);
+    const hexMatch = line.match(/^\s*\$\w+\s*=\s*\{([^}]+)\}/);
+    if (stringMatch) patterns.push(stringMatch[1]);
+    if (hexMatch) patterns.push(hexMatch[1].replace(/\s/g, ""));
   }
-
-  const params: unknown[] = [];
-  const clauses = stringMatches.map((s) => {
-    params.push(`%${s}%`);
-    return `LOWER(raw_payload::text) LIKE LOWER($${params.length})`;
-  });
-
-  // Extract rule name
-  const nameMatch = ruleText.match(/rule\s+(\w+)/);
-  const ruleName = nameMatch ? nameMatch[1] : "Untitled YARA Rule";
-
+  const ruleName = ruleText.match(/rule\s+(\w+)/i)?.[1] || "Untitled YARA Rule";
   return {
-    whereClause: clauses.length > 0 ? clauses.join(" OR ") : "1=1",
-    params,
-    explanation: `YARA rule "${ruleName}": searches for ${stringMatches.length} string pattern(s) across event payloads`,
-    targetTable: "alerts",
+    conditions: patterns.map((value) => ({ field: "payloadText", operator: "contains", value })),
+    conditionLogic: "or",
+    explanation: `YARA rule "${ruleName}": searches for ${patterns.length} string pattern(s) across alert payloads`,
+    targetTable,
   };
 }
-
-// ─── KQL Compiler ───────────────────────────────────────────────────────────
 
 export function compileKqlQuery(kqlText: string): CompiledFilter {
-  const params: unknown[] = [];
-  const clauses: string[] = [];
-
-  // Parse KQL-like syntax: Table | where Field == "value" | where Field contains "value"
-  const lines = kqlText
+  const parts = kqlText
     .split("|")
-    .map((s) => s.trim())
+    .map((part) => part.trim())
     .filter(Boolean);
-
-  let targetTable: CompiledFilter["targetTable"] = "alerts";
-
-  for (const line of lines) {
-    // Table name
-    const tableMatch = line.match(/^(alerts|ingestion_logs|sensor_events)$/i);
-    if (tableMatch) {
-      targetTable = tableMatch[1].toLowerCase() as CompiledFilter["targetTable"];
+  let targetTable: HuntTable = "alerts";
+  const conditions: HuntCondition[] = [];
+  for (const part of parts) {
+    if (TABLES.has(part.toLowerCase() as HuntTable)) {
+      targetTable = part.toLowerCase() as HuntTable;
       continue;
     }
-
-    // where Field == "value"
-    const eqMatch = line.match(/where\s+(\w+)\s*==\s*"([^"]+)"/i);
-    if (eqMatch) {
-      params.push(eqMatch[2]);
-      clauses.push(`"${sanitizeFieldName(eqMatch[1])}" = $${params.length}`);
-      continue;
-    }
-
-    // where Field != "value"
-    const neqMatch = line.match(/where\s+(\w+)\s*!=\s*"([^"]+)"/i);
-    if (neqMatch) {
-      params.push(neqMatch[2]);
-      clauses.push(`"${sanitizeFieldName(neqMatch[1])}" != $${params.length}`);
-      continue;
-    }
-
-    // where Field contains "value"
-    const containsMatch = line.match(/where\s+(\w+)\s+contains\s+"([^"]+)"/i);
-    if (containsMatch) {
-      params.push(`%${containsMatch[2]}%`);
-      clauses.push(`"${sanitizeFieldName(containsMatch[1])}"::text ILIKE $${params.length}`);
-      continue;
-    }
-
-    // where Field > number
-    const gtMatch = line.match(/where\s+(\w+)\s*>\s*(\d+)/i);
-    if (gtMatch) {
-      params.push(Number(gtMatch[2]));
-      clauses.push(`"${sanitizeFieldName(gtMatch[1])}"::numeric > $${params.length}`);
-      continue;
-    }
-
-    // where Field < number
-    const ltMatch = line.match(/where\s+(\w+)\s*<\s*(\d+)/i);
-    if (ltMatch) {
-      params.push(Number(ltMatch[2]));
-      clauses.push(`"${sanitizeFieldName(ltMatch[1])}"::numeric < $${params.length}`);
-      continue;
-    }
-
-    // where Field in ("a","b","c")
-    const inMatch = line.match(/where\s+(\w+)\s+in\s*\(([^)]+)\)/i);
-    if (inMatch) {
-      const values = inMatch[2].split(",").map((v) => v.trim().replace(/^["']|["']$/g, ""));
-      for (const v of values) {
-        params.push(v);
-      }
-      const placeholders = values.map((_, i) => `$${params.length - values.length + i + 1}`).join(", ");
-      clauses.push(`"${sanitizeFieldName(inMatch[1])}" IN (${placeholders})`);
-      continue;
-    }
+    const match = part.match(
+      /^where\s+([A-Za-z_][\w]*)\s*(==|!=|contains|>|<)\s*(?:"([^"]*)"|'([^']*)'|(-?\d+(?:\.\d+)?))$/i,
+    );
+    if (!match) return rejected(targetTable, `Unsupported KQL expression: "${part}".`);
+    const value = match[3] ?? match[4] ?? (match[5] !== undefined ? Number(match[5]) : "");
+    const operator: HuntOperator =
+      match[2] === "=="
+        ? "eq"
+        : match[2] === "!="
+          ? "neq"
+          : match[2] === ">"
+            ? "gt"
+            : match[2] === "<"
+              ? "lt"
+              : "contains";
+    const parsed = condition(targetTable, match[1], operator, value);
+    if (!parsed) return rejected(targetTable, `KQL field "${match[1]}" is not supported for ${targetTable}.`);
+    conditions.push(parsed);
   }
-
+  if (conditions.length === 0)
+    return rejected(targetTable, "A KQL hunt must contain at least one supported where condition.");
   return {
-    whereClause: clauses.length > 0 ? clauses.join(" AND ") : "1=1",
-    params,
-    explanation: `KQL query with ${clauses.length} filter condition(s)`,
+    conditions,
+    conditionLogic: "and",
+    explanation: `KQL query with ${conditions.length} filter condition(s)`,
     targetTable,
   };
 }
-
-// ─── SQL Pass-through ───────────────────────────────────────────────────────
-
-// Dangerous SQL keywords/patterns that indicate injection attempts
-const SQL_INJECTION_PATTERNS = [
-  /;\s*(DROP|DELETE|TRUNCATE|ALTER|CREATE|INSERT|UPDATE|GRANT|REVOKE)\s/i,
-  /;\s*$/,
-  /--\s/,
-  /\/\*[\s\S]*?\*\//,
-  /\bUNION\s+(ALL\s+)?SELECT\b/i,
-  /\bINTO\s+(OUT|DUMP)FILE\b/i,
-  /\bLOAD_FILE\s*\(/i,
-  /\bEXEC(UTE)?\s*\(/i,
-  /\bxp_\w+/i,
-  /\bpg_\w+\s*\(/i,
-  /\bINFORMATION_SCHEMA\b/i,
-];
 
 export function compileSqlQuery(sqlText: string): CompiledFilter {
-  // Extract WHERE clause from raw SQL — only allow SELECT queries
   const normalized = sqlText.trim();
-  if (!/^SELECT\s/i.test(normalized)) {
-    return {
-      whereClause: "1=0",
-      params: [],
-      explanation: "Only SELECT queries are allowed",
-      targetTable: "alerts",
-    };
+  const header = normalized.match(
+    /^SELECT\s+\*\s+FROM\s+(alerts|ingestion_logs|sensor_events)\s*(?:WHERE\s+([\s\S]*?))?(?:ORDER\s+BY[\s\S]*)?$/i,
+  );
+  if (!header)
+    return rejected(
+      "alerts",
+      "SQL hunts only support SELECT * from an allowlisted event table with simple AND filters.",
+    );
+  const targetTable = header[1].toLowerCase() as HuntTable;
+  const whereText = (header[2] || "").trim();
+  if (!whereText) return rejected(targetTable, "SQL hunts require at least one supported WHERE condition.");
+  if (/[();]|--|\/\*|\*\/|\b(OR|UNION|JOIN|SELECT|DROP|INSERT|UPDATE|DELETE)\b/i.test(whereText)) {
+    return rejected(
+      targetTable,
+      "SQL query rejected: only simple AND equality, comparison, and text filters are supported.",
+    );
   }
-
-  // Reject queries containing multiple statements or injection patterns
-  for (const pattern of SQL_INJECTION_PATTERNS) {
-    if (pattern.test(normalized)) {
-      return {
-        whereClause: "1=0",
-        params: [],
-        explanation: "Query rejected: potentially unsafe SQL pattern detected",
-        targetTable: "alerts",
-      };
-    }
+  const conditions: HuntCondition[] = [];
+  for (const fragment of whereText.split(/\s+AND\s+/i)) {
+    const match = fragment.trim().match(/^([A-Za-z_][\w]*)\s*(=|!=|>|<|LIKE|ILIKE)\s*(['"])(.*?)\3$/i);
+    if (!match) return rejected(targetTable, `Unsupported SQL condition: "${fragment.trim()}".`);
+    const operator: HuntOperator =
+      match[2] === "="
+        ? "eq"
+        : match[2] === "!="
+          ? "neq"
+          : match[2] === ">"
+            ? "gt"
+            : match[2] === "<"
+              ? "lt"
+              : "contains";
+    const value = operator === "contains" ? match[4].replace(/^%|%$/g, "") : match[4];
+    const parsed = condition(targetTable, match[1], operator, value);
+    if (!parsed) return rejected(targetTable, `SQL field "${match[1]}" is not supported for ${targetTable}.`);
+    conditions.push(parsed);
   }
-
-  // Determine target table
-  let targetTable: CompiledFilter["targetTable"] = "alerts";
-  if (/FROM\s+ingestion_logs/i.test(normalized)) targetTable = "ingestion_logs";
-  else if (/FROM\s+sensor_events/i.test(normalized)) targetTable = "sensor_events";
-
-  const whereMatch = normalized.match(/WHERE\s+([\s\S]+?)(?:ORDER|GROUP|LIMIT|$)/i);
-  const whereClause = whereMatch ? whereMatch[1].trim() : "1=1";
-
-  // Final check: reject WHERE clause if it still contains suspicious patterns
-  for (const pattern of SQL_INJECTION_PATTERNS) {
-    if (pattern.test(whereClause)) {
-      return {
-        whereClause: "1=0",
-        params: [],
-        explanation: "WHERE clause rejected: potentially unsafe SQL pattern detected",
-        targetTable,
-      };
-    }
-  }
-
-  return {
-    whereClause,
-    params: [],
-    explanation: `Raw SQL query against ${targetTable}`,
-    targetTable,
-  };
+  return { conditions, conditionLogic: "and", explanation: `Structured SQL query against ${targetTable}`, targetTable };
 }
-
-// ─── Unified Compiler ───────────────────────────────────────────────────────
 
 export function compileQuery(queryType: string, queryText: string): CompiledFilter {
   switch (queryType) {
@@ -363,19 +313,7 @@ export function compileQuery(queryType: string, queryText: string): CompiledFilt
       return compileKqlQuery(queryText);
     case "sql":
       return compileSqlQuery(queryText);
-    case "custom":
-      return {
-        whereClause: "1=1",
-        params: [],
-        explanation: "Custom query — manual review required",
-        targetTable: "alerts",
-      };
     default:
-      return {
-        whereClause: "1=0",
-        params: [],
-        explanation: `Unknown query type: ${queryType}`,
-        targetTable: "alerts",
-      };
+      return rejected("alerts", `Query type "${queryType}" is not executable.`);
   }
 }

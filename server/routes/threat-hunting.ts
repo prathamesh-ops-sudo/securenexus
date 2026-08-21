@@ -104,11 +104,13 @@ export function registerThreatHuntingRoutes(app: Express): void {
 
         // Compile the query to validate it
         let compiledQuery: string | null = null;
+        let initialStatus: string = "draft";
         try {
           const compiled = compileQuery(queryType, queryText);
           compiledQuery = JSON.stringify(compiled);
+          initialStatus = compiled.rejected ? "rejected" : "ready";
         } catch {
-          // Compilation failure is non-fatal — store as draft
+          initialStatus = "rejected";
         }
 
         const [hunt] = await db
@@ -120,7 +122,7 @@ export function registerThreatHuntingRoutes(app: Express): void {
             queryType,
             queryText: queryText.substring(0, 10000),
             compiledQuery,
-            status: compiledQuery ? "ready" : "draft",
+            status: initialStatus,
             hypothesis: typeof hypothesis === "string" ? hypothesis.substring(0, 2000) : null,
             mitreTechniques: Array.isArray(mitreTechniques) ? mitreTechniques.slice(0, 20) : [],
             tags: Array.isArray(tags) ? tags.slice(0, 20) : [],
@@ -211,8 +213,10 @@ export function registerThreatHuntingRoutes(app: Express): void {
           try {
             const compiled = compileQuery((updateData.queryType as string) || existing.queryType, queryText);
             updateData.compiledQuery = JSON.stringify(compiled);
+            updateData.status = compiled.rejected ? "rejected" : "ready";
           } catch {
             updateData.compiledQuery = null;
+            updateData.status = "rejected";
           }
         }
         if (typeof hypothesis === "string") updateData.hypothesis = hypothesis.substring(0, 2000);
@@ -294,6 +298,18 @@ export function registerThreatHuntingRoutes(app: Express): void {
 
         const result = await executeHunt(hunt.queryType, hunt.queryText, orgId, limit);
 
+        if (result.status !== "completed") {
+          await db
+            .update(threatHunts)
+            .set({ status: result.status, updatedAt: new Date() })
+            .where(and(eq(threatHunts.id, id), eq(threatHunts.orgId, orgId)));
+          return res.status(result.status === "rejected" ? 422 : 500).json({
+            message: result.reason || result.explanation,
+            status: result.status,
+            execution: result,
+          });
+        }
+
         // Store result
         const [savedResult] = await db
           .insert(huntResults)
@@ -317,17 +333,18 @@ export function registerThreatHuntingRoutes(app: Express): void {
             lastRunEventCount: result.eventCount,
             updatedAt: new Date(),
           })
-          .where(eq(threatHunts.id, id));
+          .where(and(eq(threatHunts.id, id), eq(threatHunts.orgId, orgId)));
 
         res.json({ result: savedResult, execution: result });
       } catch (error) {
         log.error("Execute hunt error", { error: String(error) });
         // Reset status on failure
         const id = String(req.params.id);
+        const orgId = getOrgId(req);
         await db
           .update(threatHunts)
           .set({ status: "failed", updatedAt: new Date() })
-          .where(eq(threatHunts.id, id))
+          .where(and(eq(threatHunts.id, id), eq(threatHunts.orgId, orgId)))
           .catch((err) => log.warn("Failed to update hunt status on error", { error: String(err), huntId: id }));
         res.status(500).json({ message: "Failed to execute hunt" });
       }

@@ -8163,7 +8163,7 @@ export type InsertWarRoomActivity = typeof warRoomActivityLog.$inferInsert;
 // ─── Threat Hunting Workbench ───────────────────────────────────────────────
 
 export const HUNT_QUERY_TYPES = ["sigma", "yara", "kql", "sql", "custom"] as const;
-export const HUNT_STATUSES = ["draft", "ready", "running", "completed", "failed", "cancelled"] as const;
+export const HUNT_STATUSES = ["draft", "ready", "running", "completed", "failed", "rejected", "cancelled"] as const;
 
 export const threatHunts = pgTable(
   "threat_hunts",
