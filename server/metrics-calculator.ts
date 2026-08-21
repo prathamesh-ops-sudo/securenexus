@@ -13,6 +13,14 @@ import { logger } from "./routes/shared";
 
 const log = logger.child("metrics-calculator");
 
+export function calculatePreventedIncidents(blockedCount: number, groupingFactor = 10): number {
+  return Math.floor(Math.max(0, blockedCount) / groupingFactor);
+}
+
+export function calculateSlaPercentage(compliant: number, total: number): number | null {
+  return total > 0 ? Math.round((compliant / total) * 100) : null;
+}
+
 // ─── MTTR / MTTD Calculations ────────────────────────────────────────────────
 
 export interface MttrMttdResult {
@@ -139,9 +147,10 @@ export interface SecurityRoiResult {
   estimatedSavings: number;
   costPerIncident: number;
   automatedResponseRate: number;
-  meanResponseTimeReduction: number;
+  meanResponseTimeReduction: number | null;
   toolSpend: number;
   roiMultiplier: number;
+  assumptions: { industry: string; groupingFactor: number; costPerIncident: number };
 }
 
 const INDUSTRY_COST_PER_INCIDENT: Record<string, number> = {
@@ -199,8 +208,8 @@ export async function computeSecurityRoi(
       ),
     );
 
-  // Approximate incidents prevented = blocked high-confidence alerts / 10 (grouping factor)
-  const prevented = Math.max(1, Math.floor(Number(blockedCount) / 10));
+  const groupingFactor = 10;
+  const prevented = calculatePreventedIncidents(Number(blockedCount), groupingFactor);
   const savings = prevented * costPerIncident;
   const automatedRate = Number(totalActions) > 0 ? Math.round((Number(autoActions) / Number(totalActions)) * 100) : 0;
 
@@ -218,17 +227,22 @@ export async function computeSecurityRoi(
     estimatedSavings: savings,
     costPerIncident,
     automatedResponseRate: automatedRate,
-    meanResponseTimeReduction: 65, // baseline improvement %
+    meanResponseTimeReduction: null,
     toolSpend,
     roiMultiplier,
+    assumptions: {
+      industry: industry || "default",
+      groupingFactor,
+      costPerIncident,
+    },
   };
 }
 
 // ─── Vulnerability SLA Compliance ────────────────────────────────────────────
 
 export interface SlaComplianceResult {
-  overall: number; // percentage
-  bySeverity: Record<string, { total: number; compliant: number; breached: number; pct: number }>;
+  overall: number | null; // percentage
+  bySeverity: Record<string, { total: number; compliant: number; breached: number; pct: number | null }>;
   targets: Array<{ severity: string; targetHours: number }>;
 }
 
@@ -249,7 +263,7 @@ export async function computeSlaCompliance(orgId: string): Promise<SlaCompliance
           { severity: "low", targetHours: 720 },
         ];
 
-  const bySeverity: Record<string, { total: number; compliant: number; breached: number; pct: number }> = {};
+  const bySeverity: Record<string, { total: number; compliant: number; breached: number; pct: number | null }> = {};
   let totalAll = 0;
   let compliantAll = 0;
 
@@ -300,14 +314,14 @@ export async function computeSlaCompliance(orgId: string): Promise<SlaCompliance
       total,
       compliant,
       breached,
-      pct: total > 0 ? Math.round((compliant / total) * 100) : 100,
+      pct: calculateSlaPercentage(compliant, total),
     };
     totalAll += total;
     compliantAll += compliant;
   }
 
   return {
-    overall: totalAll > 0 ? Math.round((compliantAll / totalAll) * 100) : 100,
+    overall: calculateSlaPercentage(compliantAll, totalAll),
     bySeverity,
     targets: effectiveTargets.map((t) => ({ severity: t.severity, targetHours: t.targetHours })),
   };

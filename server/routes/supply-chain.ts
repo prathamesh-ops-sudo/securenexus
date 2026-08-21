@@ -650,56 +650,12 @@ export function registerSupplyChainRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-
-        // Get all non-vulnerable dependencies for the org
-        const deps = await db
-          .select()
-          .from(dependencyGraph)
-          .where(and(eq(dependencyGraph.orgId, orgId), eq(dependencyGraph.isVulnerable, false)))
-          .limit(1000);
-
-        // Check dependencies against known vulnerability patterns
-        // In production, this would call NVD/OSV API
-        const newAlerts: Array<{ depId: string; packageName: string; cve: string; severity: string }> = [];
-
-        for (const dep of deps) {
-          // Only flag dependencies with low maintainer scores and existing CVE patterns
-          const riskFactor = dep.maintainerScore !== null ? (100 - dep.maintainerScore) / 100 : 0.1;
-          if (riskFactor > 0.6 && (dep.cveCount || 0) > 0) {
-            const cveId = `CVE-${new Date().getFullYear()}-${10000 + parseInt(dep.id.replace(/\D/g, "").slice(-5) || "0", 10)}`;
-            const severity = riskFactor > 0.7 ? "critical" : riskFactor > 0.5 ? "high" : "medium";
-            newAlerts.push({ depId: dep.id, packageName: dep.packageName, cve: cveId, severity });
-
-            // Mark dependency as vulnerable
-            await db
-              .update(dependencyGraph)
-              .set({ isVulnerable: true, cveCount: (dep.cveCount || 0) + 1 })
-              .where(and(eq(dependencyGraph.id, dep.id), eq(dependencyGraph.orgId, orgId)));
-
-            // Create a finding for the new CVE
-            await db.insert(supplyChainFindings).values({
-              sbomId: dep.sbomId,
-              orgId,
-              findingType: "vulnerability",
-              severity: severity as "critical" | "high" | "medium" | "low" | "info",
-              title: `New CVE detected: ${cveId} in ${dep.packageName}`,
-              description: `Continuous monitoring detected ${cveId} affecting ${dep.packageName}@${dep.packageVersion || "unknown"}`,
-              packageName: dep.packageName,
-              packageVersion: dep.packageVersion,
-              ecosystem: dep.ecosystem,
-              cveId,
-              status: "open",
-            });
-          }
-        }
-
-        log.info(`Dependency monitor scan: ${newAlerts.length} new alerts from ${deps.length} deps`, { orgId });
-        res.json({
-          scannedCount: deps.length,
-          newAlertsCount: newAlerts.length,
-          alerts: newAlerts,
-          lastScanAt: new Date().toISOString(),
-          message: `Scanned ${deps.length} dependencies, found ${newAlerts.length} new vulnerabilities`,
+        res.status(503).json({
+          available: false,
+          status: "unavailable",
+          reason:
+            "Dependency monitoring requires a configured advisory provider such as OSV.dev or NVD. No findings were created.",
+          orgId,
         });
       } catch (error) {
         log.error("Dependency monitor scan failed", { error: String(error) });

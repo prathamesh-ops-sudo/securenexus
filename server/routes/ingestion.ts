@@ -782,42 +782,47 @@ export function registerIngestionRoutes(app: Express): void {
         {
           stage: "received",
           count: total,
-          percentage: 100,
-          status: "ok" as const,
+          percentage: total > 0 ? 100 : null,
+          status: total > 0 ? ("ok" as const) : ("unavailable" as const),
           errors: 0,
         },
         {
           stage: "parsed",
           count: total - stats.totalFailed,
-          percentage: total > 0 ? Math.round(((total - stats.totalFailed) / total) * 100) : 100,
-          status: stats.totalFailed / Math.max(total, 1) > 0.1 ? ("degraded" as const) : ("ok" as const),
+          percentage: total > 0 ? Math.round(((total - stats.totalFailed) / total) * 100) : null,
+          status:
+            total === 0
+              ? ("unavailable" as const)
+              : stats.totalFailed / total > 0.1
+                ? ("degraded" as const)
+                : ("ok" as const),
           errors: stats.totalFailed,
         },
         {
           stage: "normalized",
           count: stats.totalCreated + stats.totalDeduped,
-          percentage: total > 0 ? Math.round(((stats.totalCreated + stats.totalDeduped) / total) * 100) : 100,
-          status: "ok" as const,
+          percentage: total > 0 ? Math.round(((stats.totalCreated + stats.totalDeduped) / total) * 100) : null,
+          status: total > 0 ? ("ok" as const) : ("unavailable" as const),
           errors: 0,
         },
         {
           stage: "enriched",
           count: stats.totalCreated,
-          percentage: total > 0 ? Math.round((stats.totalCreated / total) * 100) : 100,
-          status: "ok" as const,
+          percentage: total > 0 ? Math.round((stats.totalCreated / total) * 100) : null,
+          status: total > 0 ? ("ok" as const) : ("unavailable" as const),
           errors: 0,
         },
         {
           stage: "stored",
           count: stats.totalCreated,
-          percentage: total > 0 ? Math.round((stats.totalCreated / total) * 100) : 100,
-          status: "ok" as const,
+          percentage: total > 0 ? Math.round((stats.totalCreated / total) * 100) : null,
+          status: total > 0 ? ("ok" as const) : ("unavailable" as const),
           errors: 0,
         },
       ];
       const bottleneck = stages.find((s) => s.status === "degraded") || null;
       res.json({
-        overallStatus: bottleneck ? "degraded" : "healthy",
+        overallStatus: total === 0 ? "unavailable" : bottleneck ? "degraded" : "healthy",
         stages,
         bottleneck: bottleneck
           ? { stage: bottleneck.stage, errorRate: Math.round((bottleneck.errors / Math.max(total, 1)) * 100) }
@@ -827,8 +832,8 @@ export function registerIngestionRoutes(app: Express): void {
           totalStored: stats.totalCreated,
           totalDeduped: stats.totalDeduped,
           totalFailed: stats.totalFailed,
-          deduplicationRate: total > 0 ? Math.round((stats.totalDeduped / total) * 100) : 0,
-          failureRate: total > 0 ? Math.round((stats.totalFailed / total) * 100) : 0,
+          deduplicationRate: total > 0 ? Math.round((stats.totalDeduped / total) * 100) : null,
+          failureRate: total > 0 ? Math.round((stats.totalFailed / total) * 100) : null,
         },
       });
     } catch (error) {
@@ -884,10 +889,10 @@ export function registerIngestionRoutes(app: Express): void {
       const stats = await storage.getIngestionStats(orgId);
       const total = stats.totalIngested;
       const parsed = total - stats.totalFailed;
-      const parseSuccessRate = total > 0 ? Math.round((parsed / total) * 10000) / 100 : 100;
+      const parseSuccessRate = total > 0 ? Math.round((parsed / total) * 10000) / 100 : null;
       const normalizationCoverage =
-        total > 0 ? Math.round(((stats.totalCreated + stats.totalDeduped) / total) * 10000) / 100 : 100;
-      const unparsedPercent = total > 0 ? Math.round((stats.totalFailed / total) * 10000) / 100 : 0;
+        total > 0 ? Math.round(((stats.totalCreated + stats.totalDeduped) / total) * 10000) / 100 : null;
+      const unparsedPercent = total > 0 ? Math.round((stats.totalFailed / total) * 10000) / 100 : null;
       const UNPARSED_THRESHOLD = 5; // alert if >5% unparsed
 
       // Query real per-source field extraction rates from ingestion logs
@@ -906,30 +911,42 @@ export function registerIngestionRoutes(app: Express): void {
       const rateMap = new Map(
         perSourceRates.map((r) => [
           r.source,
-          r.totalReceived > 0 ? Math.round((r.totalCreated / r.totalReceived) * 10000) / 100 : 100,
+          r.totalReceived > 0 ? Math.round((r.totalCreated / r.totalReceived) * 10000) / 100 : null,
         ]),
       );
 
       const perSourceQuality = stats.sourceBreakdown.map((s) => {
-        const extractionRate = rateMap.get(s.source) ?? 100;
+        const extractionRate = rateMap.get(s.source) ?? null;
         return {
           source: s.source,
           eventCount: s.count,
-          quality: extractionRate >= 95 ? "good" : extractionRate >= 80 ? "degraded" : "poor",
+          quality:
+            extractionRate === null
+              ? "unavailable"
+              : extractionRate >= 95
+                ? "good"
+                : extractionRate >= 80
+                  ? "degraded"
+                  : "poor",
           fieldExtractionRate: extractionRate,
         };
       });
 
       res.json({
-        overallQuality: unparsedPercent > UNPARSED_THRESHOLD ? "degraded" : "healthy",
+        overallQuality:
+          total === 0
+            ? "unavailable"
+            : unparsedPercent !== null && unparsedPercent > UNPARSED_THRESHOLD
+              ? "degraded"
+              : "healthy",
         parseSuccessRate,
         normalizationCoverage,
         unparsedPercent,
         unparsedThreshold: UNPARSED_THRESHOLD,
-        thresholdExceeded: unparsedPercent > UNPARSED_THRESHOLD,
+        thresholdExceeded: unparsedPercent !== null && unparsedPercent > UNPARSED_THRESHOLD,
         perSourceQuality,
         alerts:
-          unparsedPercent > UNPARSED_THRESHOLD
+          unparsedPercent !== null && unparsedPercent > UNPARSED_THRESHOLD
             ? [
                 {
                   level: "warning",

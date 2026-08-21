@@ -116,7 +116,7 @@ export function registerStunningDashboardRoutes(app: Express): void {
 
       return res.json({
         securityScore,
-        scoreChange: 2,
+        scoreChange: null,
         alertsToday,
         alertsChange,
         threatsBlocked: threatsToday,

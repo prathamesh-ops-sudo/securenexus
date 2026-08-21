@@ -804,8 +804,6 @@ export function registerPhase2FeatureRoutes(app: Express): void {
       const dailyUsage = ((dailyResult as any).rows || []).map((r: any) => ({
         date: r.date instanceof Date ? r.date.toISOString() : String(r.date),
         requests: parseInt(r.alert_count || "0"),
-        tokens: 0,
-        storage: 0,
       }));
 
       // Get top consumers from audit logs
@@ -823,7 +821,6 @@ export function registerPhase2FeatureRoutes(app: Express): void {
       const topConsumers = ((consumerResult as any).rows || []).map((r: any) => ({
         user: r.user_name || "Unknown",
         requests: parseInt(r.request_count || "0"),
-        cost: 0,
       }));
 
       res.json({

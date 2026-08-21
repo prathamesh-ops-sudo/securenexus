@@ -706,7 +706,7 @@ function AssetDetailPanel({ assetId, onClose }: { assetId: string; onClose: () =
   if (!data) return null;
 
   const asset = data.asset;
-  const vulnBreakdown = data.vulnerabilityBreakdown || {};
+  const vulnBreakdown = data.vulnerabilityBreakdown;
 
   return (
     <Card>
@@ -745,20 +745,26 @@ function AssetDetailPanel({ assetId, onClose }: { assetId: string; onClose: () =
         {/* Vulnerability Breakdown */}
         <div>
           <p className="text-xs font-medium mb-2">Vulnerability Breakdown</p>
-          <div className="flex gap-2">
-            <Badge variant="destructive" className="text-[10px]">
-              Critical: {vulnBreakdown.critical || 0}
-            </Badge>
-            <Badge variant="outline" className="text-[10px] border-orange-500/30 text-orange-500">
-              High: {vulnBreakdown.high || 0}
-            </Badge>
-            <Badge variant="outline" className="text-[10px] border-yellow-500/30 text-yellow-500">
-              Medium: {vulnBreakdown.medium || 0}
-            </Badge>
-            <Badge variant="outline" className="text-[10px]">
-              Low: {vulnBreakdown.low || 0}
-            </Badge>
-          </div>
+          {vulnBreakdown ? (
+            <div className="flex gap-2">
+              <Badge variant="destructive" className="text-[10px]">
+                Critical: {vulnBreakdown.critical}
+              </Badge>
+              <Badge variant="outline" className="text-[10px] border-orange-500/30 text-orange-500">
+                High: {vulnBreakdown.high}
+              </Badge>
+              <Badge variant="outline" className="text-[10px] border-yellow-500/30 text-yellow-500">
+                Medium: {vulnBreakdown.medium}
+              </Badge>
+              <Badge variant="outline" className="text-[10px]">
+                Low: {vulnBreakdown.low}
+              </Badge>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Unavailable: connect a vulnerability scanner to collect severity-level findings.
+            </p>
+          )}
         </div>
 
         {/* Software */}
@@ -767,19 +773,23 @@ function AssetDetailPanel({ assetId, onClose }: { assetId: string; onClose: () =
             <Package className="h-3 w-3" /> Software Inventory
           </p>
           <div className="space-y-1">
-            {(data.softwareInventory || []).map((s: any) => (
-              <div key={s.name} className="flex items-center gap-2 text-xs p-1.5 rounded border">
-                <span className="font-mono font-medium">{s.name}</span>
-                <Badge variant="outline" className="text-[10px]">
-                  {s.version}
-                </Badge>
-                {s.cveCount > 0 && (
-                  <Badge variant="destructive" className="text-[10px]">
-                    {s.cveCount} CVEs
+            {data.softwareInventory.length > 0 ? (
+              data.softwareInventory.map((s: any) => (
+                <div key={s.name} className="flex items-center gap-2 text-xs p-1.5 rounded border">
+                  <span className="font-mono font-medium">{s.name}</span>
+                  <Badge variant="outline" className="text-[10px]">
+                    {s.version}
                   </Badge>
-                )}
-              </div>
-            ))}
+                  {s.cveCount > 0 && (
+                    <Badge variant="destructive" className="text-[10px]">
+                      {s.cveCount} CVEs
+                    </Badge>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-muted-foreground">{data.availability?.softwareInventory?.reason}</p>
+            )}
           </div>
         </div>
 
@@ -788,13 +798,11 @@ function AssetDetailPanel({ assetId, onClose }: { assetId: string; onClose: () =
           <p className="text-xs font-medium mb-2 flex items-center gap-1">
             <Wifi className="h-3 w-3" /> Open Ports
           </p>
-          <div className="flex gap-1 flex-wrap">
-            {(data.openPorts || []).map((p: number) => (
-              <Badge key={p} variant="outline" className="text-[10px] font-mono">
-                {p}
-              </Badge>
-            ))}
-          </div>
+          <p className="text-xs text-muted-foreground">
+            {data.openPorts.length > 0
+              ? data.openPorts.join(", ")
+              : data.availability?.network?.reason || "Unavailable: no port telemetry collected."}
+          </p>
         </div>
 
         {/* Alert History */}
@@ -803,18 +811,22 @@ function AssetDetailPanel({ assetId, onClose }: { assetId: string; onClose: () =
             <ShieldAlert className="h-3 w-3" /> Recent Alerts
           </p>
           <div className="space-y-1">
-            {(data.alertHistory || []).map((a: any) => (
-              <div key={a.id} className="flex items-center gap-2 text-xs p-1.5 rounded border">
-                <Badge
-                  variant={a.severity === "critical" || a.severity === "high" ? "destructive" : "outline"}
-                  className="text-[10px]"
-                >
-                  {a.severity}
-                </Badge>
-                <span className="flex-1 truncate">{a.title}</span>
-                <span className="text-muted-foreground">{new Date(a.createdAt).toLocaleDateString()}</span>
-              </div>
-            ))}
+            {data.alertHistory.length > 0 ? (
+              data.alertHistory.map((a: any) => (
+                <div key={a.id} className="flex items-center gap-2 text-xs p-1.5 rounded border">
+                  <Badge
+                    variant={a.severity === "critical" || a.severity === "high" ? "destructive" : "outline"}
+                    className="text-[10px]"
+                  >
+                    {a.severity}
+                  </Badge>
+                  <span className="flex-1 truncate">{a.title}</span>
+                  <span className="text-muted-foreground">{new Date(a.createdAt).toLocaleDateString()}</span>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-muted-foreground">{data.availability?.securityHistory?.reason}</p>
+            )}
           </div>
         </div>
 
@@ -824,12 +836,8 @@ function AssetDetailPanel({ assetId, onClose }: { assetId: string; onClose: () =
             <Shield className="h-3 w-3" /> Compliance
           </p>
           <div className="flex items-center gap-2">
-            {data.complianceStatus?.compliant ? (
-              <CheckCircle className="h-4 w-4 text-green-500" />
-            ) : (
-              <XCircle className="h-4 w-4 text-red-500" />
-            )}
-            <span className="text-xs">{data.complianceStatus?.compliant ? "Compliant" : "Non-compliant"}</span>
+            <span className="text-xs font-medium">Not assessed</span>
+            <span className="text-xs text-muted-foreground">{data.complianceStatus?.reason}</span>
             {(data.complianceStatus?.frameworks || []).map((f: string) => (
               <Badge key={f} variant="outline" className="text-[10px]">
                 {f}

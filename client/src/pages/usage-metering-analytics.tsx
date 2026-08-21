@@ -44,8 +44,8 @@ interface MeteringData {
   billingPeriodEnd: string;
   totalCost: number;
   metrics: UsageMetric[];
-  dailyUsage: { date: string; requests: number; tokens: number; storage: number }[];
-  topConsumers: { user: string; requests: number; cost: number }[];
+  dailyUsage: { date: string; requests: number }[];
+  topConsumers: { user: string; requests: number }[];
 }
 
 /* 91.3 — usage alert thresholds */
@@ -306,14 +306,6 @@ export default function UsageMeteringAnalyticsPage() {
                           <Zap className="inline h-3 w-3 mr-1" />
                           {d.requests.toLocaleString()} req
                         </span>
-                        <span>
-                          <Activity className="inline h-3 w-3 mr-1" />
-                          {(d.tokens / 1000).toFixed(0)}K tok
-                        </span>
-                        <span>
-                          <Database className="inline h-3 w-3 mr-1" />
-                          {(d.storage / 1e6).toFixed(1)} MB
-                        </span>
                       </div>
                     </div>
                   ))}
@@ -342,7 +334,6 @@ export default function UsageMeteringAnalyticsPage() {
                     <p className="font-medium text-sm">{c.user}</p>
                     <p className="text-xs text-muted-foreground">{c.requests.toLocaleString()} requests</p>
                   </div>
-                  <p className="font-bold">${c.cost.toFixed(2)}</p>
                 </CardContent>
               </Card>
             ))

@@ -278,7 +278,11 @@ function OverviewTab() {
             <CheckCircle2 className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.ciGatePassRate ?? 100}%</div>
+            <div className="text-2xl font-bold">
+              {stats?.ciGatePassRate === null || stats?.ciGatePassRate === undefined
+                ? "Unavailable"
+                : `${stats.ciGatePassRate}%`}
+            </div>
             <p className="text-xs text-muted-foreground">{stats?.totalCiGates ?? 0} total gate evaluations</p>
           </CardContent>
         </Card>
@@ -1029,14 +1033,6 @@ function SecurityDebtTab() {
 // ── 64.4 — Developer Leaderboard Tab ──────────────────────────────
 
 function LeaderboardTab() {
-  const leaderboard = [
-    { rank: 1, name: "Team Alpha", findings: 3, avgRemediationDays: 1.2, score: 98 },
-    { rank: 2, name: "Team Bravo", findings: 7, avgRemediationDays: 2.5, score: 91 },
-    { rank: 3, name: "Team Charlie", findings: 12, avgRemediationDays: 3.8, score: 85 },
-    { rank: 4, name: "Team Delta", findings: 18, avgRemediationDays: 5.1, score: 78 },
-    { rank: 5, name: "Team Echo", findings: 25, avgRemediationDays: 7.2, score: 72 },
-  ];
-
   return (
     <div className="space-y-4">
       <Card>
@@ -1050,50 +1046,9 @@ function LeaderboardTab() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Rank</TableHead>
-                <TableHead>Team</TableHead>
-                <TableHead>Open Findings</TableHead>
-                <TableHead>Avg Remediation</TableHead>
-                <TableHead>Security Score</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {leaderboard.map((entry) => (
-                <TableRow key={entry.rank}>
-                  <TableCell>
-                    <span className={`font-bold ${entry.rank <= 3 ? "text-amber-400" : "text-muted-foreground"}`}>
-                      #{entry.rank}
-                    </span>
-                  </TableCell>
-                  <TableCell className="font-medium">{entry.name}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={entry.findings <= 5 ? "default" : entry.findings <= 15 ? "secondary" : "destructive"}
-                    >
-                      {entry.findings}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm">{entry.avgRemediationDays} days</TableCell>
-                  <TableCell>
-                    <span
-                      className={
-                        entry.score >= 90
-                          ? "text-emerald-400 font-bold"
-                          : entry.score >= 75
-                            ? "text-amber-400 font-bold"
-                            : "text-red-400 font-bold"
-                      }
-                    >
-                      {entry.score}/100
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            A team leaderboard is unavailable because team-level remediation outcomes are not persisted.
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -1302,11 +1257,11 @@ function IntegrationsTab() {
             </div>
             <div className="rounded border p-3">
               <p className="text-xs text-muted-foreground">Most Common Finding</p>
-              <p className="text-sm font-medium">SQL Injection</p>
+              <p className="text-sm font-medium text-muted-foreground">Unavailable</p>
             </div>
             <div className="rounded border p-3">
               <p className="text-xs text-muted-foreground">Gate Mode</p>
-              <Badge variant="default">Blocking</Badge>
+              <Badge variant="outline">Unavailable</Badge>
             </div>
           </div>
         </CardContent>

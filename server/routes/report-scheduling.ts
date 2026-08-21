@@ -116,7 +116,9 @@ export function registerReportSchedulingRoutes(app: Express): void {
           totalRuns,
           completedRuns: completedRuns.length,
           failedRuns: failedRuns.length,
-          successRate: totalRuns > 0 ? Math.round((completedRuns.length / totalRuns) * 100) : 100,
+          successRate: totalRuns > 0 ? Math.round((completedRuns.length / totalRuns) * 100) : null,
+          available: totalRuns > 0,
+          reason: totalRuns > 0 ? null : "No scheduled report runs in the selected window.",
         });
       } catch (error: unknown) {
         log.error("Failed to get SLA summary", { error });

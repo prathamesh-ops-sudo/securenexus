@@ -752,11 +752,15 @@ function VulnAgingTab() {
           </CardHeader>
           <CardContent>
             <div
-              className={`text-2xl font-bold tabular-nums ${(sla.complianceRate ?? 0) >= 80 ? "text-green-500" : (sla.complianceRate ?? 0) >= 60 ? "text-yellow-500" : "text-red-500"}`}
+              className={`text-2xl font-bold tabular-nums ${sla.complianceRate === null || sla.complianceRate === undefined ? "text-muted-foreground" : sla.complianceRate >= 80 ? "text-green-500" : sla.complianceRate >= 60 ? "text-yellow-500" : "text-red-500"}`}
             >
-              {sla.complianceRate ?? 0}%
+              {sla.complianceRate === null || sla.complianceRate === undefined
+                ? "Unavailable"
+                : `${sla.complianceRate}%`}
             </div>
-            <Progress value={sla.complianceRate ?? 0} className="h-2 mt-2" />
+            {sla.complianceRate !== null && sla.complianceRate !== undefined && (
+              <Progress value={sla.complianceRate} className="h-2 mt-2" />
+            )}
           </CardContent>
         </Card>
         <Card>

@@ -165,9 +165,23 @@ interface DataSourceInfo {
   id: string;
   name: string;
   status: string;
-  recordCount: number;
-  lastSync: string;
+  recordCount: number | null;
+  lastSync: string | null;
+  reason: string | null;
 }
+
+const DATA_SOURCE_DEFINITIONS = [
+  { id: "alerts", name: "Alerts", icon: AlertTriangle },
+  { id: "incidents", name: "Incidents", icon: ShieldCheck },
+  { id: "entities", name: "Entities", icon: Users },
+  { id: "threat_intel", name: "Threat Intel", icon: Shield },
+  { id: "osint", name: "OSINT", icon: Eye },
+  { id: "ueba", name: "UEBA", icon: Activity },
+  { id: "endpoint_telemetry", name: "Endpoints", icon: Server },
+  { id: "network_flows", name: "Network", icon: Network },
+  { id: "cloud_configs", name: "Cloud", icon: Layers },
+  { id: "vulnerability_scanner", name: "Vuln Scanner", icon: Crosshair },
+] as const;
 
 interface AIModel {
   id: string;
@@ -408,23 +422,17 @@ function StreamingMarkdownRenderer({ content }: { content: string }) {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            {[
-              { name: "Alerts", icon: AlertTriangle },
-              { name: "Incidents", icon: ShieldCheck },
-              { name: "Entities", icon: Users },
-              { name: "Threat Intel", icon: Shield },
-              { name: "OSINT", icon: Eye },
-              { name: "UEBA", icon: Activity },
-              { name: "Endpoints", icon: Server },
-              { name: "Network", icon: Network },
-              { name: "Cloud", icon: Layers },
-              { name: "Vuln Scanner", icon: Crosshair },
-            ].map((ds) => (
-              <div key={ds.name} className="flex items-center gap-2 rounded-md bg-muted/30 p-2">
-                <ds.icon className="h-3.5 w-3.5 text-emerald-500" />
-                <span className="text-xs">{ds.name}</span>
-              </div>
-            ))}
+            {DATA_SOURCE_DEFINITIONS.map((ds) => {
+              const sourceStatus = "unavailable";
+              return (
+                <div key={ds.name} className="flex items-center gap-2 rounded-md bg-muted/30 p-2">
+                  <ds.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs">
+                    {ds.name}: {sourceStatus}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
@@ -773,23 +781,17 @@ function ThreatMeter({ severity }: { severity: string; priority: number }) {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            {[
-              { name: "Alerts", icon: AlertTriangle },
-              { name: "Incidents", icon: ShieldCheck },
-              { name: "Entities", icon: Users },
-              { name: "Threat Intel", icon: Shield },
-              { name: "OSINT", icon: Eye },
-              { name: "UEBA", icon: Activity },
-              { name: "Endpoints", icon: Server },
-              { name: "Network", icon: Network },
-              { name: "Cloud", icon: Layers },
-              { name: "Vuln Scanner", icon: Crosshair },
-            ].map((ds) => (
-              <div key={ds.name} className="flex items-center gap-2 rounded-md bg-muted/30 p-2">
-                <ds.icon className="h-3.5 w-3.5 text-emerald-500" />
-                <span className="text-xs">{ds.name}</span>
-              </div>
-            ))}
+            {DATA_SOURCE_DEFINITIONS.map((ds) => {
+              const sourceStatus = "unavailable";
+              return (
+                <div key={ds.name} className="flex items-center gap-2 rounded-md bg-muted/30 p-2">
+                  <ds.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs">
+                    {ds.name}: {sourceStatus}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
@@ -966,6 +968,17 @@ export default function AIEnginePage() {
     queryKey: ["/api/ai/setup-status"],
     refetchInterval: 60000,
   });
+
+  const { data: dataSourcesResponse } = useQuery<{
+    data?: DataSourceInfo[];
+    sources?: DataSourceInfo[];
+    dataSources?: DataSourceInfo[];
+  }>({
+    queryKey: ["/api/ai/data-sources"],
+  });
+  const dataSources =
+    dataSourcesResponse?.data ?? dataSourcesResponse?.sources ?? dataSourcesResponse?.dataSources ?? [];
+  const dataSourceById = new Map(dataSources.map((source) => [source.id, source]));
 
   const { data: alertsResponse, isLoading: alertsLoading } = useQuery<PaginatedResponse<Alert>>({
     queryKey: ["/api/v1/alerts"],
@@ -2428,23 +2441,19 @@ export default function AIEnginePage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            {[
-              { name: "Alerts", icon: AlertTriangle },
-              { name: "Incidents", icon: ShieldCheck },
-              { name: "Entities", icon: Users },
-              { name: "Threat Intel", icon: Shield },
-              { name: "OSINT", icon: Eye },
-              { name: "UEBA", icon: Activity },
-              { name: "Endpoints", icon: Server },
-              { name: "Network", icon: Network },
-              { name: "Cloud", icon: Layers },
-              { name: "Vuln Scanner", icon: Crosshair },
-            ].map((ds) => (
-              <div key={ds.name} className="flex items-center gap-2 rounded-md bg-muted/30 p-2">
-                <ds.icon className="h-3.5 w-3.5 text-emerald-500" />
-                <span className="text-xs">{ds.name}</span>
-              </div>
-            ))}
+            {DATA_SOURCE_DEFINITIONS.map((ds) => {
+              const source = dataSourceById.get(ds.id);
+              return (
+                <div key={ds.name} className="flex items-center gap-2 rounded-md bg-muted/30 p-2">
+                  <ds.icon
+                    className={`h-3.5 w-3.5 ${source?.status === "connected" ? "text-emerald-500" : "text-muted-foreground"}`}
+                  />
+                  <span className="text-xs">
+                    {ds.name}: {source?.status ?? "unavailable"}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>

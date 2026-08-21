@@ -2104,55 +2104,65 @@ function CompliancePostureTab() {
         </div>
       ) : complianceData ? (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {(complianceData.frameworks || []).map((fw: any) => (
-              <Card key={fw.frameworkId}>
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold">{fw.frameworkName}</p>
-                    <Badge
-                      variant={fw.overallScore >= 80 ? "default" : fw.overallScore >= 50 ? "outline" : "destructive"}
-                      className="no-default-hover-elevate no-default-active-elevate"
-                    >
-                      {fw.overallScore}%
-                    </Badge>
-                  </div>
-                  <Progress value={fw.overallScore} className="h-2" />
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <span className="text-muted-foreground">Passing:</span>{" "}
-                      <span className="font-medium text-green-500">{fw.passingControls}</span>
+          {!complianceData.available ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <ShieldCheck className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <p className="text-sm font-medium">Not assessed</p>
+                <p className="text-xs text-muted-foreground mt-1">{complianceData.reason}</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {(complianceData.frameworks || []).map((fw: any) => (
+                <Card key={fw.frameworkId}>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold">{fw.frameworkName}</p>
+                      <Badge
+                        variant={fw.overallScore >= 80 ? "default" : fw.overallScore >= 50 ? "outline" : "destructive"}
+                        className="no-default-hover-elevate no-default-active-elevate"
+                      >
+                        {fw.overallScore}%
+                      </Badge>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">Failing:</span>{" "}
-                      <span className="font-medium text-red-500">{fw.failingControls}</span>
+                    <Progress value={fw.overallScore} className="h-2" />
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-muted-foreground">Passing:</span>{" "}
+                        <span className="font-medium text-green-500">{fw.passingControls}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Failing:</span>{" "}
+                        <span className="font-medium text-red-500">{fw.failingControls}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Total:</span>{" "}
+                        <span className="font-medium">{fw.totalControls}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Findings:</span>{" "}
+                        <span className="font-medium">{fw.totalFindings}</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">Total:</span>{" "}
-                      <span className="font-medium">{fw.totalControls}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Findings:</span>{" "}
-                      <span className="font-medium">{fw.totalFindings}</span>
-                    </div>
-                  </div>
-                  {fw.categories && fw.categories.length > 0 && (
-                    <div className="space-y-1.5 pt-1 border-t">
-                      {fw.categories.slice(0, 4).map((cat: any) => (
-                        <div key={cat.category} className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground truncate max-w-[60%]">{cat.category}</span>
-                          <div className="flex items-center gap-1.5">
-                            <Progress value={cat.score} className="h-1 w-12" />
-                            <span className="font-medium w-8 text-right">{cat.score}%</span>
+                    {fw.categories && fw.categories.length > 0 && (
+                      <div className="space-y-1.5 pt-1 border-t">
+                        {fw.categories.slice(0, 4).map((cat: any) => (
+                          <div key={cat.category} className="flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground truncate max-w-[60%]">{cat.category}</span>
+                            <div className="flex items-center gap-1.5">
+                              <Progress value={cat.score} className="h-1 w-12" />
+                              <span className="font-medium w-8 text-right">{cat.score}%</span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
 
           {complianceData.frameworks?.length > 0 && complianceData.frameworks[0].controls && (
             <Card>
@@ -2322,69 +2332,81 @@ function MultiCloudDashboardTab() {
 
       {dashboard ? (
         <>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
-                    Overall Security Score
-                  </p>
-                  <p className="text-4xl font-bold mt-1">
-                    {dashboard.overallScore}
-                    <span className="text-lg text-muted-foreground">/100</span>
-                  </p>
-                </div>
-                <div className="text-right text-xs text-muted-foreground space-y-1">
-                  <p>Total Accounts: {dashboard.totalAccounts}</p>
-                  <p>Total Findings: {dashboard.totalFindings}</p>
-                </div>
-              </div>
-              <Progress value={dashboard.overallScore} className="h-3 mt-3" />
-            </CardContent>
-          </Card>
+          {!dashboard.available ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Globe className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <p className="text-sm font-medium">Multi-cloud posture not assessed</p>
+                <p className="text-xs text-muted-foreground mt-1">{dashboard.reason}</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                        Overall Security Score
+                      </p>
+                      <p className="text-4xl font-bold mt-1">
+                        {dashboard.overallScore}
+                        <span className="text-lg text-muted-foreground">/100</span>
+                      </p>
+                    </div>
+                    <div className="text-right text-xs text-muted-foreground space-y-1">
+                      <p>Total Accounts: {dashboard.totalAccounts}</p>
+                      <p>Total Findings: {dashboard.totalFindings}</p>
+                    </div>
+                  </div>
+                  <Progress value={dashboard.overallScore} className="h-3 mt-3" />
+                </CardContent>
+              </Card>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {(dashboard.providers || []).map((prov: any) => {
-              const ProvIcon = PROVIDER_ICONS[prov.provider] || Cloud;
-              return (
-                <Card key={prov.provider}>
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <ProvIcon className="h-5 w-5 text-muted-foreground" />
-                        <p className="text-sm font-semibold">{PROVIDER_LABELS[prov.provider] || prov.provider}</p>
-                      </div>
-                      <Badge
-                        variant={prov.score >= 80 ? "default" : prov.score >= 50 ? "outline" : "destructive"}
-                        className="no-default-hover-elevate no-default-active-elevate"
-                      >
-                        {prov.score}/100
-                      </Badge>
-                    </div>
-                    <Progress value={prov.score} className="h-2" />
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <span className="text-muted-foreground">Accounts:</span>{" "}
-                        <span className="font-medium">{prov.accountCount}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Findings:</span>{" "}
-                        <span className="font-medium">{prov.findingCount}</span>
-                      </div>
-                      <div>
-                        <span className="text-red-500">Critical:</span>{" "}
-                        <span className="font-medium">{prov.criticalCount}</span>
-                      </div>
-                      <div>
-                        <span className="text-orange-500">High:</span>{" "}
-                        <span className="font-medium">{prov.highCount}</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {(dashboard.providers || []).map((prov: any) => {
+                  const ProvIcon = PROVIDER_ICONS[prov.provider] || Cloud;
+                  return (
+                    <Card key={prov.provider}>
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <ProvIcon className="h-5 w-5 text-muted-foreground" />
+                            <p className="text-sm font-semibold">{PROVIDER_LABELS[prov.provider] || prov.provider}</p>
+                          </div>
+                          <Badge
+                            variant={prov.score >= 80 ? "default" : prov.score >= 50 ? "outline" : "destructive"}
+                            className="no-default-hover-elevate no-default-active-elevate"
+                          >
+                            {prov.score}/100
+                          </Badge>
+                        </div>
+                        <Progress value={prov.score} className="h-2" />
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="text-muted-foreground">Accounts:</span>{" "}
+                            <span className="font-medium">{prov.accountCount}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Findings:</span>{" "}
+                            <span className="font-medium">{prov.findingCount}</span>
+                          </div>
+                          <div>
+                            <span className="text-red-500">Critical:</span>{" "}
+                            <span className="font-medium">{prov.criticalCount}</span>
+                          </div>
+                          <div>
+                            <span className="text-orange-500">High:</span>{" "}
+                            <span className="font-medium">{prov.highCount}</span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </>
       ) : (
         <Card>

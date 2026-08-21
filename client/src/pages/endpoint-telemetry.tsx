@@ -689,7 +689,17 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <Activity className="h-10 w-10 text-muted-foreground mb-3" />
                 <p className="text-sm font-medium text-muted-foreground">No telemetry data available</p>
-                <p className="text-xs text-muted-foreground mt-1">Generate telemetry from the Endpoint Inventory tab</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Deploy and connect an endpoint sensor to collect software, process, network, and session telemetry.
+                </p>
+              </CardContent>
+            </Card>
+          ) : softwareInv.available === false ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <Package className="h-10 w-10 text-muted-foreground mb-3" />
+                <p className="text-sm font-medium text-muted-foreground">Software inventory unavailable</p>
+                <p className="text-xs text-muted-foreground mt-1">{softwareInv.reason}</p>
               </CardContent>
             </Card>
           ) : (
@@ -822,6 +832,22 @@ function AssetDetailView({ assetId, assets }: { assetId: string; assets: Endpoin
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <Package className="h-10 w-10 text-muted-foreground mb-3" />
                 <p className="text-sm font-medium text-muted-foreground">Software inventory loading...</p>
+              </CardContent>
+            </Card>
+          ) : softwareInv.available === false ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <Package className="h-10 w-10 text-muted-foreground mb-3" />
+                <p className="text-sm font-medium text-muted-foreground">Software inventory unavailable</p>
+                <p className="text-xs text-muted-foreground mt-1">{softwareInv.reason}</p>
+              </CardContent>
+            </Card>
+          ) : vulns.available === false ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <Bug className="h-10 w-10 text-muted-foreground mb-3" />
+                <p className="text-sm font-medium text-muted-foreground">Vulnerability data unavailable</p>
+                <p className="text-xs text-muted-foreground mt-1">{vulns.reason}</p>
               </CardContent>
             </Card>
           ) : (
@@ -1320,20 +1346,6 @@ export default function EndpointTelemetryPage() {
     },
   });
 
-  const genTelemetryMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("POST", `/api/endpoints/${id}/telemetry`);
-    },
-    onSuccess: (_data, id) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/endpoints", id, "telemetry"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/endpoints", id, "detail"] });
-      toast({ title: "Telemetry generated", description: "Endpoint telemetry data has been collected." });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Telemetry generation failed", description: err.message, variant: "destructive" });
-    },
-  });
-
   const calcRiskMutation = useMutation({
     mutationFn: async (id: string) => {
       await apiRequest("POST", `/api/endpoints/${id}/risk`);
@@ -1576,19 +1588,6 @@ export default function EndpointTelemetryPage() {
                             >
                               <Eye className="h-3.5 w-3.5 mr-1.5" />
                               View Detail
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                genTelemetryMutation.reset();
-                                genTelemetryMutation.mutate(asset.id);
-                              }}
-                              disabled={genTelemetryMutation.isPending}
-                              data-testid={`button-gen-telemetry-${asset.id}`}
-                            >
-                              <Activity className="h-3.5 w-3.5 mr-1.5" />
-                              Generate Telemetry
                             </Button>
                             <Button
                               size="sm"

@@ -854,7 +854,7 @@ export function registerVulnScannerRoutes(app: Express): void {
         patchCompliancePct:
           parseInt(r.total_vulns || "0") > 0
             ? Math.round((parseInt(r.patched_count || "0") / parseInt(r.total_vulns || "0")) * 100)
-            : 100,
+            : null,
       }));
 
       const overallTotal = hosts.reduce((s: number, h: { totalVulns: number }) => s + h.totalVulns, 0);
@@ -867,7 +867,12 @@ export function registerVulnScannerRoutes(app: Express): void {
           totalVulnerabilities: overallTotal,
           totalPatched: overallPatched,
           totalUnpatched: overallTotal - overallPatched,
-          overallCompliancePct: overallTotal > 0 ? Math.round((overallPatched / overallTotal) * 100) : 100,
+          overallCompliancePct: overallTotal > 0 ? Math.round((overallPatched / overallTotal) * 100) : null,
+          available: overallTotal > 0,
+          reason:
+            overallTotal > 0
+              ? null
+              : "No vulnerability findings are available. Run a vulnerability scan to measure patch compliance.",
         },
       });
     } catch (error) {

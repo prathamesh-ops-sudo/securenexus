@@ -120,7 +120,6 @@ export function registerPhase2Routes(app: Express): void {
             title: "Open Alerts",
             type: "counter",
             value: openAlerts,
-            trend: 0,
             status: openAlerts > 20 ? "warning" : "good",
           },
           {
@@ -128,7 +127,6 @@ export function registerPhase2Routes(app: Express): void {
             title: "Active Incidents",
             type: "counter",
             value: activeIncidents,
-            trend: 0,
             status: activeIncidents > 5 ? "warning" : "good",
           },
           {
@@ -136,12 +134,10 @@ export function registerPhase2Routes(app: Express): void {
             title: "Pending Reviews",
             type: "counter",
             value: pendingReviews,
-            trend: 0,
             status: pendingReviews > 10 ? "warning" : "good",
           },
-          { id: "w4", title: "Resolved Today", type: "counter", value: resolvedToday, trend: 0, status: "good" },
+          { id: "w4", title: "Resolved Today", type: "counter", value: resolvedToday, status: "good" },
         ],
-        recentActivity: [],
         kpis: [
           { label: "Mean Time to Detect", value: mttdMinutes, target: 15, unit: "min" },
           { label: "Mean Time to Respond", value: mttrMinutes, target: 60, unit: "min" },

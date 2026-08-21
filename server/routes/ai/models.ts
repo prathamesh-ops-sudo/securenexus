@@ -188,64 +188,54 @@ export function registerAiModelsRoutes(app: Express): void {
         /* table may not exist */
       }
 
+      const sourceStatus = (recordCount: number, sourceName: string) => ({
+        status: recordCount > 0 ? "connected" : "unconfigured",
+        recordCount: recordCount > 0 ? recordCount : null,
+        lastSync: null,
+        reason: recordCount > 0 ? null : `No ${sourceName} records are available. Configure and connect this source.`,
+      });
       const dataSources = [
         {
           id: "alerts",
           name: "Security Alerts",
-          status: "connected",
-          recordCount: alertCount,
-          lastSync: new Date().toISOString(),
+          ...sourceStatus(alertCount, "security alert"),
         },
         {
           id: "incidents",
           name: "Incidents",
-          status: "connected",
-          recordCount: incidentCount,
-          lastSync: new Date().toISOString(),
+          ...sourceStatus(incidentCount, "incident"),
         },
         {
           id: "entities",
           name: "Entity Graph",
-          status: "connected",
-          recordCount: entityCount,
-          lastSync: new Date().toISOString(),
+          ...sourceStatus(entityCount, "entity"),
         },
         {
           id: "threat_intel",
           name: "Threat Intelligence",
-          status: "connected",
-          recordCount: 0,
-          lastSync: new Date().toISOString(),
+          ...sourceStatus(0, "threat intelligence"),
         },
-        { id: "osint", name: "OSINT Feeds", status: "connected", recordCount: 0, lastSync: new Date().toISOString() },
-        { id: "ueba", name: "UEBA Analytics", status: "connected", recordCount: 0, lastSync: new Date().toISOString() },
+        { id: "osint", name: "OSINT Feeds", ...sourceStatus(0, "OSINT") },
+        { id: "ueba", name: "UEBA Analytics", ...sourceStatus(0, "UEBA") },
         {
           id: "endpoint_telemetry",
           name: "Endpoint Telemetry",
-          status: "connected",
-          recordCount: 0,
-          lastSync: new Date().toISOString(),
+          ...sourceStatus(0, "endpoint telemetry"),
         },
         {
           id: "network_flows",
           name: "Network Flows",
-          status: "connected",
-          recordCount: 0,
-          lastSync: new Date().toISOString(),
+          ...sourceStatus(0, "network flow"),
         },
         {
           id: "cloud_configs",
           name: "Cloud Configurations",
-          status: "connected",
-          recordCount: 0,
-          lastSync: new Date().toISOString(),
+          ...sourceStatus(0, "cloud configuration"),
         },
         {
           id: "vulnerability_scanner",
           name: "Vulnerability Scanner",
-          status: "connected",
-          recordCount: 0,
-          lastSync: new Date().toISOString(),
+          ...sourceStatus(0, "vulnerability scan"),
         },
       ];
 
@@ -253,7 +243,7 @@ export function registerAiModelsRoutes(app: Express): void {
         totalSources: dataSources.length,
         connectedSources: dataSources.filter((s) => s.status === "connected").length,
         dataSources,
-        totalRecords: dataSources.reduce((sum, s) => sum + s.recordCount, 0),
+        totalRecords: dataSources.reduce((sum, s) => sum + (s.recordCount || 0), 0),
       });
     } catch (error: any) {
       logger.child("ai").error("Data sources error", { error: String(error) });

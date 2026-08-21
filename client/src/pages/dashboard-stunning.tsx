@@ -31,7 +31,7 @@ import confetti from "canvas-confetti";
 
 interface DashboardStats {
   securityScore: number;
-  scoreChange: number;
+  scoreChange: number | null;
   alertsToday: number;
   alertsChange: number;
   threatsBlocked: number;

@@ -1272,31 +1272,9 @@ function ThresholdTuningTab() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { label: "AI Engine", status: "healthy", icon: Brain },
-              { label: "Rule-Based Fallback", status: "standby", icon: Shield },
-              { label: "Human Queue", status: "empty", icon: Users },
-              { label: "Budget", status: "within_limits", icon: Gauge },
-            ].map((item) => (
-              <div
-                key={item.label}
-                className={`flex items-center gap-2 p-3 rounded border ${
-                  item.status === "healthy" ||
-                  item.status === "standby" ||
-                  item.status === "empty" ||
-                  item.status === "within_limits"
-                    ? "border-green-500/20 bg-green-500/5"
-                    : "border-red-500/20 bg-red-500/5"
-                }`}
-              >
-                <item.icon className="h-4 w-4 text-green-400" />
-                <div>
-                  <p className="text-xs font-medium">{item.label}</p>
-                  <p className="text-[10px] text-muted-foreground">{item.status.replace(/_/g, " ")}</p>
-                </div>
-              </div>
-            ))}
+          <div className="rounded border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
+            Unavailable: AI health, fallback rules, human queue, and budget utilization are not persisted as operational
+            measurements. Configure operational telemetry before relying on this status.
           </div>
         </CardContent>
       </Card>

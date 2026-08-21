@@ -410,7 +410,7 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
       const gatePassRate =
         recentGates.length > 0
           ? Math.round((recentGates.filter((g) => g.status === "passed").length / recentGates.length) * 100)
-          : 100;
+          : null;
 
       // Security debt
       const allDebt = await db
@@ -818,7 +818,11 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
             "regex_dos",
             "insecure_deserialization",
           ],
-          supportedLanguages: ["typescript", "javascript", "tsx", "jsx", "python", "java", "go", "ruby", "php"],
+          supportedLanguages: null,
+          availability: {
+            configured: false,
+            reason: "SAST language support is not persisted as organization configuration.",
+          },
           integrations: {
             github: { enabled: true, webhookConfigured: false },
             gitlab: { enabled: true, webhookConfigured: false },
@@ -898,10 +902,12 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
       res.json({
         data: {
           totalGateEvaluations: total,
-          passRate: total > 0 ? Number(((passed / total) * 100).toFixed(1)) : 100,
+          passRate: total > 0 ? Number(((passed / total) * 100).toFixed(1)) : null,
           reposWithGates: Number(row.repo_count) || 0,
-          blockingMode: true,
-          mostCommonFinding: "sql_injection",
+          blockingMode: null,
+          mostCommonFinding: null,
+          available: total > 0,
+          reason: total > 0 ? null : "No CI gate evaluations have been recorded.",
         },
       });
     } catch (err) {
@@ -972,10 +978,13 @@ export function registerDeveloperSecurityRoutes(app: Express): void {
       res.json({
         data: {
           totalFindings: total,
-          falsePositiveRate: total > 0 ? Number(((fpCount / total) * 100).toFixed(1)) : 0,
-          truePositiveRate: total > 0 ? Number(((tpCount / total) * 100).toFixed(1)) : 100,
+          falsePositiveRate: total > 0 ? Number(((fpCount / total) * 100).toFixed(1)) : null,
+          truePositiveRate: null,
           rulesActive: Number(row.rules_used) || 0,
-          supportedLanguages: 12,
+          supportedLanguages: null,
+          available: total > 0,
+          reason:
+            "True-positive rate is unavailable because adjudication outcomes are not persisted. Supported languages are not persisted as configuration.",
         },
       });
     } catch (err) {

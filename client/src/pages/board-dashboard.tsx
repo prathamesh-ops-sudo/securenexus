@@ -77,7 +77,7 @@ function KpiCard({
   invertTrend,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   unit: string;
   trend?: number;
   icon: React.ElementType;
@@ -85,7 +85,8 @@ function KpiCard({
   invertTrend?: boolean;
 }) {
   let displayValue: string;
-  if (unit === "minutes") displayValue = formatMinutes(value);
+  if (value === null) displayValue = "Unavailable";
+  else if (unit === "minutes") displayValue = formatMinutes(value);
   else if (unit === "x") displayValue = `${value}x`;
   else if (unit === "percent") displayValue = `${value}%`;
   else if (unit === "currency") displayValue = formatCurrency(value);
@@ -112,8 +113,8 @@ function SlaComplianceSection({
   data,
 }: {
   data: {
-    overall: number;
-    bySeverity: Record<string, { total: number; compliant: number; breached: number; pct: number }>;
+    overall: number | null;
+    bySeverity: Record<string, { total: number; compliant: number; breached: number; pct: number | null }>;
     targets: Array<{ severity: string; targetHours: number }>;
   };
 }) {
@@ -126,7 +127,7 @@ function SlaComplianceSection({
       <CardContent>
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <span className="text-3xl font-bold">{data.overall}%</span>
+            <span className="text-3xl font-bold">{data.overall === null ? "Unavailable" : `${data.overall}%`}</span>
             <span className="text-sm text-muted-foreground">overall compliance</span>
           </div>
           <div className="grid gap-3">
@@ -135,20 +136,34 @@ function SlaComplianceSection({
               return (
                 <div key={severity} className="flex items-center gap-3">
                   <Badge
-                    variant={stats.pct >= 90 ? "default" : stats.pct >= 70 ? "secondary" : "destructive"}
+                    variant={
+                      stats.pct === null
+                        ? "outline"
+                        : stats.pct >= 90
+                          ? "default"
+                          : stats.pct >= 70
+                            ? "secondary"
+                            : "destructive"
+                    }
                     className="w-20 justify-center capitalize"
                   >
                     {severity}
                   </Badge>
                   <div className="flex-1">
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${stats.pct >= 90 ? "bg-green-500" : stats.pct >= 70 ? "bg-yellow-500" : "bg-red-500"}`}
-                        style={{ width: `${Math.min(100, stats.pct)}%` }}
-                      />
-                    </div>
+                    {stats.pct === null ? (
+                      <span className="text-xs text-muted-foreground">Unavailable</span>
+                    ) : (
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${stats.pct >= 90 ? "bg-green-500" : stats.pct >= 70 ? "bg-yellow-500" : "bg-red-500"}`}
+                          style={{ width: `${Math.min(100, stats.pct)}%` }}
+                        />
+                      </div>
+                    )}
                   </div>
-                  <span className="text-sm font-medium w-12 text-right">{stats.pct}%</span>
+                  <span className="text-sm font-medium w-12 text-right">
+                    {stats.pct === null ? "—" : `${stats.pct}%`}
+                  </span>
                   <span className="text-xs text-muted-foreground w-32">
                     {stats.compliant}/{stats.total} within {target?.targetHours || "—"}h
                   </span>
@@ -542,7 +557,7 @@ export default function BoardDashboardPage() {
                 value={data.kpis.roi.value}
                 unit={data.kpis.roi.unit}
                 icon={DollarSign}
-                description={`${formatCurrency(data.roi.estimatedSavings)} saved`}
+                description={`Modeled estimate: ${formatCurrency(data.roi.estimatedSavings)}`}
               />
               <KpiCard
                 label={data.kpis.slaCompliance.label}
@@ -575,45 +590,25 @@ export default function BoardDashboardPage() {
                   <DollarSign className="h-4 w-4" />
                   Financial Risk Quantification
                 </CardTitle>
-                <CardDescription>Annualized loss expectancy and risk reduction metrics</CardDescription>
+                <CardDescription>
+                  Modeled estimate using industry incident-cost and grouping assumptions
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-xs text-muted-foreground">Annual Loss Expectancy</p>
-                    <p className="text-lg font-bold">{formatCurrency(data.roi.estimatedSavings * 2)}</p>
+                    <p className="text-xs text-muted-foreground">Modeled Savings</p>
+                    <p className="text-lg font-bold">{formatCurrency(data.roi.estimatedSavings)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Risk Reduction</p>
-                    <p className="text-lg font-bold text-emerald-600">{formatCurrency(data.roi.estimatedSavings)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Net Risk Exposure</p>
-                    <p className="text-lg font-bold text-amber-600">{formatCurrency(data.roi.estimatedSavings)}</p>
+                    <p className="text-xs text-muted-foreground">Loss Expectancy</p>
+                    <p className="text-lg font-bold text-muted-foreground">Unavailable</p>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* 85.3 — compliance status summary */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Shield className="h-4 w-4" />
-                  Compliance Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {["SOC 2", "ISO 27001", "PCI DSS", "HIPAA", "GDPR"].map((fw) => (
-                    <Badge key={fw} variant="outline" className="text-xs gap-1">
-                      <CheckCircle2 className="h-3 w-3 text-green-500" />
-                      {fw}
-                    </Badge>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Framework compliance tracked in Compliance Center. Status reflects latest assessment scores.
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Assumptions: {data.roi.assumptions?.industry || "default"} industry,{" "}
+                  {data.roi.assumptions?.groupingFactor || 10} alerts per modeled incident,{" "}
+                  {formatCurrency(data.roi.assumptions?.costPerIncident || data.roi.costPerIncident)} per incident.
                 </p>
               </CardContent>
             </Card>
@@ -662,7 +657,7 @@ export default function BoardDashboardPage() {
                     <span className="font-medium">{data.roi.totalIncidentsPrevented}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span>Estimated Savings</span>
+                    <span>Modeled Savings</span>
                     <span className="font-medium">{formatCurrency(data.roi.estimatedSavings)}</span>
                   </div>
                   <div className="flex justify-between text-sm">

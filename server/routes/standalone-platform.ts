@@ -895,61 +895,48 @@ export function registerStandalonePlatformRoutes(app: Express): void {
         .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
       if (!asset) return res.status(404).json({ message: "Asset not found" });
 
-      const softwareInventory = [
-        {
-          name: "nginx",
-          version: "1.24.0",
-          cveCount: 2,
-          lastUpdated: new Date(Date.now() - 86400000 * 30).toISOString(),
-        },
-        {
-          name: "openssl",
-          version: "3.0.12",
-          cveCount: 0,
-          lastUpdated: new Date(Date.now() - 86400000 * 7).toISOString(),
-        },
-        {
-          name: "node",
-          version: "20.11.0",
-          cveCount: 1,
-          lastUpdated: new Date(Date.now() - 86400000 * 14).toISOString(),
-        },
-      ];
-      const openPorts = [22, 80, 443, 5432];
-      const networkConnections = [
-        { remoteIp: "10.0.1.50", remotePort: 5432, protocol: "TCP", state: "ESTABLISHED" },
-        { remoteIp: "10.0.2.10", remotePort: 443, protocol: "TCP", state: "ESTABLISHED" },
-      ];
-      const associatedUsers = ["admin", "deploy-bot", "monitoring-agent"];
-      const complianceStatus = {
-        frameworks: ["SOC2", "ISO27001"],
-        compliant: true,
-        lastAssessment: new Date(Date.now() - 86400000 * 60).toISOString(),
-      };
-      const alertHistory = [
-        {
-          id: "a1",
-          title: "Unusual SSH login",
-          severity: "high",
-          createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-        },
-        {
-          id: "a2",
-          title: "Port scan detected",
-          severity: "medium",
-          createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-        },
-      ];
+      const softwareInventory = Array.isArray(asset.installedSoftware) ? asset.installedSoftware : [];
 
       res.json({
         asset,
         softwareInventory,
-        openPorts,
-        networkConnections,
-        associatedUsers,
-        complianceStatus,
-        alertHistory,
-        vulnerabilityBreakdown: { critical: 0, high: 1, medium: 2, low: 4 },
+        openPorts: [],
+        networkConnections: [],
+        associatedUsers: [],
+        complianceStatus: {
+          status: "not_assessed",
+          frameworks: [],
+          compliant: null,
+          reason: "No asset-scoped compliance assessment is persisted for this asset.",
+        },
+        alertHistory: [],
+        vulnerabilityBreakdown: null,
+        availability: {
+          softwareInventory: {
+            available: softwareInventory.length > 0,
+            reason:
+              softwareInventory.length > 0
+                ? null
+                : "No software inventory has been collected. Connect an endpoint or asset inventory sensor.",
+          },
+          network: {
+            available: false,
+            reason: "Port and connection telemetry is not collected for asset inventory records.",
+          },
+          users: {
+            available: false,
+            reason: "User-session telemetry is not collected for asset inventory records.",
+          },
+          securityHistory: {
+            available: false,
+            reason: "Asset-linked alert and incident history is not persisted.",
+          },
+          vulnerabilities: {
+            available: asset.vulnerabilityCount > 0,
+            reason:
+              asset.vulnerabilityCount > 0 ? null : "No vulnerability scan results are associated with this asset.",
+          },
+        },
       });
     } catch (error) {
       log.error("Failed to get asset context", { error: String(error) });
@@ -1020,53 +1007,20 @@ export function registerStandalonePlatformRoutes(app: Express): void {
   });
 
   // 45.4 — Asset import sources
-  app.get("/api/assets/import-sources", isAuthenticated, resolveOrgContext, requireOrgId, async (_req, res) => {
+  app.get("/api/assets/import-sources", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
-      const sources = [
-        {
-          id: "ad",
-          name: "Active Directory",
-          type: "directory",
-          status: "connected",
-          lastSync: new Date(Date.now() - 3600000).toISOString(),
-          assetCount: 1240,
-        },
-        {
-          id: "aws",
-          name: "AWS EC2",
-          type: "cloud",
-          status: "connected",
-          lastSync: new Date(Date.now() - 1800000).toISOString(),
-          assetCount: 89,
-        },
-        { id: "azure", name: "Azure VMs", type: "cloud", status: "disconnected", lastSync: null, assetCount: 0 },
-        { id: "gcp", name: "GCP Instances", type: "cloud", status: "disconnected", lastSync: null, assetCount: 0 },
-        {
-          id: "edr",
-          name: "EDR Agents",
-          type: "agent",
-          status: "connected",
-          lastSync: new Date(Date.now() - 300000).toISOString(),
-          assetCount: 567,
-        },
-        {
-          id: "cmdb",
-          name: "CMDB Export",
-          type: "import",
-          status: "available",
-          lastSync: new Date(Date.now() - 86400000 * 7).toISOString(),
-          assetCount: 2100,
-        },
-        {
-          id: "vuln_scanner",
-          name: "Vulnerability Scanner",
-          type: "scanner",
-          status: "connected",
-          lastSync: new Date(Date.now() - 7200000).toISOString(),
-          assetCount: 890,
-        },
-      ];
-      res.json({ sources });
+      const orgId = getOrgId(req);
+      const assets = await db
+        .select({ id: assetInventory.id })
+        .from(assetInventory)
+        .where(eq(assetInventory.orgId, orgId));
+      res.json({
+        sources: [],
+        available: false,
+        reason:
+          "No asset connector status is persisted. Connect Active Directory, cloud inventory, EDR, CMDB, or a vulnerability scanner to collect source data.",
+        assetCount: assets.length,
+      });
     } catch (error) {
       log.error("Failed to get import sources", { error: String(error) });
       res.status(500).json({ message: "Failed to get import sources" });
@@ -1076,43 +1030,14 @@ export function registerStandalonePlatformRoutes(app: Express): void {
   // 45.5 — Asset auto-discovery status
   app.get("/api/assets/auto-discovery", isAuthenticated, resolveOrgContext, requireOrgId, async (_req, res) => {
     try {
-      const discovery = {
-        enabled: true,
-        lastScanAt: new Date(Date.now() - 1800000).toISOString(),
-        nextScanAt: new Date(Date.now() + 1800000).toISOString(),
-        scanInterval: "30m",
-        sources: [
-          { type: "network_scan", enabled: true, lastFound: 12, totalDiscovered: 234 },
-          { type: "edr_telemetry", enabled: true, lastFound: 3, totalDiscovered: 567 },
-          { type: "cloud_api", enabled: true, lastFound: 5, totalDiscovered: 89 },
-          { type: "dns_records", enabled: false, lastFound: 0, totalDiscovered: 0 },
-        ],
-        recentlyDiscovered: [
-          {
-            name: "unknown-host-192.168.1.45",
-            ipAddress: "192.168.1.45",
-            discoveredBy: "network_scan",
-            discoveredAt: new Date(Date.now() - 600000).toISOString(),
-            inInventory: false,
-          },
-          {
-            name: "dev-container-7b2f",
-            ipAddress: "10.0.3.22",
-            discoveredBy: "edr_telemetry",
-            discoveredAt: new Date(Date.now() - 1200000).toISOString(),
-            inInventory: false,
-          },
-          {
-            name: "ec2-i-0abc123",
-            ipAddress: "172.31.10.5",
-            discoveredBy: "cloud_api",
-            discoveredAt: new Date(Date.now() - 1800000).toISOString(),
-            inInventory: true,
-          },
-        ],
-        alertOnNew: true,
-      };
-      res.json(discovery);
+      res.json({
+        available: false,
+        enabled: false,
+        sources: [],
+        recentlyDiscovered: [],
+        reason:
+          "Asset auto-discovery is not configured. Connect a network scanner, EDR sensor, cloud API, or DNS source.",
+      });
     } catch (error) {
       log.error("Failed to get auto-discovery", { error: String(error) });
       res.status(500).json({ message: "Failed to get auto-discovery status" });
@@ -1164,45 +1089,17 @@ export function registerStandalonePlatformRoutes(app: Express): void {
         .from(assetInventory)
         .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
       if (!asset) return res.status(404).json({ message: "Asset not found" });
-      const software = [
-        {
-          name: "nginx",
-          version: "1.24.0",
-          vendor: "Nginx Inc",
-          category: "Web Server",
-          cves: [{ id: "CVE-2024-1234", severity: "high" }],
-          lastPatchDate: new Date(Date.now() - 86400000 * 30).toISOString(),
-        },
-        {
-          name: "openssl",
-          version: "3.0.12",
-          vendor: "OpenSSL Foundation",
-          category: "Crypto Library",
-          cves: [],
-          lastPatchDate: new Date(Date.now() - 86400000 * 7).toISOString(),
-        },
-        {
-          name: "postgresql",
-          version: "16.1",
-          vendor: "PostgreSQL",
-          category: "Database",
-          cves: [{ id: "CVE-2024-5678", severity: "medium" }],
-          lastPatchDate: new Date(Date.now() - 86400000 * 14).toISOString(),
-        },
-        {
-          name: "node",
-          version: "20.11.0",
-          vendor: "Node.js Foundation",
-          category: "Runtime",
-          cves: [{ id: "CVE-2024-9012", severity: "low" }],
-          lastPatchDate: new Date(Date.now() - 86400000 * 3).toISOString(),
-        },
-      ];
+      const software = Array.isArray(asset.installedSoftware) ? asset.installedSoftware : [];
       res.json({
         assetId: asset.id,
         assetName: asset.name,
         software,
         totalVulnerable: software.filter((s) => s.cves.length > 0).length,
+        available: software.length > 0,
+        reason:
+          software.length > 0
+            ? null
+            : "No software inventory has been collected. Connect an endpoint or asset inventory sensor.",
       });
     } catch (error) {
       log.error("Failed to get software inventory", { error: String(error) });
@@ -1219,43 +1116,14 @@ export function registerStandalonePlatformRoutes(app: Express): void {
         .from(assetInventory)
         .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
       if (!asset) return res.status(404).json({ message: "Asset not found" });
-      const cves = [
-        {
-          id: "CVE-2024-1234",
-          software: "nginx 1.24.0",
-          severity: "high",
-          cvss: 8.1,
-          description: "Remote code execution in HTTP/2 module",
-          published: "2024-03-15",
-          hasExploit: true,
-          patchAvailable: true,
-        },
-        {
-          id: "CVE-2024-5678",
-          software: "postgresql 16.1",
-          severity: "medium",
-          cvss: 5.3,
-          description: "Privilege escalation via role manipulation",
-          published: "2024-06-20",
-          hasExploit: false,
-          patchAvailable: true,
-        },
-        {
-          id: "CVE-2024-9012",
-          software: "node 20.11.0",
-          severity: "low",
-          cvss: 3.1,
-          description: "Timing side-channel in crypto module",
-          published: "2024-09-10",
-          hasExploit: false,
-          patchAvailable: false,
-        },
-      ];
       res.json({
         assetId: asset.id,
         assetName: asset.name,
-        cves,
-        summary: { critical: 0, high: 1, medium: 1, low: 1, total: 3, withExploit: 1, patchable: 2 },
+        cves: [],
+        summary: null,
+        available: false,
+        reason:
+          "No vulnerability scan results are associated with this asset. Connect a vulnerability scanner to collect CVE evidence.",
       });
     } catch (error) {
       log.error("Failed to get CVE exposure", { error: String(error) });
@@ -1272,40 +1140,13 @@ export function registerStandalonePlatformRoutes(app: Express): void {
         .from(assetInventory)
         .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
       if (!asset) return res.status(404).json({ message: "Asset not found" });
-      const isCloud = ["cloud_instance", "container", "virtual_machine"].includes(asset.assetType || "");
-      const findings = isCloud
-        ? [
-            {
-              id: "f1",
-              rule: "Unrestricted SSH access",
-              severity: "high",
-              service: "EC2",
-              status: "open",
-              detectedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-            },
-            {
-              id: "f2",
-              rule: "Missing encryption at rest",
-              severity: "medium",
-              service: "EBS",
-              status: "open",
-              detectedAt: new Date(Date.now() - 86400000 * 7).toISOString(),
-            },
-            {
-              id: "f3",
-              rule: "Public IP assigned",
-              severity: "low",
-              service: "EC2",
-              status: "resolved",
-              detectedAt: new Date(Date.now() - 86400000 * 14).toISOString(),
-            },
-          ]
-        : [];
+      const findings: unknown[] = [];
       res.json({
         assetId: asset.id,
-        isCloudAsset: isCloud,
         findings,
-        openCount: findings.filter((f) => f.status === "open").length,
+        openCount: 0,
+        available: false,
+        reason: "No asset-linked CSPM findings are persisted. Connect a cloud account and run a CSPM scan.",
       });
     } catch (error) {
       log.error("Failed to get CSPM findings", { error: String(error) });
@@ -1322,38 +1163,8 @@ export function registerStandalonePlatformRoutes(app: Express): void {
         .from(assetInventory)
         .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
       if (!asset) return res.status(404).json({ message: "Asset not found" });
-      const alerts = [
-        {
-          id: "a1",
-          title: "Brute force SSH attempt",
-          severity: "high",
-          status: "open",
-          createdAt: new Date(Date.now() - 86400000).toISOString(),
-        },
-        {
-          id: "a2",
-          title: "Suspicious outbound connection",
-          severity: "medium",
-          status: "resolved",
-          createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-        },
-        {
-          id: "a3",
-          title: "Privilege escalation attempt",
-          severity: "critical",
-          status: "resolved",
-          createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
-        },
-      ];
-      const incidents = [
-        {
-          id: "inc1",
-          title: "Unauthorized access investigation",
-          severity: "high",
-          status: "closed",
-          createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
-        },
-      ];
+      const alerts: Array<{ status?: string }> = [];
+      const incidents: unknown[] = [];
       res.json({
         assetId: asset.id,
         assetName: asset.name,
@@ -1364,6 +1175,9 @@ export function registerStandalonePlatformRoutes(app: Express): void {
           openAlerts: alerts.filter((a) => a.status === "open").length,
           totalIncidents: incidents.length,
         },
+        available: false,
+        reason:
+          "Asset-linked alert and incident history is not persisted. Review organization-level alerts and incidents instead.",
       });
     } catch (error) {
       log.error("Failed to get security history", { error: String(error) });
@@ -2282,7 +2096,9 @@ export function registerStandalonePlatformRoutes(app: Express): void {
             ? Math.round(
                 (agingReport.filter((v) => !v.slaBreached || v.status === "closed").length / agingReport.length) * 100,
               )
-            : 100,
+            : null,
+        available: agingReport.length > 0,
+        reason: agingReport.length > 0 ? null : "No vulnerability findings are available in the selected window.",
       };
 
       res.json({ agingReport, histogram, slaCompliance });

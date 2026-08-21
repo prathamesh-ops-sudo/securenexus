@@ -113,7 +113,7 @@ interface SourceBreakdown {
 interface PipelineStage {
   stage: string;
   count: number;
-  percentage: number;
+  percentage: number | null;
   status: string;
   errors: number;
 }
@@ -127,8 +127,8 @@ interface PipelineHealth {
     totalStored: number;
     totalDeduped: number;
     totalFailed: number;
-    deduplicationRate: number;
-    failureRate: number;
+    deduplicationRate: number | null;
+    failureRate: number | null;
   };
 }
 
@@ -145,9 +145,9 @@ interface BackpressureStatus {
 
 interface DataQuality {
   overallQuality: string;
-  parseSuccessRate: number;
-  normalizationCoverage: number;
-  unparsedPercent: number;
+  parseSuccessRate: number | null;
+  normalizationCoverage: number | null;
+  unparsedPercent: number | null;
   unparsedThreshold: number;
   thresholdExceeded: boolean;
   perSourceQuality: Array<{ source: string; eventCount: number; quality: string; fieldExtractionRate: number }>;
@@ -291,7 +291,7 @@ function PipelineHealthPanel() {
             variant="outline"
             className={`text-xs ${pipeline.overallStatus === "healthy" ? "text-emerald-400" : "text-amber-400"}`}
           >
-            {pipeline.overallStatus}
+            {pipeline.overallStatus === "unavailable" ? "Unavailable" : pipeline.overallStatus}
           </Badge>
         </div>
       </CardHeader>
@@ -311,7 +311,7 @@ function PipelineHealthPanel() {
                 <div className="text-[10px] font-medium capitalize">{stage.stage}</div>
                 <div className="text-xs font-bold tabular-nums">{stage.count}</div>
                 <div className={`text-[10px] ${stage.status === "ok" ? "text-emerald-400" : "text-amber-400"}`}>
-                  {stage.percentage}%
+                  {stage.percentage === null ? "Unavailable" : `${stage.percentage}%`}
                 </div>
                 {stage.errors > 0 && <div className="text-[10px] text-red-400">{stage.errors} err</div>}
               </div>
@@ -322,12 +322,16 @@ function PipelineHealthPanel() {
         <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
           <div className="text-center">
             <div className="text-muted-foreground">Dedup Rate</div>
-            <div className="font-bold">{pipeline.summary.deduplicationRate}%</div>
+            <div className="font-bold">
+              {pipeline.summary.deduplicationRate === null ? "Unavailable" : `${pipeline.summary.deduplicationRate}%`}
+            </div>
           </div>
           <div className="text-center">
             <div className="text-muted-foreground">Failure Rate</div>
-            <div className={`font-bold ${pipeline.summary.failureRate > 5 ? "text-red-400" : "text-emerald-400"}`}>
-              {pipeline.summary.failureRate}%
+            <div
+              className={`font-bold ${pipeline.summary.failureRate !== null && pipeline.summary.failureRate > 5 ? "text-red-400" : "text-muted-foreground"}`}
+            >
+              {pipeline.summary.failureRate === null ? "Unavailable" : `${pipeline.summary.failureRate}%`}
             </div>
           </div>
           <div className="text-center">
@@ -443,23 +447,25 @@ function DataQualityPanel() {
           <div className="p-2 rounded border border-border/40 text-center">
             <div className="text-[10px] text-muted-foreground">Parse Success</div>
             <div
-              className={`text-lg font-bold ${quality.parseSuccessRate >= 95 ? "text-emerald-400" : quality.parseSuccessRate >= 80 ? "text-amber-400" : "text-red-400"}`}
+              className={`text-lg font-bold ${quality.parseSuccessRate === null ? "text-muted-foreground" : quality.parseSuccessRate >= 95 ? "text-emerald-400" : quality.parseSuccessRate >= 80 ? "text-amber-400" : "text-red-400"}`}
             >
-              {quality.parseSuccessRate}%
+              {quality.parseSuccessRate === null ? "Unavailable" : `${quality.parseSuccessRate}%`}
             </div>
           </div>
           <div className="p-2 rounded border border-border/40 text-center">
             <div className="text-[10px] text-muted-foreground">Normalization</div>
             <div
-              className={`text-lg font-bold ${quality.normalizationCoverage >= 95 ? "text-emerald-400" : "text-amber-400"}`}
+              className={`text-lg font-bold ${quality.normalizationCoverage === null ? "text-muted-foreground" : quality.normalizationCoverage >= 95 ? "text-emerald-400" : "text-amber-400"}`}
             >
-              {quality.normalizationCoverage}%
+              {quality.normalizationCoverage === null ? "Unavailable" : `${quality.normalizationCoverage}%`}
             </div>
           </div>
           <div className="p-2 rounded border border-border/40 text-center">
             <div className="text-[10px] text-muted-foreground">Unparsed</div>
-            <div className={`text-lg font-bold ${quality.thresholdExceeded ? "text-red-400" : "text-emerald-400"}`}>
-              {quality.unparsedPercent}%
+            <div
+              className={`text-lg font-bold ${quality.unparsedPercent === null ? "text-muted-foreground" : quality.thresholdExceeded ? "text-red-400" : "text-emerald-400"}`}
+            >
+              {quality.unparsedPercent === null ? "Unavailable" : `${quality.unparsedPercent}%`}
             </div>
           </div>
         </div>

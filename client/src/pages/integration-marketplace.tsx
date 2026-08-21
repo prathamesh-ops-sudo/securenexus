@@ -481,9 +481,9 @@ function InstanceRow({
                   </div>
                   <div>
                     <div
-                      className={`text-lg font-bold ${qualityScore.reliabilityPercent >= 99 ? "text-emerald-400" : qualityScore.reliabilityPercent >= 95 ? "text-yellow-400" : "text-red-400"}`}
+                      className={`text-lg font-bold ${qualityScore.reliabilityPercent !== null && qualityScore.reliabilityPercent >= 99 ? "text-emerald-400" : qualityScore.reliabilityPercent !== null && qualityScore.reliabilityPercent >= 95 ? "text-yellow-400" : "text-muted-foreground"}`}
                     >
-                      {qualityScore.reliabilityPercent}%
+                      {qualityScore.reliabilityPercent !== null ? `${qualityScore.reliabilityPercent}%` : "Unavailable"}
                     </div>
                     <div className="text-[10px] text-muted-foreground">Reliability</div>
                   </div>

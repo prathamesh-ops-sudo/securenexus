@@ -320,174 +320,29 @@ export function registerModelGatewayRoutes(app: Express): void {
   // 33.6 Model Version Management
   // ═══════════════════════════════════════════════════════════════════════════
 
-  interface ModelVersion {
-    id: string;
-    modelId: string;
-    version: string;
-    status: "active" | "testing" | "deprecated" | "rollback";
-    activatedAt: string;
-    performance: {
-      avgLatencyMs: number;
-      errorRate: number;
-      avgCostPerRequest: number;
-      sampleSize: number;
-    };
-  }
-
-  const modelVersionStore: ModelVersion[] = [
-    {
-      id: "mv-1",
-      modelId: "amazon.nova-pro-v1:0",
-      version: "nova-pro-v1",
-      status: "active",
-      activatedAt: new Date(Date.now() - 7 * 86400000).toISOString(),
-      performance: { avgLatencyMs: 2800, errorRate: 1.2, avgCostPerRequest: 0.045, sampleSize: 1250 },
-    },
-    {
-      id: "mv-2",
-      modelId: "amazon.nova-pro-v1:0",
-      version: "nova-pro-v1-high-quality",
-      status: "active",
-      activatedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-      performance: { avgLatencyMs: 5200, errorRate: 0.8, avgCostPerRequest: 0.135, sampleSize: 430 },
-    },
-    {
-      id: "mv-3",
-      modelId: "amazon.nova-lite-v1:0",
-      version: "nova-lite-v1",
-      status: "active",
-      activatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-      performance: { avgLatencyMs: 800, errorRate: 0.5, avgCostPerRequest: 0.003, sampleSize: 8200 },
-    },
-    {
-      id: "mv-4",
-      modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
-      version: "v3.0-sonnet",
-      status: "deprecated",
-      activatedAt: new Date(Date.now() - 60 * 86400000).toISOString(),
-      performance: { avgLatencyMs: 3100, errorRate: 2.1, avgCostPerRequest: 0.048, sampleSize: 5600 },
-    },
-    {
-      id: "mv-5",
-      modelId: "mistral.mistral-large-2402-v1:0",
-      version: "v2402-large",
-      status: "active",
-      activatedAt: new Date(Date.now() - 14 * 86400000).toISOString(),
-      performance: { avgLatencyMs: 2200, errorRate: 1.8, avgCostPerRequest: 0.038, sampleSize: 920 },
-    },
-  ];
-
-  interface ABTest {
-    id: string;
-    name: string;
-    modelA: string;
-    modelB: string;
-    trafficSplitPercent: number;
-    status: "running" | "completed" | "cancelled";
-    startedAt: string;
-    completedAt: string | null;
-    results: {
-      modelA: { requests: number; avgLatencyMs: number; errorRate: number; avgCost: number };
-      modelB: { requests: number; avgLatencyMs: number; errorRate: number; avgCost: number };
-      winner: string | null;
-    } | null;
-  }
-
-  const abTestStore: ABTest[] = [
-    {
-      id: "ab-1",
-      name: "Sonnet 4 vs Sonnet 3 for Triage",
-      modelA: "amazon.nova-pro-v1:0",
-      modelB: "amazon.nova-lite-v1:0",
-      trafficSplitPercent: 50,
-      status: "completed",
-      startedAt: new Date(Date.now() - 14 * 86400000).toISOString(),
-      completedAt: new Date(Date.now() - 7 * 86400000).toISOString(),
-      results: {
-        modelA: { requests: 500, avgLatencyMs: 2800, errorRate: 1.2, avgCost: 0.045 },
-        modelB: { requests: 500, avgLatencyMs: 3100, errorRate: 2.1, avgCost: 0.048 },
-        winner: "amazon.nova-pro-v1:0",
-      },
-    },
-  ];
-
-  app.get("/api/model-gateway/versions", ...authChain, async (_req, res) => {
+  app.get("/api/model-gateway/versions", ...authChain, async (req, res) => {
     try {
+      const orgId = getOrgId(req);
+      const usage = await getOrgUsageSummary(orgId);
       res.json({
-        versions: modelVersionStore,
-        abTests: abTestStore,
+        versions: [],
+        configuredModelId: process.env.AI_MODEL_ID || null,
+        usage: usage
+          ? {
+              invocationCount: usage.invocationCount,
+              totalInputTokens: usage.totalInputTokens,
+              totalOutputTokens: usage.totalOutputTokens,
+              totalCostUsd: usage.totalCostUsd,
+            }
+          : null,
+        available: Boolean(process.env.AI_MODEL_ID),
+        reason: process.env.AI_MODEL_ID
+          ? null
+          : "No model is configured. Configure an AI model and usage accounting to report model telemetry.",
       });
     } catch (error) {
       log.error("Failed to fetch model versions", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch model versions" });
-    }
-  });
-
-  const rollbackVersionSchema = z.object({
-    modelId: z.string().min(1),
-    targetVersionId: z.string().min(1),
-  });
-
-  app.post("/api/model-gateway/versions/rollback", ...adminChain, async (req, res) => {
-    try {
-      const parsed = rollbackVersionSchema.safeParse(req.body);
-      if (!parsed.success)
-        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
-
-      const targetVersion = modelVersionStore.find((v) => v.id === parsed.data.targetVersionId);
-      if (!targetVersion) return res.status(404).json({ message: "Target version not found" });
-
-      // Deprecate current active version for the same model
-      for (const v of modelVersionStore) {
-        if (v.modelId === parsed.data.modelId && v.status === "active") {
-          v.status = "deprecated";
-        }
-      }
-      targetVersion.status = "active";
-      targetVersion.activatedAt = new Date().toISOString();
-
-      log.info("Model version rolled back", {
-        modelId: parsed.data.modelId,
-        targetVersionId: parsed.data.targetVersionId,
-      });
-      res.json(targetVersion);
-    } catch (error) {
-      log.error("Failed to rollback model version", { error: String(error) });
-      res.status(500).json({ message: "Failed to rollback model version" });
-    }
-  });
-
-  const createABTestSchema = z.object({
-    name: z.string().min(1).max(200),
-    modelA: z.string().min(1),
-    modelB: z.string().min(1),
-    trafficSplitPercent: z.number().min(1).max(99).default(50),
-  });
-
-  app.post("/api/model-gateway/ab-tests", ...adminChain, async (req, res) => {
-    try {
-      const parsed = createABTestSchema.safeParse(req.body);
-      if (!parsed.success)
-        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten().fieldErrors });
-
-      const test: ABTest = {
-        id: `ab-${Date.now()}`,
-        name: parsed.data.name,
-        modelA: parsed.data.modelA,
-        modelB: parsed.data.modelB,
-        trafficSplitPercent: parsed.data.trafficSplitPercent,
-        status: "running",
-        startedAt: new Date().toISOString(),
-        completedAt: null,
-        results: null,
-      };
-      abTestStore.push(test);
-
-      log.info("A/B test created", { testId: test.id, name: test.name });
-      res.json(test);
-    } catch (error) {
-      log.error("Failed to create A/B test", { error: String(error) });
-      res.status(500).json({ message: "Failed to create A/B test" });
     }
   });
 

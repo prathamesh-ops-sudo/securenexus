@@ -75,9 +75,9 @@ export function registerSecurityMetricsRoutes(app: Express): void {
           mttr: mttrMttd.mttrMinutes,
           mttd: mttrMttd.mttdMinutes,
           false_positive_rate: fpRate.rate,
-          sla_compliance: sla.overall,
           automated_response_rate: roi.automatedResponseRate,
         };
+        if (sla.overall !== null) orgMetrics.sla_compliance = sla.overall;
         const benchmarks = computePeerBenchmarks(orgMetrics);
 
         res.json({
@@ -177,12 +177,17 @@ export function registerSecurityMetricsRoutes(app: Express): void {
         const fpRate = await computeFalsePositiveRate(orgId, dayStart, now);
         const sla = await computeSlaCompliance(orgId);
 
-        await Promise.all([
+        const snapshotWrites = [
           persistKpiSnapshot(orgId, "mttr", metrics.mttrMinutes, "daily", dayStart, dayEnd, "minutes"),
           persistKpiSnapshot(orgId, "mttd", metrics.mttdMinutes, "daily", dayStart, dayEnd, "minutes"),
           persistKpiSnapshot(orgId, "false_positive_rate", fpRate.rate, "daily", dayStart, dayEnd, "percent"),
-          persistKpiSnapshot(orgId, "sla_compliance", sla.overall, "daily", dayStart, dayEnd, "percent"),
-        ]);
+        ];
+        if (sla.overall !== null) {
+          snapshotWrites.push(
+            persistKpiSnapshot(orgId, "sla_compliance", sla.overall, "daily", dayStart, dayEnd, "percent"),
+          );
+        }
+        await Promise.all(snapshotWrites);
 
         res.json({ success: true, message: "KPI snapshots saved" });
       } catch (err) {
@@ -448,9 +453,9 @@ export function registerSecurityMetricsRoutes(app: Express): void {
           mttr: metrics.mttrMinutes,
           mttd: metrics.mttdMinutes,
           false_positive_rate: fpRate.rate,
-          sla_compliance: sla.overall,
           automated_response_rate: roi.automatedResponseRate,
         };
+        if (sla.overall !== null) orgMetrics.sla_compliance = sla.overall;
 
         const benchmarks = computePeerBenchmarks(orgMetrics);
         res.json({ benchmarks, orgMetrics });

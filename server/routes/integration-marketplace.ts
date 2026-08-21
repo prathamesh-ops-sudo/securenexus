@@ -317,8 +317,11 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
           totalSyncs,
           successfulSyncs,
           failedSyncs,
-          reliabilityPercent: totalSyncs > 0 ? Math.round((successfulSyncs / totalSyncs) * 100) : 100,
-          uptimePercent: 99.9,
+          reliabilityPercent: totalSyncs > 0 ? Math.round((successfulSyncs / totalSyncs) * 100) : null,
+          uptimePercent: null,
+          available: totalSyncs > 0,
+          reason:
+            totalSyncs > 0 ? "Uptime events are not persisted." : "No sync history is available for this integration.",
           avgDurationMs: Math.round(avgDuration),
         });
       } catch (err) {
@@ -348,8 +351,13 @@ export function registerIntegrationMarketplaceRoutes(app: Express): void {
               totalSyncs,
               successfulSyncs,
               failedSyncs: history.filter((h) => h.status === "error").length,
-              reliabilityPercent: totalSyncs > 0 ? Math.round((successfulSyncs / totalSyncs) * 100) : 100,
-              uptimePercent: 99.9,
+              reliabilityPercent: totalSyncs > 0 ? Math.round((successfulSyncs / totalSyncs) * 100) : null,
+              uptimePercent: null,
+              available: totalSyncs > 0,
+              reason:
+                totalSyncs > 0
+                  ? "Uptime events are not persisted."
+                  : "No sync history is available for this integration.",
             };
           }),
         );

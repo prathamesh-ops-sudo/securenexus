@@ -120,7 +120,6 @@ export default function RoleDashboardPage() {
       <Tabs defaultValue="kpis">
         <TabsList>
           <TabsTrigger value="kpis">KPIs</TabsTrigger>
-          <TabsTrigger value="activity">Recent Activity</TabsTrigger>
           <TabsTrigger value="widgets">All Widgets</TabsTrigger>
         </TabsList>
 
@@ -149,31 +148,6 @@ export default function RoleDashboardPage() {
                 </Card>
               );
             })
-          )}
-        </TabsContent>
-
-        <TabsContent value="activity" className="space-y-2">
-          {activity.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center py-12 gap-2">
-                <Activity className="h-8 w-8 text-muted-foreground" />
-                <p className="text-muted-foreground">No recent activity</p>
-              </CardContent>
-            </Card>
-          ) : (
-            activity.map((a) => (
-              <Card key={a.id}>
-                <CardContent className="py-3 flex items-center gap-3">
-                  <Bell className="h-4 w-4 text-primary" />
-                  <div className="flex-1">
-                    <p className="text-sm">{a.action}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {a.user} &middot; {new Date(a.timestamp).toLocaleString()}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
           )}
         </TabsContent>
 

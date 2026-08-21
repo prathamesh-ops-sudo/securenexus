@@ -191,9 +191,9 @@ export default function ReportSchedulingPage() {
           </CardHeader>
           <CardContent>
             <div
-              className={`text-2xl font-bold ${(sla?.slaComplianceRate || 100) >= 95 ? "text-green-400" : (sla?.slaComplianceRate || 100) >= 80 ? "text-yellow-400" : "text-red-400"}`}
+              className={`text-2xl font-bold ${sla?.successRate === null || sla?.successRate === undefined ? "text-muted-foreground" : sla.successRate >= 95 ? "text-green-400" : sla.successRate >= 80 ? "text-yellow-400" : "text-red-400"}`}
             >
-              {sla?.slaComplianceRate || 100}%
+              {sla?.successRate === null || sla?.successRate === undefined ? "Unavailable" : `${sla.successRate}%`}
             </div>
             <p className="text-xs text-muted-foreground">{sla?.totalRuns || 0} total runs</p>
           </CardContent>

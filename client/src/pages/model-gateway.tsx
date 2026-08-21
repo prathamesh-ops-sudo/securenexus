@@ -265,25 +265,17 @@ interface ModelVersion {
   };
 }
 
-interface ABTest {
-  id: string;
-  name: string;
-  modelA: string;
-  modelB: string;
-  trafficSplitPercent: number;
-  status: "running" | "completed" | "cancelled";
-  startedAt: string;
-  completedAt: string | null;
-  results: {
-    modelA: { requests: number; avgLatencyMs: number; errorRate: number; avgCost: number };
-    modelB: { requests: number; avgLatencyMs: number; errorRate: number; avgCost: number };
-    winner: string | null;
-  } | null;
-}
-
 interface VersionsResponse {
   versions: ModelVersion[];
-  abTests: ABTest[];
+  configuredModelId: string | null;
+  usage: {
+    invocationCount: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalCostUsd: number;
+  } | null;
+  available: boolean;
+  reason: string | null;
 }
 
 function formatUptime(ms: number): string {
@@ -880,106 +872,57 @@ const VERSION_STATUS_CONFIG: Record<string, { color: string }> = {
   rollback: { color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
 };
 
-function ModelVersionsPanel({ versions, abTests }: { versions: ModelVersion[]; abTests: ABTest[] }) {
+function ModelVersionsPanel({ versions }: { versions: ModelVersion[] }) {
   return (
     <div className="space-y-4">
       <div>
         <p className="text-xs font-medium mb-2">Active Model Versions</p>
         <div className="space-y-2">
-          {versions.map((v) => {
-            const statusConfig = VERSION_STATUS_CONFIG[v.status] || VERSION_STATUS_CONFIG.deprecated;
-            return (
-              <div key={v.id} className="p-3 rounded-md border border-border/50 bg-card/50">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium font-mono">{v.modelId.split(".").pop()}</span>
-                    <Badge variant="outline" className="text-[9px]">
-                      {v.version}
+          {versions.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No configured model version telemetry is available. Configure a model and usage accounting to report
+              measured data.
+            </p>
+          ) : (
+            versions.map((v) => {
+              const statusConfig = VERSION_STATUS_CONFIG[v.status] || VERSION_STATUS_CONFIG.deprecated;
+              return (
+                <div key={v.id} className="p-3 rounded-md border border-border/50 bg-card/50">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium font-mono">{v.modelId.split(".").pop()}</span>
+                      <Badge variant="outline" className="text-[9px]">
+                        {v.version}
+                      </Badge>
+                    </div>
+                    <Badge variant="outline" className={`text-[9px] ${statusConfig.color}`}>
+                      {v.status}
                     </Badge>
                   </div>
-                  <Badge variant="outline" className={`text-[9px] ${statusConfig.color}`}>
-                    {v.status}
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-4 gap-2 text-center text-[10px]">
-                  <div>
-                    <p className="text-muted-foreground">Latency</p>
-                    <p className="font-medium">{v.performance.avgLatencyMs}ms</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Error Rate</p>
-                    <p className="font-medium">{v.performance.errorRate}%</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Cost/Req</p>
-                    <p className="font-medium">{formatCost(v.performance.avgCostPerRequest)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Samples</p>
-                    <p className="font-medium">{v.performance.sampleSize.toLocaleString()}</p>
+                  <div className="grid grid-cols-4 gap-2 text-center text-[10px]">
+                    <div>
+                      <p className="text-muted-foreground">Latency</p>
+                      <p className="font-medium">{v.performance.avgLatencyMs}ms</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Error Rate</p>
+                      <p className="font-medium">{v.performance.errorRate}%</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Cost/Req</p>
+                      <p className="font-medium">{formatCost(v.performance.avgCostPerRequest)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Samples</p>
+                      <p className="font-medium">{v.performance.sampleSize.toLocaleString()}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
-
-      {abTests.length > 0 && (
-        <div>
-          <p className="text-xs font-medium mb-2">A/B Tests</p>
-          <div className="space-y-2">
-            {abTests.map((test) => (
-              <div key={test.id} className="p-3 rounded-md border border-border/50 bg-card/50">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <FlaskConical className="h-3.5 w-3.5 text-primary" />
-                    <span className="text-xs font-medium">{test.name}</span>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className={`text-[9px] ${
-                      test.status === "running"
-                        ? "text-blue-400 bg-blue-500/10 border-blue-500/20"
-                        : test.status === "completed"
-                          ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
-                          : "text-muted-foreground"
-                    }`}
-                  >
-                    {test.status}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                  <span className="font-mono">{test.modelA.split(".").pop()}</span>
-                  <span>vs</span>
-                  <span className="font-mono">{test.modelB.split(".").pop()}</span>
-                  <span>&middot; {test.trafficSplitPercent}% split</span>
-                </div>
-                {test.results && (
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <div
-                      className={`p-2 rounded border text-center text-[10px] ${test.results.winner === test.modelA ? "border-emerald-500/30 bg-emerald-500/5" : "border-border/50"}`}
-                    >
-                      <p className="font-mono">{test.modelA.split(".").pop()}</p>
-                      <p>
-                        {test.results.modelA.avgLatencyMs}ms / {test.results.modelA.errorRate}% err
-                      </p>
-                    </div>
-                    <div
-                      className={`p-2 rounded border text-center text-[10px] ${test.results.winner === test.modelB ? "border-emerald-500/30 bg-emerald-500/5" : "border-border/50"}`}
-                    >
-                      <p className="font-mono">{test.modelB.split(".").pop()}</p>
-                      <p>
-                        {test.results.modelB.avgLatencyMs}ms / {test.results.modelB.errorRate}% err
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1248,8 +1191,8 @@ export default function ModelGatewayPage() {
             Health
           </TabsTrigger>
           <TabsTrigger value="versions" className="text-xs">
-            <FlaskConical className="h-3.5 w-3.5 mr-1" />
-            Versions
+            <Server className="h-3.5 w-3.5 mr-1" />
+            Configured Usage
           </TabsTrigger>
         </TabsList>
 
@@ -1528,23 +1471,19 @@ export default function ModelGatewayPage() {
           </Card>
         </TabsContent>
 
-        {/* ═══════════════════════════════════════════════════════════════════════
-          33.5 + 33.6 Model Versions & A/B Testing
-          ═══════════════════════════════════════════════════════════════════════ */}
+        {/* Configured model usage */}
         <TabsContent value="versions" className="mt-4">
           <Card className="glass-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
-                <FlaskConical className="h-4 w-4" />
-                Model Version Management
+                <Server className="h-4 w-4" />
+                Configured Model Usage
               </CardTitle>
-              <CardDescription>
-                Track model versions, run A/B tests, and rollback underperforming versions
-              </CardDescription>
+              <CardDescription>Report configured model identity and persisted usage accounting</CardDescription>
             </CardHeader>
             <CardContent>
               {versionsData ? (
-                <ModelVersionsPanel versions={versionsData.versions} abTests={versionsData.abTests} />
+                <ModelVersionsPanel versions={versionsData.versions} />
               ) : (
                 <Skeleton className="h-40 w-full" />
               )}

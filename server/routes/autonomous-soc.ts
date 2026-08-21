@@ -438,12 +438,10 @@ export function registerAutonomousSocRoutes(app: Express): void {
     async (_req, res) => {
       try {
         return res.json({
-          aiEngine: { status: "healthy", lastCheck: new Date().toISOString() },
-          ruleBasedFallback: { status: "standby", rulesLoaded: 45 },
-          humanQueue: { status: "empty", pendingCount: 0 },
-          budget: { status: "within_limits", usedPercent: 34, monthlyLimitUsd: 500 },
-          mode: "full_ai",
-          fallbackActive: false,
+          available: false,
+          status: "unavailable",
+          reason:
+            "AI health, fallback rule inventory, human queue, and budget utilization are not persisted as an operational status snapshot.",
         });
       } catch (error: unknown) {
         const err = error as Error;
