@@ -24,6 +24,14 @@ vi.mock("../rbac", () => ({
     next();
   },
   requireOrgId: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireMinRole: (minRole: string) => (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const role = (req as express.Request & { orgRole?: string }).orgRole;
+    const roleLevels: Record<string, number> = { read_only: 1, analyst: 2, admin: 3, owner: 4 };
+    if ((roleLevels[role || ""] || 0) < (roleLevels[minRole] || 0)) {
+      return res.status(403).json({ errors: [{ code: "FORBIDDEN", message: "Forbidden" }] });
+    }
+    next();
+  },
 }));
 
 vi.mock("../routes/shared", () => ({
