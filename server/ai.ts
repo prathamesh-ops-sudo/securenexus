@@ -760,6 +760,7 @@ export interface ThreatIntelContext {
   }>;
   summary: string;
   historicalContext?: RAGContext;
+  retrievalUnavailable?: boolean;
   suppressedSources?: string[];
   /** Items that were summarized rather than included in full (low-relevance). */
   droppedSummary?: string;
@@ -972,6 +973,7 @@ export async function buildThreatIntelContext(alerts: Alert[]): Promise<ThreatIn
         representativeAlert.orgId ?? undefined,
       );
       result.historicalContext = ragCtx;
+      result.retrievalUnavailable = ragCtx.retrievalStatus === "unavailable";
     } catch (ragErr) {
       log.warn("RAG context build failed (non-fatal)", { error: String(ragErr) });
     }

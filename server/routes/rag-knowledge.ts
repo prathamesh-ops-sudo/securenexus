@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { getOrgId, logger, strictLimiter, sendEnvelope } from "./shared";
+import { getOrgId, logger, strictLimiter, sendEnvelope, replyError } from "./shared";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import {
@@ -51,8 +51,15 @@ export function registerRagKnowledgeRoutes(app: Express): void {
         const cappedLimit = Math.min(Math.max(parseInt(String(limit), 10) || 5, 1), 20);
 
         if (cat === "incidents") {
-          const results = await searchSimilarIncidents(query.trim(), orgId, cappedLimit);
-          return sendEnvelope(res, { category: "incidents", results, count: results.length });
+          const retrieval = await searchSimilarIncidents(query.trim(), orgId, cappedLimit);
+          if (!retrieval.ok) {
+            return replyError(res, 503, [{ code: "RAG_RETRIEVAL_FAILED", message: retrieval.error }]);
+          }
+          return sendEnvelope(res, {
+            category: "incidents",
+            results: retrieval.results,
+            count: retrieval.results.length,
+          });
         }
 
         if (cat === "all") {
@@ -61,15 +68,25 @@ export function registerRagKnowledgeRoutes(app: Express): void {
             vectorSearch(query.trim(), "cve_advisories", cappedLimit, orgId),
             searchSimilarIncidents(query.trim(), orgId, cappedLimit),
           ]);
+          if (!techniques.ok || !cves.ok || !incidents.ok) {
+            const failedRetrieval = !techniques.ok ? techniques : !cves.ok ? cves : incidents;
+            if (failedRetrieval.ok) {
+              return replyError(res, 503, [{ code: "RAG_RETRIEVAL_FAILED", message: "RAG retrieval failed." }]);
+            }
+            return replyError(res, 503, [{ code: "RAG_RETRIEVAL_FAILED", message: failedRetrieval.error }]);
+          }
           return sendEnvelope(res, {
-            attackTechniques: { results: techniques, count: techniques.length },
-            cveAdvisories: { results: cves, count: cves.length },
-            incidents: { results: incidents, count: incidents.length },
+            attackTechniques: { results: techniques.results, count: techniques.results.length },
+            cveAdvisories: { results: cves.results, count: cves.results.length },
+            incidents: { results: incidents.results, count: incidents.results.length },
           });
         }
 
-        const results = await vectorSearch(query.trim(), cat, cappedLimit, orgId);
-        sendEnvelope(res, { category: cat, results, count: results.length });
+        const retrieval = await vectorSearch(query.trim(), cat, cappedLimit, orgId);
+        if (!retrieval.ok) {
+          return replyError(res, 503, [{ code: "RAG_RETRIEVAL_FAILED", message: retrieval.error }]);
+        }
+        sendEnvelope(res, { category: cat, results: retrieval.results, count: retrieval.results.length });
       } catch (err) {
         log.error("RAG search failed", { error: String(err) });
         res.status(500).json({ message: "Semantic search failed" });
@@ -95,6 +112,14 @@ export function registerRagKnowledgeRoutes(app: Express): void {
         }
 
         const ragCtx = await buildRAGContext(alertData, orgId);
+        if (ragCtx.retrievalStatus === "unavailable") {
+          return replyError(res, 503, [
+            {
+              code: "RAG_RETRIEVAL_FAILED",
+              message: ragCtx.retrievalError || "RAG retrieval is unavailable.",
+            },
+          ]);
+        }
         sendEnvelope(res, ragCtx);
       } catch (err) {
         log.error("RAG context preview failed", { error: String(err) });

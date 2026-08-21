@@ -77,12 +77,25 @@ export interface VectorSearchResult {
   similarity: number;
 }
 
+export interface RetrievalFailure {
+  ok: false;
+  code: "RETRIEVAL_FAILED";
+  error: string;
+}
+
+export interface RetrievalSuccess<T> {
+  ok: true;
+  results: T[];
+}
+
+export type RetrievalResult<T> = RetrievalSuccess<T> | RetrievalFailure;
+
 export async function vectorSearch(
   queryText: string,
   category: string,
   limit: number = 5,
   orgId?: string,
-): Promise<VectorSearchResult[]> {
+): Promise<RetrievalResult<VectorSearchResult>> {
   try {
     const { embedding } = await generateEmbedding(queryText);
     const vecStr = `[${embedding.join(",")}]`;
@@ -119,19 +132,26 @@ export async function vectorSearch(
 
     const result = await pool.query(query, params);
 
-    return result.rows.map((row) => ({
-      id: row.id,
-      category: row.category,
-      sourceType: row.source_type,
-      sourceId: row.source_id,
-      title: row.title,
-      content: row.content,
-      metadata: row.metadata || {},
-      similarity: parseFloat(row.similarity),
-    }));
+    return {
+      ok: true,
+      results: result.rows.map((row) => ({
+        id: row.id,
+        category: row.category,
+        sourceType: row.source_type,
+        sourceId: row.source_id,
+        title: row.title,
+        content: row.content,
+        metadata: row.metadata || {},
+        similarity: parseFloat(row.similarity),
+      })),
+    };
   } catch (err) {
     log.warn("Vector search failed", { error: String(err), category });
-    return [];
+    return {
+      ok: false,
+      code: "RETRIEVAL_FAILED",
+      error: "Semantic retrieval failed while generating embeddings or querying the knowledge base.",
+    };
   }
 }
 
@@ -151,7 +171,7 @@ export async function searchSimilarIncidents(
   queryText: string,
   orgId: string,
   limit: number = 5,
-): Promise<IncidentSearchResult[]> {
+): Promise<RetrievalResult<IncidentSearchResult>> {
   try {
     const { embedding } = await generateEmbedding(queryText);
     const vecStr = `[${embedding.join(",")}]`;
@@ -170,20 +190,27 @@ export async function searchSimilarIncidents(
       [vecStr, orgId, limit],
     );
 
-    return result.rows.map((row) => ({
-      id: row.id,
-      incidentId: row.incident_id,
-      title: row.title,
-      summary: row.summary,
-      severity: row.severity,
-      mitreTactics: row.mitre_tactics || [],
-      mitreTechniques: row.mitre_techniques || [],
-      iocs: row.iocs || [],
-      similarity: parseFloat(row.similarity),
-    }));
+    return {
+      ok: true,
+      results: result.rows.map((row) => ({
+        id: row.id,
+        incidentId: row.incident_id,
+        title: row.title,
+        summary: row.summary,
+        severity: row.severity,
+        mitreTactics: row.mitre_tactics || [],
+        mitreTechniques: row.mitre_techniques || [],
+        iocs: row.iocs || [],
+        similarity: parseFloat(row.similarity),
+      })),
+    };
   } catch (err) {
     log.warn("Incident search failed", { error: String(err) });
-    return [];
+    return {
+      ok: false,
+      code: "RETRIEVAL_FAILED",
+      error: "Similar-incident retrieval failed while generating embeddings or querying incident history.",
+    };
   }
 }
 
@@ -876,6 +903,8 @@ export interface RAGContext {
   relatedAttackTechniques: VectorSearchResult[];
   relevantCveAdvisories: VectorSearchResult[];
   ragSummary: string;
+  retrievalStatus: "available" | "unavailable";
+  retrievalError: string | null;
 }
 
 export async function buildRAGContext(
@@ -900,6 +929,8 @@ export async function buildRAGContext(
     relatedAttackTechniques: [],
     relevantCveAdvisories: [],
     ragSummary: "",
+    retrievalStatus: "available",
+    retrievalError: null,
   };
 
   try {
@@ -921,15 +952,28 @@ export async function buildRAGContext(
 
     // Execute all three searches in parallel
     const [incidents, techniques, cves] = await Promise.all([
-      orgId ? searchSimilarIncidents(queryParts, orgId, 5) : Promise.resolve([]),
+      orgId ? searchSimilarIncidents(queryParts, orgId, 5) : Promise.resolve({ ok: true as const, results: [] }),
       vectorSearch(queryParts, "attack_techniques", 10, orgId),
       vectorSearch(queryParts, "cve_advisories", 5, orgId),
     ]);
 
+    const failedRetrievals = [incidents, techniques, cves].filter(
+      (retrieval): retrieval is RetrievalFailure => !retrieval.ok,
+    );
+    if (failedRetrievals.length > 0) {
+      result.retrievalStatus = "unavailable";
+      result.retrievalError = failedRetrievals.map((retrieval) => retrieval.error).join(" ");
+      return result;
+    }
+
+    if (!incidents.ok || !techniques.ok || !cves.ok) {
+      return result;
+    }
+
     // Filter by minimum similarity threshold
-    result.similarPastIncidents = incidents.filter((i) => i.similarity > 0.3);
-    result.relatedAttackTechniques = techniques.filter((t) => t.similarity > 0.4);
-    result.relevantCveAdvisories = cves.filter((c) => c.similarity > 0.35);
+    result.similarPastIncidents = incidents.results.filter((i) => i.similarity > 0.3);
+    result.relatedAttackTechniques = techniques.results.filter((t) => t.similarity > 0.4);
+    result.relevantCveAdvisories = cves.results.filter((c) => c.similarity > 0.35);
 
     // Build summary
     const summaryParts: string[] = [];
@@ -956,13 +1000,19 @@ export async function buildRAGContext(
       result.ragSummary = summaryParts.join(". ") + ".";
     }
   } catch (err) {
-    log.warn("RAG context build failed (non-fatal)", { error: String(err) });
+    log.warn("RAG context build failed", { error: String(err) });
+    result.retrievalStatus = "unavailable";
+    result.retrievalError = "RAG context retrieval failed unexpectedly.";
   }
 
   return result;
 }
 
 export function formatRAGContextForPrompt(ctx: RAGContext): string {
+  if (ctx.retrievalStatus === "unavailable") {
+    return `RAG RETRIEVAL UNAVAILABLE: ${ctx.retrievalError || "The knowledge base could not be queried."} Do not infer that no relevant incidents, techniques, or advisories exist from this failed retrieval.`;
+  }
+
   if (
     ctx.similarPastIncidents.length === 0 &&
     ctx.relatedAttackTechniques.length === 0 &&
