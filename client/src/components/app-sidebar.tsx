@@ -354,7 +354,6 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
   const {
-    currentOrgId,
     memberships,
     currentRole,
     hasTenantContext,
