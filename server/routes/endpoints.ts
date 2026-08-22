@@ -5,14 +5,20 @@ import { getOrgId, logger, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { insertCspmAccountSchema, insertEndpointAssetSchema } from "@shared/schema";
 import { runCspmScan, runDspmScan, createDriftBaseline, runDriftDetection, remediationEngine } from "../cspm-scanner";
-import { calculateEndpointRisk, generateTelemetry, seedEndpointAssets } from "../endpoint-telemetry";
+import { calculateEndpointRisk } from "../endpoint-telemetry";
 import { calculatePostureScore } from "../posture-engine";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import * as endpointStorage from "../storage/endpoint-extras";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
-import { replyNotImplemented } from "../api-response";
+import { replyError, replyNotImplemented } from "../api-response";
 
 export function registerEndpointsRoutes(app: Express): void {
+  app.post("/api/endpoints/seed", isAuthenticated, (_req, res) => {
+    return replyError(res, 410, [
+      { code: "NOT_FOUND", message: "Endpoint inventory requires a real endpoint agent or telemetry source." },
+    ]);
+  });
+
   // ── CSPM Routes ──
   app.get(
     "/api/cspm/accounts",
@@ -1689,23 +1695,6 @@ export function registerEndpointsRoutes(app: Express): void {
   );
 
   app.post(
-    "/api/endpoints/seed",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    requireMinRole("analyst"),
-    async (req, res) => {
-      try {
-        const orgId = getOrgId(req);
-        const assets = await seedEndpointAssets(orgId);
-        res.status(201).json(assets);
-      } catch (error) {
-        res.status(500).json({ message: "Failed to seed endpoint assets" });
-      }
-    },
-  );
-
-  app.post(
     "/api/endpoints",
     isAuthenticated,
     resolveOrgContext,
@@ -1783,25 +1772,6 @@ export function registerEndpointsRoutes(app: Express): void {
         res.json(telemetry);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch endpoint telemetry" });
-      }
-    },
-  );
-
-  app.post(
-    "/api/endpoints/:id/telemetry",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    requireMinRole("analyst"),
-    async (req, res) => {
-      try {
-        const orgId = getOrgId(req);
-        const asset = await storage.getEndpointAsset(p(req.params.id));
-        if (!asset || asset.orgId !== orgId) return res.status(404).json({ message: "Endpoint asset not found" });
-        const telemetry = await generateTelemetry(orgId, p(req.params.id));
-        res.status(201).json(telemetry);
-      } catch (error) {
-        res.status(500).json({ message: "Failed to generate endpoint telemetry" });
       }
     },
   );

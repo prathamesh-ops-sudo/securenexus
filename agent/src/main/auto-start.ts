@@ -53,7 +53,7 @@ export class AutoStart {
 </dict>
 </plist>`;
         fs.writeFileSync(plistPath, plist);
-        execSync(`launchctl load -w "${plistPath}" 2>/dev/null || true`);
+        execSync(`launchctl load -w "${plistPath}"`);
         log.info("Auto-start enabled (macOS LaunchAgent)");
       } else {
         // Linux: create systemd user service
@@ -81,8 +81,8 @@ Environment=XAUTHORITY=${process.env.HOME}/.Xauthority
 WantedBy=default.target
 `;
         fs.writeFileSync(servicePath, service);
-        execSync("systemctl --user daemon-reload 2>/dev/null || true");
-        execSync("systemctl --user enable ats-sensor.service 2>/dev/null || true");
+        execSync("systemctl --user daemon-reload");
+        execSync("systemctl --user enable ats-sensor.service");
         log.info("Auto-start enabled (systemd user service)");
       }
     } catch (err) {
@@ -96,9 +96,7 @@ WantedBy=default.target
 
     try {
       if (platform === "win32") {
-        execSync(
-          'reg delete "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run" /v "ATSSensor" /f 2>nul || exit 0',
-        );
+        execSync('reg delete "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run" /v "ATSSensor" /f');
       } else if (platform === "darwin") {
         const plistPath = path.join(
           process.env.HOME || "/tmp",
@@ -106,12 +104,12 @@ WantedBy=default.target
           "LaunchAgents",
           "com.aricatech.ats-sensor.plist",
         );
-        execSync(`launchctl unload -w "${plistPath}" 2>/dev/null || true`);
+        execSync(`launchctl unload -w "${plistPath}"`);
         if (fs.existsSync(plistPath)) {
           fs.unlinkSync(plistPath);
         }
       } else {
-        execSync("systemctl --user disable ats-sensor.service 2>/dev/null || true");
+        execSync("systemctl --user disable ats-sensor.service");
         const servicePath = path.join(process.env.HOME || "/tmp", ".config", "systemd", "user", "ats-sensor.service");
         if (fs.existsSync(servicePath)) {
           fs.unlinkSync(servicePath);

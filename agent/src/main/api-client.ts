@@ -26,7 +26,7 @@ export class ApiClient {
 
   async testConnection(): Promise<boolean> {
     try {
-      const resp = await fetch(`${this.config.serverUrl}/api/native-sensors/${this.config.sensorId}/heartbeat`, {
+      const resp = await fetch(`${this.config.serverUrl}/api/agent/v1/sensors/${this.config.sensorId}/heartbeat`, {
         method: "POST",
         headers: this.getHeaders(),
         body: JSON.stringify({
@@ -75,7 +75,7 @@ export class ApiClient {
       const freeMem = os.freemem();
       const memoryUsage = ((totalMem - freeMem) / totalMem) * 100;
 
-      const resp = await fetch(`${this.config.serverUrl}/api/native-sensors/${this.config.sensorId}/heartbeat`, {
+      const resp = await fetch(`${this.config.serverUrl}/api/agent/v1/sensors/${this.config.sensorId}/heartbeat`, {
         method: "POST",
         headers: this.getHeaders(),
         body: JSON.stringify({
@@ -106,7 +106,7 @@ export class ApiClient {
     if (events.length === 0) return { accepted: 0, alertsCreated: 0 };
 
     try {
-      const resp = await fetch(`${this.config.serverUrl}/api/native-sensors/${this.config.sensorId}/events`, {
+      const resp = await fetch(`${this.config.serverUrl}/api/agent/v1/sensors/${this.config.sensorId}/events`, {
         method: "POST",
         headers: this.getHeaders(),
         body: JSON.stringify({ events }),

@@ -11,9 +11,7 @@ contextBridge.exposeInMainWorld("atsAgent", {
   // Configuration
   getConfig: () => ipcRenderer.invoke("get-config"),
   saveConfig: (config: Record<string, unknown>) => ipcRenderer.invoke("save-config", config),
-  testConnection: (config: { serverUrl: string; sensorId: string; apiKey: string }) =>
-    ipcRenderer.invoke("test-connection", config),
-  registerSensor: (data: { serverUrl: string; hostname: string; platform: string; orgToken: string }) =>
+  registerSensor: (data: { serverUrl: string; hostname: string; platform: string; enrollmentToken: string }) =>
     ipcRenderer.invoke("register-sensor", data),
 
   // Agent control

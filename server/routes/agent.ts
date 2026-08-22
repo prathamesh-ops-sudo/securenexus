@@ -7,6 +7,7 @@ import { db } from "../db";
 import {
   collectorEvents,
   collectorInstances,
+  collectorIngestBatches,
   nativeSensors,
   SENSOR_EVENT_TYPES,
   SENSOR_PLATFORMS,
@@ -20,7 +21,13 @@ import { expireTimedOutResponseActions } from "../response-action-timeouts";
 import { logger, getOrgId, hashApiKey } from "./shared";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
-import { agentAuth, collectorAgentAuth, createSensorAgentKey, type AgentContext } from "../agent-auth";
+import {
+  agentAuth,
+  collectorAgentAuth,
+  createCollectorAgentKey,
+  createSensorAgentKey,
+  type AgentContext,
+} from "../agent-auth";
 import {
   ERROR_CODES,
   reply,
@@ -43,6 +50,8 @@ const enrollmentTokenSchema = z.object({
 });
 
 const enrollSchema = z.object({
+  agentType: z.enum(["sensor", "collector"]).default("sensor"),
+  collectorId: z.string().uuid().optional(),
   enrollmentToken: z.string().trim().min(1).max(300),
   hostname: z.string().trim().min(1).max(200),
   platform: z.enum(SENSOR_PLATFORMS),
@@ -461,6 +470,7 @@ async function handleCollectorHeartbeat(req: Request, res: Response): Promise<vo
       metrics: parsed.data.metrics,
       lastHeartbeatAt: new Date(),
       status: "active",
+      lifecycleState: sql`CASE WHEN ${collectorInstances.lastDataAt} IS NULL THEN 'online-but-zero-telemetry' ELSE 'receiving-telemetry' END`,
       updatedAt: new Date(),
     })
     .where(
@@ -489,25 +499,60 @@ async function handleCollectorEvents(req: Request, res: Response): Promise<void>
     replyBadRequest(res, "Invalid collector event batch.", ERROR_CODES.VALIDATION_ERROR);
     return;
   }
-  const created = await db
-    .insert(collectorEvents)
-    .values(
-      parsed.data.events.map((event) => ({
-        collectorId: context.collectorId,
-        orgId: context.orgId,
-        eventType: event.eventType,
-        severity: event.severity,
-        source: event.source,
-        rawData: event.rawData,
-        tags: event.tags ?? [],
-      })),
-    )
-    .returning({ id: collectorEvents.id });
-  await db
-    .update(collectorInstances)
-    .set({ lastDataAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(collectorInstances.id, context.collectorId), eq(collectorInstances.orgId, context.orgId)));
-  reply(res, { accepted: created.length, duplicate: false });
+  const batchId = parsed.data.batchId ?? `collector-${Date.now()}-${randomUUID()}`;
+  const result = await db.transaction(async (tx) => {
+    const [claimed] = await tx
+      .insert(collectorIngestBatches)
+      .values({ orgId: context.orgId, collectorId: context.collectorId, batchId, accepted: 0 })
+      .onConflictDoNothing({
+        target: [collectorIngestBatches.collectorId, collectorIngestBatches.batchId],
+      })
+      .returning({ id: collectorIngestBatches.id });
+    if (!claimed) {
+      const [existingBatch] = await tx
+        .select({ accepted: collectorIngestBatches.accepted })
+        .from(collectorIngestBatches)
+        .where(
+          and(
+            eq(collectorIngestBatches.collectorId, context.collectorId),
+            eq(collectorIngestBatches.orgId, context.orgId),
+            eq(collectorIngestBatches.batchId, batchId),
+          ),
+        )
+        .limit(1);
+      return { accepted: existingBatch?.accepted ?? 0, duplicate: true };
+    }
+    const created = await tx
+      .insert(collectorEvents)
+      .values(
+        parsed.data.events.map((event) => ({
+          collectorId: context.collectorId,
+          orgId: context.orgId,
+          eventType: event.eventType,
+          severity: event.severity,
+          source: event.source,
+          rawData: event.rawData,
+          tags: event.tags ?? [],
+        })),
+      )
+      .returning({ id: collectorEvents.id });
+    await tx
+      .update(collectorInstances)
+      .set({ lastDataAt: new Date(), lifecycleState: "receiving-telemetry", updatedAt: new Date() })
+      .where(and(eq(collectorInstances.id, context.collectorId), eq(collectorInstances.orgId, context.orgId)));
+    await tx
+      .update(collectorIngestBatches)
+      .set({ accepted: created.length })
+      .where(
+        and(
+          eq(collectorIngestBatches.id, claimed.id),
+          eq(collectorIngestBatches.orgId, context.orgId),
+          eq(collectorIngestBatches.collectorId, context.collectorId),
+        ),
+      );
+    return { accepted: created.length, duplicate: false };
+  });
+  reply(res, { ...result, batchId });
 }
 
 async function handleEnrollment(req: Request, res: Response): Promise<void> {
@@ -555,6 +600,29 @@ async function handleEnrollment(req: Request, res: Response): Promise<void> {
         throw new EnrollmentError("Enrollment token has reached its maximum uses.", "ENROLLMENT_TOKEN_EXHAUSTED");
       }
 
+      if (parsed.data.agentType === "collector") {
+        if (!parsed.data.collectorId) {
+          throw new EnrollmentError("collectorId is required for collector enrollment.", "COLLECTOR_ID_REQUIRED");
+        }
+        const [collector] = await tx
+          .select({ id: collectorInstances.id, orgId: collectorInstances.orgId })
+          .from(collectorInstances)
+          .where(
+            and(
+              eq(collectorInstances.id, parsed.data.collectorId),
+              eq(collectorInstances.orgId, claimed.orgId),
+              isNull(collectorInstances.revokedAt),
+            ),
+          )
+          .limit(1);
+        if (!collector) throw new EnrollmentError("Collector not found for this organization.", "COLLECTOR_NOT_FOUND");
+        const { key, hash, prefix } = createCollectorAgentKey(collector.id);
+        await tx
+          .update(collectorInstances)
+          .set({ apiKey: hash, apiKeyPrefix: prefix, revokedAt: null, updatedAt: now })
+          .where(and(eq(collectorInstances.id, collector.id), eq(collectorInstances.orgId, claimed.orgId)));
+        return { collector, key, orgId: claimed.orgId, createdBy: claimed.createdBy };
+      }
       const sensorId = randomUUID();
       const { key, hash } = createSensorAgentKey(sensorId);
       const [sensor] = await tx
@@ -570,18 +638,35 @@ async function handleEnrollment(req: Request, res: Response): Promise<void> {
           status: "provisioning",
         })
         .returning({ id: nativeSensors.id, orgId: nativeSensors.orgId, hostname: nativeSensors.hostname });
+      if (!sensor) throw new EnrollmentError("Failed to create sensor.", "ENROLLMENT_FAILED");
       return { sensor, key, orgId: claimed.orgId, createdBy: claimed.createdBy };
     });
 
-    await createAuditLog({
-      orgId: result.orgId,
-      userId: result.createdBy,
-      action: "sensor_enrolled",
-      resourceType: "native_sensor",
-      resourceId: result.sensor.id,
-      details: { hostname: result.sensor.hostname, platform: parsed.data.platform },
-    });
-    reply(res, { sensorId: result.sensor.id, apiKey: result.key }, {}, 201);
+    if ("collector" in result) {
+      if (!result.collector) {
+        replyError(res, 400, [{ code: "ENROLLMENT_FAILED", message: "Failed to enroll collector." }]);
+        return;
+      }
+      await createAuditLog({
+        orgId: result.orgId,
+        userId: result.createdBy,
+        action: "collector_enrolled",
+        resourceType: "collector_instance",
+        resourceId: result.collector.id,
+        details: { platform: parsed.data.platform },
+      });
+      reply(res, { collectorId: result.collector.id, apiKey: result.key }, {}, 201);
+    } else {
+      await createAuditLog({
+        orgId: result.orgId,
+        userId: result.createdBy,
+        action: "sensor_enrolled",
+        resourceType: "native_sensor",
+        resourceId: result.sensor.id,
+        details: { hostname: result.sensor.hostname, platform: parsed.data.platform },
+      });
+      reply(res, { sensorId: result.sensor.id, apiKey: result.key }, {}, 201);
+    }
   } catch (error) {
     if (error instanceof EnrollmentError) {
       replyError(res, 400, [{ code: error.code, message: error.message }]);

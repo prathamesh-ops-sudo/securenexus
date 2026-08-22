@@ -139,7 +139,9 @@ function EndpointDashboardTab() {
         <CardContent className="flex flex-col items-center justify-center py-12 text-center">
           <Monitor className="h-10 w-10 text-muted-foreground mb-3" />
           <p className="text-sm font-medium text-muted-foreground">No endpoint data available</p>
-          <p className="text-xs text-muted-foreground mt-1">Seed endpoints from the Inventory tab to see dashboard</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Connect a real endpoint agent or telemetry source to populate this dashboard.
+          </p>
         </CardContent>
       </Card>
     );
@@ -1330,22 +1332,6 @@ export default function EndpointTelemetryPage() {
     queryKey: ["/api/endpoints"],
   });
 
-  const seedMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest("POST", "/api/endpoints/seed");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/endpoints"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/endpoints/dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/endpoints/groups"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/endpoints/sensor-coverage"] });
-      toast({ title: "Endpoints seeded", description: "Demo endpoint data has been created." });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Seeding failed", description: err.message, variant: "destructive" });
-    },
-  });
-
   const calcRiskMutation = useMutation({
     mutationFn: async (id: string) => {
       await apiRequest("POST", `/api/endpoints/${id}/risk`);
@@ -1416,17 +1402,9 @@ export default function EndpointTelemetryPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            onClick={() => {
-              seedMutation.reset();
-              seedMutation.mutate();
-            }}
-            disabled={seedMutation.isPending}
-            data-testid="button-seed-endpoints"
-          >
-            <Plus className={`h-4 w-4 mr-2 ${seedMutation.isPending ? "animate-spin" : ""}`} />
-            {seedMutation.isPending ? "Seeding..." : "Seed Endpoints"}
-          </Button>
+          <div className="text-xs text-muted-foreground max-w-xs">
+            Endpoint inventory and telemetry appear only after a real endpoint agent or telemetry source reports data.
+          </div>
           <Button
             variant="outline"
             onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/endpoints"] })}
@@ -1481,19 +1459,9 @@ export default function EndpointTelemetryPage() {
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <Monitor className="h-10 w-10 text-muted-foreground mb-3" />
                 <p className="text-sm font-medium text-muted-foreground">No endpoints discovered</p>
-                <p className="text-xs text-muted-foreground mt-1">Seed demo endpoint data to get started</p>
-                <Button
-                  className="mt-4"
-                  onClick={() => {
-                    seedMutation.reset();
-                    seedMutation.mutate();
-                  }}
-                  disabled={seedMutation.isPending}
-                  data-testid="button-seed-endpoints-empty"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Seed Endpoints
-                </Button>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Connect a real endpoint agent or telemetry source to populate this inventory.
+                </p>
               </CardContent>
             </Card>
           ) : (

@@ -233,32 +233,20 @@ function registerIpcHandlers(): void {
     }
   });
 
-  // Setup wizard: test connection to server
-  ipcMain.handle("test-connection", async (_event, config: { serverUrl: string; sensorId: string; apiKey: string }) => {
-    try {
-      const client = new ApiClient(config as AgentConfig);
-      const connected = await client.testConnection();
-      return { success: connected };
-    } catch (err) {
-      return { success: false, error: String(err) };
-    }
-  });
-
-  // Setup wizard: register sensor with server
+  // Setup wizard: exchange the one-time enrollment token for a sensor credential.
   ipcMain.handle(
     "register-sensor",
-    async (_event, data: { serverUrl: string; hostname: string; platform: string; orgToken: string }) => {
+    async (_event, data: { serverUrl: string; hostname: string; platform: string; enrollmentToken: string }) => {
       try {
-        const response = await fetch(`${data.serverUrl}/api/native-sensors/register`, {
+        const response = await fetch(`${data.serverUrl.replace(/\/$/, "")}/api/agent/v1/enroll`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${data.orgToken}`,
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            enrollmentToken: data.enrollmentToken,
             hostname: data.hostname,
             platform: data.platform,
             osVersion: `${process.platform} ${process.arch}`,
+            agentVersion: app.getVersion(),
           }),
           signal: AbortSignal.timeout(15000),
         });
@@ -268,11 +256,11 @@ function registerIpcHandlers(): void {
           return { success: false, error: `Server returned ${response.status}: ${errBody}` };
         }
 
-        const result = await response.json();
+        const result = (await response.json()) as { data?: { sensorId?: string; apiKey?: string } };
         return {
           success: true,
-          sensorId: result.sensor?.id,
-          apiKey: result.apiKey,
+          sensorId: result.data?.sensorId,
+          apiKey: result.data?.apiKey,
         };
       } catch (err) {
         return { success: false, error: String(err) };

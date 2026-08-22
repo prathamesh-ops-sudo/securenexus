@@ -1603,7 +1603,6 @@ function addEndpointMgmtEndpoints(paths: Record<string, PathItemObject>): void {
       parameters: [idParam],
     }),
   };
-  paths["/api/endpoints/seed"] = { post: op("Seed sample endpoints", "seedEndpoints", ["Endpoint Management"]) };
 }
 
 function addOrgEndpoints(paths: Record<string, PathItemObject>): void {

@@ -2,12 +2,10 @@
 import type { Express } from "express";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
-import { logger, getOrgId, generateApiKey, hashApiKey } from "./shared";
+import { logger, getOrgId } from "./shared";
 import { storage } from "../storage";
 import { db } from "../db";
-import { sql, eq, and, desc, ilike, or, count } from "drizzle-orm";
-import { randomBytes, timingSafeEqual } from "crypto";
-import type { Request, Response, NextFunction } from "express";
+import { sql, eq, and, desc, ilike, or } from "drizzle-orm";
 import {
   nativeSensors,
   sensorEvents,
@@ -20,27 +18,13 @@ import {
   MITRE_TACTICS,
 } from "../../shared/schema";
 import type { DetectionRule } from "../../shared/schema";
-import { processEventBatch } from "../native-detections";
 import { seedBuiltinRules } from "../native-detections";
-import { expireTimedOutResponseActions } from "../response-action-timeouts";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { randomBytes } from "crypto";
 import { getSensorLifecycleState } from "../native-sensor-lifecycle";
 
 const log = logger.child("native-sensors");
-
-/** Timing-safe comparison of two hex-encoded hashes */
-function safeHashEqual(a: string | null | undefined, b: string): boolean {
-  if (!a) return false;
-  try {
-    const bufA = Buffer.from(a, "hex");
-    const bufB = Buffer.from(b, "hex");
-    if (bufA.length !== bufB.length) return false;
-    return timingSafeEqual(bufA, bufB);
-  } catch {
-    return false;
-  }
-}
 
 function detectionRuleSnapshot(rule: DetectionRule): Record<string, unknown> {
   return {
@@ -68,36 +52,6 @@ function publicSensor(sensor: typeof nativeSensors.$inferSelect): Omit<
 } {
   const { apiKey: _apiKey, registrationToken: _registrationToken, ...safeSensor } = sensor;
   return { ...safeSensor, lifecycleState: getSensorLifecycleState(sensor) };
-}
-
-/**
- * Middleware: authenticate a sensor agent via API key (Bearer token or X-API-Key header).
- * On success sets req.sensorId and req.sensorOrgId on the request for downstream handlers.
- */
-async function sensorApiKeyAuth(req: Request, res: Response, next: NextFunction) {
-  const sensorId = String(req.params.id);
-  const bearerToken =
-    req.headers["x-api-key"] ||
-    (typeof req.headers.authorization === "string" ? req.headers.authorization.replace("Bearer ", "") : undefined);
-  if (!bearerToken || typeof bearerToken !== "string") {
-    return res.status(401).json({ message: "Missing sensor API key" });
-  }
-  const keyHash = hashApiKey(bearerToken);
-
-  const [sensor] = await db
-    .select({ id: nativeSensors.id, orgId: nativeSensors.orgId, apiKey: nativeSensors.apiKey })
-    .from(nativeSensors)
-    .where(eq(nativeSensors.id, sensorId))
-    .limit(1);
-
-  if (!sensor || !safeHashEqual(sensor.apiKey, keyHash)) {
-    return res.status(401).json({ message: "Invalid sensor credentials" });
-  }
-
-  // Attach sensor context to request for downstream handlers
-  (req as any).sensorId = sensor.id;
-  (req as any).sensorOrgId = sensor.orgId;
-  next();
 }
 
 export function registerNativeSensorRoutes(app: Express): void {
@@ -216,211 +170,6 @@ export function registerNativeSensorRoutes(app: Express): void {
     }
   });
 
-  // Register a new sensor with a one-time token
-  app.post(
-    "/api/native-sensors/register",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    requireMinRole("admin"),
-    async (req, res) => {
-      try {
-        const orgId = getOrgId(req);
-        const { hostname, platform, osVersion, tags } = req.body;
-
-        if (!hostname || typeof hostname !== "string") {
-          return res.status(400).json({ message: "hostname is required" });
-        }
-        if (!platform || !SENSOR_PLATFORMS.includes(platform as any)) {
-          return res.status(400).json({ message: `platform must be one of: ${SENSOR_PLATFORMS.join(", ")}` });
-        }
-
-        // Generate one-time registration token and API key
-        const registrationToken = `snx-reg-${randomBytes(24).toString("hex")}`;
-        const { hash: apiKeyHash } = generateApiKey();
-
-        const [sensor] = await db
-          .insert(nativeSensors)
-          .values({
-            orgId,
-            hostname,
-            platform,
-            osVersion: osVersion || null,
-            registrationToken,
-            apiKey: apiKeyHash, // Store hash only
-            status: "provisioning",
-            tags: tags || [],
-          })
-          .returning();
-
-        // Seed built-in rules if not already done
-        await seedBuiltinRules();
-
-        log.info(`Sensor registered: ${hostname} (${platform})`, { sensorId: sensor.id, orgId });
-
-        res.status(201).json({
-          sensor: publicSensor(sensor),
-          message: "Use an enrollment token to provision a headless sensor agent.",
-        });
-      } catch (error) {
-        log.error("Failed to register sensor", { error: String(error) });
-        res.status(500).json({ message: "Failed to register sensor" });
-      }
-    },
-  );
-
-  // Heartbeat — agent calls home every 30s (supports both session auth and sensor API key auth)
-  app.post(
-    "/api/native-sensors-legacy/:id/heartbeat",
-    resolveOrgContext,
-    requireOrgId,
-    requireMinRole("admin"),
-    sensorApiKeyAuth,
-    async (req, res) => {
-      try {
-        const orgId = (req as any).sensorOrgId;
-        const sensorId = String(req.params.id);
-
-        const [sensor] = await db
-          .select()
-          .from(nativeSensors)
-          .where(and(eq(nativeSensors.id, sensorId), eq(nativeSensors.orgId, orgId)))
-          .limit(1);
-
-        if (!sensor) {
-          return res.status(404).json({ message: "Sensor not found" });
-        }
-
-        const { cpuUsage, memoryUsage, diskUsage, agentVersion } = req.body;
-
-        await db
-          .update(nativeSensors)
-          .set({
-            lastHeartbeat: new Date(),
-            status: "online",
-            cpuUsage: typeof cpuUsage === "number" ? cpuUsage : sensor.cpuUsage,
-            memoryUsage: typeof memoryUsage === "number" ? memoryUsage : sensor.memoryUsage,
-            diskUsage: typeof diskUsage === "number" ? diskUsage : sensor.diskUsage,
-            agentVersion: agentVersion || sensor.agentVersion,
-            updatedAt: new Date(),
-          })
-          .where(eq(nativeSensors.id, sensorId));
-
-        res.json({ status: "ok", serverTime: new Date().toISOString() });
-      } catch (error) {
-        log.error("Heartbeat failed", { error: String(error) });
-        res.status(500).json({ message: "Heartbeat failed" });
-      }
-    },
-  );
-
-  // Bulk event ingestion — up to 500 events per call (supports both session auth and sensor API key auth)
-  app.post(
-    "/api/native-sensors-legacy/:id/events",
-    resolveOrgContext,
-    requireOrgId,
-    requireMinRole("admin"),
-    sensorApiKeyAuth,
-    async (req, res) => {
-      try {
-        const orgId = (req as any).sensorOrgId;
-        const sensorId = String(req.params.id);
-
-        const [sensor] = await db
-          .select()
-          .from(nativeSensors)
-          .where(and(eq(nativeSensors.id, sensorId), eq(nativeSensors.orgId, orgId)))
-          .limit(1);
-
-        if (!sensor) {
-          return res.status(404).json({ message: "Sensor not found" });
-        }
-
-        const { events } = req.body;
-        if (!Array.isArray(events) || events.length === 0) {
-          return res.status(400).json({ message: "events array is required and must not be empty" });
-        }
-        if (events.length > 500) {
-          return res.status(400).json({ message: "Maximum 500 events per call" });
-        }
-
-        // Validate and insert events
-        const validEvents = events.filter((e: any) => {
-          return e.eventType && SENSOR_EVENT_TYPES.includes(e.eventType);
-        });
-
-        if (validEvents.length === 0) {
-          return res
-            .status(400)
-            .json({ message: `No valid events. eventType must be one of: ${SENSOR_EVENT_TYPES.join(", ")}` });
-        }
-
-        const eventRows = await db
-          .insert(sensorEvents)
-          .values(
-            validEvents.map((e: any) => ({
-              orgId,
-              sensorId,
-              eventType: e.eventType,
-              timestamp: e.timestamp ? new Date(e.timestamp) : new Date(),
-              processName: e.processName || null,
-              processPath: e.processPath || null,
-              processArgs: e.processArgs || null,
-              parentProcess: e.parentProcess || null,
-              pid: typeof e.pid === "number" ? e.pid : null,
-              ppid: typeof e.ppid === "number" ? e.ppid : null,
-              userName: e.userName || null,
-              srcIp: e.srcIp || null,
-              dstIp: e.dstIp || null,
-              srcPort: typeof e.srcPort === "number" ? e.srcPort : null,
-              dstPort: typeof e.dstPort === "number" ? e.dstPort : null,
-              protocol: e.protocol || null,
-              bytesIn: typeof e.bytesIn === "number" ? e.bytesIn : null,
-              bytesOut: typeof e.bytesOut === "number" ? e.bytesOut : null,
-              filePath: e.filePath || null,
-              fileAction: e.fileAction || null,
-              fileHash: e.fileHash || null,
-              fileSize: typeof e.fileSize === "number" ? e.fileSize : null,
-              authAction: e.authAction || null,
-              authResult: e.authResult || null,
-              authMethod: e.authMethod || null,
-              dnsQuery: e.dnsQuery || null,
-              dnsType: e.dnsType || null,
-              dnsResponse: e.dnsResponse || null,
-              logSource: e.logSource || null,
-              logLevel: e.logLevel || null,
-              logMessage: e.logMessage || null,
-              rawData: e.rawData || null,
-            })),
-          )
-          .returning();
-
-        // Run detection engine on the batch
-        const detectionResult = await processEventBatch(eventRows, orgId, sensorId);
-
-        // Update sensor stats
-        await db
-          .update(nativeSensors)
-          .set({
-            eventsIngested: sql`${nativeSensors.eventsIngested} + ${eventRows.length}`,
-            alertsGenerated: sql`${nativeSensors.alertsGenerated} + ${detectionResult.alertsCreated}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(nativeSensors.id, sensorId));
-
-        res.json({
-          accepted: eventRows.length,
-          rejected: events.length - validEvents.length,
-          alertsCreated: detectionResult.alertsCreated,
-          eventsMatched: detectionResult.eventsMatched,
-        });
-      } catch (error) {
-        log.error("Event ingestion failed", { error: String(error) });
-        res.status(500).json({ message: "Event ingestion failed" });
-      }
-    },
-  );
-
   // Delete / deregister a sensor
   app.delete(
     "/api/native-sensors/:id",
@@ -463,10 +212,13 @@ export function registerNativeSensorRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const { platform, sensorId, apiKey } = req.body;
+        const { platform, enrollmentToken } = req.body;
 
         if (!platform || !SENSOR_PLATFORMS.includes(platform as any)) {
           return res.status(400).json({ message: `platform must be one of: ${SENSOR_PLATFORMS.join(", ")}` });
+        }
+        if (typeof enrollmentToken !== "string" || enrollmentToken.length < 1) {
+          return res.status(400).json({ message: "enrollmentToken is required" });
         }
 
         const serverUrl = `${req.protocol}://${req.get("host")}`;
@@ -474,30 +226,29 @@ export function registerNativeSensorRoutes(app: Express): void {
 
         switch (platform) {
           case "linux":
-            command = `curl -fsSL ${serverUrl}/api/native-sensors/agent/install.sh | SENSOR_ID="${sensorId}" API_KEY="${apiKey}" SERVER_URL="${serverUrl}" bash`;
+            command = `curl -fsSL ${serverUrl}/api/native-sensors/agent/install.sh | SERVER_URL="${serverUrl}" ENROLLMENT_TOKEN="${enrollmentToken}" bash`;
             break;
           case "windows":
-            command = `powershell -Command "& { $env:SENSOR_ID='${sensorId}'; $env:API_KEY='${apiKey}'; $env:SERVER_URL='${serverUrl}'; iwr -useb ${serverUrl}/api/native-sensors/agent/install.ps1 | iex }"`;
+            command = `powershell -Command "& { $env:ENROLLMENT_TOKEN='${enrollmentToken}'; $env:SERVER_URL='${serverUrl}'; iwr -useb ${serverUrl}/api/native-sensors/agent/install.ps1 | iex }"`;
             break;
           case "macos":
-            command = `curl -fsSL ${serverUrl}/api/native-sensors/agent/install.sh | SENSOR_ID="${sensorId}" API_KEY="${apiKey}" SERVER_URL="${serverUrl}" bash`;
+            command = `curl -fsSL ${serverUrl}/api/native-sensors/agent/install.sh | SERVER_URL="${serverUrl}" ENROLLMENT_TOKEN="${enrollmentToken}" bash`;
             break;
           case "docker":
-            command = `docker run -d --name ats-sensor -e SENSOR_ID="${sensorId}" -e API_KEY="${apiKey}" -e SERVER_URL="${serverUrl}" --pid=host --net=host --privileged aricatech/ats-sensor:latest`;
+            command = `docker run -d --name ats-sensor -e ENROLLMENT_TOKEN="${enrollmentToken}" -e SERVER_URL="${serverUrl}" --pid=host --net=host --privileged aricatech/ats-sensor:latest`;
             break;
           case "ios":
             command = `# ATS Sensor for iOS — requires MDM enrollment or TestFlight distribution
 # 1. Install the ATS Sensor app from your MDM portal or TestFlight
 # 2. Open the app and enter the following configuration:
 #    Server URL: ${serverUrl}
-#    Sensor ID:  ${sensorId}
-#    API Key:    ${apiKey}
+#    Enrollment token: ${enrollmentToken}
+#    Server URL: ${serverUrl}
 #
 # Or configure via MDM managed app config (AppConfig):
 # <dict>
 #   <key>ServerURL</key><string>${serverUrl}</string>
-#   <key>SensorID</key><string>${sensorId}</string>
-#   <key>APIKey</key><string>${apiKey}</string>
+#   <key>EnrollmentToken</key><string>${enrollmentToken}</string>
 # </dict>`;
             break;
           case "android":
@@ -508,14 +259,14 @@ export function registerNativeSensorRoutes(app: Express): void {
 # 2. Configure via intent or managed config:
 #    adb shell am start -n com.aricatech.sensor/.MainActivity \\
 #      --es server_url "${serverUrl}" \\
-#      --es sensor_id "${sensorId}" \\
-#      --es api_key "${apiKey}"
+#      --es enrollment_token "${enrollmentToken}" \\
+#      --es server_url "${serverUrl}"
 #
 # Or configure via Android Enterprise managed configurations:
 # {
 #   "server_url": "${serverUrl}",
-#   "sensor_id": "${sensorId}",
-#   "api_key": "${apiKey}"
+#   "enrollment_token": "${enrollmentToken}",
+#   "server_url": "${serverUrl}"
 # }`;
             break;
           case "kubernetes":
@@ -540,10 +291,8 @@ spec:
       - name: sensor
         image: aricatech/ats-sensor:latest
         env:
-        - name: SENSOR_ID
-          value: "${sensorId}"
-        - name: API_KEY
-          value: "${apiKey}"
+        - name: ENROLLMENT_TOKEN
+          value: "${enrollmentToken}"
         - name: SERVER_URL
           value: "${serverUrl}"
         securityContext:
@@ -593,161 +342,6 @@ EOF`;
     } catch (error) {
       log.error("Failed to serve install.ps1", { error: String(error) });
       res.status(500).send("Write-Error 'Install script not available. Contact your administrator.'\nexit 1\n");
-    }
-  });
-
-  // ==========================================================================
-  // AGENT ACTION POLLING & RESULT REPORTING
-  // ==========================================================================
-
-  // GET /api/native-sensors/:id/pending-actions — agents poll for approved actions
-  app.get("/api/native-sensors-legacy/:id/pending-actions", async (req, res) => {
-    try {
-      const sensorId = String(req.params.id);
-
-      // Authenticate sensor via API key (Bearer token or X-API-Key header)
-      const bearerToken =
-        req.headers["x-api-key"] ||
-        (typeof req.headers.authorization === "string" ? req.headers.authorization.replace("Bearer ", "") : undefined);
-      if (!bearerToken || typeof bearerToken !== "string") {
-        return res.status(401).json({ message: "Missing sensor API key", actions: [] });
-      }
-      const keyHash = hashApiKey(bearerToken);
-
-      // Verify sensor exists AND API key matches
-      const [sensor] = await db
-        .select({ id: nativeSensors.id, orgId: nativeSensors.orgId, apiKey: nativeSensors.apiKey })
-        .from(nativeSensors)
-        .where(eq(nativeSensors.id, sensorId))
-        .limit(1);
-
-      if (!sensor || !safeHashEqual(sensor.apiKey, keyHash)) {
-        return res.status(401).json({ message: "Invalid sensor credentials", actions: [] });
-      }
-
-      await expireTimedOutResponseActions(sensor.orgId);
-
-      // Atomically claim and return approved actions (prevents double-dispatch on concurrent polls)
-      const claimedActions = await db.execute(sql`
-        UPDATE agent_response_actions
-        SET status = 'executing', dispatched_at = NOW(), updated_at = NOW()
-        WHERE id IN (
-          SELECT id FROM agent_response_actions
-          WHERE sensor_id = ${sensorId}
-            AND org_id = ${sensor.orgId}
-            AND status = 'approved'
-            AND dispatched_at IS NULL
-          ORDER BY created_at ASC
-          LIMIT 10
-          FOR UPDATE SKIP LOCKED
-        )
-        RETURNING id, action_type, status, target_pid, target_process_name,
-                  target_ip, target_file_path, target_user_name, target_domain,
-                  target_service_name, script_content, script_type, parameters,
-                  reason, timeout_seconds, created_at
-      `);
-
-      const actions = ((claimedActions as any).rows || []).map((row: any) => ({
-        id: row.id,
-        actionType: row.action_type,
-        status: row.status,
-        targetPid: row.target_pid,
-        targetProcessName: row.target_process_name,
-        targetIp: row.target_ip,
-        targetFilePath: row.target_file_path,
-        targetUserName: row.target_user_name,
-        targetDomain: row.target_domain,
-        targetServiceName: row.target_service_name,
-        scriptContent: row.script_content,
-        scriptType: row.script_type,
-        parameters: row.parameters,
-        reason: row.reason,
-        timeoutSeconds: row.timeout_seconds,
-        createdAt: row.created_at,
-      }));
-
-      res.json({ actions, count: actions.length });
-    } catch (error) {
-      log.error("Failed to fetch pending actions", { error: String(error) });
-      res.status(500).json({ message: "Failed to fetch pending actions", actions: [] });
-    }
-  });
-
-  // POST /api/native-sensors/:id/action-result/:actionId — agents report action results
-  app.post("/api/native-sensors-legacy/:id/action-result/:actionId", async (req, res) => {
-    try {
-      const sensorId = String(req.params.id);
-      const actionId = String(req.params.actionId);
-      const { status, resultOutput, resultError } = req.body;
-
-      // Authenticate sensor via API key
-      const bearerToken =
-        req.headers["x-api-key"] ||
-        (typeof req.headers.authorization === "string" ? req.headers.authorization.replace("Bearer ", "") : undefined);
-      if (!bearerToken || typeof bearerToken !== "string") {
-        return res.status(401).json({ message: "Missing sensor API key" });
-      }
-      const keyHash = hashApiKey(bearerToken);
-
-      // Verify sensor exists AND API key matches
-      const [sensorCheck] = await db
-        .select({ id: nativeSensors.id, orgId: nativeSensors.orgId, apiKey: nativeSensors.apiKey })
-        .from(nativeSensors)
-        .where(eq(nativeSensors.id, sensorId))
-        .limit(1);
-
-      if (!sensorCheck || !safeHashEqual(sensorCheck.apiKey, keyHash)) {
-        return res.status(401).json({ message: "Invalid sensor credentials" });
-      }
-
-      if (!status || !["completed", "failed"].includes(status)) {
-        return res.status(400).json({ message: "status must be 'completed' or 'failed'" });
-      }
-
-      // Verify action belongs to this sensor
-      const actionResult = await db.execute(sql`
-        SELECT id, sensor_id, action_type, org_id, status
-        FROM agent_response_actions
-        WHERE id = ${actionId} AND sensor_id = ${sensorId} AND org_id = ${sensorCheck.orgId}
-        LIMIT 1
-      `);
-
-      const actionRow = (actionResult as any).rows?.[0];
-      if (!actionRow) {
-        return res.status(404).json({ message: "Action not found for this sensor" });
-      }
-
-      if (actionRow.status !== "executing") {
-        return res.status(409).json({
-          message: `Action cannot accept an agent result from status '${actionRow.status}'`,
-        });
-      }
-
-      // Update action status
-      const updateResult = await db.execute(sql`
-        UPDATE agent_response_actions
-        SET status = ${status},
-            completed_at = NOW(),
-            result_output = ${String(resultOutput || "").slice(0, 4000)},
-            result_error = ${String(resultError || "").slice(0, 4000) || null},
-            updated_at = NOW()
-        WHERE id = ${actionId} AND sensor_id = ${sensorId} AND org_id = ${sensorCheck.orgId} AND status = 'executing'
-        RETURNING id
-      `);
-      if (!((updateResult as { rows?: unknown[] }).rows || []).length) {
-        return res.status(409).json({ message: "Action is no longer executing and cannot accept this result" });
-      }
-
-      log.info(`Action result reported: ${actionRow.action_type} -> ${status}`, {
-        actionId,
-        sensorId,
-        orgId: actionRow.org_id,
-      });
-
-      res.json({ message: "Action result recorded", actionId, status });
-    } catch (error) {
-      log.error("Failed to report action result", { error: String(error) });
-      res.status(500).json({ message: "Failed to report action result" });
     }
   });
 

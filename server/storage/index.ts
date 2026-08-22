@@ -707,9 +707,6 @@ export class DatabaseStorage implements IStorage {
   getCollectorEventsByInstance = collectorsFns.getCollectorEventsByInstance;
   createCollectorEvent = collectorsFns.createCollectorEvent;
   countCollectorEvents = collectorsFns.countCollectorEvents;
-  getCollectorScans = collectorsFns.getCollectorScans;
-  createCollectorScan = collectorsFns.createCollectorScan;
-  updateCollectorScan = collectorsFns.updateCollectorScan;
 
   // chaos engineering
   getChaosSimulations = chaosFns.getChaosSimulations;

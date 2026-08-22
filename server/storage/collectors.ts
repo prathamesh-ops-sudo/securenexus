@@ -3,14 +3,11 @@ import {
   type InsertCollectorInstance,
   type CollectorEvent,
   type InsertCollectorEvent,
-  type CollectorScan,
-  type InsertCollectorScan,
   collectorInstances,
   collectorEvents,
-  collectorScans,
 } from "@shared/schema";
 import { db } from "../db";
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 
 // ── Collector Instances ──
 
@@ -22,8 +19,11 @@ export async function getCollectorInstances(orgId: string): Promise<CollectorIns
     .orderBy(desc(collectorInstances.createdAt));
 }
 
-export async function getCollectorInstance(id: string): Promise<CollectorInstance | undefined> {
-  const [instance] = await db.select().from(collectorInstances).where(eq(collectorInstances.id, id));
+export async function getCollectorInstance(id: string, orgId: string): Promise<CollectorInstance | undefined> {
+  const [instance] = await db
+    .select()
+    .from(collectorInstances)
+    .where(and(eq(collectorInstances.id, id), eq(collectorInstances.orgId, orgId)));
   return instance;
 }
 
@@ -35,17 +35,20 @@ export async function createCollectorInstance(instance: InsertCollectorInstance)
 export async function updateCollectorInstance(
   id: string,
   updates: Partial<InsertCollectorInstance>,
+  orgId: string,
 ): Promise<CollectorInstance | undefined> {
   const [updated] = await db
     .update(collectorInstances)
     .set({ ...updates, updatedAt: new Date() })
-    .where(eq(collectorInstances.id, id))
+    .where(and(eq(collectorInstances.id, id), eq(collectorInstances.orgId, orgId)))
     .returning();
   return updated;
 }
 
-export async function deleteCollectorInstance(id: string): Promise<boolean> {
-  const result = await db.delete(collectorInstances).where(eq(collectorInstances.id, id));
+export async function deleteCollectorInstance(id: string, orgId: string): Promise<boolean> {
+  const result = await db
+    .delete(collectorInstances)
+    .where(and(eq(collectorInstances.id, id), eq(collectorInstances.orgId, orgId)));
   return (result.rowCount ?? 0) > 0;
 }
 
@@ -66,11 +69,15 @@ export async function getCollectorEvents(orgId: string, limit = 100, offset = 0)
     .offset(offset);
 }
 
-export async function getCollectorEventsByInstance(instanceId: string, limit = 100): Promise<CollectorEvent[]> {
+export async function getCollectorEventsByInstance(
+  instanceId: string,
+  orgId: string,
+  limit = 100,
+): Promise<CollectorEvent[]> {
   return db
     .select()
     .from(collectorEvents)
-    .where(eq(collectorEvents.collectorId, instanceId))
+    .where(and(eq(collectorEvents.collectorId, instanceId), eq(collectorEvents.orgId, orgId)))
     .orderBy(desc(collectorEvents.createdAt))
     .limit(limit);
 }
@@ -83,28 +90,4 @@ export async function createCollectorEvent(event: InsertCollectorEvent): Promise
 export async function countCollectorEvents(orgId: string): Promise<number> {
   const [row] = await db.select({ total: count() }).from(collectorEvents).where(eq(collectorEvents.orgId, orgId));
   return row?.total ?? 0;
-}
-
-// ── Collector Scans ──
-
-export async function getCollectorScans(orgId: string, limit = 50): Promise<CollectorScan[]> {
-  return db
-    .select()
-    .from(collectorScans)
-    .where(eq(collectorScans.orgId, orgId))
-    .orderBy(desc(collectorScans.startedAt))
-    .limit(limit);
-}
-
-export async function createCollectorScan(scan: InsertCollectorScan): Promise<CollectorScan> {
-  const [created] = await db.insert(collectorScans).values(scan).returning();
-  return created;
-}
-
-export async function updateCollectorScan(
-  id: string,
-  updates: Partial<InsertCollectorScan>,
-): Promise<CollectorScan | undefined> {
-  const [updated] = await db.update(collectorScans).set(updates).where(eq(collectorScans.id, id)).returning();
-  return updated;
 }

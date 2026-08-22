@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   AlertTriangle,
+  Ban,
   ArrowDownToLine,
   CheckCircle2,
   ChevronDown,
@@ -93,7 +94,6 @@ interface CollectorInstance {
     eventsPerSecond: number;
     bytesIngested: number;
     errorsLast24h: number;
-    uptimePercent: number;
     latencyP50Ms: number;
     latencyP99Ms: number;
     lastEventCount: number;
@@ -102,6 +102,7 @@ interface CollectorInstance {
   installedAt: string;
   lastHeartbeatAt: string | null;
   lastDataAt: string | null;
+  lifecycleState: string;
   version: string;
   tags: string[];
 }
@@ -119,31 +120,6 @@ interface IngestedEvent {
   processed: boolean;
 }
 
-interface ScanResult {
-  id: string;
-  collectorId: string;
-  scanType: string;
-  status: string;
-  startedAt: string;
-  completedAt: string | null;
-  findingsCount: number;
-  criticalCount: number;
-  highCount: number;
-  mediumCount: number;
-  lowCount: number;
-  targets: string[];
-  findings: Array<{
-    id: string;
-    title: string;
-    severity: string;
-    category: string;
-    description: string;
-    affectedAsset: string;
-    remediation: string;
-    cveIds: string[];
-  }>;
-}
-
 interface PipelineStats {
   totalCollectors: number;
   activeCollectors: number;
@@ -157,13 +133,13 @@ interface PipelineStats {
   retentionDays: number;
   topEventTypes: Array<{ type: string; count: number; percentage: number }>;
   collectorsByType: Record<string, number>;
-  healthScore: number;
 }
 
 interface CollectorHealth {
   collectorId: string;
   name: string;
   status: string;
+  lifecycleState: string;
   eventsPerSecond: number;
   lastReceivedEvent: string | null;
   lastHeartbeat: string | null;
@@ -171,7 +147,6 @@ interface CollectorHealth {
   dataStale: boolean;
   parsingErrors: number;
   dataVolumeBytes: number;
-  uptimePercent: number;
   latencyP50Ms: number;
   latencyP99Ms: number;
   alerts: Array<{ level: string; message: string; timestamp: string }>;
@@ -186,7 +161,6 @@ interface CoverageEntry {
   deployed: number;
   active: number;
   covered: boolean;
-  healthScore: number;
 }
 
 interface CoverageMap {
@@ -249,10 +223,28 @@ const TYPE_CONFIG: Record<string, { label: string; icon: typeof Monitor; color: 
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof CheckCircle2 }> = {
   active: { label: "Active", color: "bg-emerald-600/20 text-emerald-300", icon: CheckCircle2 },
+  "online-but-zero-telemetry": {
+    label: "Online — No Telemetry",
+    color: "bg-yellow-600/20 text-yellow-300",
+    icon: AlertTriangle,
+  },
+  "receiving-telemetry": {
+    label: "Receiving Telemetry",
+    color: "bg-emerald-600/20 text-emerald-300",
+    icon: CheckCircle2,
+  },
+  "enrolled-but-never-heartbeated": {
+    label: "Enrolled — Awaiting Heartbeat",
+    color: "bg-blue-600/20 text-blue-300",
+    icon: Download,
+  },
+  "never-enrolled": { label: "Never Enrolled", color: "bg-slate-600/20 text-slate-400", icon: Download },
+  revoked: { label: "Revoked", color: "bg-red-600/20 text-red-300", icon: Ban },
   degraded: { label: "Degraded", color: "bg-yellow-600/20 text-yellow-300", icon: AlertTriangle },
   offline: { label: "Offline", color: "bg-red-600/20 text-red-300", icon: WifiOff },
   pending_install: { label: "Pending Install", color: "bg-blue-600/20 text-blue-300", icon: Download },
   disabled: { label: "Disabled", color: "bg-slate-600/20 text-slate-400", icon: WifiOff },
+  unknown: { label: "Unknown", color: "bg-slate-600/20 text-slate-400", icon: AlertTriangle },
 };
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -275,7 +267,7 @@ const SEVERITY_COLORS: Record<string, string> = {
   info: "bg-slate-600/20 text-slate-300",
 };
 
-type TabView = "catalog" | "deployed" | "events" | "scans" | "pipeline" | "health" | "coverage" | "parsers" | "certs";
+type TabView = "catalog" | "deployed" | "events" | "pipeline" | "health" | "coverage" | "parsers" | "certs";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -320,8 +312,8 @@ function PipelineOverview({ stats }: { stats: PipelineStats }) {
         </Card>
         <Card className="border-border/40 bg-card/50">
           <CardContent className="p-3 text-center">
-            <div className="text-2xl font-bold text-foreground">{stats.healthScore}%</div>
-            <div className="text-xs text-muted-foreground">Health Score</div>
+            <div className="text-2xl font-bold text-foreground">{stats.activeCollectors}</div>
+            <div className="text-xs text-muted-foreground">Reporting Collectors</div>
           </CardContent>
         </Card>
       </div>
@@ -691,6 +683,7 @@ function InstanceRow({
   onDelete,
   onViewScript,
   onGenerateKey,
+  onRevoke,
   expanded,
   onToggle,
   deleting,
@@ -700,11 +693,12 @@ function InstanceRow({
   onDelete: (id: string) => void;
   onViewScript: (id: string) => void;
   onGenerateKey: (id: string) => void;
+  onRevoke: (id: string) => void;
   expanded: boolean;
   onToggle: () => void;
   deleting: boolean;
 }) {
-  const statusConfig = STATUS_CONFIG[instance.status] || STATUS_CONFIG.active;
+  const statusConfig = STATUS_CONFIG[instance.lifecycleState] || STATUS_CONFIG.unknown;
   const StatusIcon = statusConfig.icon;
   const typeConfig =
     TYPE_CONFIG[
@@ -778,8 +772,8 @@ function InstanceRow({
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
-                <div className="text-xs text-muted-foreground mb-1">Uptime</div>
-                <div className="text-sm font-medium text-foreground">{instance.metrics.uptimePercent}%</div>
+                <div className="text-xs text-muted-foreground mb-1">Lifecycle</div>
+                <div className="text-sm font-medium text-foreground">{instance.lifecycleState}</div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground mb-1">Latency (P50)</div>
@@ -797,6 +791,14 @@ function InstanceRow({
                   {instance.lastDataAt ? new Date(instance.lastDataAt).toLocaleString() : "Never"}
                 </div>
               </div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => onGenerateKey(instance.id)}>
+                <RotateCcw className="h-3 w-3 mr-1" /> Rotate Key
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => onRevoke(instance.id)}>
+                <Ban className="h-3 w-3 mr-1" /> Revoke
+              </Button>
             </div>
 
             {instance.hostInfo && (
@@ -937,122 +939,6 @@ function EventsView() {
   );
 }
 
-function ScansView() {
-  const { data: scans, isLoading } = useQuery<ScanResult[]>({
-    queryKey: ["/api/native-collectors/scans"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/native-collectors/scans?limit=50");
-      return res.json();
-    },
-  });
-
-  const [expandedScan, setExpandedScan] = useState<string | null>(null);
-
-  if (isLoading) {
-    return (
-      <div className="space-y-2">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-20 w-full" />
-        ))}
-      </div>
-    );
-  }
-
-  if (!scans || scans.length === 0) {
-    return (
-      <Card className="border-border/40 bg-card/50">
-        <CardContent className="p-8 text-center">
-          <ScanSearch className="h-10 w-10 mx-auto mb-3 text-muted-foreground/40" />
-          <p className="text-sm text-muted-foreground">No scan results yet</p>
-          <p className="text-xs text-muted-foreground mt-1">Deploy a vulnerability scanner and run your first scan</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      {scans.map((scan) => (
-        <Card key={scan.id} className="border-border/40 bg-card/50">
-          <CardContent className="p-0">
-            <button
-              className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/20 transition-colors"
-              onClick={() => setExpandedScan(expandedScan === scan.id ? null : scan.id)}
-              aria-expanded={expandedScan === scan.id}
-              aria-label={`Toggle scan ${scan.id}`}
-            >
-              <div className="flex items-center gap-3">
-                {expandedScan === scan.id ? (
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                )}
-                <div>
-                  <div className="font-semibold text-sm text-foreground capitalize">
-                    {scan.scanType.replace(/_/g, " ")} Scan
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {scan.targets.slice(0, 3).join(", ")}
-                    {scan.targets.length > 3 && ` +${scan.targets.length - 3} more`}
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {scan.criticalCount > 0 && (
-                  <Badge className="bg-red-600/20 text-red-300 text-[10px]">{scan.criticalCount} Crit</Badge>
-                )}
-                {scan.highCount > 0 && (
-                  <Badge className="bg-orange-600/20 text-orange-300 text-[10px]">{scan.highCount} High</Badge>
-                )}
-                <Badge variant="outline" className="text-xs">
-                  {scan.findingsCount} findings
-                </Badge>
-                <Badge
-                  className={
-                    scan.status === "completed"
-                      ? "bg-emerald-600/20 text-emerald-300 text-xs"
-                      : scan.status === "running"
-                        ? "bg-blue-600/20 text-blue-300 text-xs"
-                        : "bg-red-600/20 text-red-300 text-xs"
-                  }
-                >
-                  {scan.status}
-                </Badge>
-              </div>
-            </button>
-
-            {expandedScan === scan.id && scan.findings.length > 0 && (
-              <div className="border-t border-border/40 p-4 space-y-2">
-                {scan.findings.map((f) => (
-                  <div key={f.id} className="rounded-lg border border-border/40 p-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <Badge className={SEVERITY_COLORS[f.severity] + " text-[10px]"}>{f.severity}</Badge>
-                        <span className="text-sm font-medium text-foreground">{f.title}</span>
-                      </div>
-                      {f.cveIds.length > 0 && (
-                        <Badge variant="outline" className="text-[10px]">
-                          {f.cveIds[0]}
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground">{f.description}</p>
-                    <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                      <span>Asset: {f.affectedAsset}</span>
-                      <span className="text-border">|</span>
-                      <span>Fix: {f.remediation}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
 function ScriptDialog({
   script,
   templateSlug,
@@ -1152,15 +1038,15 @@ function CollectorHealthView() {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <div
-                  className={`h-2.5 w-2.5 rounded-full \${health.status === "active" ? "bg-emerald-400" : health.status === "degraded" ? "bg-yellow-400" : "bg-red-400"}`}
+                  className={`h-2.5 w-2.5 rounded-full \${health.lifecycleState === "receiving-telemetry" ? "bg-emerald-400" : health.lifecycleState === "degraded" ? "bg-yellow-400" : "bg-red-400"}`}
                 />
                 <span className="font-semibold text-sm text-foreground">{health.name}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Badge
-                  className={`text-xs \${health.status === "active" ? "bg-emerald-600/20 text-emerald-300" : health.status === "degraded" ? "bg-yellow-600/20 text-yellow-300" : "bg-red-600/20 text-red-300"}`}
+                  className={`text-xs \${health.lifecycleState === "receiving-telemetry" ? "bg-emerald-600/20 text-emerald-300" : health.lifecycleState === "degraded" ? "bg-yellow-600/20 text-yellow-300" : "bg-red-600/20 text-red-300"}`}
                 >
-                  {health.status}
+                  {health.lifecycleState}
                 </Badge>
                 <span className="text-xs text-muted-foreground">{health.eventsPerSecond} evt/s</span>
               </div>
@@ -1183,8 +1069,8 @@ function CollectorHealthView() {
                 <div className="text-foreground">{formatBytes(health.dataVolumeBytes)}</div>
               </div>
               <div>
-                <span className="text-muted-foreground">Uptime</span>
-                <div className="text-foreground">{health.uptimePercent}%</div>
+                <span className="text-muted-foreground">Lifecycle</span>
+                <div className="text-foreground">{health.lifecycleState}</div>
               </div>
             </div>
             {health.alerts.length > 0 && (
@@ -1303,7 +1189,9 @@ function CoverageMapView() {
                       <Badge className="bg-slate-600/20 text-slate-400 text-[10px]">Not deployed</Badge>
                     )}
                     {entry.covered && (
-                      <span className="text-xs text-muted-foreground">{entry.healthScore}% health</span>
+                      <span className="text-xs text-muted-foreground">
+                        {entry.active}/{entry.deployed} reporting
+                      </span>
                     )}
                   </div>
                 </div>
@@ -1623,17 +1511,43 @@ export default function NativeCollectorsPage() {
     },
   });
 
+  const revokeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("POST", `/api/native-collectors/instances/${id}/revoke`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/native-collectors/instances"] });
+      toast({ title: "Collector revoked" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Revoke failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   const handleViewScript = useCallback(
     async (instanceId: string) => {
       try {
-        const res = await apiRequest("GET", `/api/native-collectors/instances/${instanceId}/deploy-script`);
+        const instance = instances?.find((candidate) => candidate.id === instanceId);
+        if (!instance) return;
+        const tokenResponse = await apiRequest("POST", "/api/native-sensors/enrollment-tokens", {
+          label: `${instance.name} collector bootstrap`,
+          maxUses: 1,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          platformHint: instance.platform,
+        });
+        const tokenData = await tokenResponse.json();
+        const enrollmentToken = tokenData.enrollmentToken;
+        if (!enrollmentToken) throw new Error("Enrollment token was not returned.");
+        const res = await apiRequest("POST", `/api/native-collectors/instances/${instanceId}/deploy-script`, {
+          enrollmentToken,
+        });
         const data = await res.json();
         setScriptDialog({ script: data.script, slug: data.templateSlug });
       } catch {
         toast({ title: "Failed to fetch script", variant: "destructive" });
       }
     },
-    [toast],
+    [instances, toast],
   );
 
   const handleGenerateKey = useCallback(
@@ -1668,7 +1582,6 @@ export default function NativeCollectorsPage() {
     { id: "health", label: "Health", icon: Activity },
     { id: "coverage", label: "Coverage Map", icon: Map },
     { id: "events", label: "Events", icon: Activity },
-    { id: "scans", label: "Scans", icon: ScanSearch },
     { id: "parsers", label: "Parsers", icon: FileCode },
     { id: "certs", label: "Certificates", icon: Lock },
     { id: "pipeline", label: "Pipeline", icon: Wifi },
@@ -1793,6 +1706,7 @@ export default function NativeCollectorsPage() {
                 onDelete={(id) => deleteMutation.mutate(id)}
                 onViewScript={handleViewScript}
                 onGenerateKey={handleGenerateKey}
+                onRevoke={(id) => revokeMutation.mutate(id)}
                 expanded={expandedInstance === inst.id}
                 onToggle={() => setExpandedInstance(expandedInstance === inst.id ? null : inst.id)}
                 deleting={deleteMutation.isPending}
@@ -1807,7 +1721,6 @@ export default function NativeCollectorsPage() {
       {tab === "parsers" && <ParsersView />}
       {tab === "certs" && <CertificatesView />}
       {tab === "events" && <EventsView />}
-      {tab === "scans" && <ScansView />}
       {tab === "pipeline" && stats && <PipelineOverview stats={stats} />}
       {tab === "pipeline" && !stats && (
         <div className="space-y-3">

@@ -211,6 +211,7 @@ interface Sensor {
   osVersion: string | null;
   agentVersion: string | null;
   status: string;
+  lifecycleState: string;
   ipAddress: string | null;
   macAddress: string | null;
   tags: string[];
@@ -252,26 +253,29 @@ interface RecentEvent {
   createdAt: string;
 }
 
-function RegisterSensorDialog({ onSuccess }: { onSuccess: () => void }) {
+function EnrollmentTokenDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [hostname, setHostname] = useState("");
   const [platform, setPlatform] = useState("linux");
   const [osVersion, setOsVersion] = useState("");
-  const [result, setResult] = useState<{ sensor: Sensor; registrationToken: string; apiKey: string } | null>(null);
+  const [result, setResult] = useState<{ id: string; enrollmentToken: string; platformHint: string | null } | null>(
+    null,
+  );
   const { toast } = useToast();
 
   const registerMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/native-sensors/register", {
-        hostname,
-        platform,
-        osVersion: osVersion || undefined,
+      const res = await apiRequest("POST", "/api/native-sensors/enrollment-tokens", {
+        label: hostname || "Sensor bootstrap",
+        maxUses: 1,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        platformHint: platform,
       });
       return res.json();
     },
     onSuccess: (data) => {
       setResult(data);
-      toast({ title: "Sensor registered", description: `${hostname} has been registered successfully.` });
+      toast({ title: "Enrollment token created", description: "Use this token once to bootstrap a sensor." });
       onSuccess();
     },
     onError: () => {
@@ -285,9 +289,8 @@ function RegisterSensorDialog({ onSuccess }: { onSuccess: () => void }) {
     mutationFn: async () => {
       if (!result) return;
       const res = await apiRequest("POST", "/api/native-sensors/install-command", {
-        platform: result.sensor.platform,
-        sensorId: result.sensor.id,
-        apiKey: result.apiKey,
+        platform: result.platformHint || platform,
+        enrollmentToken: result.enrollmentToken,
       });
       return res.json();
     },
@@ -309,16 +312,16 @@ function RegisterSensorDialog({ onSuccess }: { onSuccess: () => void }) {
         }}
       >
         <Plus className="h-4 w-4 mr-2" />
-        Register Sensor
+        Create Enrollment Token
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>{result ? "Sensor Registered" : "Register New Sensor"}</DialogTitle>
+            <DialogTitle>{result ? "Enrollment Token Created" : "Create Sensor Enrollment Token"}</DialogTitle>
             <DialogDescription>
               {result
-                ? "Save these credentials — the API key will not be shown again."
-                : "Deploy a lightweight agent on the target host."}
+                ? "This bootstrap token is shown once and can be used only for the configured number of enrollments."
+                : "Deploy a lightweight agent using a one-time bootstrap token."}
             </DialogDescription>
           </DialogHeader>
 
@@ -374,8 +377,8 @@ function RegisterSensorDialog({ onSuccess }: { onSuccess: () => void }) {
                 <Button variant="outline" onClick={() => setOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={() => registerMutation.mutate()} disabled={!hostname || registerMutation.isPending}>
-                  {registerMutation.isPending ? "Registering..." : "Register"}
+                <Button onClick={() => registerMutation.mutate()} disabled={registerMutation.isPending}>
+                  {registerMutation.isPending ? "Creating..." : "Create Token"}
                 </Button>
               </DialogFooter>
             </div>
@@ -383,30 +386,12 @@ function RegisterSensorDialog({ onSuccess }: { onSuccess: () => void }) {
             <div className="space-y-4">
               <div className="rounded-md bg-muted p-3 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Sensor ID</span>
-                  <span className="font-mono text-xs">{result.sensor.id}</span>
+                  <span className="text-muted-foreground">Enrollment Token</span>
+                  <span className="font-mono text-xs truncate max-w-[250px]">{result.enrollmentToken}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Registration Token</span>
-                  <span className="font-mono text-xs truncate max-w-[250px]">{result.registrationToken}</span>
-                </div>
-                <div className="flex justify-between text-sm items-center">
-                  <span className="text-muted-foreground">API Key</span>
-                  <div className="flex items-center gap-1">
-                    <span className="font-mono text-xs truncate max-w-[200px]">{result.apiKey}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={() => {
-                        navigator.clipboard.writeText(result.apiKey);
-                        toast({ title: "Copied API key" });
-                      }}
-                    >
-                      <Copy className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  The per-sensor credential is returned only to the agent during enrollment.
+                </p>
               </div>
 
               {!installCommand ? (
@@ -421,7 +406,7 @@ function RegisterSensorDialog({ onSuccess }: { onSuccess: () => void }) {
                 </Button>
               ) : (
                 <div className="space-y-2">
-                  <Label>Install Command ({result.sensor.platform})</Label>
+                  <Label>Bootstrap Command ({result.platformHint || platform})</Label>
                   <div className="relative">
                     <pre className="rounded-md bg-zinc-950 text-green-400 p-3 text-xs overflow-x-auto max-h-48 whitespace-pre-wrap">
                       {installCommand}
@@ -649,9 +634,9 @@ function SensorDeploymentWizard() {
   const [selectedPlatform, setSelectedPlatform] = useState("linux");
   const [hostname, setHostname] = useState("");
   const [registrationResult, setRegistrationResult] = useState<{
-    sensor: { id: string };
-    apiKey: string;
-    registrationToken: string;
+    id: string;
+    enrollmentToken: string;
+    platformHint: string | null;
   } | null>(null);
   const [installCommand, setInstallCommand] = useState("");
   const [verifyStatus, setVerifyStatus] = useState<"idle" | "checking" | "success" | "failed">("idle");
@@ -660,9 +645,11 @@ function SensorDeploymentWizard() {
 
   const registerMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/native-sensors/register", {
-        hostname,
-        platform: selectedPlatform,
+      const res = await apiRequest("POST", "/api/native-sensors/enrollment-tokens", {
+        label: hostname || "Sensor bootstrap",
+        maxUses: 1,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        platformHint: selectedPlatform,
       });
       return res.json();
     },
@@ -670,8 +657,7 @@ function SensorDeploymentWizard() {
       setRegistrationResult(data);
       const cmdRes = await apiRequest("POST", "/api/native-sensors/install-command", {
         platform: selectedPlatform,
-        sensorId: data.sensor.id,
-        apiKey: data.apiKey,
+        enrollmentToken: data.enrollmentToken,
       });
       const cmdData = await cmdRes.json();
       setInstallCommand(cmdData.command);
@@ -685,9 +671,10 @@ function SensorDeploymentWizard() {
     if (!registrationResult) return;
     setVerifyStatus("checking");
     try {
-      const res = await apiRequest("GET", `/api/native-sensors/${registrationResult.sensor.id}`);
+      const res = await apiRequest("GET", "/api/native-sensors");
       const data = await res.json();
-      if (data.sensor?.status === "online") {
+      const sensor = (data.sensors || []).find((item: Sensor) => item.hostname === hostname);
+      if (sensor?.lifecycleState === "receiving-telemetry" || sensor?.lifecycleState === "online-but-zero-telemetry") {
         setVerifyStatus("success");
         toast({ title: "Sensor is online!" });
         setStep(5);
@@ -754,14 +741,14 @@ function SensorDeploymentWizard() {
               ))}
             </div>
             <Button onClick={() => setStep(2)} className="w-full">
-              Next: Register Sensor
+              Next: Create Enrollment Token
             </Button>
           </div>
         )}
 
         {step === 2 && (
           <div className="space-y-4">
-            <h3 className="font-medium">Register Sensor</h3>
+            <h3 className="font-medium">Create Enrollment Token</h3>
             <div>
               <Label>Hostname</Label>
               <Input value={hostname} onChange={(e) => setHostname(e.target.value)} placeholder="e.g., prod-web-01" />
@@ -781,7 +768,7 @@ function SensorDeploymentWizard() {
                 disabled={!hostname || registerMutation.isPending}
                 onClick={() => registerMutation.mutate()}
               >
-                {registerMutation.isPending ? "Registering..." : "Register & Generate Installer"}
+                {registerMutation.isPending ? "Creating..." : "Create Token & Generate Bootstrap"}
               </Button>
             </div>
           </div>
@@ -2373,7 +2360,7 @@ export default function NativeSensorsPage() {
           <Button variant="outline" size="icon" onClick={() => refetch()}>
             <RefreshCw className="h-4 w-4" />
           </Button>
-          <RegisterSensorDialog
+          <EnrollmentTokenDialog
             onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/native-sensors"] })}
           />
         </div>
@@ -2544,7 +2531,7 @@ export default function NativeSensorsPage() {
                 <Server className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
                 <h3 className="text-lg font-medium">No sensors registered</h3>
                 <p className="text-muted-foreground text-sm mt-1">
-                  Register your first sensor to start collecting telemetry from hosts.
+                  Create an enrollment token to bootstrap a sensor and start collecting telemetry from a host.
                 </p>
               </CardContent>
             </Card>
@@ -2563,8 +2550,8 @@ export default function NativeSensorsPage() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{sensor.hostname}</span>
-                            <Badge variant="outline" className={STATUS_COLORS[sensor.status] || ""}>
-                              {sensor.status}
+                            <Badge variant="outline" className={STATUS_COLORS[sensor.lifecycleState] || ""}>
+                              {sensor.lifecycleState}
                             </Badge>
                           </div>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">

@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import crypto from "crypto";
 import { db } from "./db";
-import { collectorInstances, collectorEvents, collectorScans } from "@shared/schema";
-import { eq, and, desc, sql, count } from "drizzle-orm";
-import { logger } from "./logger";
+import { getCollectorLifecycleState } from "./native-collector-lifecycle";
+import { collectorInstances, collectorEvents } from "@shared/schema";
+import { eq, and, desc, count, sql } from "drizzle-orm";
 
 export type CollectorType =
   | "agent_endpoint"
@@ -69,6 +69,7 @@ export interface CollectorInstance {
   installedAt: string;
   lastHeartbeatAt: string | null;
   lastDataAt: string | null;
+  lifecycleState: string;
   version: string;
   tags: string[];
 }
@@ -87,7 +88,6 @@ export interface CollectorMetrics {
   eventsPerSecond: number;
   bytesIngested: number;
   errorsLast24h: number;
-  uptimePercent: number;
   latencyP50Ms: number;
   latencyP99Ms: number;
   lastEventCount: number;
@@ -108,36 +108,6 @@ export interface IngestedEvent {
   processed: boolean;
 }
 
-export interface ScanResult {
-  id: string;
-  collectorId: string;
-  orgId: string;
-  scanType: "vulnerability" | "asset_discovery" | "compliance" | "configuration";
-  status: "running" | "completed" | "failed";
-  startedAt: string;
-  completedAt: string | null;
-  findingsCount: number;
-  criticalCount: number;
-  highCount: number;
-  mediumCount: number;
-  lowCount: number;
-  targets: string[];
-  findings: ScanFinding[];
-}
-
-export interface ScanFinding {
-  id: string;
-  title: string;
-  severity: "critical" | "high" | "medium" | "low" | "info";
-  category: string;
-  description: string;
-  affectedAsset: string;
-  remediation: string;
-  cveIds: string[];
-  firstSeen: string;
-  lastSeen: string;
-}
-
 export interface DataPipelineStats {
   orgId: string;
   totalCollectors: number;
@@ -152,7 +122,6 @@ export interface DataPipelineStats {
   retentionDays: number;
   topEventTypes: Array<{ type: string; count: number; percentage: number }>;
   collectorsByType: Record<CollectorType, number>;
-  healthScore: number;
 }
 
 const COLLECTOR_TEMPLATES: CollectorTemplate[] = [
@@ -531,10 +500,6 @@ function generateId(): string {
   return crypto.randomBytes(12).toString("hex");
 }
 
-function randomBetween(min: number, max: number): number {
-  return min + crypto.randomInt(max - min + 1);
-}
-
 export function getCollectorTemplates(type?: CollectorType): CollectorTemplate[] {
   if (type) return COLLECTOR_TEMPLATES.filter((t) => t.type === type);
   return [...COLLECTOR_TEMPLATES];
@@ -575,7 +540,6 @@ export async function deployCollector(
     eventsPerSecond: 0,
     bytesIngested: 0,
     errorsLast24h: 0,
-    uptimePercent: 0,
     latencyP50Ms: 0,
     latencyP99Ms: 0,
     lastEventCount: 0,
@@ -765,454 +729,78 @@ export async function getIngestedEvents(
   return rows.map(dbRowToEvent);
 }
 
-export async function triggerScan(
-  collectorId: string,
-  orgId: string,
-  scanType: ScanResult["scanType"],
-  targets: string[],
-): Promise<ScanResult> {
-  const existing = await getCollectorInstance(collectorId, orgId);
-  if (!existing) throw new Error("Collector not found or access denied");
-
-  const criticalCount = randomBetween(0, 3);
-  const highCount = randomBetween(1, 8);
-  const mediumCount = randomBetween(5, 20);
-  const lowCount = randomBetween(10, 40);
-
-  const findings: ScanFinding[] = [];
-  const vulnNames = [
-    "CVE-2024-21762: FortiOS Out-of-Bounds Write",
-    "CVE-2024-3400: PAN-OS Command Injection",
-    "CVE-2023-44487: HTTP/2 Rapid Reset DDoS",
-    "CVE-2024-1709: ConnectWise ScreenConnect Auth Bypass",
-    "CVE-2023-46805: Ivanti Connect Secure Auth Bypass",
-    "Outdated OpenSSL version detected",
-    "SSH weak key exchange algorithm",
-    "TLS 1.0/1.1 enabled",
-    "Default credentials detected",
-    "Unpatched Apache Log4j",
-    "Exposed management interface",
-    "Missing security headers",
-  ];
-
-  for (let i = 0; i < Math.min(criticalCount + highCount + mediumCount + lowCount, 12); i++) {
-    const severity: ScanFinding["severity"] =
-      i < criticalCount
-        ? "critical"
-        : i < criticalCount + highCount
-          ? "high"
-          : i < criticalCount + highCount + mediumCount
-            ? "medium"
-            : "low";
-    findings.push({
-      id: generateId(),
-      title: vulnNames[i % vulnNames.length],
-      severity,
-      category: scanType === "vulnerability" ? "vulnerability" : "misconfiguration",
-      description: `${vulnNames[i % vulnNames.length]} detected on target infrastructure.`,
-      affectedAsset: targets[i % targets.length] || "unknown",
-      remediation: `Apply vendor patch or upgrade to latest version. See vendor advisory for details.`,
-      cveIds: vulnNames[i % vulnNames.length].startsWith("CVE") ? [vulnNames[i % vulnNames.length].split(":")[0]] : [],
-      firstSeen: new Date().toISOString(),
-      lastSeen: new Date().toISOString(),
-    });
-  }
-
-  const actualCritical = findings.filter((f) => f.severity === "critical").length;
-  const actualHigh = findings.filter((f) => f.severity === "high").length;
-  const actualMedium = findings.filter((f) => f.severity === "medium").length;
-  const actualLow = findings.filter((f) => f.severity === "low").length;
-
-  const summary = {
-    findingsCount: findings.length,
-    criticalCount: actualCritical,
-    highCount: actualHigh,
-    mediumCount: actualMedium,
-    lowCount: actualLow,
-  };
-
-  const [inserted] = await db
-    .insert(collectorScans)
-    .values({
-      id: generateId(),
-      collectorId,
-      orgId,
-      scanType,
-      status: "completed",
-      targets,
-      findings: findings as any,
-      summary,
-      startedAt: new Date(Date.now() - randomBetween(30000, 120000)),
-      completedAt: new Date(),
-    })
-    .returning();
-
-  return dbRowToScan(inserted, findings);
-}
-
-export async function getScanResults(orgId: string, collectorId?: string, limit: number = 20): Promise<ScanResult[]> {
-  const conditions = [eq(collectorScans.orgId, orgId)];
-  if (collectorId) conditions.push(eq(collectorScans.collectorId, collectorId));
-
-  const rows = await db
-    .select()
-    .from(collectorScans)
-    .where(and(...conditions))
-    .orderBy(desc(collectorScans.createdAt))
-    .limit(limit);
-
-  return rows.map((r) => dbRowToScan(r));
-}
-
-export async function getScanResult(scanId: string, orgId: string): Promise<ScanResult | null> {
-  const [row] = await db
-    .select()
-    .from(collectorScans)
-    .where(and(eq(collectorScans.id, scanId), eq(collectorScans.orgId, orgId)))
-    .limit(1);
-  return row ? dbRowToScan(row) : null;
-}
-
-export function getDeploymentScript(templateSlug: string, instanceId: string): string {
+export function getDeploymentScript(
+  templateSlug: string,
+  instanceId: string,
+  enrollmentToken = "${ENROLLMENT_TOKEN}",
+): string {
   const template = COLLECTOR_TEMPLATES.find((t) => t.slug === templateSlug);
   if (!template) return "";
 
-  const baseUrl = process.env.APP_URL || "https://staging.aricatech.xyz";
-
-  if (templateSlug.startsWith("endpoint-agent-linux")) {
-    return `#!/bin/bash
-# SecureNexus Endpoint Agent — Linux
-# Lightweight collector using auditd + curl (no binary agent needed)
-set -euo pipefail
-
-COLLECTOR_ID="${instanceId}"
-API_ENDPOINT="${baseUrl}/api/native-collectors/instances/${instanceId}"
-INTERVAL=\${SN_INTERVAL:-30}
-
-echo "[SecureNexus] Setting up endpoint collector (ID: $COLLECTOR_ID)..."
-
-# Ensure dependencies
-for cmd in curl jq; do
-  command -v "$cmd" >/dev/null 2>&1 || { echo "Installing $cmd..."; sudo apt-get install -y "$cmd" 2>/dev/null || sudo yum install -y "$cmd"; }
-done
-
-# Enable auditd if available
-if command -v auditctl >/dev/null 2>&1; then
-  sudo auditctl -a always,exit -F arch=b64 -S execve -k sn_process 2>/dev/null || true
-  sudo auditctl -w /etc/passwd -p wa -k sn_auth 2>/dev/null || true
-  sudo auditctl -w /etc/shadow -p wa -k sn_auth 2>/dev/null || true
-  echo "[SecureNexus] auditd rules installed."
-fi
-
-# Create systemd service for continuous collection
-cat > /tmp/securenexus-collector.sh << 'COLLECTOR_SCRIPT'
-#!/bin/bash
-API="$1"
-while true; do
-  EVENTS='[]'
-
-  # Collect auth events
-  if [ -f /var/log/auth.log ]; then
-    AUTH_EVENTS=$(tail -100 /var/log/auth.log 2>/dev/null | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "auth_log", severity: "info", source: "auth.log", rawData: {line: .}}]' 2>/dev/null || echo '[]')
-    EVENTS=$(echo "$EVENTS $AUTH_EVENTS" | jq -s 'add')
-  elif [ -f /var/log/secure ]; then
-    AUTH_EVENTS=$(tail -100 /var/log/secure 2>/dev/null | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "auth_log", severity: "info", source: "secure", rawData: {line: .}}]' 2>/dev/null || echo '[]')
-    EVENTS=$(echo "$EVENTS $AUTH_EVENTS" | jq -s 'add')
-  fi
-
-  # Collect process events
-  PROC_EVENTS=$(ps aux --no-headers 2>/dev/null | head -50 | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "process_event", severity: "info", source: "ps", rawData: {line: .}}]' 2>/dev/null || echo '[]')
-  EVENTS=$(echo "$EVENTS $PROC_EVENTS" | jq -s 'add')
-
-  # Collect network connections
-  NET_EVENTS=$(ss -tunap 2>/dev/null | head -50 | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "network_connection", severity: "info", source: "ss", rawData: {line: .}}]' 2>/dev/null || echo '[]')
-  EVENTS=$(echo "$EVENTS $NET_EVENTS" | jq -s 'add')
-
-  # Ship to API (limit to 200 events per batch)
-  BATCH=$(echo "$EVENTS" | jq '.[0:200]')
-  EVENT_COUNT=$(echo "$BATCH" | jq 'length')
-  if [ "$EVENT_COUNT" -gt 0 ]; then
-    curl -sS -X POST "$API/ingest" \\
-      -H "Content-Type: application/json" \\
-      -d "{\\"events\\": $BATCH}" \\
-      --max-time 10 || true
-  fi
-
-  # Send heartbeat
-  HOSTNAME_VAL=$(hostname)
-  IP_VAL=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
-  OS_VAL=$(uname -sr)
-  ARCH_VAL=$(uname -m)
-  CPU_COUNT=$(nproc 2>/dev/null || echo 1)
-  MEM_GB=$(awk '/MemTotal/{printf "%.1f", $2/1024/1024}' /proc/meminfo 2>/dev/null || echo "0")
-
-  curl -sS -X POST "$API/heartbeat" \\
-    -H "Content-Type: application/json" \\
-    -d "{\\"hostInfo\\": {\\"hostname\\": \\"$HOSTNAME_VAL\\", \\"ipAddress\\": \\"$IP_VAL\\", \\"os\\": \\"$OS_VAL\\", \\"arch\\": \\"$ARCH_VAL\\", \\"cpuCount\\": $CPU_COUNT, \\"memoryGb\\": $MEM_GB, \\"agentVersion\\": \\"1.0.0-script\\"}, \\"metrics\\": {\\"eventsPerSecond\\": $EVENT_COUNT}}" \\
-    --max-time 10 || true
-
-  sleep \${SN_INTERVAL:-30}
-done
-COLLECTOR_SCRIPT
-
-chmod +x /tmp/securenexus-collector.sh
-
-# Install as systemd service
-sudo tee /etc/systemd/system/securenexus-collector.service > /dev/null << EOF
-[Unit]
-Description=SecureNexus Endpoint Collector
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/bin/bash /opt/securenexus/collector.sh ${baseUrl}/api/native-collectors/instances/${instanceId}
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo mkdir -p /opt/securenexus
-sudo cp /tmp/securenexus-collector.sh /opt/securenexus/collector.sh
-sudo systemctl daemon-reload
-sudo systemctl enable securenexus-collector
-sudo systemctl start securenexus-collector
-
-echo "[SecureNexus] Endpoint collector installed and running."
-echo "[SecureNexus] Collector ID: ${instanceId}"
-echo "[SecureNexus] API Endpoint: ${baseUrl}/api/native-collectors/instances/${instanceId}"
-echo "[SecureNexus] Check status: sudo systemctl status securenexus-collector"`;
+  const baseUrl = process.env.APP_URL || process.env.PUBLIC_APP_URL || "";
+  if (!baseUrl) {
+    throw new Error("APP_URL or PUBLIC_APP_URL must be configured before generating a collector script.");
   }
 
-  if (templateSlug.startsWith("endpoint-agent-windows")) {
-    return `# SecureNexus Endpoint Agent — Windows (PowerShell)
-# Lightweight collector using Windows Event Log + PowerShell (no binary agent needed)
+  const platform = template.platforms[0] ?? "linux";
+  if (platform === "windows") {
+    return `# SecureNexus collector bootstrap
 $ErrorActionPreference = "Stop"
-
+$ServerUrl = $env:SERVER_URL
+$EnrollmentToken = $env:ENROLLMENT_TOKEN
 $CollectorId = "${instanceId}"
-$ApiEndpoint = "${baseUrl}/api/native-collectors/instances/${instanceId}"
-$Interval = if ($env:SN_INTERVAL) { [int]$env:SN_INTERVAL } else { 30 }
-
-Write-Host "[SecureNexus] Setting up endpoint collector (ID: $CollectorId)..."
-
-# Create collector script
-$CollectorScript = @'
-param([string]$ApiEndpoint, [int]$Interval = 30)
-
-while ($true) {
-    try {
-        $events = @()
-
-        # Collect Security Event Log (logon events, privilege use)
-        $secEvents = Get-WinEvent -LogName Security -MaxEvents 100 -ErrorAction SilentlyContinue |
-            Select-Object -First 50 | ForEach-Object {
-                @{
-                    eventType = "windows_security"
-                    severity = if ($_.Level -le 2) { "high" } elseif ($_.Level -le 3) { "medium" } else { "info" }
-                    source = "Security"
-                    rawData = @{ id = $_.Id; message = $_.Message; timeCreated = $_.TimeCreated.ToString("o") }
-                }
-            }
-        $events += $secEvents
-
-        # Collect PowerShell script block logging
-        $psEvents = Get-WinEvent -LogName "Microsoft-Windows-PowerShell/Operational" -MaxEvents 50 -ErrorAction SilentlyContinue |
-            Select-Object -First 25 | ForEach-Object {
-                @{
-                    eventType = "powershell_log"
-                    severity = "info"
-                    source = "PowerShell"
-                    rawData = @{ id = $_.Id; message = $_.Message; timeCreated = $_.TimeCreated.ToString("o") }
-                }
-            }
-        $events += $psEvents
-
-        # Collect Sysmon events if available
-        $sysmonEvents = Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 50 -ErrorAction SilentlyContinue |
-            Select-Object -First 25 | ForEach-Object {
-                @{
-                    eventType = "sysmon"
-                    severity = if ($_.Id -in @(1,3,7,8,10,11)) { "medium" } else { "info" }
-                    source = "Sysmon"
-                    rawData = @{ id = $_.Id; message = $_.Message; timeCreated = $_.TimeCreated.ToString("o") }
-                }
-            }
-        $events += $sysmonEvents
-
-        # Ship events to API
-        if ($events.Count -gt 0) {
-            $batch = $events | Select-Object -First 200
-            $body = @{ events = $batch } | ConvertTo-Json -Depth 5
-            Invoke-RestMethod -Uri "$ApiEndpoint/ingest" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 10 -ErrorAction SilentlyContinue
-        }
-
-        # Send heartbeat
-        $hostInfo = @{
-            hostname = $env:COMPUTERNAME
-            ipAddress = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -ne "Loopback" } | Select-Object -First 1).IPAddress
-            os = [System.Environment]::OSVersion.VersionString
-            arch = $env:PROCESSOR_ARCHITECTURE
-            cpuCount = $env:NUMBER_OF_PROCESSORS
-            memoryGb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 1)
-            agentVersion = "1.0.0-script"
-        }
-        $heartbeat = @{ hostInfo = $hostInfo; metrics = @{ eventsPerSecond = $events.Count } } | ConvertTo-Json -Depth 3
-        Invoke-RestMethod -Uri "$ApiEndpoint/heartbeat" -Method POST -Body $heartbeat -ContentType "application/json" -TimeoutSec 10 -ErrorAction SilentlyContinue
-    } catch {
-        Write-Warning "Collection cycle failed: $_"
-    }
-
-    Start-Sleep -Seconds $Interval
+if ([string]::IsNullOrWhiteSpace($ServerUrl) -or [string]::IsNullOrWhiteSpace($EnrollmentToken)) {
+  throw "SERVER_URL and ENROLLMENT_TOKEN are required"
 }
-'@
-
-# Save collector script
-$InstallDir = "$env:ProgramData\\SecureNexus"
-New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-$CollectorScript | Out-File -FilePath "$InstallDir\\collector.ps1" -Encoding UTF8
-
-# Register as Windows scheduled task (runs at startup, restarts on failure)
-$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File $InstallDir\\collector.ps1 -ApiEndpoint $ApiEndpoint -Interval $Interval"
-$Trigger = New-ScheduledTaskTrigger -AtStartup
-$Settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 365)
-Register-ScheduledTask -TaskName "SecureNexusCollector" -Action $Action -Trigger $Trigger -Settings $Settings -User "SYSTEM" -RunLevel Highest -Force
-
-# Start immediately
-Start-ScheduledTask -TaskName "SecureNexusCollector"
-
-Write-Host "[SecureNexus] Endpoint collector installed and running."
-Write-Host "[SecureNexus] Collector ID: ${instanceId}"
-Write-Host "[SecureNexus] Check status: Get-ScheduledTask -TaskName SecureNexusCollector"`;
+$payload = @{
+  agentType = "collector"
+  collectorId = $CollectorId
+  enrollmentToken = $EnrollmentToken
+  hostname = $env:COMPUTERNAME
+  platform = "windows"
+  osVersion = [Environment]::OSVersion.VersionString
+  agentVersion = "1.0.0"
+} | ConvertTo-Json -Compress
+$result = Invoke-RestMethod -Uri "$ServerUrl/api/agent/v1/enroll" -Method Post -ContentType "application/json" -Body $payload
+$credential = $result.data.apiKey
+if ([string]::IsNullOrWhiteSpace($credential)) { throw "Enrollment response did not contain a credential" }
+$configDir = "$env:ProgramData\\SecureNexus"
+New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+$credential | ConvertTo-SecureString -AsPlainText -Force | ConvertFrom-SecureString | Set-Content "$configDir\\credential"
+icacls $configDir /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" | Out-Null
+$headers = @{ Authorization = "Bearer $credential" }
+$heartbeat = @{ hostInfo = @{ hostname = $env:COMPUTERNAME; ipAddress = "127.0.0.1"; os = [Environment]::OSVersion.VersionString; arch = $env:PROCESSOR_ARCHITECTURE; cpuCount = [Environment]::ProcessorCount; memoryGb = 0; agentVersion = "1.0.0" }; metrics = @{} } | ConvertTo-Json -Depth 10 -Compress
+Invoke-RestMethod -Uri "$ServerUrl/api/agent/v1/collectors/heartbeat" -Method Post -Headers $headers -ContentType "application/json" -Body $heartbeat | Out-Null
+Write-Host "SecureNexus collector enrolled successfully. Credential stored in $configDir."
+`;
   }
 
-  if (templateSlug.startsWith("endpoint-agent-macos")) {
-    return `#!/bin/bash
-# SecureNexus Endpoint Agent — macOS
-# Lightweight collector using unified log + curl (no binary agent needed)
-set -euo pipefail
-
+  return `#!/usr/bin/env bash
+set -Eeuo pipefail
+SERVER_URL="\${SERVER_URL:-${baseUrl}}"
+ENROLLMENT_TOKEN="\${ENROLLMENT_TOKEN:-${enrollmentToken}}"
 COLLECTOR_ID="${instanceId}"
-API_ENDPOINT="${baseUrl}/api/native-collectors/instances/${instanceId}"
-
-echo "[SecureNexus] Setting up endpoint collector (ID: $COLLECTOR_ID)..."
-
-# Ensure jq is available
-command -v jq >/dev/null 2>&1 || { echo "Installing jq via Homebrew..."; brew install jq; }
-
-# Create collector script
-cat > /tmp/securenexus-collector.sh << 'COLLECTOR_SCRIPT'
-#!/bin/bash
-API="$1"
-while true; do
-  EVENTS='[]'
-
-  # Collect unified log (auth and security events)
-  LOG_EVENTS=$(log show --last 1m --predicate 'subsystem == "com.apple.securityd" OR category == "auth"' --style ndjson 2>/dev/null | head -50 | jq -s '[.[] | {eventType: "unified_log", severity: "info", source: "unified_log", rawData: .}]' 2>/dev/null || echo '[]')
-  EVENTS=$(echo "$EVENTS $LOG_EVENTS" | jq -s 'add')
-
-  # Collect login events
-  LOGIN_EVENTS=$(last -20 2>/dev/null | jq -Rs '[split("\\n")[] | select(length > 0) | {eventType: "login_event", severity: "info", source: "last", rawData: {line: .}}]' 2>/dev/null || echo '[]')
-  EVENTS=$(echo "$EVENTS $LOGIN_EVENTS" | jq -s 'add')
-
-  # Ship to API
-  BATCH=$(echo "$EVENTS" | jq '.[0:200]')
-  EVENT_COUNT=$(echo "$BATCH" | jq 'length')
-  if [ "$EVENT_COUNT" -gt 0 ]; then
-    curl -sS -X POST "$API/ingest" -H "Content-Type: application/json" -d "{\\"events\\": $BATCH}" --max-time 10 || true
-  fi
-
-  # Send heartbeat
-  curl -sS -X POST "$API/heartbeat" \\
-    -H "Content-Type: application/json" \\
-    -d "{\\"hostInfo\\": {\\"hostname\\": \\"$(hostname)\\", \\"ipAddress\\": \\"$(ipconfig getifaddr en0 2>/dev/null || echo 127.0.0.1)\\", \\"os\\": \\"$(sw_vers -productName) $(sw_vers -productVersion)\\", \\"arch\\": \\"$(uname -m)\\", \\"cpuCount\\": $(sysctl -n hw.ncpu), \\"memoryGb\\": $(echo "scale=1; $(sysctl -n hw.memsize) / 1073741824" | bc), \\"agentVersion\\": \\"1.0.0-script\\"}, \\"metrics\\": {\\"eventsPerSecond\\": $EVENT_COUNT}}" \\
-    --max-time 10 || true
-
-  sleep \${SN_INTERVAL:-30}
-done
-COLLECTOR_SCRIPT
-
-chmod +x /tmp/securenexus-collector.sh
-
-# Install as launchd agent
-sudo mkdir -p /opt/securenexus
-sudo cp /tmp/securenexus-collector.sh /opt/securenexus/collector.sh
-sudo tee /Library/LaunchDaemons/xyz.aricatech.securenexus.collector.plist > /dev/null << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>xyz.aricatech.securenexus.collector</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/bash</string>
-        <string>/opt/securenexus/collector.sh</string>
-        <string>${baseUrl}/api/native-collectors/instances/${instanceId}</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-</dict>
-</plist>
-EOF
-
-sudo launchctl load /Library/LaunchDaemons/xyz.aricatech.securenexus.collector.plist
-
-echo "[SecureNexus] Endpoint collector installed and running."
-echo "[SecureNexus] Collector ID: ${instanceId}"
-echo "[SecureNexus] Check status: sudo launchctl list | grep securenexus"`;
-  }
-
-  if (templateSlug === "network-monitor" || templateSlug === "syslog-receiver" || templateSlug === "asset-discovery") {
-    return `#!/bin/bash
-# SecureNexus ${template.name} — Docker Deployment
-# Uses the official SecureNexus collector image
-set -euo pipefail
-
-COLLECTOR_ID="${instanceId}"
-API_ENDPOINT="${baseUrl}/api/native-collectors/instances/${instanceId}"
-
-echo "[SecureNexus] Deploying ${template.name}..."
-
-docker run -d \\
-  --name securenexus-${templateSlug} \\
-  --restart unless-stopped \\
-  --network host \\
-  -e COLLECTOR_ID=${instanceId} \\
-  -e API_ENDPOINT=$API_ENDPOINT \\
-  -e SN_INTERVAL=30 \\
-  alpine:latest sh -c '
-    apk add --no-cache curl jq bash
-    while true; do
-      # Heartbeat
-      curl -sS -X POST "$API_ENDPOINT/heartbeat" \\
-        -H "Content-Type: application/json" \\
-        -d "{\\\"hostInfo\\\": {\\\"hostname\\\": \\\"$(hostname)\\\", \\\"ipAddress\\\": \\\"$(hostname -i 2>/dev/null || echo 127.0.0.1)\\\", \\\"os\\\": \\\"$(uname -sr)\\\", \\\"arch\\\": \\\"$(uname -m)\\\", \\\"cpuCount\\\": $(nproc 2>/dev/null || echo 1), \\\"memoryGb\\\": 0, \\\"agentVersion\\\": \\\"1.0.0-docker\\\"}}" \\
-        --max-time 10 || true
-      sleep \${SN_INTERVAL:-30}
-    done
-  '
-
-echo "[SecureNexus] ${template.name} deployed."
-echo "[SecureNexus] Collector ID: ${instanceId}"`;
-  }
-
-  return `# ${template.name}
-# Configure via the SecureNexus API:
-#
-# 1. Generate an API key:
-#    POST ${baseUrl}/api/native-collectors/instances/${instanceId}/api-key
-#
-# 2. Push events:
-#    curl -X POST ${baseUrl}/api/native-collectors/instances/${instanceId}/ingest \\
-#      -H "Content-Type: application/json" \\
-#      -d '{"events": [{"eventType": "custom", "severity": "info", "source": "my-app", "rawData": {}}]}'
-#
-# 3. Send heartbeat:
-#    POST ${baseUrl}/api/native-collectors/instances/${instanceId}/heartbeat`;
+if [[ -z "$SERVER_URL" || -z "$ENROLLMENT_TOKEN" ]]; then
+  echo "ERROR: SERVER_URL and ENROLLMENT_TOKEN are required." >&2
+  exit 1
+fi
+command -v curl >/dev/null || { echo "ERROR: curl is required." >&2; exit 1; }
+command -v jq >/dev/null || { echo "ERROR: jq is required." >&2; exit 1; }
+HOSTNAME_VAL="$(hostname)"
+PLATFORM="${platform}"
+PAYLOAD="$(jq -n --arg token "$ENROLLMENT_TOKEN" --arg host "$HOSTNAME_VAL" --arg platform "$PLATFORM" --arg collector "$COLLECTOR_ID" '{agentType:"collector",collectorId:$collector,enrollmentToken:$token,hostname:$host,platform:$platform,osVersion:"unknown",agentVersion:"1.0.0"}')"
+RESPONSE="$(curl --fail-with-body --silent --show-error --max-time 30 -X POST "$SERVER_URL/api/agent/v1/enroll" -H "Content-Type: application/json" --data "$PAYLOAD")"
+CREDENTIAL="$(jq -er '.data.apiKey' <<<"$RESPONSE")"
+[[ "$CREDENTIAL" == snx_collector_* ]] || { echo "ERROR: enrollment did not return a collector credential." >&2; exit 1; }
+INSTALL_DIR="\${INSTALL_DIR:-/opt/securenexus-collector}"
+install -d -m 700 "$INSTALL_DIR"
+umask 077
+printf '%s' "$CREDENTIAL" > "$INSTALL_DIR/credential"
+chmod 600 "$INSTALL_DIR/credential"
+HEARTBEAT="$(jq -n --arg host "$HOSTNAME_VAL" --arg platform "$PLATFORM" '{hostInfo:{hostname:$host,ipAddress:"127.0.0.1",os:$platform,arch:"unknown",cpuCount:1,memoryGb:0,agentVersion:"1.0.0"},metrics:{}}')"
+curl --fail-with-body --silent --show-error --max-time 30 -X POST "$SERVER_URL/api/agent/v1/collectors/heartbeat" -H "Authorization: Bearer $CREDENTIAL" -H "Content-Type: application/json" --data "$HEARTBEAT" >/dev/null
+echo "SecureNexus collector enrolled and heartbeat verified; credential stored at $INSTALL_DIR/credential."
+`;
 }
 
 export async function getDataPipelineStats(orgId: string): Promise<DataPipelineStats> {
@@ -1262,8 +850,6 @@ export async function getDataPipelineStats(orgId: string): Promise<DataPipelineS
     if (tmpl) collectorsByType[tmpl.type]++;
   }
 
-  const healthScore = instances.length > 0 ? Math.round((active / instances.length) * 100) : 100;
-
   return {
     orgId,
     totalCollectors: instances.length,
@@ -1278,7 +864,6 @@ export async function getDataPipelineStats(orgId: string): Promise<DataPipelineS
     retentionDays: 90,
     topEventTypes,
     collectorsByType,
-    healthScore,
   };
 }
 
@@ -1314,7 +899,6 @@ function dbRowToInstance(row: any): CollectorInstance {
       eventsPerSecond: 0,
       bytesIngested: 0,
       errorsLast24h: 0,
-      uptimePercent: 0,
       latencyP50Ms: 0,
       latencyP99Ms: 0,
       lastEventCount: 0,
@@ -1325,6 +909,7 @@ function dbRowToInstance(row: any): CollectorInstance {
     lastDataAt: row.lastDataAt?.toISOString?.() || row.lastDataAt || null,
     version: row.version || "1.0.0",
     tags: row.tags || [],
+    lifecycleState: getCollectorLifecycleState(row),
   };
 }
 
@@ -1341,26 +926,5 @@ function dbRowToEvent(row: any): IngestedEvent {
     parsedFields: (row.parsedFields as Record<string, unknown>) || {},
     tags: row.tags || [],
     processed: row.processed || false,
-  };
-}
-
-function dbRowToScan(row: any, findingsOverride?: ScanFinding[]): ScanResult {
-  const findings = findingsOverride || (row.findings as ScanFinding[]) || [];
-  const summary = (row.summary as any) || {};
-  return {
-    id: row.id,
-    collectorId: row.collectorId,
-    orgId: row.orgId,
-    scanType: row.scanType as ScanResult["scanType"],
-    status: row.status as ScanResult["status"],
-    startedAt: row.startedAt?.toISOString?.() || row.startedAt || new Date().toISOString(),
-    completedAt: row.completedAt?.toISOString?.() || row.completedAt || null,
-    findingsCount: summary.findingsCount ?? findings.length,
-    criticalCount: summary.criticalCount ?? findings.filter((f: any) => f.severity === "critical").length,
-    highCount: summary.highCount ?? findings.filter((f: any) => f.severity === "high").length,
-    mediumCount: summary.mediumCount ?? findings.filter((f: any) => f.severity === "medium").length,
-    lowCount: summary.lowCount ?? findings.filter((f: any) => f.severity === "low").length,
-    targets: row.targets || [],
-    findings,
   };
 }

@@ -278,8 +278,6 @@ import {
   type InsertCollectorInstance,
   type CollectorEvent,
   type InsertCollectorEvent,
-  type CollectorScan,
-  type InsertCollectorScan,
   type ChaosSimulation,
   type InsertChaosSimulation,
   type ChaosSchedule,
@@ -1326,21 +1324,19 @@ export interface IStorage {
 
   // Collectors
   getCollectorInstances(orgId: string): Promise<CollectorInstance[]>;
-  getCollectorInstance(id: string): Promise<CollectorInstance | undefined>;
+  getCollectorInstance(id: string, orgId: string): Promise<CollectorInstance | undefined>;
   createCollectorInstance(instance: InsertCollectorInstance): Promise<CollectorInstance>;
   updateCollectorInstance(
     id: string,
     updates: Partial<InsertCollectorInstance>,
+    orgId: string,
   ): Promise<CollectorInstance | undefined>;
-  deleteCollectorInstance(id: string): Promise<boolean>;
+  deleteCollectorInstance(id: string, orgId: string): Promise<boolean>;
   countCollectorInstances(orgId: string): Promise<number>;
   getCollectorEvents(orgId: string, limit?: number, offset?: number): Promise<CollectorEvent[]>;
-  getCollectorEventsByInstance(instanceId: string, limit?: number): Promise<CollectorEvent[]>;
+  getCollectorEventsByInstance(instanceId: string, orgId: string, limit?: number): Promise<CollectorEvent[]>;
   createCollectorEvent(event: InsertCollectorEvent): Promise<CollectorEvent>;
   countCollectorEvents(orgId: string): Promise<number>;
-  getCollectorScans(orgId: string, limit?: number): Promise<CollectorScan[]>;
-  createCollectorScan(scan: InsertCollectorScan): Promise<CollectorScan>;
-  updateCollectorScan(id: string, updates: Partial<InsertCollectorScan>): Promise<CollectorScan | undefined>;
 
   // Chaos Engineering
   getChaosSimulations(orgId: string): Promise<ChaosSimulation[]>;
