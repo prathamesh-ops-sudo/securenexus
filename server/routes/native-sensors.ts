@@ -271,7 +271,7 @@ export function registerNativeSensorRoutes(app: Express): void {
 
   // Heartbeat — agent calls home every 30s (supports both session auth and sensor API key auth)
   app.post(
-    "/api/native-sensors/:id/heartbeat",
+    "/api/native-sensors-legacy/:id/heartbeat",
     resolveOrgContext,
     requireOrgId,
     requireMinRole("admin"),
@@ -316,7 +316,7 @@ export function registerNativeSensorRoutes(app: Express): void {
 
   // Bulk event ingestion — up to 500 events per call (supports both session auth and sensor API key auth)
   app.post(
-    "/api/native-sensors/:id/events",
+    "/api/native-sensors-legacy/:id/events",
     resolveOrgContext,
     requireOrgId,
     requireMinRole("admin"),
@@ -601,7 +601,7 @@ EOF`;
   // ==========================================================================
 
   // GET /api/native-sensors/:id/pending-actions — agents poll for approved actions
-  app.get("/api/native-sensors/:id/pending-actions", async (req, res) => {
+  app.get("/api/native-sensors-legacy/:id/pending-actions", async (req, res) => {
     try {
       const sensorId = String(req.params.id);
 
@@ -674,7 +674,7 @@ EOF`;
   });
 
   // POST /api/native-sensors/:id/action-result/:actionId — agents report action results
-  app.post("/api/native-sensors/:id/action-result/:actionId", async (req, res) => {
+  app.post("/api/native-sensors-legacy/:id/action-result/:actionId", async (req, res) => {
     try {
       const sensorId = String(req.params.id);
       const actionId = String(req.params.actionId);
