@@ -72,6 +72,19 @@ const INDUSTRIES = [
 
 const COMPANY_SIZES = ["1-10", "11-50", "51-200", "201-500", "501-1000", "1001-5000", "5001-10000", "10000+"];
 
+/** Human-readable label for a membership row, preferring the member's name over any identifier. */
+function memberLabel(member: {
+  user?: { firstName?: string | null; lastName?: string | null; email?: string | null } | null;
+  email?: string | null;
+  invitedEmail?: string | null;
+  userId?: string | null;
+}): string {
+  const name = [member.user?.firstName, member.user?.lastName].filter(Boolean).join(" ").trim();
+  const email = member.user?.email || member.email || member.invitedEmail || null;
+  if (name && email) return `${name} (${email})`;
+  return name || email || member.userId || "Unknown member";
+}
+
 const TIMEZONES = [
   "UTC",
   "America/New_York",
@@ -798,7 +811,7 @@ export default function OrgSettingsPage() {
                     .filter((m: any) => m.role !== "owner")
                     .map((m: any) => (
                       <SelectItem key={m.userId} value={m.userId}>
-                        {m.invitedEmail || m.userId}
+                        {memberLabel(m)}
                         <Badge variant="outline" className="ml-2 text-[9px]">
                           {m.role}
                         </Badge>
