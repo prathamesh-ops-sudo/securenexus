@@ -24,6 +24,7 @@ const CSRF_EXEMPT_PATHS = new Set([
 ]);
 
 const CSRF_EXEMPT_PREFIXES = [
+  "/api/agent/v1",
   "/api/v1/ingest",
   "/api/v1/webhooks",
   "/api/ingest/",

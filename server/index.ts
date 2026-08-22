@@ -41,6 +41,7 @@ import { AiUnavailableError } from "./ai/fallback";
 import { replyError } from "./api-response";
 import { initializeAiPrompts } from "./ai";
 import { startResponseActionTimeoutScheduler } from "./response-action-timeouts";
+import { startNativeSensorLifecycleScheduler } from "./native-sensor-lifecycle";
 
 const startedAt = Date.now();
 
@@ -243,6 +244,7 @@ export function log(message: string, source = "express") {
       startStaleSlotReaper();
       startBudgetResetScheduler();
       startResponseActionTimeoutScheduler();
+      startNativeSensorLifecycleScheduler();
       startConnectorHealthLoop();
       registerShutdownHandler("job-worker", stopJobWorker);
       registerShutdownHandler("connector-health-loop", async () => stopConnectorHealthLoop());

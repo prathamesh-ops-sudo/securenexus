@@ -73,6 +73,7 @@ import { registerComplianceGapRoutes } from "./compliance-gap";
 import { registerReportSchedulingRoutes } from "./report-scheduling";
 import { registerStandalonePlatformRoutes } from "./standalone-platform";
 import { registerNativeSensorRoutes } from "./native-sensors";
+import { registerAgentRoutes } from "./agent";
 import { registerLogSourceRoutes } from "./log-sources";
 import { registerVulnScannerRoutes } from "./vuln-scanner";
 import { registerUebaRoutes } from "./ueba";
@@ -186,6 +187,7 @@ export function registerAllDomainRoutes(app: Express): void {
   registerComplianceGapRoutes(app);
   registerReportSchedulingRoutes(app);
   registerStandalonePlatformRoutes(app);
+  registerAgentRoutes(app);
   registerNativeSensorRoutes(app);
   registerLogSourceRoutes(app);
   registerVulnScannerRoutes(app);

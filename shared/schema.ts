@@ -6183,7 +6183,7 @@ export type InsertThreatReport = typeof threatReports.$inferInsert;
 // NATIVE SENSOR AGENT PROTOCOL
 // ==========================================
 
-export const SENSOR_STATUSES = ["online", "offline", "degraded", "provisioning"] as const;
+export const SENSOR_STATUSES = ["online", "offline", "degraded", "provisioning", "revoked"] as const;
 export const SENSOR_PLATFORMS = ["linux", "windows", "macos", "ios", "android", "docker", "kubernetes"] as const;
 export const SENSOR_EVENT_TYPES = ["process", "network", "file", "auth", "dns", "log"] as const;
 
@@ -6200,8 +6200,9 @@ export const nativeSensors = pgTable(
     platform: text("platform").notNull(),
     osVersion: text("os_version"),
     agentVersion: text("agent_version"),
-    registrationToken: text("registration_token").notNull(),
+    registrationToken: text("registration_token"),
     apiKey: text("api_key"),
+    revokedAt: timestamp("revoked_at"),
     status: text("status").notNull().default("provisioning"),
     ipAddress: text("ip_address"),
     macAddress: text("mac_address"),
@@ -6209,6 +6210,7 @@ export const nativeSensors = pgTable(
       .array()
       .default(sql`ARRAY[]::text[]`),
     lastHeartbeat: timestamp("last_heartbeat"),
+    lastTelemetryAt: timestamp("last_telemetry_at"),
     cpuUsage: real("cpu_usage"),
     memoryUsage: real("memory_usage"),
     diskUsage: real("disk_usage"),
@@ -6231,6 +6233,65 @@ export const nativeSensorsRelations = relations(nativeSensors, ({ one }) => ({
 
 export type NativeSensor = typeof nativeSensors.$inferSelect;
 export type InsertNativeSensor = typeof nativeSensors.$inferInsert;
+
+export const sensorEnrollmentTokens = pgTable(
+  "sensor_enrollment_tokens",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    tokenHash: text("token_hash").notNull(),
+    label: text("label").notNull(),
+    maxUses: integer("max_uses").notNull().default(1),
+    useCount: integer("use_count").notNull().default(0),
+    expiresAt: timestamp("expires_at").notNull(),
+    revokedAt: timestamp("revoked_at"),
+    createdBy: varchar("created_by").notNull(),
+    platformHint: text("platform_hint"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_sensor_enrollment_tokens_hash").on(table.tokenHash),
+    index("idx_sensor_enrollment_tokens_org").on(table.orgId),
+  ],
+);
+
+export type SensorEnrollmentToken = typeof sensorEnrollmentTokens.$inferSelect;
+export type InsertSensorEnrollmentToken = typeof sensorEnrollmentTokens.$inferInsert;
+
+export const sensorIngestBatches = pgTable(
+  "sensor_ingest_batches",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sensorId: varchar("sensor_id")
+      .notNull()
+      .references(() => nativeSensors.id, { onDelete: "cascade" }),
+    batchId: text("batch_id").notNull(),
+    status: text("status").notNull().default("processing"),
+    accepted: integer("accepted").notNull().default(0),
+    rejected: integer("rejected").notNull().default(0),
+    alertsCreated: integer("alerts_created").notNull().default(0),
+    eventsMatched: integer("events_matched").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [
+    uniqueIndex("idx_sensor_ingest_batches_sensor_batch").on(table.sensorId, table.batchId),
+    index("idx_sensor_ingest_batches_org").on(table.orgId),
+  ],
+);
+
+export type SensorIngestBatch = typeof sensorIngestBatches.$inferSelect;
+export type InsertSensorIngestBatch = typeof sensorIngestBatches.$inferInsert;
 
 export const sensorPolicies = pgTable(
   "sensor_policies",
@@ -6276,6 +6337,8 @@ export const sensorEvents = pgTable(
       .notNull()
       .references(() => nativeSensors.id),
     eventType: text("event_type").notNull(),
+    batchId: text("batch_id"),
+    batchEventIndex: integer("batch_event_index"),
     timestamp: timestamp("timestamp").notNull(),
     // Process events
     processName: text("process_name"),
@@ -6322,6 +6385,7 @@ export const sensorEvents = pgTable(
     index("idx_sensor_events_sensor").on(table.sensorId),
     index("idx_sensor_events_type").on(table.orgId, table.eventType),
     index("idx_sensor_events_ts").on(table.orgId, table.timestamp),
+    uniqueIndex("idx_sensor_events_sensor_batch_index").on(table.sensorId, table.batchId, table.batchEventIndex),
   ],
 );
 
@@ -6354,6 +6418,9 @@ export const collectorInstances = pgTable(
     platform: text("platform").notNull(),
     deploymentMethod: text("deployment_method").notNull(),
     config: jsonb("config").default({}),
+    apiKey: text("api_key"),
+    apiKeyPrefix: text("api_key_prefix"),
+    revokedAt: timestamp("revoked_at"),
     hostInfo: jsonb("host_info"),
     metrics: jsonb("metrics").default({
       eventsPerSecond: 0,

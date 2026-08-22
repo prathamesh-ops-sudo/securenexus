@@ -25,6 +25,7 @@ import { seedBuiltinRules } from "../native-detections";
 import { expireTimedOutResponseActions } from "../response-action-timeouts";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { getSensorLifecycleState } from "../native-sensor-lifecycle";
 
 const log = logger.child("native-sensors");
 
@@ -57,6 +58,16 @@ function detectionRuleSnapshot(rule: DetectionRule): Record<string, unknown> {
     falsePositiveNotes: rule.falsePositiveNotes,
     references: rule.references,
   };
+}
+
+function publicSensor(sensor: typeof nativeSensors.$inferSelect): Omit<
+  typeof sensor,
+  "apiKey" | "registrationToken"
+> & {
+  lifecycleState: ReturnType<typeof getSensorLifecycleState>;
+} {
+  const { apiKey: _apiKey, registrationToken: _registrationToken, ...safeSensor } = sensor;
+  return { ...safeSensor, lifecycleState: getSensorLifecycleState(sensor) };
 }
 
 /**
@@ -135,7 +146,7 @@ export function registerNativeSensorRoutes(app: Express): void {
       const statsRow = (statsResult as any).rows?.[0] || {};
 
       res.json({
-        sensors,
+        sensors: sensors.map(publicSensor),
         stats: {
           total: parseInt(statsRow.total || "0"),
           onlineCount: parseInt(statsRow.online_count || "0"),
@@ -191,7 +202,7 @@ export function registerNativeSensorRoutes(app: Express): void {
         .limit(10);
 
       res.json({
-        sensor,
+        sensor: publicSensor(sensor),
         eventStats: {
           totalEvents: parseInt(eventsRow.total_events || "0"),
           matchedEvents: parseInt(eventsRow.matched_events || "0"),
@@ -226,7 +237,7 @@ export function registerNativeSensorRoutes(app: Express): void {
 
         // Generate one-time registration token and API key
         const registrationToken = `snx-reg-${randomBytes(24).toString("hex")}`;
-        const { key: apiKey, hash: apiKeyHash } = generateApiKey();
+        const { hash: apiKeyHash } = generateApiKey();
 
         const [sensor] = await db
           .insert(nativeSensors)
@@ -248,10 +259,8 @@ export function registerNativeSensorRoutes(app: Express): void {
         log.info(`Sensor registered: ${hostname} (${platform})`, { sensorId: sensor.id, orgId });
 
         res.status(201).json({
-          sensor,
-          registrationToken,
-          apiKey, // Return raw key once — not stored
-          message: "Sensor registered. Use the apiKey for heartbeat and event ingestion.",
+          sensor: publicSensor(sensor),
+          message: "Use an enrollment token to provision a headless sensor agent.",
         });
       } catch (error) {
         log.error("Failed to register sensor", { error: String(error) });
@@ -434,7 +443,7 @@ export function registerNativeSensorRoutes(app: Express): void {
           return res.status(404).json({ message: "Sensor not found" });
         }
 
-        await db.delete(nativeSensors).where(eq(nativeSensors.id, sensorId));
+        await db.delete(nativeSensors).where(and(eq(nativeSensors.id, sensorId), eq(nativeSensors.orgId, orgId)));
 
         log.info(`Sensor deregistered: ${sensor.hostname}`, { sensorId, orgId });
         res.json({ message: "Sensor deregistered" });

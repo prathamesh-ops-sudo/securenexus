@@ -5,6 +5,7 @@ import { logger, getOrgId, reply, replyError } from "./shared";
 import { z } from "zod";
 import { storage } from "../storage";
 import { getCollectorTemplates, getTemplateBySlug, getDeploymentScript } from "../native-collectors-engine";
+import { createCollectorAgentKey } from "../agent-auth";
 
 interface RequestWithUser extends Request {
   user?: { id?: string; orgId?: string; role?: string };
@@ -14,18 +15,21 @@ const log = logger.child("native-collectors");
 
 const REDACTED = "***REDACTED***";
 
-function redactInstanceConfig(instance: {
-  config: unknown;
-  templateSlug: string;
-  [key: string]: unknown;
-}): typeof instance {
+function redactInstanceConfig<
+  T extends {
+    config: unknown;
+    templateSlug: string;
+    apiKey?: string | null;
+  },
+>(instance: T): Omit<T, "apiKey"> {
   const template = getTemplateBySlug(instance.templateSlug);
-  if (!template) return instance;
+  const { apiKey: _apiKey, ...safeInstance } = instance;
+  if (!template) return safeInstance;
 
   const secretKeys = new Set(
     template.configSchema.filter((f: { type: string }) => f.type === "secret").map((f: { key: string }) => f.key),
   );
-  if (secretKeys.size === 0) return instance;
+  if (secretKeys.size === 0) return safeInstance;
 
   const rawConfig = (instance.config && typeof instance.config === "object" ? instance.config : {}) as Record<
     string,
@@ -35,7 +39,7 @@ function redactInstanceConfig(instance: {
   for (const [key, value] of Object.entries(rawConfig)) {
     redactedConfig[key] = secretKeys.has(key) ? REDACTED : value;
   }
-  return { ...instance, config: redactedConfig };
+  return { ...safeInstance, config: redactedConfig };
 }
 
 function stripRedactedKeys(config: Record<string, unknown>, templateSlug: string): Record<string, unknown> {
@@ -549,15 +553,11 @@ export function registerNativeCollectorRoutes(app: Express): void {
           return res.status(404).json({ message: "Collector not found" });
         }
         // Generate a random API key for the collector
-        const { randomBytes } = await import("crypto");
-        const apiKey = randomBytes(32).toString("hex");
-        const prefix = apiKey.slice(0, 8);
-        // Store the key hash in the instance config
-        const existingConfig = (
-          instance.config && typeof instance.config === "object" ? instance.config : {}
-        ) as Record<string, unknown>;
+        const { key: apiKey, hash: apiKeyHash, prefix } = createCollectorAgentKey(instanceId);
         await storage.updateCollectorInstance(instanceId, {
-          config: { ...existingConfig, apiKeyPrefix: prefix, apiKeySet: true },
+          apiKey: apiKeyHash,
+          apiKeyPrefix: prefix,
+          revokedAt: null,
         });
         res.json({ apiKey, prefix, createdAt: new Date().toISOString() });
       } catch (error) {
