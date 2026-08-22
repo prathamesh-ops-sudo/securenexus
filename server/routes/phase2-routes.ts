@@ -93,8 +93,26 @@ export function registerPhase2Routes(app: Express): void {
             cursor: state.cursor?.toISOString() ?? null,
             lastRunAt: state.lastRunAt?.toISOString() ?? null,
             lockAcquiredAt: state.lockAcquiredAt?.toISOString() ?? null,
+            reevaluationLastRunAt: state.reevaluationLastRunAt?.toISOString() ?? null,
+            reevaluationLastCompletedAt: state.reevaluationLastCompletedAt?.toISOString() ?? null,
+            fullReevaluationLastAt: state.fullReevaluationLastAt?.toISOString() ?? null,
           }
-        : { source: "nvd", lastStatus: "never", cursor: null, lastRunAt: null, itemsUpserted: 0, lastError: null },
+        : {
+            source: "nvd",
+            lastStatus: "never",
+            cursor: null,
+            lastRunAt: null,
+            itemsUpserted: 0,
+            lastError: null,
+            reevaluationStatus: "never",
+            reevaluationLastRunAt: null,
+            reevaluationLastCompletedAt: null,
+            reevaluationLastError: null,
+            reevaluationGroups: 0,
+            reevaluationFailedGroups: 0,
+            reevaluationScope: null,
+            fullReevaluationLastAt: null,
+          },
     );
   });
 

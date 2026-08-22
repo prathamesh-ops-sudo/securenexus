@@ -4635,12 +4635,70 @@ export const cveSyncStates = pgTable(
     itemsUpserted: integer("items_upserted").notNull().default(0),
     lockToken: text("lock_token"),
     lockAcquiredAt: timestamp("lock_acquired_at"),
+    reevaluationStatus: text("reevaluation_status").notNull().default("never"),
+    reevaluationLastRunAt: timestamp("reevaluation_last_run_at"),
+    reevaluationLastCompletedAt: timestamp("reevaluation_last_completed_at"),
+    reevaluationLastError: text("reevaluation_last_error"),
+    reevaluationGroups: integer("reevaluation_groups").notNull().default(0),
+    reevaluationFailedGroups: integer("reevaluation_failed_groups").notNull().default(0),
+    reevaluationScope: text("reevaluation_scope"),
+    fullReevaluationLastAt: timestamp("full_reevaluation_last_at"),
   },
   (table) => [index("idx_cve_sync_states_source").on(table.source)],
 );
 
 export type CveSyncState = typeof cveSyncStates.$inferSelect;
 export type InsertCveSyncState = typeof cveSyncStates.$inferInsert;
+
+export const osvVulnerabilityCache = pgTable(
+  "osv_vulnerability_cache",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    advisoryId: text("advisory_id").notNull().unique(),
+    modifiedAt: timestamp("modified_at"),
+    fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
+    payload: jsonb("payload").notNull(),
+  },
+  (table) => [
+    index("idx_osv_vulnerability_cache_advisory").on(table.advisoryId),
+    index("idx_osv_vulnerability_cache_modified").on(table.modifiedAt),
+  ],
+);
+
+export type OsvVulnerabilityCache = typeof osvVulnerabilityCache.$inferSelect;
+export type InsertOsvVulnerabilityCache = typeof osvVulnerabilityCache.$inferInsert;
+
+export const vulnReevaluationRuns = pgTable(
+  "vuln_reevaluation_runs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    source: text("source").notNull().default("nvd"),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sensorId: varchar("sensor_id")
+      .notNull()
+      .references(() => nativeSensors.id, { onDelete: "cascade" }),
+    status: text("status").notNull(),
+    packageCount: integer("package_count").notNull().default(0),
+    affectedProducts: jsonb("affected_products").default(sql`'[]'::jsonb`),
+    error: text("error"),
+    startedAt: timestamp("started_at").notNull().defaultNow(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [
+    index("idx_vuln_reevaluation_runs_org").on(table.orgId),
+    index("idx_vuln_reevaluation_runs_sensor").on(table.sensorId),
+    index("idx_vuln_reevaluation_runs_started").on(table.startedAt),
+  ],
+);
+
+export type VulnReevaluationRun = typeof vulnReevaluationRuns.$inferSelect;
+export type InsertVulnReevaluationRun = typeof vulnReevaluationRuns.$inferInsert;
 
 export const TICKET_SYNC_STATUSES = ["pending", "syncing", "synced", "error"] as const;
 export const TICKET_SYNC_DIRECTIONS = ["outbound", "inbound", "bidirectional"] as const;
@@ -6899,6 +6957,7 @@ export const vulnPackages = pgTable(
     isVulnerable: boolean("is_vulnerable").notNull().default(false),
     cveCount: integer("cve_count").notNull().default(0),
     reportedAt: timestamp("reported_at").defaultNow(),
+    lastEvaluatedAt: timestamp("last_evaluated_at"),
     updatedAt: timestamp("updated_at").defaultNow(),
   },
   (table) => [

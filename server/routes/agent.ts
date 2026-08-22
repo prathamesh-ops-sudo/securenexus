@@ -425,6 +425,7 @@ async function handleSensorPackages(req: Request, res: Response): Promise<void> 
             isVulnerable: pkg.matches.length > 0,
             cveCount: pkg.matches.length,
             reportedAt: now,
+            lastEvaluatedAt: now,
             updatedAt: now,
           })),
         )
