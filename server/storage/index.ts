@@ -39,6 +39,7 @@ import * as adversarialTestingFns from "./adversarial-testing";
 import * as agentToolSecurityFns from "./agent-tool-security";
 import * as browserDefenseFns from "./browser-defense";
 import * as runtimeGuardrailsFns from "./runtime-guardrails";
+import * as complianceGapFns from "./compliance-gap";
 
 import type { IStorage } from "./types";
 
@@ -238,6 +239,10 @@ export class DatabaseStorage implements IStorage {
   // compliance
   getCompliancePolicy = complianceFns.getCompliancePolicy;
   upsertCompliancePolicy = complianceFns.upsertCompliancePolicy;
+  getComplianceGapAssessments = complianceGapFns.getComplianceGapAssessments;
+  getComplianceGapAssessment = complianceGapFns.getComplianceGapAssessment;
+  getComplianceGapsByFramework = complianceGapFns.getComplianceGapsByFramework;
+  createComplianceGapAssessment = complianceGapFns.createComplianceGapAssessment;
   getDsarRequests = complianceFns.getDsarRequests;
   getDsarRequest = complianceFns.getDsarRequest;
   createDsarRequest = complianceFns.createDsarRequest;

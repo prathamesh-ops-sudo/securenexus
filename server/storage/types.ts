@@ -28,6 +28,8 @@ import {
   type InsertThreatIntelConfig,
   type CompliancePolicy,
   type InsertCompliancePolicy,
+  type ComplianceGapAssessment,
+  type InsertComplianceGapAssessment,
   type DsarRequest,
   type InsertDsarRequest,
   type IntegrationConfig,
@@ -493,6 +495,10 @@ export interface IStorage {
 
   getCompliancePolicy(orgId: string): Promise<CompliancePolicy | undefined>;
   upsertCompliancePolicy(policy: InsertCompliancePolicy): Promise<CompliancePolicy>;
+  getComplianceGapAssessments(orgId: string): Promise<ComplianceGapAssessment[]>;
+  getComplianceGapAssessment(id: string): Promise<ComplianceGapAssessment | undefined>;
+  getComplianceGapsByFramework(orgId: string, frameworkId: string): Promise<ComplianceGapAssessment[]>;
+  createComplianceGapAssessment(data: InsertComplianceGapAssessment): Promise<ComplianceGapAssessment>;
 
   getDsarRequests(orgId: string): Promise<DsarRequest[]>;
   getDsarRequest(id: string): Promise<DsarRequest | undefined>;
@@ -888,11 +894,11 @@ export interface IStorage {
   cleanupOldSliMetrics(olderThanDays: number): Promise<number>;
 
   // SLO Targets
-  getSloTargets(): Promise<SloTarget[]>;
-  getSloTarget(id: string): Promise<SloTarget | undefined>;
+  getSloTargets(orgId?: string): Promise<SloTarget[]>;
+  getSloTarget(id: string, orgId?: string): Promise<SloTarget | undefined>;
   createSloTarget(target: InsertSloTarget): Promise<SloTarget>;
-  updateSloTarget(id: string, data: Partial<SloTarget>): Promise<SloTarget | undefined>;
-  deleteSloTarget(id: string): Promise<boolean>;
+  updateSloTarget(id: string, data: Partial<SloTarget>, orgId?: string): Promise<SloTarget | undefined>;
+  deleteSloTarget(id: string, orgId?: string): Promise<boolean>;
 
   // DR Runbooks
   getDrRunbooks(orgId: string): Promise<DrRunbook[]>;

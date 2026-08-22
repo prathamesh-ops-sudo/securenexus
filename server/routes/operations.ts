@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
-import { randomBytes } from "crypto";
 import { getOrgId, p, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../rbac";
@@ -147,7 +146,7 @@ export function registerOperationsRoutes(app: Express): void {
 
   app.get("/api/ops/slo", isAuthenticated, async (req, res) => {
     try {
-      const targets = await storage.getSloTargets();
+      const targets = await storage.getSloTargets(getOrgId(req));
       const { evaluateSlos } = await import("../sli-middleware");
       const evaluations = await evaluateSlos();
       res.json({ targets, evaluations });
@@ -164,7 +163,7 @@ export function registerOperationsRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const targets = await storage.getSloTargets();
+        const targets = await storage.getSloTargets(getOrgId(req));
         res.json(targets);
       } catch (error) {
         res.status(500).json({ message: "Failed to fetch SLO targets" });
@@ -180,7 +179,8 @@ export function registerOperationsRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const target = await storage.createSloTarget(req.body);
+        const orgId = getOrgId(req);
+        const target = await storage.createSloTarget({ ...req.body, orgId });
         res.status(201).json(target);
       } catch (error) {
         res.status(500).json({ message: "Failed to create SLO target" });
@@ -196,7 +196,7 @@ export function registerOperationsRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const updated = await storage.updateSloTarget(p(req.params.id), req.body);
+        const updated = await storage.updateSloTarget(p(req.params.id), req.body, getOrgId(req));
         if (!updated) return res.status(404).json({ message: "SLO target not found" });
         res.json(updated);
       } catch (error) {
@@ -213,7 +213,7 @@ export function registerOperationsRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const deleted = await storage.deleteSloTarget(p(req.params.id));
+        const deleted = await storage.deleteSloTarget(p(req.params.id), getOrgId(req));
         if (!deleted) return res.status(404).json({ message: "SLO target not found" });
         res.json({ deleted: true });
       } catch (error) {
@@ -695,9 +695,9 @@ export function registerOperationsRoutes(app: Express): void {
   // ============================
   // SLO v1 Endpoints (per-endpoint aware)
   // ============================
-  app.get("/api/v1/slo/targets", isAuthenticated, async (_req, res) => {
+  app.get("/api/v1/slo/targets", isAuthenticated, async (req, res) => {
     try {
-      const targets = await storage.getSloTargets();
+      const targets = await storage.getSloTargets(getOrgId(req));
       return sendEnvelope(res, targets, { meta: { total: targets.length } });
     } catch (error: any) {
       return sendEnvelope(res, null, {
@@ -723,6 +723,7 @@ export function registerOperationsRoutes(app: Express): void {
           });
         }
         const sloTarget = await storage.createSloTarget({
+          orgId: getOrgId(req),
           service,
           metric,
           endpoint: endpoint || "*",
@@ -750,7 +751,7 @@ export function registerOperationsRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const updated = await storage.updateSloTarget(p(req.params.id), req.body);
+        const updated = await storage.updateSloTarget(p(req.params.id), req.body, getOrgId(req));
         if (!updated)
           return sendEnvelope(res, null, {
             status: 404,
@@ -774,7 +775,7 @@ export function registerOperationsRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const deleted = await storage.deleteSloTarget(p(req.params.id));
+        const deleted = await storage.deleteSloTarget(p(req.params.id), getOrgId(req));
         if (!deleted)
           return sendEnvelope(res, null, {
             status: 404,

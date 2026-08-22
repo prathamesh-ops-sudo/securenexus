@@ -370,23 +370,15 @@ export function registerCrossCuttingRoutes(app: Express): void {
     requireMinRole("admin"),
     async (req, res) => {
       try {
-        const orgId = getOrgId(req);
-        // Trigger a simulated drift scan — creates a drift record if none exists
-        const newDrift = await storage.createCrossCuttingDriftRecord({
-          orgId,
-          driftType: "policy",
-          sourceModule: "drift-scanner",
-          resourceId: null,
-          resourceType: null,
-          expectedState: {},
-          actualState: {},
-          severity: "info",
-          status: "detected",
-          remediationAction: null,
-        });
-        const driftRecords = await storage.getCrossCuttingDriftRecords(orgId);
-        const driftsDetected = driftRecords.filter((signal) => signal.status === "detected").length;
-        reply(res, { scanId: newDrift.id, status: "completed", driftsDetected });
+        reply(
+          res,
+          {
+            status: "unavailable",
+            message: "Drift scanning is unavailable because no persisted baseline comparison engine is configured.",
+          },
+          {},
+          503,
+        );
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         log.error(`POST /api/cross-cutting/drift/scan failed: ${message}`);

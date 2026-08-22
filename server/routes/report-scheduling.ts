@@ -63,7 +63,7 @@ export function registerReportSchedulingRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const user = (req as any).user;
-        const { templateId, name, cadence, deliveryTargets, timezone } = req.body;
+        const { templateId, reportType, format, name, cadence, deliveryTargets, recipients, timezone } = req.body;
 
         if (!name) {
           return replyError(res, 400, [{ code: "VALIDATION_ERROR", message: "name is required." }]);
@@ -72,13 +72,32 @@ export function registerReportSchedulingRoutes(app: Express): void {
         const validCadences = ["daily", "weekly", "biweekly", "monthly", "quarterly"];
         const resolvedCadence = validCadences.includes(cadence) ? cadence : "weekly";
 
+        let resolvedTemplateId = templateId;
+        if (!resolvedTemplateId) {
+          const template = await storage.createReportTemplate({
+            orgId,
+            name: `${name} template`,
+            description: `Template for ${name}`,
+            reportType: reportType || "compliance",
+            format: format || "pdf",
+            config: null,
+            dashboardRole: null,
+            isBuiltIn: false,
+            createdBy: user?.id || user?.username || null,
+          });
+          resolvedTemplateId = template.id;
+        }
+
+        const resolvedDeliveryTargets = deliveryTargets ?? recipients;
         const schedule = await storage.createReportSchedule({
           orgId,
-          templateId: templateId || "default",
+          templateId: resolvedTemplateId,
           name,
           cadence: resolvedCadence,
           timezone: timezone || "UTC",
-          deliveryTargets: Array.isArray(deliveryTargets) ? JSON.stringify(deliveryTargets) : deliveryTargets || null,
+          deliveryTargets: Array.isArray(resolvedDeliveryTargets)
+            ? JSON.stringify(resolvedDeliveryTargets)
+            : resolvedDeliveryTargets || null,
           enabled: true,
           createdBy: user?.id || user?.username || null,
         });

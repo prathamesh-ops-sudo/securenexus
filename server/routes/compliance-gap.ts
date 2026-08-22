@@ -1,9 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express, Request, Response } from "express";
-import { getOrgId, logger, reply, replyError, sendEnvelope } from "./shared";
+import { getOrgId, logger, reply, replyError, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, resolveOrgContext } from "../rbac";
-import { randomBytes } from "crypto";
 import { getComplianceControls, getComplianceControlMappings } from "../storage/compliance";
 
 interface ControlGap {
@@ -377,8 +376,26 @@ export function registerComplianceGapRoutes(app: Express): void {
         const partial = gaps.filter((g) => g.status === "partial").length;
         const missing = gaps.filter((g) => g.status === "missing").length;
 
+        const persistedAssessments = await Promise.all(
+          gaps.map((gap) =>
+            storage.createComplianceGapAssessment({
+              orgId,
+              frameworkId: framework,
+              frameworkName: fw.name,
+              controlId: gap.controlId,
+              controlName: gap.controlName,
+              category: gap.category,
+              status: gap.status,
+              evidence: gap.evidence,
+              remediationPriority: gap.remediationPriority,
+              estimatedEffort: gap.estimatedEffort,
+              description: gap.description,
+              assessedBy: user?.id || user?.username || "unknown",
+            }),
+          ),
+        );
         const analysis = {
-          id: `gap-${Date.now()}-${randomBytes(4).toString("hex")}`,
+          id: persistedAssessments[0]?.id || null,
           orgId,
           framework: fw.name,
           frameworkKey: framework,
@@ -416,31 +433,31 @@ export function registerComplianceGapRoutes(app: Express): void {
         const orgId = getOrgId(req);
         const frameworkFilter = req.query.framework as string | undefined;
 
+        const assessments = await storage.getComplianceGapAssessments(orgId);
         const frameworkKeys = frameworkFilter ? [frameworkFilter] : Object.keys(FRAMEWORKS);
-        const results = [];
-
-        for (const key of frameworkKeys) {
+        const results = frameworkKeys.flatMap((key) => {
           const fw = FRAMEWORKS[key];
-          if (!fw) continue;
-
-          const { gaps } = await analyzeCompliance(orgId, fw, key);
-          const implemented = gaps.filter((g) => g.status === "implemented").length;
-          const partial = gaps.filter((g) => g.status === "partial").length;
-          const missing = gaps.filter((g) => g.status === "missing").length;
-
-          results.push({
-            id: key,
-            framework: fw.name,
-            frameworkKey: key,
-            version: fw.version,
-            status: "completed",
-            totalControls: fw.controls.length,
-            implementedControls: implemented,
-            partialControls: partial,
-            missingControls: missing,
-            complianceScore: fw.controls.length > 0 ? Math.round((implemented / fw.controls.length) * 100) : 0,
-          });
-        }
+          const frameworkAssessments = assessments.filter((assessment) => assessment.frameworkId === key);
+          if (!fw || frameworkAssessments.length === 0) return [];
+          const implemented = frameworkAssessments.filter((g) => g.status === "implemented").length;
+          const partial = frameworkAssessments.filter((g) => g.status === "partial").length;
+          const missing = frameworkAssessments.filter((g) => g.status === "missing").length;
+          return [
+            {
+              id: frameworkAssessments[0].id,
+              framework: fw.name,
+              frameworkKey: key,
+              version: fw.version,
+              status: "completed",
+              totalControls: frameworkAssessments.length,
+              implementedControls: implemented,
+              partialControls: partial,
+              missingControls: missing,
+              complianceScore:
+                frameworkAssessments.length > 0 ? Math.round((implemented / frameworkAssessments.length) * 100) : 0,
+            },
+          ];
+        });
 
         return sendEnvelope(res, results, { meta: { total: results.length } });
       } catch (error: unknown) {
@@ -465,12 +482,27 @@ export function registerComplianceGapRoutes(app: Express): void {
           return replyError(res, 404, [{ code: "NOT_FOUND", message: "Framework not found." }]);
         }
 
-        const { gaps, recommendations } = await analyzeCompliance(orgId, fw, frameworkKey);
+        const persistedAssessments = await storage.getComplianceGapsByFramework(orgId, frameworkKey);
+        if (persistedAssessments.length === 0) {
+          return replyError(res, 404, [{ code: "NOT_FOUND", message: "No completed analysis found." }]);
+        }
+        const gaps = persistedAssessments.map((assessment) => ({
+          controlId: assessment.controlId,
+          controlName: assessment.controlName || assessment.controlId,
+          category: assessment.category || "Uncategorized",
+          status: assessment.status as ControlGap["status"],
+          evidence: Array.isArray(assessment.evidence) ? assessment.evidence.map(String) : [],
+          remediationPriority: (assessment.remediationPriority || "medium") as ControlGap["remediationPriority"],
+          estimatedEffort: assessment.estimatedEffort || "Unknown",
+          description: assessment.description || "",
+        }));
+        const { recommendations } = await analyzeCompliance(orgId, fw, frameworkKey);
         const implemented = gaps.filter((g) => g.status === "implemented").length;
         const partial = gaps.filter((g) => g.status === "partial").length;
         const missing = gaps.filter((g) => g.status === "missing").length;
 
         return reply(res, {
+          id: persistedAssessments[0].id,
           framework: fw.name,
           frameworkKey,
           version: fw.version,

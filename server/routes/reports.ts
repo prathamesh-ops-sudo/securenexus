@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
-import { calculateNextRunFromCadence, formatCSVRow, getOrgId, p, storage } from "./shared";
+import { formatCSVRow, getOrgId, p, storage } from "./shared";
 import { isAuthenticated } from "../auth";
-import { insertReportScheduleSchema, insertReportTemplateSchema } from "@shared/schema";
+import { insertReportTemplateSchema } from "@shared/schema";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 
@@ -214,94 +214,6 @@ export function registerReportsRoutes(app: Express): void {
       const existing = await storage.getReportTemplate(p(req.params.id));
       if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Template not found" });
       await storage.deleteReportTemplate(p(req.params.id));
-      res.json({ success: true });
-    },
-  );
-
-  app.get(
-    "/api/report-schedules",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    requireMinRole("analyst"),
-    async (req, res) => {
-      const user = req.user as any;
-      const schedules = await storage.getReportSchedules(user?.orgId);
-      res.json(schedules);
-    },
-  );
-
-  app.get(
-    "/api/report-schedules/:id",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    requireMinRole("analyst"),
-    async (req, res) => {
-      const orgId = getOrgId(req);
-      const schedule = await storage.getReportSchedule(p(req.params.id));
-      if (!schedule || schedule.orgId !== orgId) return res.status(404).json({ message: "Schedule not found" });
-      res.json(schedule);
-    },
-  );
-
-  app.post(
-    "/api/report-schedules",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    requireMinRole("analyst"),
-    async (req, res) => {
-      try {
-        const user = req.user as any;
-        const cadence = req.body.cadence || "weekly";
-        const nextRunAt = calculateNextRunFromCadence(cadence);
-        const orgId = getOrgId(req);
-        const data = insertReportScheduleSchema.parse({ ...req.body, orgId, createdBy: user?.id || null });
-        const template = await storage.getReportTemplate(data.templateId);
-        if (!template || template.orgId !== orgId) return res.status(404).json({ message: "Template not found" });
-        const schedule = await storage.createReportSchedule(data);
-        await storage.updateReportSchedule(schedule.id, { nextRunAt });
-        const updated = await storage.getReportSchedule(schedule.id);
-        res.status(201).json(updated);
-      } catch (error: any) {
-        if (error.message === "ORG_CONTEXT_MISSING")
-          return res.status(403).json({ message: "Organization context required" });
-        res.status(500).json({ message: "Failed to create report schedule" });
-      }
-    },
-  );
-
-  app.patch(
-    "/api/report-schedules/:id",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    requireMinRole("analyst"),
-    async (req, res) => {
-      const orgId = getOrgId(req);
-      const existing = await storage.getReportSchedule(p(req.params.id));
-      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Schedule not found" });
-      const { id: _id, orgId: _org, ...updateData } = req.body;
-      if (updateData.cadence) {
-        updateData.nextRunAt = calculateNextRunFromCadence(updateData.cadence);
-      }
-      const schedule = await storage.updateReportSchedule(p(req.params.id), updateData);
-      res.json(schedule);
-    },
-  );
-
-  app.delete(
-    "/api/report-schedules/:id",
-    isAuthenticated,
-    resolveOrgContext,
-    requireOrgId,
-    requireMinRole("analyst"),
-    async (req, res) => {
-      const orgId = getOrgId(req);
-      const existing = await storage.getReportSchedule(p(req.params.id));
-      if (!existing || existing.orgId !== orgId) return res.status(404).json({ message: "Schedule not found" });
-      await storage.deleteReportSchedule(p(req.params.id));
       res.json({ success: true });
     },
   );

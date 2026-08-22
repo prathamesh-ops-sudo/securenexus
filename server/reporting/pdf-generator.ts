@@ -6,6 +6,7 @@
 import PDFDocument from "pdfkit";
 import path from "path";
 import fs from "fs";
+import { fileURLToPath } from "url";
 import {
   drawBarChart,
   drawDonutChart,
@@ -25,6 +26,7 @@ const TABLE_ALT_ROW = "#F8F9FC";
 const TEXT_PRIMARY = "#1a1a2e";
 const TEXT_SECONDARY = "#64748b";
 const BORDER_COLOR = "#E2E8F0";
+const MODULE_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -94,7 +96,7 @@ function getDefaultLogoPath(): string | null {
   const candidates = [
     path.join(process.cwd(), "client", "public", "ats-logo.png"),
     path.join(process.cwd(), "dist", "public", "ats-logo.png"),
-    path.join(__dirname, "..", "..", "client", "public", "ats-logo.png"),
+    path.join(MODULE_DIRECTORY, "..", "..", "client", "public", "ats-logo.png"),
   ];
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;

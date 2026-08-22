@@ -3,13 +3,11 @@ import type { Express, Request, Response } from "express";
 
 const mocks = vi.hoisted(() => ({
   getCrossCuttingDriftRecords: vi.fn(),
-  createCrossCuttingDriftRecord: vi.fn(),
 }));
 
 vi.mock("../storage", () => ({
   storage: {
     getCrossCuttingDriftRecords: mocks.getCrossCuttingDriftRecords,
-    createCrossCuttingDriftRecord: mocks.createCrossCuttingDriftRecord,
   },
 }));
 
@@ -74,14 +72,9 @@ function responseMock(): Response {
 describe("cross-cutting drift summary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.createCrossCuttingDriftRecord.mockResolvedValue({ id: "drift-1", status: "detected" });
   });
 
-  it("counts detected rows returned from the tenant-scoped persisted read", async () => {
-    mocks.getCrossCuttingDriftRecords.mockResolvedValue([
-      { id: "drift-1", orgId: "org-1", status: "detected" },
-      { id: "drift-2", orgId: "org-1", status: "resolved" },
-    ]);
+  it("reports that scanning is unavailable without creating synthetic drift evidence", async () => {
     const route = registerRoutes().find((candidate) => candidate.path === "/api/cross-cutting/drift/scan");
     expect(route).toBeDefined();
     const handler = route?.handlers.at(-1);
@@ -89,11 +82,15 @@ describe("cross-cutting drift summary", () => {
 
     await handler?.({ body: {} } as Request, res);
 
-    expect(mocks.getCrossCuttingDriftRecords).toHaveBeenCalledWith("org-1");
+    expect(res.status).toHaveBeenCalledWith(503);
     expect(res.json).toHaveBeenCalledWith({
-      data: { scanId: "drift-1", status: "completed", driftsDetected: 1 },
+      data: {
+        status: "unavailable",
+        message: "Drift scanning is unavailable because no persisted baseline comparison engine is configured.",
+      },
       meta: {},
       errors: null,
     });
+    expect(mocks.getCrossCuttingDriftRecords).not.toHaveBeenCalled();
   });
 });

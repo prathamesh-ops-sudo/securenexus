@@ -226,8 +226,8 @@ export const ROLE_PERMISSIONS: Record<string, Record<string, string[]>> = {
     response_actions: ["read", "write"],
     settings: ["read"],
     team: ["read"],
-    compliance: ["read", "write"],
-    security_awareness: ["read", "write"],
+    compliance: ["read"],
+    security_awareness: ["read"],
     physical_security: ["read", "write"],
   },
   read_only: {
@@ -4344,6 +4344,7 @@ export const sloTargets = pgTable(
     id: varchar("id")
       .primaryKey()
       .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").references(() => organizations.id),
     service: text("service").notNull(),
     metric: text("metric").notNull(),
     endpoint: text("endpoint").notNull().default("*"),

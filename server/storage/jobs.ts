@@ -257,12 +257,19 @@ export async function cleanupOldSliMetrics(olderThanDays: number): Promise<numbe
   return result.length;
 }
 
-export async function getSloTargets(): Promise<SloTarget[]> {
-  return db.select().from(sloTargets).orderBy(asc(sloTargets.service));
+export async function getSloTargets(orgId?: string): Promise<SloTarget[]> {
+  return db
+    .select()
+    .from(sloTargets)
+    .where(orgId ? eq(sloTargets.orgId, orgId) : undefined)
+    .orderBy(asc(sloTargets.service));
 }
 
-export async function getSloTarget(id: string): Promise<SloTarget | undefined> {
-  const [target] = await db.select().from(sloTargets).where(eq(sloTargets.id, id));
+export async function getSloTarget(id: string, orgId?: string): Promise<SloTarget | undefined> {
+  const [target] = await db
+    .select()
+    .from(sloTargets)
+    .where(orgId ? and(eq(sloTargets.id, id), eq(sloTargets.orgId, orgId)) : eq(sloTargets.id, id));
   return target;
 }
 
@@ -271,17 +278,24 @@ export async function createSloTarget(target: InsertSloTarget): Promise<SloTarge
   return created;
 }
 
-export async function updateSloTarget(id: string, data: Partial<SloTarget>): Promise<SloTarget | undefined> {
+export async function updateSloTarget(
+  id: string,
+  data: Partial<SloTarget>,
+  orgId?: string,
+): Promise<SloTarget | undefined> {
   const [updated] = await db
     .update(sloTargets)
     .set({ ...data, updatedAt: new Date() })
-    .where(eq(sloTargets.id, id))
+    .where(orgId ? and(eq(sloTargets.id, id), eq(sloTargets.orgId, orgId)) : eq(sloTargets.id, id))
     .returning();
   return updated;
 }
 
-export async function deleteSloTarget(id: string): Promise<boolean> {
-  const result = await db.delete(sloTargets).where(eq(sloTargets.id, id)).returning();
+export async function deleteSloTarget(id: string, orgId?: string): Promise<boolean> {
+  const result = await db
+    .delete(sloTargets)
+    .where(orgId ? and(eq(sloTargets.id, id), eq(sloTargets.orgId, orgId)) : eq(sloTargets.id, id))
+    .returning();
   return result.length > 0;
 }
 

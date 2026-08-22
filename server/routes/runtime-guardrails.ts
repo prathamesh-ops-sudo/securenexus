@@ -4,7 +4,7 @@ import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 
 import { storage } from "../storage";
-import { evaluateAction, simulatePolicy } from "../runtime-guardrails-engine";
+import { evaluateAction, simulatePolicy, toPolicyRule } from "../runtime-guardrails-engine";
 import type { PolicyAction, PolicyMode, PolicyDecisionVerdict, PolicyScope } from "../runtime-guardrails-engine";
 
 const VALID_ACTIONS: PolicyAction[] = [
@@ -295,15 +295,20 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
           return res.status(400).json({ message: "actorType must be user, agent, or service" });
         }
 
-        // Run evaluation via engine (stateless)
-        const decision = evaluateAction(orgId, {
-          action: body.action,
-          actorId: body.actorId,
-          actorType: body.actorType,
-          resourceId: body.resourceId || "unknown",
-          resourceType: body.resourceType || "unknown",
-          context: body.context || {},
-        });
+        const persistedPolicies = await storage.getRuntimePolicies(orgId);
+        const decision = evaluateAction(
+          orgId,
+          {
+            action: body.action,
+            actorId: body.actorId,
+            actorType: body.actorType,
+            resourceId: body.resourceId || "unknown",
+            resourceType: body.resourceType || "unknown",
+            context: body.context || {},
+          },
+          { skipLog: true },
+          persistedPolicies.map(toPolicyRule),
+        );
 
         // Persist decision to DB
         await storage.createRuntimeDecision({
@@ -349,11 +354,16 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
           return res.status(400).json({ message: `Invalid action. Must be one of: ${VALID_ACTIONS.join(", ")}` });
         }
 
-        const simulation = simulatePolicy(orgId, {
-          policyId: body.policyId,
-          action: body.action,
-          context: body.context || {},
-        });
+        const persistedPolicies = await storage.getRuntimePolicies(orgId);
+        const simulation = simulatePolicy(
+          orgId,
+          {
+            policyId: body.policyId,
+            action: body.action,
+            context: body.context || {},
+          },
+          persistedPolicies.map(toPolicyRule),
+        );
         res.json(simulation);
       } catch (error) {
         const errMsg = String(error);

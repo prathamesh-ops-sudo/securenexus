@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import type { RuntimeGuardrailPolicy } from "@shared/schema";
 
 export type PolicyAction =
   | "ai_agent_invoke"
@@ -542,15 +543,12 @@ function getOrgOverrideStore(orgId: string): Map<string, EmergencyOverride> {
 
 export function getPolicies(orgId: string): PolicyRule[] {
   const orgStore = getOrgPolicyStore(orgId);
-  const merged = [...CATALOG_POLICIES, ...Array.from(orgStore.values())];
-  return merged.sort((a, b) => b.priority - a.priority);
+  return Array.from(orgStore.values()).sort((a, b) => b.priority - a.priority);
 }
 
 export function getPolicyById(policyId: string, orgId: string): PolicyRule | null {
   const orgStore = getOrgPolicyStore(orgId);
-  const orgPolicy = orgStore.get(policyId);
-  if (orgPolicy) return orgPolicy;
-  return CATALOG_POLICIES.find((p) => p.id === policyId) || null;
+  return orgStore.get(policyId) || null;
 }
 
 export function createPolicy(
@@ -574,9 +572,6 @@ export function createPolicy(
 export function deletePolicy(policyIdVal: string, orgId: string): boolean {
   const store = getOrgPolicyStore(orgId);
   if (store.has(policyIdVal)) {
-    if (CATALOG_POLICIES.some((p) => p.id === policyIdVal)) {
-      return false;
-    }
     store.delete(policyIdVal);
     return true;
   }
@@ -603,21 +598,8 @@ export function updatePolicy(
   >,
 ): PolicyRule | null {
   const store = getOrgPolicyStore(orgId);
-  let policy = store.get(policyIdVal);
-
-  if (!policy) {
-    const catalogPolicy = CATALOG_POLICIES.find((p) => p.id === policyIdVal);
-    if (!catalogPolicy) return null;
-    policy = {
-      ...catalogPolicy,
-      orgId,
-      conditions: catalogPolicy.conditions.map((c) => ({ ...c })),
-      actions: [...catalogPolicy.actions],
-      tags: [...catalogPolicy.tags],
-      rateLimit: catalogPolicy.rateLimit ? { ...catalogPolicy.rateLimit } : null,
-    };
-    store.set(policy.id, policy);
-  }
+  const policy = store.get(policyIdVal);
+  if (!policy) return null;
 
   if (updates.name !== undefined) policy.name = updates.name;
   if (updates.description !== undefined) policy.description = updates.description;
@@ -636,13 +618,71 @@ export function updatePolicy(
   return policy;
 }
 
+function isPolicyAction(value: unknown): value is PolicyAction {
+  return typeof value === "string" && VALID_POLICY_ACTIONS.has(value as PolicyAction);
+}
+
+const VALID_POLICY_ACTIONS = new Set<PolicyAction>([
+  "ai_agent_invoke",
+  "ai_agent_tool_call",
+  "api_outbound_call",
+  "browser_navigation",
+  "secret_access",
+  "data_egress",
+  "file_write",
+  "shell_exec",
+  "db_query",
+  "webhook_dispatch",
+]);
+
+export function toPolicyRule(policy: RuntimeGuardrailPolicy): PolicyRule {
+  const metadata =
+    typeof policy.metadata === "object" && policy.metadata !== null ? (policy.metadata as Record<string, unknown>) : {};
+  const metadataActions = Array.isArray(metadata.actions) ? metadata.actions.filter(isPolicyAction) : [];
+  const actions = metadataActions.length > 0 ? metadataActions : [policy.action as PolicyAction];
+  const conditions = Array.isArray(policy.conditions) ? (policy.conditions as PolicyCondition[]) : [];
+  const tags = Array.isArray(metadata.tags)
+    ? metadata.tags.filter((tag): tag is string => typeof tag === "string")
+    : [];
+  const verdict = metadata.verdict === "deny" || metadata.verdict === "quarantine" ? metadata.verdict : "allow";
+  const mode: PolicyMode =
+    policy.enabled === false
+      ? "disabled"
+      : policy.mode === "dry_run" || policy.mode === "audit_only" || policy.mode === "disabled"
+        ? policy.mode
+        : "enforce";
+
+  return {
+    id: policy.id,
+    orgId: policy.orgId,
+    name: policy.name,
+    description: policy.description || "",
+    scope: policy.scope as PolicyScope,
+    actions,
+    mode,
+    priority: policy.priority,
+    conditions,
+    verdict,
+    rateLimit:
+      typeof metadata.rateLimit === "object" && metadata.rateLimit !== null
+        ? (metadata.rateLimit as { maxRequests: number; windowSeconds: number })
+        : null,
+    tags,
+    version: typeof metadata.version === "number" ? metadata.version : 1,
+    createdAt: policy.createdAt?.toISOString() || new Date(0).toISOString(),
+    updatedAt: policy.updatedAt?.toISOString() || new Date(0).toISOString(),
+    createdBy: typeof metadata.createdBy === "string" ? metadata.createdBy : "api",
+  };
+}
+
 export function evaluateAction(
   orgId: string,
   request: EvaluateRequest,
   options?: { skipLog?: boolean },
+  policySource?: PolicyRule[],
 ): PolicyDecision {
   const startTime = Date.now();
-  const policies = getPolicies(orgId).filter((p) => p.mode !== "disabled");
+  const policies = (policySource ?? getPolicies(orgId)).filter((p) => p.mode !== "disabled");
 
   let matchedPolicy: PolicyRule | null = null;
   let matchedConditionNames: string[] = [];
@@ -755,8 +795,9 @@ function evaluateCondition(fieldValue: unknown, condition: PolicyCondition): boo
   }
 }
 
-export function simulatePolicy(orgId: string, request: SimulateRequest): PolicySimulation {
-  const policy = getPolicyById(request.policyId, orgId);
+export function simulatePolicy(orgId: string, request: SimulateRequest, policySource?: PolicyRule[]): PolicySimulation {
+  const policies = policySource ?? getPolicies(orgId);
+  const policy = policies.find((candidate) => candidate.id === request.policyId) || null;
   if (!policy) {
     throw new Error("POLICY_NOT_FOUND");
   }
@@ -772,9 +813,10 @@ export function simulatePolicy(orgId: string, request: SimulateRequest): PolicyS
       context: request.context,
     },
     { skipLog: true },
+    policies,
   );
 
-  const allPolicies = getPolicies(orgId);
+  const allPolicies = policies;
   const scopedPolicies = allPolicies.filter((p) => p.scope === policy.scope || p.scope === "global");
 
   const blastRadius: BlastRadius = {
@@ -812,15 +854,12 @@ export function simulatePolicy(orgId: string, request: SimulateRequest): PolicyS
 
 export function getDecisionLogs(orgId: string): PolicyDecision[] {
   const orgStore = getOrgDecisionStore(orgId);
-  const merged = [...CATALOG_DECISIONS, ...orgStore];
-  return merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  return [...orgStore].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 }
 
 export function getSimulations(orgId: string): PolicySimulation[] {
   const orgStore = getOrgSimulationStore(orgId);
-  return [...CATALOG_SIMULATIONS, ...orgStore].sort(
-    (a, b) => new Date(b.dryRunAt).getTime() - new Date(a.dryRunAt).getTime(),
-  );
+  return [...orgStore].sort((a, b) => new Date(b.dryRunAt).getTime() - new Date(a.dryRunAt).getTime());
 }
 
 export function requestEmergencyOverride(
@@ -866,18 +905,8 @@ export function approveEmergencyOverride(
   approvedBy: string,
 ): EmergencyOverride | null {
   const store = getOrgOverrideStore(orgId);
-  let override = store.get(overrideIdVal);
-
-  if (!override) {
-    const catalogOverride = CATALOG_OVERRIDES.find((o) => o.id === overrideIdVal);
-    if (!catalogOverride) return null;
-    override = {
-      ...catalogOverride,
-      orgId,
-      auditTrail: catalogOverride.auditTrail.map((a) => ({ ...a })),
-    };
-    store.set(override.id, override);
-  }
+  const override = store.get(overrideIdVal);
+  if (!override) return null;
 
   if (override.status !== "pending") {
     throw new Error("OVERRIDE_NOT_PENDING");
@@ -912,18 +941,8 @@ export function denyEmergencyOverride(
   deniedBy: string,
 ): EmergencyOverride | null {
   const store = getOrgOverrideStore(orgId);
-  let override = store.get(overrideIdVal);
-
-  if (!override) {
-    const catalogOverride = CATALOG_OVERRIDES.find((o) => o.id === overrideIdVal);
-    if (!catalogOverride) return null;
-    override = {
-      ...catalogOverride,
-      orgId,
-      auditTrail: catalogOverride.auditTrail.map((a) => ({ ...a })),
-    };
-    store.set(override.id, override);
-  }
+  const override = store.get(overrideIdVal);
+  if (!override) return null;
 
   if (override.status !== "pending") {
     throw new Error("OVERRIDE_NOT_PENDING");
@@ -938,8 +957,9 @@ export function denyEmergencyOverride(
 
 export function getOverrides(orgId: string): EmergencyOverride[] {
   const orgStore = getOrgOverrideStore(orgId);
-  const merged = [...CATALOG_OVERRIDES, ...Array.from(orgStore.values())];
-  return merged.sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
+  return Array.from(orgStore.values()).sort(
+    (a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime(),
+  );
 }
 
 export function getGuardrailStats(orgId: string): GuardrailStats {
