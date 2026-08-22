@@ -1,7 +1,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { randomBytes, randomUUID } from "node:crypto";
-import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
 import {
@@ -17,7 +17,6 @@ import {
   sensorPackageBatches,
   vulnPackages,
   vulnFindings,
-  cveCpeMatches,
   cveEntries,
   VULN_PKG_MANAGERS,
 } from "../../shared/schema";
@@ -43,7 +42,7 @@ import {
   replyNotFound,
   replyUnauthenticated,
 } from "../api-response";
-import { cpeMatchesPackage, type VersionEcosystem } from "../vulnerability-matching";
+import { evaluateInventoryPackages, type InventoryPackage } from "../vulnerability-evaluation";
 
 const log = logger.child("agent-api");
 const MAX_SENSOR_EVENTS = 500;
@@ -115,12 +114,20 @@ const sensorEventsSchema = z.object({
 
 const sensorPackagesSchema = z.object({
   batchId: z.string().trim().min(1).max(200).optional(),
+  host: z
+    .object({
+      osId: z.string().trim().max(100).optional(),
+      versionId: z.string().trim().max(100).optional(),
+      platform: z.string().trim().max(100).optional(),
+    })
+    .optional(),
   packages: z
     .array(
       z.object({
         packageManager: z.enum(VULN_PKG_MANAGERS),
         packageName: z.string().trim().min(1).max(300),
         installedVersion: z.string().trim().min(1).max(300),
+        packageVendor: z.string().trim().max(300).optional(),
         source: z.string().trim().max(100).optional(),
         evidence: z.record(z.unknown()).optional(),
       }),
@@ -152,6 +159,7 @@ const collectorIngestSchema = z.object({
 
 const collectorPackagesSchema = z.object({
   batchId: z.string().trim().min(1).max(200).optional(),
+  host: sensorPackagesSchema.shape.host,
   packages: sensorPackagesSchema.shape.packages,
 });
 
@@ -346,25 +354,6 @@ async function handleSensorEvents(req: Request, res: Response): Promise<void> {
   }
 }
 
-function packageEcosystem(manager: string): VersionEcosystem | null {
-  if (manager === "apt") return "dpkg";
-  if (manager === "rpm") return "rpm";
-  if (
-    manager === "apk" ||
-    manager === "brew" ||
-    manager === "npm" ||
-    manager === "pip" ||
-    manager === "gem" ||
-    manager === "cargo" ||
-    manager === "nuget" ||
-    manager === "windows" ||
-    manager === "windows-registry"
-  ) {
-    return "semver";
-  }
-  return null;
-}
-
 async function handleSensorPackages(req: Request, res: Response): Promise<void> {
   const { sensorId, orgId } = sensorContext(req);
   const parsed = sensorPackagesSchema.safeParse(req.body);
@@ -403,97 +392,144 @@ async function handleSensorPackages(req: Request, res: Response): Promise<void> 
     return;
   }
   try {
-    let findingsCreated = 0;
-    for (const pkg of parsed.data.packages) {
-      const ecosystem = packageEcosystem(pkg.packageManager);
-      const matches = ecosystem
-        ? await db
-            .select({
-              match: cveCpeMatches,
-              cve: cveEntries,
-            })
-            .from(cveCpeMatches)
-            .innerJoin(cveEntries, eq(cveEntries.cveId, cveCpeMatches.cveId))
-            .where(eq(cveCpeMatches.product, pkg.packageName.toLowerCase()))
-        : [];
-      const vulnerableMatches = ecosystem
-        ? matches.filter(({ match }) => cpeMatchesPackage(pkg.packageName, pkg.installedVersion, ecosystem, match))
-        : [];
-      const [storedPackage] = await db
+    const host = parsed.data.host;
+    const inventory: InventoryPackage[] = parsed.data.packages.map((pkg) => ({
+      ...pkg,
+      hostOsId: host?.osId ?? null,
+      hostOsVersion: host?.versionId ?? null,
+      hostPlatform: host?.platform ?? null,
+      evidence: pkg.evidence ?? null,
+    }));
+    const evaluated = await evaluateInventoryPackages(inventory);
+    const cveIds = Array.from(new Set(evaluated.flatMap((pkg) => pkg.matches.map((match) => match.cveId))));
+    const catalogueRows =
+      cveIds.length > 0 ? await db.select().from(cveEntries).where(inArray(cveEntries.cveId, cveIds)) : [];
+    const catalogue = new Map(catalogueRows.map((entry) => [entry.cveId, entry]));
+    const { findingsCreated } = await db.transaction(async (tx) => {
+      const now = new Date();
+      const storedPackages = await tx
         .insert(vulnPackages)
-        .values({
-          orgId,
-          sensorId,
-          packageManager: pkg.packageManager,
-          packageName: pkg.packageName,
-          installedVersion: pkg.installedVersion,
-          inventorySource: pkg.source ?? pkg.packageManager,
-          evidence: pkg.evidence ?? null,
-          isVulnerable: vulnerableMatches.length > 0,
-          cveCount: vulnerableMatches.length,
-          reportedAt: new Date(),
-          updatedAt: new Date(),
-        })
+        .values(
+          evaluated.map((pkg) => ({
+            orgId,
+            sensorId,
+            packageManager: pkg.packageManager,
+            packageName: pkg.packageName,
+            installedVersion: pkg.installedVersion,
+            packageVendor: pkg.packageVendor ?? null,
+            hostOsId: pkg.hostOsId ?? null,
+            hostOsVersion: pkg.hostOsVersion ?? null,
+            hostPlatform: pkg.hostPlatform ?? null,
+            inventorySource: pkg.source ?? pkg.packageManager,
+            evidence: pkg.evidence ?? null,
+            isVulnerable: pkg.matches.length > 0,
+            cveCount: pkg.matches.length,
+            reportedAt: now,
+            updatedAt: now,
+          })),
+        )
         .onConflictDoUpdate({
           target: [vulnPackages.orgId, vulnPackages.sensorId, vulnPackages.packageManager, vulnPackages.packageName],
           set: {
-            installedVersion: pkg.installedVersion,
-            inventorySource: pkg.source ?? pkg.packageManager,
-            evidence: pkg.evidence ?? null,
-            isVulnerable: vulnerableMatches.length > 0,
-            cveCount: vulnerableMatches.length,
-            reportedAt: new Date(),
-            updatedAt: new Date(),
+            installedVersion: sql.raw(`excluded.installed_version`),
+            packageVendor: sql.raw(`excluded.package_vendor`),
+            hostOsId: sql.raw(`excluded.host_os_id`),
+            hostOsVersion: sql.raw(`excluded.host_os_version`),
+            hostPlatform: sql.raw(`excluded.host_platform`),
+            inventorySource: sql.raw(`excluded.inventory_source`),
+            evidence: sql.raw(`excluded.evidence`),
+            isVulnerable: sql.raw(`excluded.is_vulnerable`),
+            cveCount: sql.raw(`excluded.cve_count`),
+            reportedAt: now,
+            updatedAt: now,
           },
         })
-        .returning({ id: vulnPackages.id });
-      if (!storedPackage) continue;
-      for (const { match, cve } of vulnerableMatches) {
-        const [existing] = await db
-          .select({ id: vulnFindings.id })
-          .from(vulnFindings)
-          .where(
-            and(
-              eq(vulnFindings.orgId, orgId),
-              eq(vulnFindings.sensorId, sensorId),
-              eq(vulnFindings.packageName, pkg.packageName),
-              eq(vulnFindings.cveId, cve.cveId),
-            ),
-          )
-          .limit(1);
-        if (existing) continue;
-        await db.insert(vulnFindings).values({
-          orgId,
-          sensorId,
-          packageId: storedPackage.id,
-          source: "nvd_cpe",
-          cveId: cve.cveId,
-          packageName: pkg.packageName,
-          installedVersion: pkg.installedVersion,
-          fixedVersion: match.versionEndIncluding ?? match.versionEndExcluding,
-          severity: cve.severity,
-          cvssScore: cve.cvssScore,
-          cvssVector: cve.cvssVector,
-          epssScore: cve.epssScore,
-          epssPercentile: cve.epssPercentile,
-          epssDate: cve.epssDate,
-          exploitAvailable: cve.exploitAvailable,
-          kevDateAdded: cve.kevDateAdded,
-          description: cve.description,
-          references: cve.references,
-          matchedCpe: match.cpe23,
-          matchedVersionRange: {
-            versionStartIncluding: match.versionStartIncluding,
-            versionStartExcluding: match.versionStartExcluding,
-            versionEndIncluding: match.versionEndIncluding,
-            versionEndExcluding: match.versionEndExcluding,
-          },
-          matchSource: "nvd_cpe",
-          status: "open",
+        .returning({
+          id: vulnPackages.id,
+          packageManager: vulnPackages.packageManager,
+          packageName: vulnPackages.packageName,
         });
-        findingsCreated++;
+      const packageIds = new Map(
+        storedPackages.map((stored) => [`${stored.packageManager}\0${stored.packageName}`, stored.id]),
+      );
+      const existingFindings = await tx
+        .select()
+        .from(vulnFindings)
+        .where(and(eq(vulnFindings.orgId, orgId), eq(vulnFindings.sensorId, sensorId)));
+      const currentKeys = new Set<string>();
+      const newFindings = [];
+      for (const pkg of evaluated) {
+        const packageId = packageIds.get(`${pkg.packageManager}\0${pkg.packageName}`);
+        for (const match of pkg.matches) {
+          const key = `${pkg.packageName}\0${match.source}\0${match.advisoryId ?? match.cveId}`;
+          currentKeys.add(key);
+          const cve = catalogue.get(match.cveId);
+          const existing = existingFindings.find(
+            (finding) => `${finding.packageName}\0${finding.source}\0${finding.advisoryId ?? finding.cveId}` === key,
+          );
+          const values = {
+            packageId: packageId ?? null,
+            source: match.source,
+            cveId: match.cveId,
+            packageName: pkg.packageName,
+            installedVersion: pkg.installedVersion,
+            fixedVersion: match.fixedVersion,
+            severity: cve?.severity ?? "none",
+            cvssScore: cve?.cvssScore ?? null,
+            cvssVector: cve?.cvssVector ?? null,
+            epssScore: cve?.epssScore ?? null,
+            epssPercentile: cve?.epssPercentile ?? null,
+            epssDate: cve?.epssDate ?? null,
+            exploitAvailable: cve?.exploitAvailable ?? null,
+            kevDateAdded: cve?.kevDateAdded ?? null,
+            description: cve?.description ?? null,
+            references: cve?.references ?? null,
+            matchedCpe: match.matchedCpe,
+            matchedVersionRange: match.matchedVersionRange,
+            matchSource: match.source,
+            advisoryId: match.advisoryId,
+            findingConfidence: match.confidence,
+            findingBasis: match.basis,
+            status: existing?.status === "remediated" ? "open" : (existing?.status ?? "open"),
+            closedReason: null,
+            closedAt: null,
+            updatedAt: now,
+          };
+          if (existing) {
+            await tx
+              .update(vulnFindings)
+              .set(values)
+              .where(and(eq(vulnFindings.id, existing.id), eq(vulnFindings.orgId, orgId)));
+          } else {
+            newFindings.push({ orgId, sensorId, ...values });
+          }
+        }
       }
-    }
+      for (const finding of existingFindings) {
+        const key = `${finding.packageName}\0${finding.source}\0${finding.advisoryId ?? finding.cveId}`;
+        if (
+          (finding.source === "osv" || finding.source === "nvd_cpe") &&
+          !currentKeys.has(key) &&
+          finding.status !== "remediated" &&
+          finding.status !== "false_positive"
+        ) {
+          await tx
+            .update(vulnFindings)
+            .set({
+              status: "remediated",
+              closedReason: "No longer matched by the current installed package version.",
+              closedAt: now,
+              remediatedAt: now,
+              updatedAt: now,
+            })
+            .where(and(eq(vulnFindings.id, finding.id), eq(vulnFindings.orgId, orgId)));
+        }
+      }
+      for (let index = 0; index < newFindings.length; index += 500) {
+        await tx.insert(vulnFindings).values(newFindings.slice(index, index + 500));
+      }
+      return { findingsCreated: newFindings.length };
+    });
     await db
       .update(sensorPackageBatches)
       .set({
@@ -797,6 +833,7 @@ async function handleCollectorPackages(req: Request, res: Response): Promise<voi
             packageManager: pkg.packageManager,
             packageName: pkg.packageName,
             installedVersion: pkg.installedVersion,
+            host: parsed.data.host ?? null,
             evidence: pkg.evidence ?? null,
           },
         })),

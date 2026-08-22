@@ -919,6 +919,11 @@ if ($Worker) {
       if ($packages.Count -gt 0) {
         Invoke-AgentPost "/api/agent/v1/collectors/packages" @{
           batchId = "packages-$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+          host = @{
+            osId = "windows"
+            versionId = [Environment]::OSVersion.Version.ToString()
+            platform = "windows"
+          }
           packages = $packages
         } $credential | Out-Null
         $lastPackageSent = [DateTimeOffset]::UtcNow
@@ -1125,13 +1130,18 @@ collect_file_events() {
 }
 
 collect_package_inventory() {
-  local packages="[]" line name version now last_sent
+  local packages="[]" line name version now last_sent os_id="" os_version=""
   now="$(date +%s)"
   last_sent=0
   if [[ -r "$PACKAGE_SENT_FILE" ]]; then
     read -r last_sent <"$PACKAGE_SENT_FILE"
   fi
   [[ "$now" -ge "$((last_sent + 21600))" ]] || return 0
+  if [[ "$PLATFORM" == "linux" && -r /etc/os-release ]]; then
+    . /etc/os-release
+    os_id="\${ID:-}"
+    os_version="\${VERSION_ID:-}"
+  fi
   if [[ "$PLATFORM" == "linux" && -x "$(command -v dpkg-query 2>/dev/null)" ]]; then
     while IFS=$'\t' read -r name version; do
       [[ -n "$name" && -n "$version" ]] || continue
@@ -1158,7 +1168,7 @@ collect_package_inventory() {
     done < <(brew list --versions)
   fi
   if [[ "$(jq 'length' <<<"$packages")" -gt 0 ]]; then
-    api_post "/api/agent/v1/collectors/packages" "$(jq -n --arg batchId "packages-$(date +%s)-$$" --argjson packages "$packages" '{batchId:$batchId,packages:$packages}')"
+    api_post "/api/agent/v1/collectors/packages" "$(jq -n --arg batchId "packages-$(date +%s)-$$" --arg id "$os_id" --arg version "$os_version" --arg platform "$PLATFORM" --argjson packages "$packages" '{batchId:$batchId,host:{osId:$id,versionId:$version,platform:$platform},packages:$packages}')"
     printf '%s\n' "$now" >"$PACKAGE_SENT_FILE"
   fi
 }

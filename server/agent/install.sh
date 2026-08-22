@@ -260,13 +260,18 @@ send_events() {
 }
 
 send_package_inventory() {
-  local packages="[]" line name version manager now last_sent
+  local packages="[]" line name version manager now last_sent os_id="" os_version=""
   now="$(date +%s)"
   last_sent=0
   if [[ -r "$PACKAGE_SENT_FILE" ]]; then
     read -r last_sent <"$PACKAGE_SENT_FILE"
   fi
   [[ "$now" -ge "$((last_sent + 21600))" ]] || return 0
+  if [[ "$PLATFORM" == "linux" && -r /etc/os-release ]]; then
+    . /etc/os-release
+    os_id="${ID:-}"
+    os_version="${VERSION_ID:-}"
+  fi
   if [[ "$PLATFORM" == "linux" && -x "$(command -v dpkg-query 2>/dev/null)" ]]; then
     while IFS=$'\t' read -r name version; do
       [[ -n "$name" && -n "$version" ]] || continue
@@ -293,7 +298,7 @@ send_package_inventory() {
     done < <(brew list --versions)
   fi
   if [[ "$(jq 'length' <<<"$packages")" -gt 0 ]]; then
-    api_post "/api/agent/v1/sensors/$SENSOR_ID/packages" "$(jq -n --arg batchId "packages-$(date +%s)-$$" --argjson packages "$packages" '{batchId:$batchId,packages:$packages}')" >/dev/null
+    api_post "/api/agent/v1/sensors/$SENSOR_ID/packages" "$(jq -n --arg batchId "packages-$(date +%s)-$$" --arg id "$os_id" --arg version "$os_version" --arg platform "$PLATFORM" --argjson packages "$packages" '{batchId:$batchId,host:{osId:$id,versionId:$version,platform:$platform},packages:$packages}')" >/dev/null
     printf '%s\n' "$now" >"$PACKAGE_SENT_FILE"
     log "INFO" "Sent $(jq 'length' <<<"$packages") observed packages"
   fi

@@ -179,6 +179,11 @@ while ($true) {
         if ($packages.Count -gt 0) {
             Invoke-AgentPost "/api/agent/v1/sensors/$sensorId/packages" @{
                 batchId = "packages-$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+                host = @{
+                    osId = "windows"
+                    versionId = [Environment]::OSVersion.Version.ToString()
+                    platform = "windows"
+                }
                 packages = $packages
             } | Out-Null
             $lastPackageSent = [DateTimeOffset]::UtcNow

@@ -58,7 +58,11 @@ interface VulnFinding {
   exploitAvailable: boolean | null;
   kevDateAdded: string | null;
   matchedCpe: string | null;
+  matchedVersionRange: Record<string, unknown> | null;
   matchSource: string | null;
+  advisoryId: string | null;
+  findingConfidence: string | null;
+  findingBasis: string | null;
   acknowledgedBy: string | null;
   acknowledgedAt: string | null;
   remediatedBy: string | null;
@@ -188,7 +192,7 @@ export default function VulnScannerPage() {
             Native Vulnerability Scanner
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Agent-reported package inventory matched against NVD CVE data in real-time
+            Agent-reported package inventory matched against live OSV and NVD vulnerability evidence
           </p>
         </div>
       </div>
@@ -341,9 +345,15 @@ export default function VulnScannerPage() {
                       <TableCell colSpan={9} className="text-center py-12">
                         <div className="flex flex-col items-center gap-2">
                           <ShieldCheck className="h-10 w-10 text-green-400/50" />
-                          <p className="text-muted-foreground">No vulnerability findings</p>
+                          <p className="text-muted-foreground">
+                            {pkgStats?.total === 0
+                              ? "no package inventory yet — install an agent"
+                              : "No vulnerability findings"}
+                          </p>
                           <p className="text-xs text-muted-foreground">
-                            Deploy sensors and push package inventories to start scanning
+                            {pkgStats?.total === 0
+                              ? "Findings will appear after an authenticated agent reports installed packages."
+                              : "The synchronized catalogue has no applicable findings for this inventory."}
                           </p>
                         </div>
                       </TableCell>
@@ -509,7 +519,7 @@ export default function VulnScannerPage() {
                           <Package className="h-10 w-10 text-muted-foreground/50" />
                           <p className="text-muted-foreground">no package inventory yet — install an agent</p>
                           <p className="text-xs text-muted-foreground">
-                            Agents will push package inventories during heartbeats
+                            Agents will push package inventories on their inventory schedule
                           </p>
                         </div>
                       </TableCell>
@@ -633,6 +643,20 @@ export default function VulnScannerPage() {
                   <span>{selectedFinding.source || "unknown"}</span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-muted-foreground">Advisory ID</span>
+                  <span className="font-mono text-xs">{selectedFinding.advisoryId ?? "not available"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Confidence</span>
+                  <span>{selectedFinding.findingConfidence ?? "not available"}</span>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-muted-foreground">Matching basis</span>
+                  <p className="rounded border border-zinc-800 bg-zinc-900 p-2 text-xs">
+                    {selectedFinding.findingBasis ?? "not available"}
+                  </p>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-muted-foreground">EPSS</span>
                   <span>
                     {selectedFinding.epssScore === null
@@ -647,6 +671,14 @@ export default function VulnScannerPage() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Matched CPE</span>
                   <span className="font-mono text-xs">{selectedFinding.matchedCpe ?? "not available"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Affected range</span>
+                  <span className="font-mono text-xs">
+                    {selectedFinding.matchedVersionRange
+                      ? JSON.stringify(selectedFinding.matchedVersionRange)
+                      : "not available"}
+                  </span>
                 </div>
               </div>
 

@@ -120,6 +120,13 @@
       "when": 1787392618000,
       "tag": "0016_real_vulnerability_catalogue",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787392619000,
+      "tag": "0017_osv_vulnerability_matching",
+      "breakpoints": true
     }
   ]
 }

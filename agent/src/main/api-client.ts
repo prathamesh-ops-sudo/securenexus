@@ -8,6 +8,7 @@ import * as os from "os";
 import { randomUUID } from "crypto";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { readFileSync } from "fs";
 
 const execFileAsync = promisify(execFile);
 
@@ -34,6 +35,12 @@ interface HostMetrics {
   arch?: string;
   cpuCount?: number;
   memoryGb?: number;
+}
+
+interface HostIdentity {
+  osId: string;
+  versionId: string;
+  platform: string;
 }
 
 export class ApiClient {
@@ -128,6 +135,7 @@ export class ApiClient {
         headers: this.getHeaders(),
         body: JSON.stringify({
           batchId: `agent-${randomUUID()}`,
+          host: this.getHostIdentity(),
           packages,
         }),
         signal: AbortSignal.timeout(30000),
@@ -270,6 +278,34 @@ export class ApiClient {
       if (output) collected.push(...entry.parse(output));
     }
     return collected;
+  }
+
+  private getHostIdentity(): HostIdentity {
+    const platform = process.platform === "win32" ? "windows" : process.platform;
+    if (platform === "linux") {
+      try {
+        const release = readFileSync("/etc/os-release", "utf8");
+        const values = Object.fromEntries(
+          release
+            .split("\n")
+            .map((line) => line.split("=", 2))
+            .filter(([key, value]) => key && value)
+            .map(([key, value]) => [key, value.replace(/^"(.*)"$/, "$1")]),
+        );
+        return {
+          osId: values.ID || platform,
+          versionId: values.VERSION_ID || os.release(),
+          platform,
+        };
+      } catch (err) {
+        log.warn(`Unable to read /etc/os-release: ${err}`);
+      }
+    }
+    return {
+      osId: platform,
+      versionId: os.release(),
+      platform,
+    };
   }
 
   private async runOptionalCommand(command: string, args: string[]): Promise<string | null> {
