@@ -14147,6 +14147,77 @@ export const vulnScans = pgTable(
 export type VulnScan = typeof vulnScans.$inferSelect;
 export type InsertVulnScan = typeof vulnScans.$inferInsert;
 
+export const vulnScanTargets = pgTable(
+  "vuln_scan_targets",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    type: text("type").notNull(),
+    value: text("value").notNull(),
+    excludePatterns: jsonb("exclude_patterns").$type<string[]>().default([]),
+    maintenanceWindow: text("maintenance_window"),
+    lastScanAt: timestamp("last_scan_at"),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_vuln_scan_targets_org").on(table.orgId)],
+);
+
+export type VulnScanTarget = typeof vulnScanTargets.$inferSelect;
+export type InsertVulnScanTarget = typeof vulnScanTargets.$inferInsert;
+
+export const vulnScanSchedules = pgTable(
+  "vuln_scan_schedules",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    name: text("name").notNull(),
+    frequency: text("frequency").notNull().default("weekly"),
+    scanType: text("scan_type").notNull().default("comprehensive"),
+    dayOfWeek: integer("day_of_week").notNull().default(1),
+    hour: integer("hour").notNull().default(2),
+    enabled: boolean("enabled").notNull().default(true),
+    nextRunAt: timestamp("next_run_at"),
+    lastRunAt: timestamp("last_run_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("idx_vuln_scan_schedules_org").on(table.orgId)],
+);
+
+export type VulnScanSchedule = typeof vulnScanSchedules.$inferSelect;
+export type InsertVulnScanSchedule = typeof vulnScanSchedules.$inferInsert;
+
+export const runtimeGuardrailSimulations = pgTable(
+  "runtime_guardrail_simulations",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    policyId: text("policy_id").notNull(),
+    policyName: text("policy_name").notNull(),
+    simulatedAction: text("simulated_action").notNull(),
+    inputContext: jsonb("input_context").default({}),
+    expectedVerdict: text("expected_verdict").notNull(),
+    actualVerdict: text("actual_verdict").notNull(),
+    blastRadius: jsonb("blast_radius").default({}),
+    dryRunAt: timestamp("dry_run_at").defaultNow(),
+    runBy: text("run_by").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("idx_rgs_org").on(table.orgId), index("idx_rgs_policy").on(table.orgId, table.policyId)],
+);
+
+export type RuntimeGuardrailSimulation = typeof runtimeGuardrailSimulations.$inferSelect;
+export type InsertRuntimeGuardrailSimulation = typeof runtimeGuardrailSimulations.$inferInsert;
+
 // ─── Identity Governance ─────────────────────────────────────────────────────
 export const accessReviews = pgTable(
   "access_reviews",

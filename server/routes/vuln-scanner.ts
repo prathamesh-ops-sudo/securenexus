@@ -5,6 +5,7 @@ import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { requirePermission } from "../rbac";
 import { logger, getOrgId } from "./shared";
+import { storage } from "../storage";
 import { db } from "../db";
 import { sql, eq, and, desc, ilike, or, count } from "drizzle-orm";
 import {
@@ -495,8 +496,7 @@ export function registerVulnScannerRoutes(app: Express): void {
   app.get("/api/native/vuln/scan-targets", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const storeKey = `vuln_scan_targets_${orgId}`;
-      const targets = ((globalThis as Record<string, unknown>)[storeKey] as Array<Record<string, unknown>>) || [];
+      const targets = await storage.getVulnScanTargets(orgId);
       res.json({ targets });
     } catch (error) {
       log.error("Failed to list scan targets", { error: String(error) });
@@ -524,22 +524,15 @@ export function registerVulnScannerRoutes(app: Express): void {
           return res.status(400).json({ message: `type must be one of: ${validTypes.join(", ")}` });
         }
 
-        const target = {
-          id: crypto.randomUUID(),
+        const target = await storage.createVulnScanTarget({
+          orgId,
           name,
           type,
           value,
           excludePatterns: Array.isArray(excludePatterns) ? excludePatterns : [],
-          maintenanceWindow: maintenanceWindow || null,
-          lastScanAt: null,
+          maintenanceWindow: maintenanceWindow ? String(maintenanceWindow) : null,
           status: "active",
-          createdAt: new Date().toISOString(),
-        };
-
-        const storeKey = `vuln_scan_targets_${orgId}`;
-        const targets = ((globalThis as Record<string, unknown>)[storeKey] as Array<Record<string, unknown>>) || [];
-        targets.push(target);
-        (globalThis as Record<string, unknown>)[storeKey] = targets;
+        });
 
         log.info("Scan target added", { orgId, targetId: target.id, type });
         res.status(201).json(target);
@@ -613,8 +606,7 @@ export function registerVulnScannerRoutes(app: Express): void {
   app.get("/api/native/vuln/scan-schedules", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const storeKey = `vuln_scan_schedules_${orgId}`;
-      const schedules = ((globalThis as Record<string, unknown>)[storeKey] as Array<Record<string, unknown>>) || [];
+      const schedules = await storage.getVulnScanSchedules(orgId);
       res.json({ schedules });
     } catch (error) {
       log.error("Failed to list scan schedules", { error: String(error) });
@@ -661,23 +653,16 @@ export function registerVulnScannerRoutes(app: Express): void {
           nextRun.setDate(nextRun.getDate() + 1);
         }
 
-        const schedule = {
-          id: crypto.randomUUID(),
+        const schedule = await storage.createVulnScanSchedule({
+          orgId,
           name,
           frequency: frequency || "weekly",
           scanType: scanType || "comprehensive",
           dayOfWeek: parseInt(dayOfWeek) || 1,
           hour: targetHour,
           enabled: enabled !== false,
-          nextRunAt: nextRun.toISOString(),
-          lastRunAt: null,
-          createdAt: new Date().toISOString(),
-        };
-
-        const storeKey = `vuln_scan_schedules_${orgId}`;
-        const schedules = ((globalThis as Record<string, unknown>)[storeKey] as Array<Record<string, unknown>>) || [];
-        schedules.push(schedule);
-        (globalThis as Record<string, unknown>)[storeKey] = schedules;
+          nextRunAt: nextRun,
+        });
 
         log.info("Scan schedule created", { orgId, scheduleId: schedule.id, frequency: schedule.frequency });
         res.status(201).json(schedule);

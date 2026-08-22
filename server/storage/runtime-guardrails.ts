@@ -5,9 +5,12 @@ import {
   type InsertRuntimeGuardrailDecision,
   type RuntimeGuardrailOverride,
   type InsertRuntimeGuardrailOverride,
+  type RuntimeGuardrailSimulation,
+  type InsertRuntimeGuardrailSimulation,
   runtimeGuardrailPolicies,
   runtimeGuardrailDecisions,
   runtimeGuardrailOverrides,
+  runtimeGuardrailSimulations,
 } from "@shared/schema";
 import { db } from "../db";
 import { and, count, desc, eq } from "drizzle-orm";
@@ -86,6 +89,22 @@ export async function countRuntimeDecisions(orgId: string): Promise<number> {
     .from(runtimeGuardrailDecisions)
     .where(eq(runtimeGuardrailDecisions.orgId, orgId));
   return row?.total ?? 0;
+}
+
+export async function getRuntimeSimulations(orgId: string, limit = 100): Promise<RuntimeGuardrailSimulation[]> {
+  return db
+    .select()
+    .from(runtimeGuardrailSimulations)
+    .where(eq(runtimeGuardrailSimulations.orgId, orgId))
+    .orderBy(desc(runtimeGuardrailSimulations.createdAt))
+    .limit(limit);
+}
+
+export async function createRuntimeSimulation(
+  data: InsertRuntimeGuardrailSimulation,
+): Promise<RuntimeGuardrailSimulation> {
+  const [created] = await db.insert(runtimeGuardrailSimulations).values(data).returning();
+  return created;
 }
 
 // ─── Overrides ───────────────────────────────────────────────────────────────

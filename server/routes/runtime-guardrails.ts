@@ -364,7 +364,19 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
           },
           persistedPolicies.map(toPolicyRule),
         );
-        res.json(simulation);
+        const persistedSimulation = await storage.createRuntimeSimulation({
+          orgId,
+          policyId: simulation.policyId,
+          policyName: simulation.policyName,
+          simulatedAction: simulation.simulatedAction,
+          inputContext: simulation.inputContext,
+          expectedVerdict: simulation.expectedVerdict,
+          actualVerdict: simulation.actualVerdict,
+          blastRadius: simulation.blastRadius,
+          dryRunAt: new Date(simulation.dryRunAt),
+          runBy: String((req.user as { id?: string } | undefined)?.id || "authenticated-user"),
+        });
+        res.json(persistedSimulation);
       } catch (error) {
         const errMsg = String(error);
         if (errMsg.includes("POLICY_NOT_FOUND")) {
@@ -516,13 +528,12 @@ export function registerRuntimeGuardrailsRoutes(app: Express): void {
     },
   );
 
-  // Simulations list — kept on engine for backward compatibility
-  app.get("/api/runtime-guardrails/simulations", isAuthenticated, async (req, res) => {
+  // Simulations are persisted tenant history; calculation remains request-scoped.
+  app.get("/api/runtime-guardrails/simulations", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      // Decisions logged as simulations are stored in the decisions table
-      const decisions = await storage.getRuntimeDecisions(orgId, 50);
-      res.json(decisions);
+      const simulations = await storage.getRuntimeSimulations(orgId, 50);
+      res.json(simulations);
     } catch (error) {
       logger.child("routes").error("List simulations error", { error: String(error) });
       res.status(500).json({ message: "Failed to list simulations" });

@@ -40,6 +40,7 @@ import * as agentToolSecurityFns from "./agent-tool-security";
 import * as browserDefenseFns from "./browser-defense";
 import * as runtimeGuardrailsFns from "./runtime-guardrails";
 import * as complianceGapFns from "./compliance-gap";
+import * as vulnScannerConfigFns from "./vuln-scanner-config";
 
 import type { IStorage } from "./types";
 
@@ -872,6 +873,16 @@ export class DatabaseStorage implements IStorage {
   getRuntimeOverride = runtimeGuardrailsFns.getRuntimeOverride;
   createRuntimeOverride = runtimeGuardrailsFns.createRuntimeOverride;
   updateRuntimeOverride = runtimeGuardrailsFns.updateRuntimeOverride;
+  getRuntimeSimulations = runtimeGuardrailsFns.getRuntimeSimulations;
+  createRuntimeSimulation = runtimeGuardrailsFns.createRuntimeSimulation;
+
+  // vulnerability scanner configuration
+  getVulnScanTargets = vulnScannerConfigFns.getVulnScanTargets;
+  getVulnScanTarget = vulnScannerConfigFns.getVulnScanTarget;
+  createVulnScanTarget = vulnScannerConfigFns.createVulnScanTarget;
+  getVulnScanSchedules = vulnScannerConfigFns.getVulnScanSchedules;
+  getVulnScanSchedule = vulnScannerConfigFns.getVulnScanSchedule;
+  createVulnScanSchedule = vulnScannerConfigFns.createVulnScanSchedule;
 }
 
 export const storage = new DatabaseStorage();

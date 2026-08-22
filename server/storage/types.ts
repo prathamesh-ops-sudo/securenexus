@@ -334,6 +334,12 @@ import {
   type InsertRuntimeGuardrailDecision,
   type RuntimeGuardrailOverride,
   type InsertRuntimeGuardrailOverride,
+  type RuntimeGuardrailSimulation,
+  type InsertRuntimeGuardrailSimulation,
+  type VulnScanTarget,
+  type InsertVulnScanTarget,
+  type VulnScanSchedule,
+  type InsertVulnScanSchedule,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -1555,4 +1561,14 @@ export interface IStorage {
     orgId: string,
     updates: Partial<InsertRuntimeGuardrailOverride>,
   ): Promise<RuntimeGuardrailOverride | undefined>;
+  getRuntimeSimulations(orgId: string, limit?: number): Promise<RuntimeGuardrailSimulation[]>;
+  createRuntimeSimulation(data: InsertRuntimeGuardrailSimulation): Promise<RuntimeGuardrailSimulation>;
+
+  // Vulnerability scanner configuration
+  getVulnScanTargets(orgId: string): Promise<VulnScanTarget[]>;
+  getVulnScanTarget(id: string, orgId: string): Promise<VulnScanTarget | undefined>;
+  createVulnScanTarget(data: InsertVulnScanTarget): Promise<VulnScanTarget>;
+  getVulnScanSchedules(orgId: string): Promise<VulnScanSchedule[]>;
+  getVulnScanSchedule(id: string, orgId: string): Promise<VulnScanSchedule | undefined>;
+  createVulnScanSchedule(data: InsertVulnScanSchedule): Promise<VulnScanSchedule>;
 }
