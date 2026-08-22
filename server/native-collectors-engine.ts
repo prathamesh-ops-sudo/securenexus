@@ -742,64 +742,407 @@ export function getDeploymentScript(
     throw new Error("APP_URL or PUBLIC_APP_URL must be configured before generating a collector script.");
   }
 
+  const shellQuote = (value: string): string => `'${value.replace(/'/g, "'\"'\"'")}'`;
+  const powershellQuote = (value: string): string => `'${value.replace(/'/g, "''")}'`;
   const platform = template.platforms[0] ?? "linux";
   if (platform === "windows") {
-    return `# SecureNexus collector bootstrap
+    return `# SecureNexus collector bootstrap and worker
+param([switch]$Worker)
 $ErrorActionPreference = "Stop"
-$ServerUrl = $env:SERVER_URL
-$EnrollmentToken = $env:ENROLLMENT_TOKEN
+$ServerUrl = if ([string]::IsNullOrWhiteSpace($env:SERVER_URL)) { ${powershellQuote(baseUrl)} } else { $env:SERVER_URL.TrimEnd("/") }
 $CollectorId = "${instanceId}"
-if ([string]::IsNullOrWhiteSpace($ServerUrl) -or [string]::IsNullOrWhiteSpace($EnrollmentToken)) {
-  throw "SERVER_URL and ENROLLMENT_TOKEN are required"
+$ConfigDir = Join-Path $env:ProgramData "SecureNexus"
+$ConfigFile = Join-Path $ConfigDir "collector.json"
+$ScriptPath = $MyInvocation.MyCommand.Path
+
+function Invoke-AgentPost([string]$Path, [hashtable]$Body, [string]$Credential) {
+  $headers = @{}
+  if (-not [string]::IsNullOrWhiteSpace($Credential)) {
+    $headers.Authorization = "Bearer $Credential"
+  }
+  return Invoke-RestMethod -Uri "$ServerUrl$Path" -Method Post -Headers $headers -ContentType "application/json" -Body ($Body | ConvertTo-Json -Depth 12 -Compress)
 }
+
+function Get-HostInfo {
+  $info = @{
+    hostname = $env:COMPUTERNAME
+    os = [Environment]::OSVersion.VersionString
+    arch = $env:PROCESSOR_ARCHITECTURE
+    agentVersion = "1.0.0"
+  }
+  $processor = Get-CimInstance Win32_Processor | Select-Object -First 1
+  if ($null -ne $processor.NumberOfLogicalProcessors) { $info.cpuCount = [int]$processor.NumberOfLogicalProcessors }
+  $computer = Get-CimInstance Win32_ComputerSystem
+  if ($null -ne $computer.TotalPhysicalMemory) { $info.memoryGb = [math]::Round($computer.TotalPhysicalMemory / 1GB, 2) }
+  $ip = Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
+    $_.IPAddress -notlike "127.*" -and $_.IPAddress -ne "0.0.0.0"
+  } | Select-Object -First 1
+  if ($null -ne $ip) { $info.ipAddress = $ip.IPAddress }
+  return $info
+}
+
+function Get-Metrics {
+  $metrics = @{}
+  $processor = Get-CimInstance Win32_Processor | Select-Object -First 1
+  if ($null -ne $processor.LoadPercentage) { $metrics.cpuUsage = [double]$processor.LoadPercentage }
+  $memory = Get-CimInstance Win32_OperatingSystem
+  if ($null -ne $memory.TotalVisibleMemorySize -and $memory.TotalVisibleMemorySize -gt 0) {
+    $metrics.memoryUsage = [math]::Round(($memory.TotalVisibleMemorySize - $memory.FreePhysicalMemory) * 100 / $memory.TotalVisibleMemorySize, 1)
+  }
+  $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+  if ($null -ne $disk.Size -and $disk.Size -gt 0) {
+    $metrics.diskUsage = [math]::Round(($disk.Size - $disk.FreeSpace) * 100 / $disk.Size, 1)
+  }
+  return $metrics
+}
+
+function Get-ObservedEvents {
+  $events = [System.Collections.Generic.List[object]]::new()
+  $source = $env:COMPUTERNAME
+  Get-Process | Select-Object -First 200 | ForEach-Object {
+    $events.Add(@{
+      eventType = "process"
+      severity = "info"
+      source = $source
+      rawData = @{
+        processName = $_.ProcessName
+        pid = $_.Id
+        timestamp = [DateTime]::UtcNow.ToString("o")
+      }
+    })
+  }
+  Get-NetTCPConnection -ErrorAction SilentlyContinue | Select-Object -First 100 | ForEach-Object {
+    $events.Add(@{
+      eventType = "network"
+      severity = "info"
+      source = $source
+      rawData = @{
+        localAddress = $_.LocalAddress
+        localPort = $_.LocalPort
+        remoteAddress = $_.RemoteAddress
+        remotePort = $_.RemotePort
+        state = [string]$_.State
+        timestamp = [DateTime]::UtcNow.ToString("o")
+      }
+    })
+  }
+  Get-WinEvent -LogName Security -MaxEvents 20 -ErrorAction SilentlyContinue | ForEach-Object {
+    $events.Add(@{
+      eventType = "auth"
+      severity = "info"
+      source = $source
+      rawData = @{
+        logName = "Security"
+        eventId = $_.Id
+        message = $_.Message
+        timestamp = $_.TimeCreated.ToUniversalTime().ToString("o")
+      }
+    })
+  }
+  foreach ($path in @(
+    "C:\\Windows\\System32\\drivers\\etc\\hosts",
+    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+  )) {
+    if (Test-Path $path) {
+      $file = Get-Item $path
+      $events.Add(@{
+        eventType = "file"
+        severity = "info"
+        source = $source
+        rawData = @{
+          filePath = $path
+          fileAction = "snapshot"
+          fileHash = (Get-FileHash -Algorithm SHA256 -Path $path).Hash
+          fileSize = [int64]$file.Length
+          timestamp = [DateTime]::UtcNow.ToString("o")
+        }
+      })
+    }
+  }
+  return @($events)
+}
+
+if ($Worker) {
+  if (-not (Test-Path $ConfigFile)) { throw "Collector configuration not found: $ConfigFile" }
+  $config = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+  $ServerUrl = $config.serverUrl
+  $CollectorId = $config.collectorId
+  $credential = $config.credential
+  while ($true) {
+    $heartbeat = @{
+      hostInfo = Get-HostInfo
+      metrics = Get-Metrics
+    }
+    Invoke-AgentPost "/api/agent/v1/collectors/heartbeat" $heartbeat $credential | Out-Null
+    $observed = @(Get-ObservedEvents)
+    if ($observed.Count -gt 0) {
+      Invoke-AgentPost "/api/agent/v1/collectors/events" @{
+        batchId = "collector-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())-$PID"
+        events = $observed
+      } $credential | Out-Null
+    }
+    Start-Sleep -Seconds 30
+  }
+}
+
+$enrollmentToken = $env:ENROLLMENT_TOKEN
+if ([string]::IsNullOrWhiteSpace($enrollmentToken)) { throw "ENROLLMENT_TOKEN is required" }
 $payload = @{
   agentType = "collector"
   collectorId = $CollectorId
-  enrollmentToken = $EnrollmentToken
+  enrollmentToken = $enrollmentToken
   hostname = $env:COMPUTERNAME
   platform = "windows"
   osVersion = [Environment]::OSVersion.VersionString
   agentVersion = "1.0.0"
-} | ConvertTo-Json -Compress
-$result = Invoke-RestMethod -Uri "$ServerUrl/api/agent/v1/enroll" -Method Post -ContentType "application/json" -Body $payload
+}
+$result = Invoke-AgentPost "/api/agent/v1/enroll" $payload ""
 $credential = $result.data.apiKey
-if ([string]::IsNullOrWhiteSpace($credential)) { throw "Enrollment response did not contain a credential" }
-$configDir = "$env:ProgramData\\SecureNexus"
-New-Item -ItemType Directory -Path $configDir -Force | Out-Null
-$credential | ConvertTo-SecureString -AsPlainText -Force | ConvertFrom-SecureString | Set-Content "$configDir\\credential"
-icacls $configDir /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" | Out-Null
-$headers = @{ Authorization = "Bearer $credential" }
-$heartbeat = @{ hostInfo = @{ hostname = $env:COMPUTERNAME; ipAddress = "127.0.0.1"; os = [Environment]::OSVersion.VersionString; arch = $env:PROCESSOR_ARCHITECTURE; cpuCount = [Environment]::ProcessorCount; memoryGb = 0; agentVersion = "1.0.0" }; metrics = @{} } | ConvertTo-Json -Depth 10 -Compress
-Invoke-RestMethod -Uri "$ServerUrl/api/agent/v1/collectors/heartbeat" -Method Post -Headers $headers -ContentType "application/json" -Body $heartbeat | Out-Null
-Write-Host "SecureNexus collector enrolled successfully. Credential stored in $configDir."
+if ([string]::IsNullOrWhiteSpace($credential) -or $credential -notlike "snx_collector_*") {
+  throw "Enrollment response did not contain a collector credential"
+}
+New-Item -ItemType Directory -Path $ConfigDir -Force | Out-Null
+@{
+  serverUrl = $ServerUrl
+  collectorId = $CollectorId
+  credential = $credential
+} | ConvertTo-Json -Compress | Set-Content -Path $ConfigFile -Encoding UTF8
+icacls $ConfigDir /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" | Out-Null
+icacls $ConfigFile /inheritance:r /grant:r "SYSTEM:F" "Administrators:F" | Out-Null
+$action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument '-NoProfile -ExecutionPolicy Bypass -File "$ScriptPath" -Worker'
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+Register-ScheduledTask -TaskName "SecureNexus Collector $CollectorId" -Action $action -Trigger $trigger -Settings $settings -User "SYSTEM" -RunLevel Highest -Force | Out-Null
+Start-ScheduledTask -TaskName "SecureNexus Collector $CollectorId"
+Write-Host "SecureNexus collector enrolled and persistent telemetry collection started."
 `;
   }
 
   return `#!/usr/bin/env bash
 set -Eeuo pipefail
-SERVER_URL="\${SERVER_URL:-${baseUrl}}"
-ENROLLMENT_TOKEN="\${ENROLLMENT_TOKEN:-${enrollmentToken}}"
+SERVER_URL="\${SERVER_URL:-}"
+if [[ -z "$SERVER_URL" ]]; then SERVER_URL=${shellQuote(baseUrl)}; fi
+ENROLLMENT_TOKEN="\${ENROLLMENT_TOKEN:-}"
+if [[ -z "$ENROLLMENT_TOKEN" ]]; then ENROLLMENT_TOKEN=${shellQuote(enrollmentToken)}; fi
 COLLECTOR_ID="${instanceId}"
+AGENT_VERSION="1.0.0"
+PLATFORM="${platform}"
+INSTALL_DIR="\${INSTALL_DIR:-/opt/securenexus-collector}"
+LOG_DIR="\${LOG_DIR:-/var/log/securenexus-collector}"
+WORKER="$INSTALL_DIR/collector-worker.sh"
 if [[ -z "$SERVER_URL" || -z "$ENROLLMENT_TOKEN" ]]; then
   echo "ERROR: SERVER_URL and ENROLLMENT_TOKEN are required." >&2
   exit 1
 fi
-command -v curl >/dev/null || { echo "ERROR: curl is required." >&2; exit 1; }
-command -v jq >/dev/null || { echo "ERROR: jq is required." >&2; exit 1; }
+for command_name in curl jq hostname; do
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "ERROR: $command_name is required." >&2
+    exit 1
+  fi
+done
 HOSTNAME_VAL="$(hostname)"
-PLATFORM="${platform}"
-PAYLOAD="$(jq -n --arg token "$ENROLLMENT_TOKEN" --arg host "$HOSTNAME_VAL" --arg platform "$PLATFORM" --arg collector "$COLLECTOR_ID" '{agentType:"collector",collectorId:$collector,enrollmentToken:$token,hostname:$host,platform:$platform,osVersion:"unknown",agentVersion:"1.0.0"}')"
+OS_VERSION="$(uname -sr)"
+PAYLOAD="$(jq -n --arg token "$ENROLLMENT_TOKEN" --arg host "$HOSTNAME_VAL" --arg platform "$PLATFORM" --arg os "$OS_VERSION" --arg collector "$COLLECTOR_ID" '{agentType:"collector",collectorId:$collector,enrollmentToken:$token,hostname:$host,platform:$platform,osVersion:$os,agentVersion:"1.0.0"}')"
 RESPONSE="$(curl --fail-with-body --silent --show-error --max-time 30 -X POST "$SERVER_URL/api/agent/v1/enroll" -H "Content-Type: application/json" --data "$PAYLOAD")"
 CREDENTIAL="$(jq -er '.data.apiKey' <<<"$RESPONSE")"
 [[ "$CREDENTIAL" == snx_collector_* ]] || { echo "ERROR: enrollment did not return a collector credential." >&2; exit 1; }
-INSTALL_DIR="\${INSTALL_DIR:-/opt/securenexus-collector}"
-install -d -m 700 "$INSTALL_DIR"
+install -d -m 700 "$INSTALL_DIR" "$LOG_DIR"
+export INSTALL_DIR
 umask 077
 printf '%s' "$CREDENTIAL" > "$INSTALL_DIR/credential"
 chmod 600 "$INSTALL_DIR/credential"
-HEARTBEAT="$(jq -n --arg host "$HOSTNAME_VAL" --arg platform "$PLATFORM" '{hostInfo:{hostname:$host,ipAddress:"127.0.0.1",os:$platform,arch:"unknown",cpuCount:1,memoryGb:0,agentVersion:"1.0.0"},metrics:{}}')"
-curl --fail-with-body --silent --show-error --max-time 30 -X POST "$SERVER_URL/api/agent/v1/collectors/heartbeat" -H "Authorization: Bearer $CREDENTIAL" -H "Content-Type: application/json" --data "$HEARTBEAT" >/dev/null
-echo "SecureNexus collector enrolled and heartbeat verified; credential stored at $INSTALL_DIR/credential."
+cat >"$WORKER" <<'WORKER_EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+source "\${INSTALL_DIR:-/opt/securenexus-collector}/collector.env"
+EVENTS="[]"
+HOSTNAME_VAL="$(hostname)"
+
+api_post() {
+  local path="$1"
+  local body
+  if [[ "$#" -ge 2 ]]; then
+    body="$2"
+  else
+    body="$(cat)"
+  fi
+  curl --fail-with-body --silent --show-error --max-time 30 -X POST "$SERVER_URL$path" \
+    -H "Authorization: Bearer $CREDENTIAL" -H "Content-Type: application/json" --data "$body"
+}
+
+get_cpu_usage() {
+  [[ -r /proc/stat ]] || return 0
+  local first second
+  first="$(awk '$1 == "cpu" {print $2, $3, $4, $5, $6, $7, $8}' /proc/stat)"
+  sleep 1
+  second="$(awk '$1 == "cpu" {print $2, $3, $4, $5, $6, $7, $8}' /proc/stat)"
+  awk -v first="$first" -v second="$second" 'BEGIN {
+    split(first,a); split(second,b); t1=a[1]+a[2]+a[3]+a[4]+a[5]+a[6]+a[7]; t2=b[1]+b[2]+b[3]+b[4]+b[5]+b[6]+b[7];
+    i1=a[4]+a[5]; i2=b[4]+b[5]; if (t2 > t1) printf "%.1f", (1-(i2-i1)/(t2-t1))*100;
+  }'
+}
+
+get_memory_usage() {
+  [[ -r /proc/meminfo ]] || return 0
+  awk '/^MemTotal:/ {total=$2} /^MemAvailable:/ {available=$2} END {if (total > 0) printf "%.1f", (total-available)*100/total}' /proc/meminfo
+}
+
+get_disk_usage() {
+  df -P / 2>/dev/null | awk 'NR == 2 {gsub(/%/,"",$5); if ($5 ~ /^[0-9]+([.][0-9]+)?$/) print $5}'
+}
+
+get_cpu_count() {
+  if command -v getconf >/dev/null 2>&1; then
+    getconf _NPROCESSORS_ONLN 2>/dev/null
+  elif [[ -r /proc/cpuinfo ]]; then
+    awk '/^processor[[:space:]]*:/ {count++} END {if (count > 0) print count}' /proc/cpuinfo
+  fi
+}
+
+get_memory_gb() {
+  [[ -r /proc/meminfo ]] || return 0
+  awk '/^MemTotal:/ {if ($2 > 0) printf "%.2f", $2/1024/1024}' /proc/meminfo
+}
+
+get_ip_address() {
+  if command -v ip >/dev/null 2>&1; then
+    local route_ip
+    route_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1);exit}}')"
+    [[ -n "$route_ip" ]] && { printf '%s' "$route_ip"; return; }
+  fi
+  hostname -I 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i !~ /^127[.]/){print $i;exit}}'
+}
+
+heartbeat() {
+  local cpu memory disk ip cpu_count memory_gb
+  cpu="$(get_cpu_usage)"; memory="$(get_memory_usage)"; disk="$(get_disk_usage)"; ip="$(get_ip_address)"
+  cpu_count="$(get_cpu_count)"; memory_gb="$(get_memory_gb)"
+  jq -n --arg host "$HOSTNAME_VAL" --arg os "$OS_VERSION" --arg arch "$(uname -m)" --arg cpu "$cpu" --arg memory "$memory" --arg disk "$disk" --arg ip "$ip" --arg cpu_count "$cpu_count" --arg memory_gb "$memory_gb" \
+    '{
+      hostInfo:{hostname:$host,os:$os,arch:$arch,agentVersion:"1.0.0"},
+      metrics:{}
+    } |
+    if $cpu != "" then .metrics.cpuUsage=($cpu|tonumber) else . end |
+    if $memory != "" then .metrics.memoryUsage=($memory|tonumber) else . end |
+    if $disk != "" then .metrics.diskUsage=($disk|tonumber) else . end |
+    if $cpu_count != "" then .hostInfo.cpuCount=($cpu_count|tonumber) else . end |
+    if $memory_gb != "" then .hostInfo.memoryGb=($memory_gb|tonumber) else . end |
+    if $ip != "" then .hostInfo.ipAddress=$ip else . end' |
+    api_post "/api/agent/v1/collectors/heartbeat" >/dev/null
+}
+
+add_event() {
+  EVENTS="$(jq --argjson event "$1" '. + [$event]' <<<"$EVENTS")"
+}
+
+collect_process_events() {
+  command -v ps >/dev/null 2>&1 || return 0
+  while read -r pid ppid user process_name process_args; do
+    [[ "$pid" =~ ^[0-9]+$ && -n "$process_name" ]] || continue
+    add_event "$(jq -n --arg source "$HOSTNAME_VAL" --arg name "$process_name" --arg args "$process_args" --arg user "$user" --argjson pid "$pid" --argjson ppid "\${ppid:-0}" \
+      '{eventType:"process",severity:"info",source:$source,rawData:{processName:$name,processArgs:$args,userName:$user,pid:$pid,ppid:$ppid}}')"
+  done < <(ps -eo pid=,ppid=,user=,comm=,args= 2>/dev/null | awk 'NR <= 200')
+}
+
+collect_network_events() {
+  command -v ss >/dev/null 2>&1 || return 0
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    add_event "$(jq -n --arg source "$HOSTNAME_VAL" --arg line "$line" '{eventType:"network",severity:"info",source:$source,rawData:{source:"ss",line:$line}}')"
+  done < <(ss -H -tunap 2>/dev/null | awk 'NR <= 100')
+}
+
+collect_auth_events() {
+  local auth_log
+  for auth_log in /var/log/auth.log /var/log/secure; do
+    [[ -r "$auth_log" ]] || continue
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      add_event "$(jq -n --arg source "$HOSTNAME_VAL" --arg logSource "$auth_log" --arg line "$line" '{eventType:"auth",severity:"info",source:$source,rawData:{logSource:$logSource,line:$line}}')"
+    done < <(tail -n 20 "$auth_log")
+  done
+}
+
+collect_file_events() {
+  local file_path file_hash file_size
+  for file_path in /etc/passwd /etc/shadow /etc/sudoers /etc/ssh/sshd_config /etc/crontab /root/.ssh/authorized_keys /etc/hosts; do
+    [[ -r "$file_path" ]] || continue
+    if command -v sha256sum >/dev/null 2>&1; then
+      file_hash="$(sha256sum "$file_path" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+      file_hash="$(shasum -a 256 "$file_path" | awk '{print $1}')"
+    else
+      continue
+    fi
+    file_size="$(wc -c <"$file_path" | tr -d ' ')"
+    add_event "$(jq -n --arg source "$HOSTNAME_VAL" --arg path "$file_path" --arg hash "$file_hash" --arg size "$file_size" \
+      '{eventType:"file",severity:"info",source:$source,rawData:{filePath:$path,fileAction:"snapshot",fileHash:$hash,fileSize:($size|tonumber)}}')"
+  done
+}
+
+send_events() {
+  local count payload
+  count="$(jq 'length' <<<"$EVENTS")"
+  [[ "$count" -gt 0 ]] || return 0
+  payload="$(jq -n --arg batchId "collector-$(date +%s)-$$" --argjson events "$EVENTS" '{batchId:$batchId,events:$events}')"
+  api_post "/api/agent/v1/collectors/events" "$payload" >/dev/null
+  EVENTS="[]"
+}
+
+while :; do
+  heartbeat
+  collect_process_events
+  collect_network_events
+  collect_auth_events
+  collect_file_events
+  send_events
+  sleep 30
+done
+WORKER_EOF
+chmod 700 "$WORKER"
+cat >"$INSTALL_DIR/collector.env" <<EOF
+SERVER_URL=$(printf '%q' "$SERVER_URL")
+CREDENTIAL=$(printf '%q' "$CREDENTIAL")
+OS_VERSION=$(printf '%q' "$OS_VERSION")
+EOF
+chmod 600 "$INSTALL_DIR/collector.env"
+if [[ -d /run/systemd/system && -x "$(command -v systemctl 2>/dev/null)" ]]; then
+  cat >/etc/systemd/system/securenexus-collector.service <<EOF
+[Unit]
+Description=SecureNexus collector
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+ExecStart=$WORKER
+Environment=INSTALL_DIR=$INSTALL_DIR
+Restart=always
+RestartSec=10
+User=root
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now securenexus-collector.service
+elif [[ "$PLATFORM" == "macos" && -x /bin/launchctl ]]; then
+  cat >/Library/LaunchDaemons/io.securenexus.collector.plist <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>io.securenexus.collector</string>
+<key>ProgramArguments</key><array><string>$WORKER</string></array>
+<key>EnvironmentVariables</key><dict><key>INSTALL_DIR</key><string>$INSTALL_DIR</string></dict>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><true/>
+</dict></plist>
+EOF
+  launchctl bootstrap system /Library/LaunchDaemons/io.securenexus.collector.plist
+else
+  nohup "$WORKER" >>"$LOG_DIR/collector.log" 2>&1 &
+  echo "$!" >"$INSTALL_DIR/collector.pid"
+  chmod 600 "$INSTALL_DIR/collector.pid"
+fi
+echo "SecureNexus collector enrolled and persistent telemetry collection started."
 `;
 }
 
