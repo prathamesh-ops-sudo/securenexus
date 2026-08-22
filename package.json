@@ -16,6 +16,7 @@
     "lint:fix": "eslint . --fix",
     "format:check": "prettier --check \"server/**/*.ts\" \"client/src/**/*.{ts,tsx}\" \"shared/**/*.ts\"",
     "format": "prettier --write \"server/**/*.ts\" \"client/src/**/*.{ts,tsx}\" \"shared/**/*.ts\"",
+    "verify:production-build": "npm run build && tsx scripts/verify-production-build.ts",
     "checks": "npm run typecheck && npm run lint && npm run test",
     "checks:all": "npm run typecheck && npm run lint && npm run test && npm run format:check",
     "db:push": "drizzle-kit push",

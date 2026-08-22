@@ -2,7 +2,6 @@ import type { Express } from "express";
 import { randomBytes } from "crypto";
 import { SignedXml } from "xml-crypto";
 import { DOMParser } from "@xmldom/xmldom";
-import * as jose from "jose";
 import { storage, logger, p } from "./shared";
 import { isAuthenticated } from "../auth";
 import { authStorage } from "../auth/storage";
@@ -605,6 +604,7 @@ export function registerSsoRoutes(app: Express): void {
 
       if (tokenData.id_token && jwksUri) {
         try {
+          const jose = await import("jose");
           const JWKS = jose.createRemoteJWKSet(new URL(jwksUri));
           const { payload } = await jose.jwtVerify(tokenData.id_token, JWKS, {
             issuer: config.metadataUrl.replace(/\/\.well-known\/openid-configuration$/, ""),
