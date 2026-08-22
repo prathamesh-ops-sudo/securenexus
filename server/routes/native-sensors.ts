@@ -3,6 +3,7 @@ import type { Express } from "express";
 import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { logger, getOrgId, generateApiKey, hashApiKey } from "./shared";
+import { storage } from "../storage";
 import { db } from "../db";
 import { sql, eq, and, desc, ilike, or, count } from "drizzle-orm";
 import { randomBytes, timingSafeEqual } from "crypto";
@@ -18,6 +19,7 @@ import {
   DETECTION_STATUSES,
   MITRE_TACTICS,
 } from "../../shared/schema";
+import type { DetectionRule } from "../../shared/schema";
 import { processEventBatch } from "../native-detections";
 import { seedBuiltinRules } from "../native-detections";
 import { expireTimedOutResponseActions } from "../response-action-timeouts";
@@ -37,6 +39,24 @@ function safeHashEqual(a: string | null | undefined, b: string): boolean {
   } catch {
     return false;
   }
+}
+
+function detectionRuleSnapshot(rule: DetectionRule): Record<string, unknown> {
+  return {
+    name: rule.name,
+    description: rule.description,
+    severity: rule.severity,
+    status: rule.status,
+    mitreTactic: rule.mitreTactic,
+    mitreTechnique: rule.mitreTechnique,
+    mitreSubtechnique: rule.mitreSubtechnique,
+    eventTypes: rule.eventTypes,
+    conditionTree: rule.conditionTree,
+    author: rule.author,
+    tags: rule.tags,
+    falsePositiveNotes: rule.falsePositiveNotes,
+    references: rule.references,
+  };
 }
 
 /**
@@ -132,7 +152,11 @@ export function registerNativeSensorRoutes(app: Express): void {
   });
 
   // Get single sensor details
-  app.get("/api/native-sensors/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+  app.get("/api/native-sensors/:id", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res, next) => {
+    if (["health-check", "policies"].includes(String(req.params.id))) {
+      return next();
+    }
+
     try {
       const orgId = getOrgId(req);
       const sensorId = String(req.params.id);
@@ -915,6 +939,14 @@ EOF`;
           })
           .returning();
 
+        await storage.createDetectionRuleVersion({
+          orgId,
+          ruleId: rule.id,
+          version: 1,
+          snapshot: detectionRuleSnapshot(rule),
+          createdBy: (req as any).user?.id || null,
+        });
+
         log.info(`Custom detection rule created: ${name}`, { ruleId: rule.id, orgId });
         res.status(201).json({ rule });
       } catch (error) {
@@ -979,8 +1011,22 @@ EOF`;
         const [updated] = await db
           .update(detectionRules)
           .set(updateData)
-          .where(eq(detectionRules.id, ruleId))
+          .where(
+            and(
+              eq(detectionRules.id, ruleId),
+              or(eq(detectionRules.orgId, orgId), sql`${detectionRules.orgId} IS NULL`),
+            ),
+          )
           .returning();
+
+        const existingVersions = await storage.getDetectionRuleVersions(ruleId, orgId);
+        await storage.createDetectionRuleVersion({
+          orgId,
+          ruleId,
+          version: (existingVersions[0]?.version || 0) + 1,
+          snapshot: detectionRuleSnapshot(updated),
+          createdBy: (req as any).user?.id || null,
+        });
 
         res.json({ rule: updated });
       } catch (error) {
@@ -1016,7 +1062,7 @@ EOF`;
           return res.status(403).json({ message: "Built-in rules cannot be deleted. You can disable them instead." });
         }
 
-        await db.delete(detectionRules).where(eq(detectionRules.id, ruleId));
+        await db.delete(detectionRules).where(and(eq(detectionRules.id, ruleId), eq(detectionRules.orgId, orgId)));
         res.json({ message: "Detection rule deleted" });
       } catch (error) {
         log.error("Failed to delete detection rule", { error: String(error) });
@@ -1124,13 +1170,8 @@ EOF`;
   app.get("/api/native-sensors/policies", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      // Return policies from DB or empty array if table not yet created
-      // For now, return from a lightweight in-memory store keyed by orgId
-      const policiesKey = `sensor_policies_${orgId}`;
-      const existing = (globalThis as Record<string, unknown>)[policiesKey] as
-        | Array<Record<string, unknown>>
-        | undefined;
-      res.json(existing || []);
+      const policies = await storage.getSensorPolicies(orgId);
+      res.json(policies.map((policy) => ({ ...policy, sensorCount: 0 })));
     } catch (error) {
       log.error("Failed to fetch sensor policies", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch sensor policies" });
@@ -1152,24 +1193,17 @@ EOF`;
           return res.status(400).json({ message: "Policy name is required" });
         }
 
-        const policy = {
-          id: randomBytes(16).toString("hex"),
+        const policy = await storage.createSensorPolicy({
           orgId,
           name,
           platform: platform === "all_platforms" ? null : platform || null,
           telemetryLevel: telemetryLevel || "standard",
           heartbeatInterval: heartbeatInterval || 60,
           autoUpdate: autoUpdate !== false,
-          sensorCount: 0,
-          createdAt: new Date().toISOString(),
-        };
+          createdBy: (req as any).user?.id || null,
+        });
 
-        const policiesKey = `sensor_policies_${orgId}`;
-        const existing = ((globalThis as Record<string, unknown>)[policiesKey] as Array<Record<string, unknown>>) || [];
-        existing.push(policy);
-        (globalThis as Record<string, unknown>)[policiesKey] = existing;
-
-        res.status(201).json(policy);
+        res.status(201).json({ ...policy, sensorCount: 0 });
       } catch (error) {
         log.error("Failed to create sensor policy", { error: String(error) });
         res.status(500).json({ message: "Failed to create sensor policy" });
@@ -1519,9 +1553,16 @@ EOF`;
 
       if (!rule) return res.status(404).json({ message: "Rule not found" });
 
-      // Version history stored in memory (per rule)
-      const versionKey = `rule_versions_${ruleId}`;
-      const versions = ((globalThis as Record<string, unknown>)[versionKey] as Array<Record<string, unknown>>) || [];
+      const versionRows = await storage.getDetectionRuleVersions(ruleId, orgId);
+      const versions = versionRows.map((row) => ({
+        ...(row.snapshot as Record<string, unknown>),
+        id: row.id,
+        orgId: row.orgId,
+        ruleId: row.ruleId,
+        version: row.version,
+        createdBy: row.createdBy,
+        createdAt: row.createdAt,
+      }));
 
       res.json({ versions, currentVersion: versions.length + 1 });
     } catch (error) {
@@ -1557,8 +1598,7 @@ EOF`;
         if (!rule) return res.status(404).json({ message: "Rule not found" });
         if (rule.isBuiltin) return res.status(403).json({ message: "Cannot rollback built-in rules" });
 
-        const versionKey = `rule_versions_${ruleId}`;
-        const versions = ((globalThis as Record<string, unknown>)[versionKey] as Array<Record<string, unknown>>) || [];
+        const versions = await storage.getDetectionRuleVersions(ruleId, orgId);
         const targetVersion = versions.find((v) => v.version === version);
 
         if (!targetVersion && version !== undefined) {

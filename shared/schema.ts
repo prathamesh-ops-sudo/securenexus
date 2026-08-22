@@ -715,6 +715,91 @@ export const playbooks = pgTable(
   ],
 );
 
+export const playbookNotificationTemplates = pgTable(
+  "playbook_notification_templates",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    playbookId: varchar("playbook_id")
+      .notNull()
+      .references(() => playbooks.id),
+    channel: text("channel").notNull(),
+    subject: text("subject"),
+    body: text("body").notNull(),
+    recipients: text("recipients"),
+    webhookUrl: text("webhook_url"),
+    urgency: text("urgency").notNull().default("high"),
+    createdBy: varchar("created_by"),
+    createdByName: text("created_by_name"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_playbook_notification_templates_org").on(table.orgId),
+    index("idx_playbook_notification_templates_playbook").on(table.orgId, table.playbookId),
+  ],
+);
+
+export const playbookNotificationTemplatesRelations = relations(playbookNotificationTemplates, ({ one }) => ({
+  organization: one(organizations, { fields: [playbookNotificationTemplates.orgId], references: [organizations.id] }),
+  playbook: one(playbooks, { fields: [playbookNotificationTemplates.playbookId], references: [playbooks.id] }),
+}));
+
+export type PlaybookNotificationTemplate = typeof playbookNotificationTemplates.$inferSelect;
+export type InsertPlaybookNotificationTemplate = typeof playbookNotificationTemplates.$inferInsert;
+
+export const playbookChangeTickets = pgTable(
+  "playbook_change_tickets",
+  {
+    id: varchar("id").primaryKey(),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    playbookId: varchar("playbook_id")
+      .notNull()
+      .references(() => playbooks.id),
+    executionId: varchar("execution_id").references(() => playbookExecutions.id),
+    playbookName: text("playbook_name").notNull(),
+    changeType: text("change_type").notNull(),
+    summary: text("summary").notNull(),
+    description: text("description"),
+    impactAssessment: text("impact_assessment"),
+    rollbackPlan: text("rollback_plan"),
+    requiresApproval: boolean("requires_approval").notNull().default(true),
+    status: text("status").notNull().default("pending_approval"),
+    requestedBy: text("requested_by"),
+    requestedAt: timestamp("requested_at").defaultNow(),
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    implementedAt: timestamp("implemented_at"),
+    closedAt: timestamp("closed_at"),
+    changeLog: jsonb("change_log").notNull().default([]),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_playbook_change_tickets_org").on(table.orgId),
+    index("idx_playbook_change_tickets_playbook").on(table.orgId, table.playbookId),
+    index("idx_playbook_change_tickets_status").on(table.orgId, table.status),
+  ],
+);
+
+export const playbookChangeTicketsRelations = relations(playbookChangeTickets, ({ one }) => ({
+  organization: one(organizations, { fields: [playbookChangeTickets.orgId], references: [organizations.id] }),
+  playbook: one(playbooks, { fields: [playbookChangeTickets.playbookId], references: [playbooks.id] }),
+  execution: one(playbookExecutions, {
+    fields: [playbookChangeTickets.executionId],
+    references: [playbookExecutions.id],
+  }),
+}));
+
+export type PlaybookChangeTicket = typeof playbookChangeTickets.$inferSelect;
+export type InsertPlaybookChangeTicket = typeof playbookChangeTickets.$inferInsert;
+
 export const playbookExecutions = pgTable(
   "playbook_executions",
   {
@@ -1799,6 +1884,8 @@ export const aiFeedbackRelations = relations(aiFeedback, ({ one }) => ({}));
 
 export const playbooksRelations = relations(playbooks, ({ one, many }) => ({
   executions: many(playbookExecutions),
+  notificationTemplates: many(playbookNotificationTemplates),
+  changeTickets: many(playbookChangeTickets),
 }));
 
 export const playbookExecutionsRelations = relations(playbookExecutions, ({ one, many }) => ({
@@ -6145,6 +6232,37 @@ export const nativeSensorsRelations = relations(nativeSensors, ({ one }) => ({
 export type NativeSensor = typeof nativeSensors.$inferSelect;
 export type InsertNativeSensor = typeof nativeSensors.$inferInsert;
 
+export const sensorPolicies = pgTable(
+  "sensor_policies",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    platform: text("platform"),
+    telemetryLevel: text("telemetry_level").notNull().default("standard"),
+    heartbeatInterval: integer("heartbeat_interval").notNull().default(60),
+    autoUpdate: boolean("auto_update").notNull().default(true),
+    createdBy: varchar("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_sensor_policies_org").on(table.orgId),
+    index("idx_sensor_policies_platform").on(table.orgId, table.platform),
+  ],
+);
+
+export const sensorPoliciesRelations = relations(sensorPolicies, ({ one }) => ({
+  organization: one(organizations, { fields: [sensorPolicies.orgId], references: [organizations.id] }),
+}));
+
+export type SensorPolicy = typeof sensorPolicies.$inferSelect;
+export type InsertSensorPolicy = typeof sensorPolicies.$inferInsert;
+
 export const sensorEvents = pgTable(
   "sensor_events",
   {
@@ -6420,6 +6538,38 @@ export const detectionRulesRelations = relations(detectionRules, ({ one }) => ({
 
 export type DetectionRule = typeof detectionRules.$inferSelect;
 export type InsertDetectionRule = typeof detectionRules.$inferInsert;
+
+export const detectionRuleVersions = pgTable(
+  "detection_rule_versions",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    ruleId: varchar("rule_id")
+      .notNull()
+      .references(() => detectionRules.id),
+    version: integer("version").notNull(),
+    snapshot: jsonb("snapshot").notNull(),
+    createdBy: varchar("created_by"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_detection_rule_versions_org").on(table.orgId),
+    index("idx_detection_rule_versions_rule").on(table.orgId, table.ruleId),
+    uniqueIndex("uq_detection_rule_versions_rule_version").on(table.orgId, table.ruleId, table.version),
+  ],
+);
+
+export const detectionRuleVersionsRelations = relations(detectionRuleVersions, ({ one }) => ({
+  organization: one(organizations, { fields: [detectionRuleVersions.orgId], references: [organizations.id] }),
+  rule: one(detectionRules, { fields: [detectionRuleVersions.ruleId], references: [detectionRules.id] }),
+}));
+
+export type DetectionRuleVersion = typeof detectionRuleVersions.$inferSelect;
+export type InsertDetectionRuleVersion = typeof detectionRuleVersions.$inferInsert;
 
 export const detectionAlerts = pgTable(
   "detection_alerts",

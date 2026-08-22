@@ -188,8 +188,6 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
 
   // Notification Channels
 
-  const notificationTemplateStore = new Map<string, any[]>();
-
   app.get(
     "/api/playbooks/:id/notification-config",
     isAuthenticated,
@@ -205,8 +203,10 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
           return res.status(404).json({ message: "Playbook not found" });
         }
 
-        const key = `${orgId}:${pb.id}`;
-        const templates = notificationTemplateStore.get(key) || [];
+        const templates = (await storage.getPlaybookNotificationTemplates(pb.id, orgId)).map((template) => ({
+          ...template,
+          createdBy: template.createdByName || template.createdBy,
+        }));
 
         const channels = [
           {
@@ -274,36 +274,32 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
           return res.status(400).json({ message: `Invalid channel. Must be one of: ${validChannels.join(", ")}` });
         }
 
-        const key = `${orgId}:${pb.id}`;
-        if (!notificationTemplateStore.has(key)) notificationTemplateStore.set(key, []);
-
-        const template = {
-          id: `tmpl-${Date.now()}-${randomBytes(3).toString("hex")}`,
+        const user = (req as any).user;
+        const createdByName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
+        const template = await storage.createPlaybookNotificationTemplate({
           channel,
           subject: subject || null,
           body,
           recipients: recipients || null,
           webhookUrl: webhookUrl || null,
           urgency: urgency || "high",
-          createdAt: new Date().toISOString(),
-          createdBy: (req as any).user?.firstName
-            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
-            : "Analyst",
-        };
-
-        notificationTemplateStore.get(key)!.push(template);
+          orgId,
+          playbookId: pb.id,
+          createdBy: user?.id || null,
+          createdByName,
+        });
 
         await storage.createAuditLog({
           orgId,
-          userId: (req as any).user?.id,
-          userName: template.createdBy,
+          userId: user?.id,
+          userName: createdByName,
           action: "playbook_notification_template_created",
           resourceType: "playbook",
           resourceId: pb.id,
           details: { templateId: template.id, channel },
         });
 
-        res.status(201).json(template);
+        res.status(201).json({ ...template, createdBy: createdByName });
       } catch (error) {
         logger.child("routes").error("Notification template error", { error: String(error) });
         res.status(500).json({ message: "Failed to create notification template" });
@@ -326,14 +322,10 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
           return res.status(404).json({ message: "Playbook not found" });
         }
 
-        const key = `${orgId}:${pb.id}`;
-        const templates = notificationTemplateStore.get(key) || [];
-        const idx = templates.findIndex((t: any) => t.id === req.params.templateId);
-        if (idx < 0) {
+        const deleted = await storage.deletePlaybookNotificationTemplate(String(req.params.templateId), pb.id, orgId);
+        if (!deleted) {
           return res.status(404).json({ message: "Template not found" });
         }
-
-        templates.splice(idx, 1);
         res.json({ success: true });
       } catch (error) {
         logger.child("routes").error("Notification template delete error", { error: String(error) });
@@ -358,9 +350,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
         }
 
         const { templateId, variables } = req.body;
-        const key = `${orgId}:${pb.id}`;
-        const templates = notificationTemplateStore.get(key) || [];
-        const template = templates.find((t: any) => t.id === templateId);
+        const template = await storage.getPlaybookNotificationTemplate(templateId, pb.id, orgId);
 
         if (!template) {
           return res.status(404).json({ message: "Template not found" });
@@ -418,8 +408,6 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
 
   // Change Management Integration
 
-  const changeTicketStore = new Map<string, any[]>();
-
   app.get(
     "/api/playbook-change-tickets",
     isAuthenticated,
@@ -429,13 +417,13 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const key = `org:${orgId}`;
-        const tickets = changeTicketStore.get(key) || [];
         const { playbookId, status } = req.query;
-        let filtered = tickets;
-        if (playbookId) filtered = filtered.filter((t: any) => t.playbookId === playbookId);
-        if (status) filtered = filtered.filter((t: any) => t.status === status);
-        res.json({ tickets: filtered, total: filtered.length });
+        const tickets = await storage.getPlaybookChangeTickets(
+          orgId,
+          typeof playbookId === "string" ? playbookId : undefined,
+          typeof status === "string" ? status : undefined,
+        );
+        res.json({ tickets, total: tickets.length });
       } catch (error) {
         logger.child("routes").error("Change tickets error", { error: String(error) });
         res.status(500).json({ message: "Failed to fetch change tickets" });
@@ -489,7 +477,9 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
         const user = (req as any).user;
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
 
-        const ticket = {
+        const requestedAt = new Date();
+        const autoApproved = requiresApproval === false;
+        const ticket = await storage.createPlaybookChangeTicket({
           id: `CHG-${Date.now().toString(36).toUpperCase()}-${randomBytes(2).toString("hex").toUpperCase()}`,
           orgId,
           playbookId,
@@ -500,12 +490,12 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
           description: description || null,
           impactAssessment: impactAssessment || "Low impact — automated security response",
           rollbackPlan: rollbackPlan || "Revert via playbook rollback mechanism",
-          requiresApproval: requiresApproval !== false,
-          status: requiresApproval !== false ? "pending_approval" : "approved",
+          requiresApproval: !autoApproved,
+          status: autoApproved ? "approved" : "pending_approval",
           requestedBy: userName,
-          requestedAt: new Date().toISOString(),
-          approvedBy: requiresApproval !== false ? null : "auto-approved",
-          approvedAt: requiresApproval !== false ? null : new Date().toISOString(),
+          requestedAt,
+          approvedBy: autoApproved ? "auto-approved" : null,
+          approvedAt: autoApproved ? requestedAt : null,
           implementedAt: null,
           closedAt: null,
           changeLog: [
@@ -516,11 +506,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
               details: { changeType, summary },
             },
           ],
-        };
-
-        const key = `org:${orgId}`;
-        if (!changeTicketStore.has(key)) changeTicketStore.set(key, []);
-        changeTicketStore.get(key)!.push(ticket);
+        });
 
         await storage.createAuditLog({
           orgId,
@@ -549,9 +535,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const key = `org:${orgId}`;
-        const tickets = changeTicketStore.get(key) || [];
-        const ticket = tickets.find((t: any) => t.id === req.params.ticketId);
+        const ticket = await storage.getPlaybookChangeTicket(String(req.params.ticketId), orgId);
 
         if (!ticket) {
           return res.status(404).json({ message: "Change ticket not found" });
@@ -568,14 +552,19 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
           return res.status(400).json({ message: "decision must be 'approved' or 'rejected'" });
         }
 
-        ticket.status = decision;
-        ticket.approvedBy = userName;
-        ticket.approvedAt = new Date().toISOString();
-        ticket.changeLog.push({
-          action: decision,
-          actor: userName,
-          timestamp: new Date().toISOString(),
-          details: { note: note || null },
+        const updated = await storage.updatePlaybookChangeTicket(String(req.params.ticketId), orgId, {
+          status: decision,
+          approvedBy: userName,
+          approvedAt: new Date(),
+          changeLog: [
+            ...((ticket.changeLog || []) as any[]),
+            {
+              action: decision,
+              actor: userName,
+              timestamp: new Date().toISOString(),
+              details: { note: note || null },
+            },
+          ],
         });
 
         await storage.createAuditLog({
@@ -588,7 +577,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
           details: { decision, note },
         });
 
-        res.json(ticket);
+        res.json(updated);
       } catch (error) {
         logger.child("routes").error("Change ticket approve error", { error: String(error) });
         res.status(500).json({ message: "Failed to approve change ticket" });
@@ -605,9 +594,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const key = `org:${orgId}`;
-        const tickets = changeTicketStore.get(key) || [];
-        const ticket = tickets.find((t: any) => t.id === req.params.ticketId);
+        const ticket = await storage.getPlaybookChangeTicket(String(req.params.ticketId), orgId);
 
         if (!ticket) {
           return res.status(404).json({ message: "Change ticket not found" });
@@ -619,13 +606,18 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
         const user = (req as any).user;
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
 
-        ticket.status = "implemented";
-        ticket.implementedAt = new Date().toISOString();
-        ticket.changeLog.push({
-          action: "implemented",
-          actor: userName,
-          timestamp: new Date().toISOString(),
-          details: req.body.notes ? { notes: req.body.notes } : {},
+        const updated = await storage.updatePlaybookChangeTicket(String(req.params.ticketId), orgId, {
+          status: "implemented",
+          implementedAt: new Date(),
+          changeLog: [
+            ...((ticket.changeLog || []) as any[]),
+            {
+              action: "implemented",
+              actor: userName,
+              timestamp: new Date().toISOString(),
+              details: req.body.notes ? { notes: req.body.notes } : {},
+            },
+          ],
         });
 
         await storage.createAuditLog({
@@ -637,7 +629,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
           resourceId: ticket.id,
         });
 
-        res.json(ticket);
+        res.json(updated);
       } catch (error) {
         logger.child("routes").error("Change ticket implement error", { error: String(error) });
         res.status(500).json({ message: "Failed to implement change ticket" });
@@ -654,9 +646,7 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const orgId = getOrgId(req);
-        const key = `org:${orgId}`;
-        const tickets = changeTicketStore.get(key) || [];
-        const ticket = tickets.find((t: any) => t.id === req.params.ticketId);
+        const ticket = await storage.getPlaybookChangeTicket(String(req.params.ticketId), orgId);
 
         if (!ticket) {
           return res.status(404).json({ message: "Change ticket not found" });
@@ -665,16 +655,21 @@ export function registerPlaybooksNotificationsRoutes(app: Express): void {
         const user = (req as any).user;
         const userName = user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Analyst";
 
-        ticket.status = "closed";
-        ticket.closedAt = new Date().toISOString();
-        ticket.changeLog.push({
-          action: "closed",
-          actor: userName,
-          timestamp: new Date().toISOString(),
-          details: req.body.resolution ? { resolution: req.body.resolution } : {},
+        const updated = await storage.updatePlaybookChangeTicket(String(req.params.ticketId), orgId, {
+          status: "closed",
+          closedAt: new Date(),
+          changeLog: [
+            ...((ticket.changeLog || []) as any[]),
+            {
+              action: "closed",
+              actor: userName,
+              timestamp: new Date().toISOString(),
+              details: req.body.resolution ? { resolution: req.body.resolution } : {},
+            },
+          ],
         });
 
-        res.json(ticket);
+        res.json(updated);
       } catch (error) {
         logger.child("routes").error("Change ticket close error", { error: String(error) });
         res.status(500).json({ message: "Failed to close change ticket" });

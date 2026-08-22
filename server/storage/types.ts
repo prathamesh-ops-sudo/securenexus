@@ -24,6 +24,10 @@ import {
   type InsertPlaybookExecution,
   type PlaybookApproval,
   type InsertPlaybookApproval,
+  type PlaybookNotificationTemplate,
+  type InsertPlaybookNotificationTemplate,
+  type PlaybookChangeTicket,
+  type InsertPlaybookChangeTicket,
   type ThreatIntelConfig,
   type InsertThreatIntelConfig,
   type CompliancePolicy,
@@ -256,6 +260,10 @@ import {
   type InsertNativeSensor,
   type DetectionRule,
   type InsertDetectionRule,
+  type SensorPolicy,
+  type InsertSensorPolicy,
+  type DetectionRuleVersion,
+  type InsertDetectionRuleVersion,
   type SensorEvent,
   type InsertSensorEvent,
   type DetectionAlert,
@@ -1084,6 +1092,24 @@ export interface IStorage {
   getLatestPlaybookVersion(playbookId: string): Promise<PlaybookVersion | undefined>;
   createPlaybookVersion(version: InsertPlaybookVersion): Promise<PlaybookVersion>;
   updatePlaybookVersion(id: string, data: Partial<PlaybookVersion>): Promise<PlaybookVersion | undefined>;
+  getPlaybookNotificationTemplates(playbookId: string, orgId: string): Promise<PlaybookNotificationTemplate[]>;
+  getPlaybookNotificationTemplate(
+    id: string,
+    playbookId: string,
+    orgId: string,
+  ): Promise<PlaybookNotificationTemplate | undefined>;
+  createPlaybookNotificationTemplate(
+    template: InsertPlaybookNotificationTemplate,
+  ): Promise<PlaybookNotificationTemplate>;
+  deletePlaybookNotificationTemplate(id: string, playbookId: string, orgId: string): Promise<boolean>;
+  getPlaybookChangeTickets(orgId: string, playbookId?: string, status?: string): Promise<PlaybookChangeTicket[]>;
+  getPlaybookChangeTicket(id: string, orgId: string): Promise<PlaybookChangeTicket | undefined>;
+  createPlaybookChangeTicket(ticket: InsertPlaybookChangeTicket): Promise<PlaybookChangeTicket>;
+  updatePlaybookChangeTicket(
+    id: string,
+    orgId: string,
+    data: Partial<PlaybookChangeTicket>,
+  ): Promise<PlaybookChangeTicket | undefined>;
 
   // Blast Radius Previews (8.3)
   getBlastRadiusPreviews(playbookId: string, orgId?: string): Promise<BlastRadiusPreview[]>;
@@ -1252,6 +1278,8 @@ export interface IStorage {
   updateNativeSensor(id: string, updates: Partial<InsertNativeSensor>): Promise<NativeSensor | undefined>;
   deleteNativeSensor(id: string): Promise<boolean>;
   countNativeSensors(orgId: string): Promise<number>;
+  getSensorPolicies(orgId: string): Promise<SensorPolicy[]>;
+  createSensorPolicy(policy: InsertSensorPolicy): Promise<SensorPolicy>;
 
   // Detection Rules
   getDetectionRules(orgId: string): Promise<DetectionRule[]>;
@@ -1260,6 +1288,8 @@ export interface IStorage {
   updateDetectionRule(id: string, updates: Partial<InsertDetectionRule>): Promise<DetectionRule | undefined>;
   deleteDetectionRule(id: string): Promise<boolean>;
   countDetectionRules(orgId: string): Promise<number>;
+  getDetectionRuleVersions(ruleId: string, orgId: string): Promise<DetectionRuleVersion[]>;
+  createDetectionRuleVersion(version: InsertDetectionRuleVersion): Promise<DetectionRuleVersion>;
 
   // Sensor Events
   getSensorEvents(orgId: string, limit?: number, offset?: number): Promise<SensorEvent[]>;

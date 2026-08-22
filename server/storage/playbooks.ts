@@ -7,6 +7,10 @@ import {
   type InsertPlaybookRollbackPlan,
   type InsertPlaybookSimulation,
   type InsertPlaybookVersion,
+  type InsertPlaybookNotificationTemplate,
+  type PlaybookNotificationTemplate,
+  type InsertPlaybookChangeTicket,
+  type PlaybookChangeTicket,
   type Playbook,
   type PlaybookApproval,
   type PlaybookExecution,
@@ -19,6 +23,8 @@ import {
   playbookRollbackPlans,
   playbookSimulations,
   playbookVersions,
+  playbookNotificationTemplates,
+  playbookChangeTickets,
   playbooks,
 } from "@shared/schema";
 import { db } from "../db";
@@ -175,6 +181,102 @@ export async function updatePlaybookVersion(
   data: Partial<PlaybookVersion>,
 ): Promise<PlaybookVersion | undefined> {
   const [updated] = await db.update(playbookVersions).set(data).where(eq(playbookVersions.id, id)).returning();
+  return updated;
+}
+
+export async function getPlaybookNotificationTemplates(
+  playbookId: string,
+  orgId: string,
+): Promise<PlaybookNotificationTemplate[]> {
+  return db
+    .select()
+    .from(playbookNotificationTemplates)
+    .where(
+      and(eq(playbookNotificationTemplates.playbookId, playbookId), eq(playbookNotificationTemplates.orgId, orgId)),
+    )
+    .orderBy(desc(playbookNotificationTemplates.createdAt));
+}
+
+export async function getPlaybookNotificationTemplate(
+  id: string,
+  playbookId: string,
+  orgId: string,
+): Promise<PlaybookNotificationTemplate | undefined> {
+  const [template] = await db
+    .select()
+    .from(playbookNotificationTemplates)
+    .where(
+      and(
+        eq(playbookNotificationTemplates.id, id),
+        eq(playbookNotificationTemplates.playbookId, playbookId),
+        eq(playbookNotificationTemplates.orgId, orgId),
+      ),
+    );
+  return template;
+}
+
+export async function createPlaybookNotificationTemplate(
+  template: InsertPlaybookNotificationTemplate,
+): Promise<PlaybookNotificationTemplate> {
+  const [created] = await db.insert(playbookNotificationTemplates).values(template).returning();
+  return created;
+}
+
+export async function deletePlaybookNotificationTemplate(
+  id: string,
+  playbookId: string,
+  orgId: string,
+): Promise<boolean> {
+  const result = await db
+    .delete(playbookNotificationTemplates)
+    .where(
+      and(
+        eq(playbookNotificationTemplates.id, id),
+        eq(playbookNotificationTemplates.playbookId, playbookId),
+        eq(playbookNotificationTemplates.orgId, orgId),
+      ),
+    );
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function getPlaybookChangeTickets(
+  orgId: string,
+  playbookId?: string,
+  status?: string,
+): Promise<PlaybookChangeTicket[]> {
+  const conditions = [eq(playbookChangeTickets.orgId, orgId)];
+  if (playbookId) conditions.push(eq(playbookChangeTickets.playbookId, playbookId));
+  if (status) conditions.push(eq(playbookChangeTickets.status, status));
+  return db
+    .select()
+    .from(playbookChangeTickets)
+    .where(and(...conditions))
+    .orderBy(desc(playbookChangeTickets.requestedAt));
+}
+
+export async function getPlaybookChangeTicket(id: string, orgId: string): Promise<PlaybookChangeTicket | undefined> {
+  const [ticket] = await db
+    .select()
+    .from(playbookChangeTickets)
+    .where(and(eq(playbookChangeTickets.id, id), eq(playbookChangeTickets.orgId, orgId)));
+  return ticket;
+}
+
+export async function createPlaybookChangeTicket(ticket: InsertPlaybookChangeTicket): Promise<PlaybookChangeTicket> {
+  const [created] = await db.insert(playbookChangeTickets).values(ticket).returning();
+  return created;
+}
+
+export async function updatePlaybookChangeTicket(
+  id: string,
+  orgId: string,
+  data: Partial<PlaybookChangeTicket>,
+): Promise<PlaybookChangeTicket | undefined> {
+  const [updated] = await db
+    .update(playbookChangeTickets)
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(eq(playbookChangeTickets.id, id), eq(playbookChangeTickets.orgId, orgId)))
+    .returning();
   return updated;
 }
 

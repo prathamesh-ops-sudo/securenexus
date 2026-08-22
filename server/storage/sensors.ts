@@ -7,13 +7,19 @@ import {
   type InsertSensorEvent,
   type DetectionAlert,
   type InsertDetectionAlert,
+  type SensorPolicy,
+  type InsertSensorPolicy,
+  type DetectionRuleVersion,
+  type InsertDetectionRuleVersion,
   nativeSensors,
+  sensorPolicies,
   detectionRules,
+  detectionRuleVersions,
   sensorEvents,
   detectionAlerts,
 } from "@shared/schema";
 import { db } from "../db";
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 
 // ── Native Sensors ──
 
@@ -51,6 +57,32 @@ export async function deleteNativeSensor(id: string): Promise<boolean> {
 export async function countNativeSensors(orgId: string): Promise<number> {
   const [row] = await db.select({ total: count() }).from(nativeSensors).where(eq(nativeSensors.orgId, orgId));
   return row?.total ?? 0;
+}
+
+export async function getSensorPolicies(orgId: string): Promise<SensorPolicy[]> {
+  return db
+    .select()
+    .from(sensorPolicies)
+    .where(eq(sensorPolicies.orgId, orgId))
+    .orderBy(desc(sensorPolicies.createdAt));
+}
+
+export async function createSensorPolicy(policy: InsertSensorPolicy): Promise<SensorPolicy> {
+  const [created] = await db.insert(sensorPolicies).values(policy).returning();
+  return created;
+}
+
+export async function getDetectionRuleVersions(ruleId: string, orgId: string): Promise<DetectionRuleVersion[]> {
+  return db
+    .select()
+    .from(detectionRuleVersions)
+    .where(and(eq(detectionRuleVersions.ruleId, ruleId), eq(detectionRuleVersions.orgId, orgId)))
+    .orderBy(desc(detectionRuleVersions.version));
+}
+
+export async function createDetectionRuleVersion(version: InsertDetectionRuleVersion): Promise<DetectionRuleVersion> {
+  const [created] = await db.insert(detectionRuleVersions).values(version).returning();
+  return created;
 }
 
 // ── Detection Rules ──
