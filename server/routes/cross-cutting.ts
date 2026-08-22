@@ -384,7 +384,9 @@ export function registerCrossCuttingRoutes(app: Express): void {
           status: "detected",
           remediationAction: null,
         });
-        reply(res, { scanId: newDrift.id, status: "completed", driftsDetected: 0 });
+        const driftRecords = await storage.getCrossCuttingDriftRecords(orgId);
+        const driftsDetected = driftRecords.filter((signal) => signal.status === "detected").length;
+        reply(res, { scanId: newDrift.id, status: "completed", driftsDetected });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         log.error(`POST /api/cross-cutting/drift/scan failed: ${message}`);

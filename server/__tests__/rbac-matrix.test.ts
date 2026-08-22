@@ -51,6 +51,9 @@ vi.mock("@shared/schema", () => ({
       response_actions: ["read", "write", "admin"],
       settings: ["read", "write", "admin"],
       team: ["read", "write", "admin"],
+      compliance: ["read", "write", "admin"],
+      security_awareness: ["read", "write", "admin"],
+      physical_security: ["read", "write", "admin"],
     },
     admin: {
       incidents: ["read", "write", "admin"],
@@ -59,6 +62,9 @@ vi.mock("@shared/schema", () => ({
       response_actions: ["read", "write", "admin"],
       settings: ["read", "write"],
       team: ["read", "write"],
+      compliance: ["read", "write", "admin"],
+      security_awareness: ["read", "write", "admin"],
+      physical_security: ["read", "write", "admin"],
     },
     analyst: {
       incidents: ["read", "write"],
@@ -67,6 +73,9 @@ vi.mock("@shared/schema", () => ({
       response_actions: ["read", "write"],
       settings: ["read"],
       team: ["read"],
+      compliance: ["read", "write"],
+      security_awareness: ["read", "write"],
+      physical_security: ["read", "write"],
     },
     read_only: {
       incidents: ["read"],
@@ -75,6 +84,9 @@ vi.mock("@shared/schema", () => ({
       response_actions: ["read"],
       settings: ["read"],
       team: ["read"],
+      compliance: ["read"],
+      security_awareness: ["read"],
+      physical_security: ["read"],
     },
   },
 }));
@@ -84,7 +96,17 @@ import { requirePermission, requireMinRole } from "../rbac";
 import { requireSuperAdmin } from "../middleware/super-admin";
 
 const ALL_ROLES = ["owner", "admin", "analyst", "read_only"];
-const ALL_SCOPES = ["incidents", "connectors", "api_keys", "response_actions", "settings", "team"];
+const ALL_SCOPES = [
+  "incidents",
+  "connectors",
+  "api_keys",
+  "response_actions",
+  "settings",
+  "team",
+  "compliance",
+  "security_awareness",
+  "physical_security",
+];
 const ALL_ACTIONS = ["read", "write", "admin"];
 
 function mockReq(overrides: Record<string, unknown> = {}): Request {
@@ -111,13 +133,13 @@ describe("RBAC Permission Matrix - Exhaustive", () => {
     vi.clearAllMocks();
   });
 
-  // Verify the matrix covers exactly 72 combinations
-  it("covers exactly 72 role x scope x action combinations", () => {
+  // Verify the matrix covers exactly 108 combinations
+  it("covers exactly 108 role x scope x action combinations", () => {
     const count = ALL_ROLES.length * ALL_SCOPES.length * ALL_ACTIONS.length;
-    expect(count).toBe(72);
+    expect(count).toBe(108);
   });
 
-  // Generate parameterized tests for all 72 combinations
+  // Generate parameterized tests for all 108 combinations
   for (const role of ALL_ROLES) {
     describe(`role: ${role}`, () => {
       for (const scope of ALL_SCOPES) {
@@ -391,6 +413,35 @@ describe("write-route authorization coverage", () => {
         );
         if (authnPattern.test(middleware) && !authzPattern.test(middleware) && !isKnownGoodAuthenticatedWithoutRole) {
           failures.push(`${key}: authenticated route has no authorization middleware`);
+        }
+      }
+    }
+
+    expect(failures).toEqual([]);
+  });
+
+  it("defines every requirePermission scope used by route handlers", async () => {
+    const { ROLE_PERMISSIONS: actualRolePermissions } =
+      await vi.importActual<typeof import("@shared/schema")>("@shared/schema");
+    const routesRoot = path.resolve(process.cwd(), "server/routes");
+    const failures: string[] = [];
+
+    function walk(directory: string): string[] {
+      return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+        const entryPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) return walk(entryPath);
+        return entry.name.endsWith(".ts") ? [entryPath] : [];
+      });
+    }
+
+    for (const filePath of walk(routesRoot)) {
+      const relativeFile = path.relative(process.cwd(), filePath);
+      const source = fs.readFileSync(filePath, "utf8");
+      for (const match of source.matchAll(/requirePermission\(\s*["'`]([^"'`]+)["'`]\s*,\s*["'`]([^"'`]+)["'`]/g)) {
+        const [, scope, action] = match;
+        const scopeDefined = Object.values(actualRolePermissions).some((permissions) => scope in permissions);
+        if (!scopeDefined) {
+          failures.push(`${relativeFile}: requirePermission("${scope}", "${action}")`);
         }
       }
     }

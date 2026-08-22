@@ -444,68 +444,28 @@ export function registerPhase2FeatureRoutes(app: Express): void {
       try {
         const orgId = getOrgId(req);
         const { type, name } = req.body;
+        if (!type || typeof type !== "string") {
+          res.status(400).json({ message: "Drill type is required" });
+          return;
+        }
 
-        const drillType = type || "failover";
-        const drillName = name || `${drillType} drill - ${new Date().toISOString().slice(0, 10)}`;
-
-        // Simulate a drill execution
-        const startedAt = new Date();
-        const rtoTarget = drillType === "failover" ? 30 : drillType === "canary" ? 15 : 60;
-        const rpoTarget = drillType === "failover" ? 15 : drillType === "canary" ? 5 : 30;
-
-        // Execute drill with deterministic results based on drill configuration
-        const rtoActual = rtoTarget * 0.75;
-        const rpoActual = rpoTarget * 0.6;
-        const durationMs = Math.round(rtoActual * 60 * 1000 + 15000);
-        const completedAt = new Date(startedAt.getTime() + durationMs);
-        const passed = rtoActual <= rtoTarget && rpoActual <= rpoTarget;
-
-        const stepResults = [
-          { step: "Health Check", status: "passed", durationMs: 2000 },
-          {
-            step: "Failover Trigger",
-            status: passed ? "passed" : "warning",
-            durationMs: 8000,
-          },
-          { step: "Data Verification", status: "passed", durationMs: 5000 },
-          {
-            step: "Service Recovery",
-            status: passed ? "passed" : "failed",
-            durationMs: Math.round(durationMs * 0.3),
-          },
-        ];
-
+        const drillName = name || `${type} drill - ${new Date().toISOString().slice(0, 10)}`;
         const drill = await storage.createDrDrillResult({
           orgId,
-          dryRun: true,
-          status: passed ? "passed" : "failed",
+          dryRun: null,
+          status: "pending",
           triggeredBy: "manual",
-          rtoTargetMinutes: rtoTarget,
-          rpoTargetMinutes: rpoTarget,
-          rtoActualMinutes: parseFloat(rtoActual.toFixed(2)),
-          rpoActualMinutes: parseFloat(rpoActual.toFixed(2)),
-          rtoMet: rtoActual <= rtoTarget,
-          rpoMet: rpoActual <= rpoTarget,
-          stepResults,
-          totalDurationMs: durationMs,
           notes: drillName,
-          startedAt,
-          completedAt,
+          startedAt: null,
         });
 
         res.json({
           id: drill.id,
           name: drillName,
-          type: drillType,
-          status: passed ? "passed" : "failed",
+          type,
+          status: "pending",
           scheduledAt: drill.createdAt?.toISOString() || "",
-          startedAt: startedAt.toISOString(),
-          completedAt: completedAt.toISOString(),
-          rpoSeconds: Math.round(rpoActual * 60),
-          rtoSeconds: Math.round(rtoActual * 60),
-          rpoTargetSeconds: rpoTarget * 60,
-          rtoTargetSeconds: rtoTarget * 60,
-          findings: extractFindings(stepResults),
+          findings: [],
         });
       } catch (error) {
         log.error("Failed to create DR drill", { error: String(error) });
@@ -972,7 +932,7 @@ export function registerPhase2FeatureRoutes(app: Express): void {
 // Helper Functions
 // ==========================================================================
 
-function mapDrillStatus(status: string): "scheduled" | "running" | "passed" | "failed" | "cancelled" {
+function mapDrillStatus(status: string): "pending" | "scheduled" | "running" | "passed" | "failed" | "cancelled" {
   switch (status) {
     case "passed":
     case "completed":
@@ -984,6 +944,8 @@ function mapDrillStatus(status: string): "scheduled" | "running" | "passed" | "f
       return "running";
     case "cancelled":
       return "cancelled";
+    case "pending":
+      return "pending";
     default:
       return "scheduled";
   }

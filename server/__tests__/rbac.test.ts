@@ -56,6 +56,9 @@ vi.mock("@shared/schema", () => ({
       response_actions: ["read", "write", "admin"],
       settings: ["read", "write", "admin"],
       team: ["read", "write", "admin"],
+      compliance: ["read", "write", "admin"],
+      security_awareness: ["read", "write", "admin"],
+      physical_security: ["read", "write", "admin"],
     },
     admin: {
       incidents: ["read", "write", "admin"],
@@ -64,6 +67,9 @@ vi.mock("@shared/schema", () => ({
       response_actions: ["read", "write", "admin"],
       settings: ["read", "write"],
       team: ["read", "write"],
+      compliance: ["read", "write", "admin"],
+      security_awareness: ["read", "write", "admin"],
+      physical_security: ["read", "write", "admin"],
     },
     analyst: {
       incidents: ["read", "write"],
@@ -72,6 +78,9 @@ vi.mock("@shared/schema", () => ({
       response_actions: ["read", "write"],
       settings: ["read"],
       team: ["read"],
+      compliance: ["read", "write"],
+      security_awareness: ["read", "write"],
+      physical_security: ["read", "write"],
     },
     read_only: {
       incidents: ["read"],
@@ -80,6 +89,9 @@ vi.mock("@shared/schema", () => ({
       response_actions: ["read"],
       settings: ["read"],
       team: ["read"],
+      compliance: ["read"],
+      security_awareness: ["read"],
+      physical_security: ["read"],
     },
   },
 }));

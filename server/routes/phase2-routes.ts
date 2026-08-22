@@ -370,8 +370,9 @@ export function registerPhase2Routes(app: Express): void {
       try {
         const orgId = (req as any).orgId;
         const userId = (req as any).user?.id;
-        const { runbookId, drillType, scope } = req.body;
-        if (!drillType) {
+        const { runbookId, drillType, type } = req.body;
+        const requestedType = drillType || type;
+        if (!requestedType) {
           return sendEnvelope(res, null, {
             status: 400,
             errors: [{ code: "VALIDATION", message: "drillType is required" }],
@@ -380,9 +381,10 @@ export function registerPhase2Routes(app: Express): void {
         const drill = await storage.createDrDrillResult({
           orgId,
           runbookId: runbookId || null,
-          status: "running",
-          startedAt: new Date(),
-          notes: drillType ? `Type: ${drillType}` : undefined,
+          dryRun: null,
+          status: "pending",
+          startedAt: null,
+          notes: `Type: ${requestedType}`,
           triggeredBy: userId || "manual",
         });
         sendEnvelope(res, drill);

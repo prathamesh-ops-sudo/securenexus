@@ -181,6 +181,9 @@ export const PERMISSION_SCOPES = [
   "response_actions",
   "settings",
   "team",
+  "compliance",
+  "security_awareness",
+  "physical_security",
 ] as const;
 export const PERMISSION_ACTIONS = ["read", "write", "admin"] as const;
 export const TEAM_MEMBERSHIP_ROLES = ["lead", "member"] as const;
@@ -201,6 +204,9 @@ export const ROLE_PERMISSIONS: Record<string, Record<string, string[]>> = {
     response_actions: ["read", "write", "admin"],
     settings: ["read", "write", "admin"],
     team: ["read", "write", "admin"],
+    compliance: ["read", "write", "admin"],
+    security_awareness: ["read", "write", "admin"],
+    physical_security: ["read", "write", "admin"],
   },
   admin: {
     incidents: ["read", "write", "admin"],
@@ -209,6 +215,9 @@ export const ROLE_PERMISSIONS: Record<string, Record<string, string[]>> = {
     response_actions: ["read", "write", "admin"],
     settings: ["read", "write"],
     team: ["read", "write"],
+    compliance: ["read", "write", "admin"],
+    security_awareness: ["read", "write", "admin"],
+    physical_security: ["read", "write", "admin"],
   },
   analyst: {
     incidents: ["read", "write"],
@@ -217,6 +226,9 @@ export const ROLE_PERMISSIONS: Record<string, Record<string, string[]>> = {
     response_actions: ["read", "write"],
     settings: ["read"],
     team: ["read"],
+    compliance: ["read", "write"],
+    security_awareness: ["read", "write"],
+    physical_security: ["read", "write"],
   },
   read_only: {
     incidents: ["read"],
@@ -225,6 +237,9 @@ export const ROLE_PERMISSIONS: Record<string, Record<string, string[]>> = {
     response_actions: ["read"],
     settings: ["read"],
     team: ["read"],
+    compliance: ["read"],
+    security_awareness: ["read"],
+    physical_security: ["read"],
   },
 };
 

@@ -28,14 +28,14 @@ interface DrDrill {
   id: string;
   name: string;
   type: "failover" | "backup_restore" | "canary" | "chaos";
-  status: "scheduled" | "running" | "passed" | "failed" | "cancelled";
+  status: "pending" | "scheduled" | "running" | "passed" | "failed" | "cancelled";
   scheduledAt: string;
   startedAt?: string;
   completedAt?: string;
   rpoSeconds?: number;
   rtoSeconds?: number;
-  rpoTargetSeconds: number;
-  rtoTargetSeconds: number;
+  rpoTargetSeconds?: number;
+  rtoTargetSeconds?: number;
   findings: string[];
 }
 
@@ -58,7 +58,7 @@ export default function DrDrillSchedulerPage() {
     mutationFn: (type: string) =>
       apiRequest("POST", "/api/dr-drills", { type, name: `${type} drill - ${new Date().toISOString().slice(0, 10)}` }),
     onSuccess: () => {
-      toast({ title: "DR drill started" });
+      toast({ title: "DR drill requested" });
       queryClient.invalidateQueries({ queryKey: ["/api/dr-drills"] });
     },
     onError: () => toast({ title: "Failed to start drill", variant: "destructive" }),
@@ -111,7 +111,7 @@ export default function DrDrillSchedulerPage() {
             <Shield className="h-6 w-6" /> DR Drill Scheduler & Canary Analysis
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Schedule and monitor disaster recovery drills with RPO/RTO tracking
+            Request disaster recovery drills and monitor measured RPO/RTO results
           </p>
         </div>
         <div className="flex gap-2">
@@ -124,7 +124,7 @@ export default function DrDrillSchedulerPage() {
             ) : (
               <Play className="mr-2 h-4 w-4" />
             )}
-            Run Drill
+            Request Drill
           </Button>
         </div>
       </div>
@@ -161,8 +161,10 @@ export default function DrDrillSchedulerPage() {
           <CardContent className="pt-4 flex items-center gap-2">
             <Calendar className="h-5 w-5 text-yellow-500" />
             <div>
-              <p className="text-2xl font-bold">{list.filter((d) => d.status === "scheduled").length}</p>
-              <p className="text-xs text-muted-foreground">Scheduled</p>
+              <p className="text-2xl font-bold">
+                {list.filter((d) => d.status === "pending" || d.status === "scheduled").length}
+              </p>
+              <p className="text-xs text-muted-foreground">Requested</p>
             </div>
           </CardContent>
         </Card>
@@ -172,9 +174,9 @@ export default function DrDrillSchedulerPage() {
         <Card>
           <CardContent className="flex flex-col items-center py-12 gap-3">
             <Shield className="h-8 w-8 text-muted-foreground" />
-            <p className="text-muted-foreground">No DR drills scheduled or completed</p>
+            <p className="text-muted-foreground">No DR drill requests or measured results</p>
             <Button size="sm" onClick={() => runDrillMutation.mutate("failover")}>
-              <Play className="mr-2 h-4 w-4" /> Run First Drill
+              <Play className="mr-2 h-4 w-4" /> Request First Drill
             </Button>
           </CardContent>
         </Card>
@@ -197,7 +199,7 @@ export default function DrDrillSchedulerPage() {
                     <Badge
                       variant={d.status === "passed" ? "default" : d.status === "failed" ? "destructive" : "secondary"}
                     >
-                      {d.status}
+                      {d.status === "pending" ? "Requested — not executed" : d.status}
                     </Badge>
                     <Badge variant="outline" className="capitalize">
                       {d.type.replace(/_/g, " ")}
@@ -206,7 +208,7 @@ export default function DrDrillSchedulerPage() {
                 </div>
                 {(d.rpoSeconds !== undefined || d.rtoSeconds !== undefined) && (
                   <div className="grid grid-cols-2 gap-4">
-                    {d.rpoSeconds !== undefined && (
+                    {d.rpoSeconds !== undefined && d.rpoTargetSeconds !== undefined && (
                       <div>
                         <div className="flex items-center justify-between text-sm mb-1">
                           <span className="text-muted-foreground">RPO</span>
@@ -217,7 +219,7 @@ export default function DrDrillSchedulerPage() {
                         <Progress value={Math.min((d.rpoSeconds / d.rpoTargetSeconds) * 100, 100)} />
                       </div>
                     )}
-                    {d.rtoSeconds !== undefined && (
+                    {d.rtoSeconds !== undefined && d.rtoTargetSeconds !== undefined && (
                       <div>
                         <div className="flex items-center justify-between text-sm mb-1">
                           <span className="text-muted-foreground">RTO</span>
