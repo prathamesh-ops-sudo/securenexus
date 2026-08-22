@@ -937,7 +937,6 @@ const ASSET_CATALOG: Omit<SecurityAsset, "orgId">[] = [
       affectedVersion: "<2.17.0",
       patchAvailable: true,
       exploitInWild: true,
-      epss: 0.975,
     },
     tags: ["vulnerability", "critical", "rce"],
     owner: "security-team",

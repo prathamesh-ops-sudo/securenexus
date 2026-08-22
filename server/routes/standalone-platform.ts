@@ -28,6 +28,8 @@ import {
   THREAT_REPORT_CATEGORIES,
   THREAT_REPORT_STATUSES,
   THREAT_REPORT_SEVERITIES,
+  vulnFindings,
+  nativeSensors,
 } from "../../shared/schema";
 
 const log = logger.child("standalone-platform");
@@ -1222,14 +1224,36 @@ export function registerStandalonePlatformRoutes(app: Express): void {
         .from(assetInventory)
         .where(and(eq(assetInventory.id, String(req.params.id)), eq(assetInventory.orgId, orgId)));
       if (!asset) return res.status(404).json({ message: "Asset not found" });
+      const assetIdentifiers = [asset.hostname, asset.ipAddress, asset.fqdn].filter(
+        (value): value is string => typeof value === "string" && value.length > 0,
+      );
+      const sensorConditions = assetIdentifiers.flatMap((value) => [
+        eq(nativeSensors.hostname, value),
+        eq(nativeSensors.ipAddress, value),
+      ]);
+      const affected = sensorConditions.length
+        ? await db
+            .select({ finding: vulnFindings, sensor: nativeSensors })
+            .from(vulnFindings)
+            .innerJoin(nativeSensors, eq(nativeSensors.id, vulnFindings.sensorId))
+            .where(and(eq(vulnFindings.orgId, orgId), eq(nativeSensors.orgId, orgId), or(...sensorConditions)))
+            .orderBy(desc(vulnFindings.cvssScore), desc(vulnFindings.createdAt))
+        : [];
       res.json({
         assetId: asset.id,
         assetName: asset.name,
-        cves: [],
-        summary: null,
-        available: false,
-        reason:
-          "No vulnerability scan results are associated with this asset. Connect a vulnerability scanner to collect CVE evidence.",
+        cves: affected.map(({ finding, sensor }) => ({
+          ...finding,
+          hostname: sensor.hostname,
+        })),
+        summary: {
+          total: affected.length,
+          open: affected.filter(({ finding }) => finding.status === "open").length,
+          critical: affected.filter(({ finding }) => finding.severity === "critical").length,
+          high: affected.filter(({ finding }) => finding.severity === "high").length,
+        },
+        available: affected.length > 0,
+        reason: affected.length > 0 ? null : "No package inventory yet — install an agent.",
       });
     } catch (error) {
       log.error("Failed to get CVE exposure", { error: String(error) });
@@ -2047,68 +2071,52 @@ export function registerStandalonePlatformRoutes(app: Express): void {
       const severityFilter = req.query.severity as string | undefined;
       const statusFilter = req.query.status as string | undefined;
       const limitParam = Math.min(parseInt(String(req.query.limit || "50")), 200);
-
-      // Get risks as proxy for vulnerabilities
-      const risks = await db
-        .select()
-        .from(riskRegister)
-        .where(eq(riskRegister.orgId, orgId))
-        .orderBy(desc(riskRegister.inherentRiskScore))
-        .limit(limitParam);
-
-      // Get asset data for criticality context
-      const assets = await db.select().from(assetInventory).where(eq(assetInventory.orgId, orgId));
-      const assetMap = new Map<string, any>();
-      for (const a of assets) {
-        if (a.hostname) assetMap.set(a.hostname, a);
-        if (a.ipAddress) assetMap.set(a.ipAddress, a);
-      }
-
-      // Build prioritized queue
-      const prioritized = risks.map((risk) => {
-        const cvssScore = risk.inherentRiskScore ?? 0;
-        // EPSS probability derived from CVSS score
-        const epssScore = Math.min(0.95, (cvssScore / 100) * 0.85 + 0.05);
-        // Asset criticality factor
-        const relatedAsset = risk.relatedAssets
-          ? assetMap.get(String((risk.relatedAssets as string[])?.[0] || ""))
-          : null;
-        const assetCriticalityFactor = relatedAsset
-          ? relatedAsset.criticality === "critical"
-            ? 2.0
-            : relatedAsset.criticality === "high"
-              ? 1.5
-              : relatedAsset.criticality === "medium"
-                ? 1.0
-                : 0.7
-          : 1.0;
-        // Attack path exposure (simulated)
-        const attackPathExposure = cvssScore > 70 ? 1.5 : cvssScore > 40 ? 1.2 : 1.0;
-        // Compensating controls reduction
-        const compensatingControls = risk.treatment === "mitigate" ? 0.8 : risk.treatment === "accept" ? 0.5 : 1.0;
-
-        const priorityScore = Math.round(
-          cvssScore * epssScore * assetCriticalityFactor * attackPathExposure * compensatingControls,
-        );
-
+      const findings = await db
+        .select({ finding: vulnFindings, asset: assetInventory })
+        .from(vulnFindings)
+        .leftJoin(nativeSensors, and(eq(nativeSensors.id, vulnFindings.sensorId), eq(nativeSensors.orgId, orgId)))
+        .leftJoin(
+          assetInventory,
+          and(
+            eq(assetInventory.orgId, orgId),
+            or(
+              eq(assetInventory.hostname, nativeSensors.hostname),
+              eq(assetInventory.ipAddress, nativeSensors.ipAddress),
+              eq(assetInventory.fqdn, nativeSensors.hostname),
+              eq(assetInventory.hostname, nativeSensors.ipAddress),
+              eq(assetInventory.fqdn, nativeSensors.ipAddress),
+            ),
+          ),
+        )
+        .where(eq(vulnFindings.orgId, orgId));
+      const prioritized = findings.map(({ finding, asset }) => {
+        const cvssScore = finding.cvssScore ?? null;
+        const epssScore = finding.epssScore ?? null;
+        const criticalityWeight =
+          asset?.criticality === "critical"
+            ? 4
+            : asset?.criticality === "high"
+              ? 3
+              : asset?.criticality === "medium"
+                ? 2
+                : asset?.criticality === "low"
+                  ? 1
+                  : 0;
+        const priorityScore =
+          (cvssScore ?? 0) * 10 +
+          (epssScore ?? 0) * 100 +
+          (finding.exploitAvailable === true ? 100 : 0) +
+          criticalityWeight;
         return {
-          id: risk.id,
-          title: risk.title,
-          description: risk.description,
-          category: risk.category,
-          severity: cvssScore > 70 ? "critical" : cvssScore > 50 ? "high" : cvssScore > 30 ? "medium" : "low",
-          status: risk.status,
-          cvssScore,
-          epssScore: Math.round(epssScore * 100) / 100,
-          assetCriticality: relatedAsset?.criticality || "medium",
-          attackPathExposure: attackPathExposure > 1.2 ? "high" : attackPathExposure > 1.0 ? "medium" : "low",
-          compensatingControls: compensatingControls < 1.0,
+          ...finding,
+          assetCriticality: asset?.criticality ?? null,
           priorityScore,
-          relatedAssets: risk.relatedAssets || [],
-          treatment: risk.treatment,
-          owner: risk.riskOwner,
-          dueDate: risk.nextReviewDate,
-          createdAt: risk.createdAt,
+          priorityInputs: {
+            cvss: cvssScore !== null,
+            epss: epssScore !== null,
+            kev: finding.exploitAvailable !== null,
+            assetCriticality: asset?.criticality !== null && asset?.criticality !== undefined,
+          },
         };
       });
 
@@ -2134,7 +2142,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
           filtered.length > 0 ? Math.round(filtered.reduce((s, v) => s + v.priorityScore, 0) / filtered.length) : 0,
       };
 
-      res.json({ vulnerabilities: filtered, summary });
+      res.json({ vulnerabilities: filtered.slice(0, limitParam), summary });
     } catch (error) {
       log.error("Vuln prioritization error", { error: String(error) });
       res.status(500).json({ message: "Failed to fetch prioritized vulnerabilities" });

@@ -4565,12 +4565,20 @@ export const cveEntries = pgTable(
     description: text("description").notNull(),
     severity: text("severity").notNull().default("medium"),
     cvssScore: doublePrecision("cvss_score").default(0),
+    cvssVector: text("cvss_vector"),
+    cvssVersion: text("cvss_version"),
+    cvssV3Metrics: jsonb("cvss_v3_metrics"),
+    cvssV4Metrics: jsonb("cvss_v4_metrics"),
     publishedDate: timestamp("published_date"),
     modifiedDate: timestamp("modified_date"),
     affectedProducts: jsonb("affected_products").default(sql`'[]'::jsonb`),
     references: jsonb("references").default(sql`'[]'::jsonb`),
     cweIds: jsonb("cwe_ids").default(sql`'[]'::jsonb`),
     exploitAvailable: boolean("exploit_available").default(false),
+    kevDateAdded: timestamp("kev_date_added"),
+    epssScore: doublePrecision("epss_score"),
+    epssPercentile: doublePrecision("epss_percentile"),
+    epssDate: timestamp("epss_date"),
     source: text("source").default("NVD"),
     createdAt: timestamp("created_at").defaultNow(),
   },
@@ -4585,6 +4593,54 @@ export const cveEntries = pgTable(
 export type CveEntry = typeof cveEntries.$inferSelect;
 export const insertCveEntrySchema = createInsertSchema(cveEntries).omit({ id: true, createdAt: true });
 export type InsertCveEntry = z.infer<typeof insertCveEntrySchema>;
+
+export const cveCpeMatches = pgTable(
+  "cve_cpe_matches",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    cveId: text("cve_id")
+      .notNull()
+      .references(() => cveEntries.cveId, { onDelete: "cascade" }),
+    vendor: text("vendor").notNull(),
+    product: text("product").notNull(),
+    cpe23: text("cpe23").notNull(),
+    versionStartIncluding: text("version_start_including"),
+    versionStartExcluding: text("version_start_excluding"),
+    versionEndIncluding: text("version_end_including"),
+    versionEndExcluding: text("version_end_excluding"),
+    vulnerable: boolean("vulnerable").notNull().default(true),
+  },
+  (table) => [
+    index("idx_cve_cpe_matches_product").on(table.product),
+    index("idx_cve_cpe_matches_cve_id").on(table.cveId),
+  ],
+);
+
+export type CveCpeMatch = typeof cveCpeMatches.$inferSelect;
+export type InsertCveCpeMatch = typeof cveCpeMatches.$inferInsert;
+
+export const cveSyncStates = pgTable(
+  "cve_sync_states",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    source: text("source").notNull().unique(),
+    cursor: timestamp("cursor"),
+    lastRunAt: timestamp("last_run_at"),
+    lastStatus: text("last_status").notNull().default("never"),
+    lastError: text("last_error"),
+    itemsUpserted: integer("items_upserted").notNull().default(0),
+    lockToken: text("lock_token"),
+    lockAcquiredAt: timestamp("lock_acquired_at"),
+  },
+  (table) => [index("idx_cve_sync_states_source").on(table.source)],
+);
+
+export type CveSyncState = typeof cveSyncStates.$inferSelect;
+export type InsertCveSyncState = typeof cveSyncStates.$inferInsert;
 
 export const TICKET_SYNC_STATUSES = ["pending", "syncing", "synced", "error"] as const;
 export const TICKET_SYNC_DIRECTIONS = ["outbound", "inbound", "bidirectional"] as const;
@@ -6803,7 +6859,19 @@ export type InsertLogSource = typeof logSources.$inferInsert;
 // VULNERABILITY SCANNER
 // =============================================================================
 
-export const VULN_PKG_MANAGERS = ["apt", "rpm", "pip", "npm", "gem", "cargo", "nuget"] as const;
+export const VULN_PKG_MANAGERS = [
+  "apt",
+  "rpm",
+  "apk",
+  "brew",
+  "pip",
+  "npm",
+  "gem",
+  "cargo",
+  "nuget",
+  "windows",
+  "windows-registry",
+] as const;
 export const VULN_FINDING_STATUSES = ["open", "acknowledged", "remediated", "false_positive"] as const;
 export const VULN_SEVERITIES = ["critical", "high", "medium", "low", "none"] as const;
 
@@ -6822,6 +6890,8 @@ export const vulnPackages = pgTable(
     packageManager: text("package_manager").notNull(),
     packageName: text("package_name").notNull(),
     installedVersion: text("installed_version").notNull(),
+    inventorySource: text("inventory_source"),
+    evidence: jsonb("evidence"),
     isVulnerable: boolean("is_vulnerable").notNull().default(false),
     cveCount: integer("cve_count").notNull().default(0),
     reportedAt: timestamp("reported_at").defaultNow(),
@@ -6853,6 +6923,15 @@ export const vulnFindings = pgTable(
     fixedVersion: text("fixed_version"),
     severity: text("severity").notNull().default("medium"),
     cvssScore: real("cvss_score"),
+    cvssVector: text("cvss_vector"),
+    epssScore: doublePrecision("epss_score"),
+    epssPercentile: doublePrecision("epss_percentile"),
+    epssDate: timestamp("epss_date"),
+    exploitAvailable: boolean("exploit_available"),
+    kevDateAdded: timestamp("kev_date_added"),
+    matchedCpe: text("matched_cpe"),
+    matchedVersionRange: jsonb("matched_version_range"),
+    matchSource: text("match_source"),
     description: text("description"),
     references: jsonb("references"),
     status: text("status").notNull().default("open"),
@@ -6887,6 +6966,34 @@ export type VulnPackage = typeof vulnPackages.$inferSelect;
 export type InsertVulnPackage = typeof vulnPackages.$inferInsert;
 export type VulnFinding = typeof vulnFindings.$inferSelect;
 export type InsertVulnFinding = typeof vulnFindings.$inferInsert;
+
+export const sensorPackageBatches = pgTable(
+  "sensor_package_batches",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    sensorId: varchar("sensor_id")
+      .notNull()
+      .references(() => nativeSensors.id, { onDelete: "cascade" }),
+    batchId: text("batch_id").notNull(),
+    status: text("status").notNull().default("processing"),
+    packagesProcessed: integer("packages_processed").notNull().default(0),
+    findingsCreated: integer("findings_created").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [
+    uniqueIndex("idx_sensor_package_batches_sensor_batch").on(table.sensorId, table.batchId),
+    index("idx_sensor_package_batches_org").on(table.orgId),
+  ],
+);
+
+export type SensorPackageBatch = typeof sensorPackageBatches.$inferSelect;
+export type InsertSensorPackageBatch = typeof sensorPackageBatches.$inferInsert;
 
 // =============================================================================
 // UEBA BEHAVIORAL ANALYTICS

@@ -2,6 +2,9 @@ import type { Express } from "express";
 import { isAuthenticated } from "../auth";
 import { requireOrgId, resolveOrgContext, requireMinRole } from "../rbac";
 import { sendEnvelope, getOrgId, logger, storage } from "./shared";
+import { db } from "../db";
+import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { cveCpeMatches, cveEntries, cveSyncStates, vulnFindings, nativeSensors } from "../../shared/schema";
 
 /**
  * Phase 2 Routes — Real DB-backed implementations
@@ -17,45 +20,82 @@ export function registerPhase2Routes(app: Express): void {
   app.get("/api/v1/cves", isAuthenticated, resolveOrgContext, async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const q = ((req.query.q as string) || "").toLowerCase();
-      // Vulnerability scanner table may not have a dedicated storage method yet
-      // Use direct DB query if available, otherwise return empty
-      let vulns: any[] = [];
-      try {
-        if (typeof (storage as any).getVulnerabilities === "function") {
-          vulns = await (storage as any).getVulnerabilities(orgId);
-        }
-      } catch {
-        /* table may not exist yet */
-      }
-      const mapped = vulns
-        .filter(
-          (v: any) =>
-            !q ||
-            (v.cveId && v.cveId.toLowerCase().includes(q)) ||
-            (v.title && v.title.toLowerCase().includes(q)) ||
-            (v.description && v.description.toLowerCase().includes(q)),
-        )
-        .slice(0, 100)
-        .map((v: any) => ({
-          id: v.id,
-          cveId: v.cveId || v.id,
-          description: v.description || v.title || "",
-          severity: v.severity,
-          cvssScore: v.cvssScore,
-          publishedDate: v.publishedAt || v.createdAt,
-          modifiedDate: v.updatedAt || v.createdAt,
-          affectedProducts: v.affectedAssets ? [v.affectedAssets].flat() : [],
-          references: v.references || [],
-          cweIds: v.cweIds || [],
-          exploitAvailable: v.exploitAvailable ?? false,
-          status: v.status,
-        }));
+      const q = (typeof req.query.q === "string" ? req.query.q : "").trim();
+      const severity = typeof req.query.severity === "string" ? req.query.severity : "";
+      const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
+      const conditions = [];
+      if (q) conditions.push(or(ilike(cveEntries.cveId, `%${q}%`), ilike(cveEntries.description, `%${q}%`)));
+      if (severity && severity !== "all") conditions.push(eq(cveEntries.severity, severity));
+      const results = await db
+        .select()
+        .from(cveEntries)
+        .where(conditions.length ? and(...conditions) : undefined)
+        .orderBy(desc(cveEntries.cvssScore))
+        .limit(limit)
+        .offset(offset);
+      const mapped = results.map((cve) => ({
+        ...cve,
+        publishedDate: cve.publishedDate?.toISOString() ?? null,
+        modifiedDate: cve.modifiedDate?.toISOString() ?? null,
+        kevDateAdded: cve.kevDateAdded?.toISOString() ?? null,
+        epssDate: cve.epssDate?.toISOString() ?? null,
+      }));
       sendEnvelope(res, mapped);
     } catch (err) {
       log.error("GET /api/v1/cves failed", { error: String(err) });
       sendEnvelope(res, null, { status: 500, errors: [{ code: "INTERNAL", message: "Failed to load CVEs" }] });
     }
+  });
+
+  app.get("/api/v1/cves/:cveId", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
+    const orgId = getOrgId(req);
+    const [entry] = await db
+      .select()
+      .from(cveEntries)
+      .where(eq(cveEntries.cveId, String(req.params.cveId)))
+      .limit(1);
+    if (!entry)
+      return sendEnvelope(res, null, { status: 404, errors: [{ code: "NOT_FOUND", message: "CVE not found" }] });
+    const [cpeRows, affectedRows] = await Promise.all([
+      db.select().from(cveCpeMatches).where(eq(cveCpeMatches.cveId, entry.cveId)),
+      db
+        .select({ finding: vulnFindings, sensor: nativeSensors })
+        .from(vulnFindings)
+        .leftJoin(nativeSensors, eq(nativeSensors.id, vulnFindings.sensorId))
+        .where(and(eq(vulnFindings.orgId, orgId), eq(vulnFindings.cveId, entry.cveId))),
+    ]);
+    return sendEnvelope(res, {
+      ...entry,
+      publishedDate: entry.publishedDate?.toISOString() ?? null,
+      modifiedDate: entry.modifiedDate?.toISOString() ?? null,
+      kevDateAdded: entry.kevDateAdded?.toISOString() ?? null,
+      epssDate: entry.epssDate?.toISOString() ?? null,
+      affectedProducts: entry.affectedProducts ?? [],
+      cpeMatches: cpeRows,
+      affectedAssets: affectedRows.map(({ finding, sensor }) => ({
+        sensorId: finding.sensorId,
+        hostname: sensor?.hostname ?? null,
+        packageName: finding.packageName,
+        installedVersion: finding.installedVersion,
+        status: finding.status,
+      })),
+    });
+  });
+
+  app.get("/api/v1/cve-sync/health", isAuthenticated, resolveOrgContext, requireOrgId, async (_req, res) => {
+    const [state] = await db.select().from(cveSyncStates).where(eq(cveSyncStates.source, "nvd")).limit(1);
+    return sendEnvelope(
+      res,
+      state
+        ? {
+            ...state,
+            cursor: state.cursor?.toISOString() ?? null,
+            lastRunAt: state.lastRunAt?.toISOString() ?? null,
+            lockAcquiredAt: state.lockAcquiredAt?.toISOString() ?? null,
+          }
+        : { source: "nvd", lastStatus: "never", cursor: null, lastRunAt: null, itemsUpserted: 0, lastError: null },
+    );
   });
 
   // ── Role-Based Dashboard ─────────────────────────────────────────

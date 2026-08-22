@@ -14,6 +14,12 @@ import {
   sensorEnrollmentTokens,
   sensorEvents,
   sensorIngestBatches,
+  sensorPackageBatches,
+  vulnPackages,
+  vulnFindings,
+  cveCpeMatches,
+  cveEntries,
+  VULN_PKG_MANAGERS,
 } from "../../shared/schema";
 import { createAuditLog } from "../storage/audit";
 import { processEventBatch } from "../native-detections";
@@ -37,10 +43,12 @@ import {
   replyNotFound,
   replyUnauthenticated,
 } from "../api-response";
+import { cpeMatchesPackage, type VersionEcosystem } from "../vulnerability-matching";
 
 const log = logger.child("agent-api");
 const MAX_SENSOR_EVENTS = 500;
 const MAX_COLLECTOR_EVENTS = 500;
+const MAX_SENSOR_PACKAGES = 5000;
 
 const enrollmentTokenSchema = z.object({
   label: z.string().trim().min(1).max(200),
@@ -105,6 +113,22 @@ const sensorEventsSchema = z.object({
   events: z.array(sensorEventSchema).min(1).max(MAX_SENSOR_EVENTS),
 });
 
+const sensorPackagesSchema = z.object({
+  batchId: z.string().trim().min(1).max(200).optional(),
+  packages: z
+    .array(
+      z.object({
+        packageManager: z.enum(VULN_PKG_MANAGERS),
+        packageName: z.string().trim().min(1).max(300),
+        installedVersion: z.string().trim().min(1).max(300),
+        source: z.string().trim().max(100).optional(),
+        evidence: z.record(z.unknown()).optional(),
+      }),
+    )
+    .min(1)
+    .max(MAX_SENSOR_PACKAGES),
+});
+
 const collectorHeartbeatSchema = z.object({
   hostInfo: z.record(z.unknown()).default({}),
   metrics: z.record(z.number().finite().min(0)).default({}),
@@ -124,6 +148,11 @@ const collectorIngestSchema = z.object({
     )
     .min(1)
     .max(MAX_COLLECTOR_EVENTS),
+});
+
+const collectorPackagesSchema = z.object({
+  batchId: z.string().trim().min(1).max(200).optional(),
+  packages: sensorPackagesSchema.shape.packages,
 });
 
 const actionResultSchema = z.object({
@@ -314,6 +343,174 @@ async function handleSensorEvents(req: Request, res: Response): Promise<void> {
       .where(and(eq(sensorIngestBatches.id, batch.id), eq(sensorIngestBatches.orgId, orgId)));
     log.error("Sensor event ingestion failed", { error: String(error), sensorId, orgId, batchId });
     replyError(res, 500, [{ code: ERROR_CODES.INTERNAL_ERROR, message: "Event ingestion failed." }]);
+  }
+}
+
+function packageEcosystem(manager: string): VersionEcosystem | null {
+  if (manager === "apt") return "dpkg";
+  if (manager === "rpm") return "rpm";
+  if (
+    manager === "apk" ||
+    manager === "brew" ||
+    manager === "npm" ||
+    manager === "pip" ||
+    manager === "gem" ||
+    manager === "cargo" ||
+    manager === "nuget" ||
+    manager === "windows" ||
+    manager === "windows-registry"
+  ) {
+    return "semver";
+  }
+  return null;
+}
+
+async function handleSensorPackages(req: Request, res: Response): Promise<void> {
+  const { sensorId, orgId } = sensorContext(req);
+  const parsed = sensorPackagesSchema.safeParse(req.body);
+  if (!parsed.success) {
+    replyBadRequest(res, "Invalid package inventory batch.", ERROR_CODES.VALIDATION_ERROR);
+    return;
+  }
+  const batchId = parsed.data.batchId ?? randomUUID();
+  const [batch] = await db
+    .insert(sensorPackageBatches)
+    .values({ orgId, sensorId, batchId, status: "processing" })
+    .onConflictDoNothing({ target: [sensorPackageBatches.sensorId, sensorPackageBatches.batchId] })
+    .returning();
+  if (!batch) {
+    const [existing] = await db
+      .select()
+      .from(sensorPackageBatches)
+      .where(
+        and(
+          eq(sensorPackageBatches.sensorId, sensorId),
+          eq(sensorPackageBatches.orgId, orgId),
+          eq(sensorPackageBatches.batchId, batchId),
+        ),
+      )
+      .limit(1);
+    if (existing?.status === "completed") {
+      reply(res, {
+        batchId,
+        packagesProcessed: existing.packagesProcessed,
+        findingsCreated: existing.findingsCreated,
+        duplicate: true,
+      });
+      return;
+    }
+    replyConflict(res, "This package batch is already being processed.", "BATCH_IN_PROGRESS");
+    return;
+  }
+  try {
+    let findingsCreated = 0;
+    for (const pkg of parsed.data.packages) {
+      const ecosystem = packageEcosystem(pkg.packageManager);
+      const matches = ecosystem
+        ? await db
+            .select({
+              match: cveCpeMatches,
+              cve: cveEntries,
+            })
+            .from(cveCpeMatches)
+            .innerJoin(cveEntries, eq(cveEntries.cveId, cveCpeMatches.cveId))
+            .where(eq(cveCpeMatches.product, pkg.packageName.toLowerCase()))
+        : [];
+      const vulnerableMatches = ecosystem
+        ? matches.filter(({ match }) => cpeMatchesPackage(pkg.packageName, pkg.installedVersion, ecosystem, match))
+        : [];
+      const [storedPackage] = await db
+        .insert(vulnPackages)
+        .values({
+          orgId,
+          sensorId,
+          packageManager: pkg.packageManager,
+          packageName: pkg.packageName,
+          installedVersion: pkg.installedVersion,
+          inventorySource: pkg.source ?? pkg.packageManager,
+          evidence: pkg.evidence ?? null,
+          isVulnerable: vulnerableMatches.length > 0,
+          cveCount: vulnerableMatches.length,
+          reportedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [vulnPackages.orgId, vulnPackages.sensorId, vulnPackages.packageManager, vulnPackages.packageName],
+          set: {
+            installedVersion: pkg.installedVersion,
+            inventorySource: pkg.source ?? pkg.packageManager,
+            evidence: pkg.evidence ?? null,
+            isVulnerable: vulnerableMatches.length > 0,
+            cveCount: vulnerableMatches.length,
+            reportedAt: new Date(),
+            updatedAt: new Date(),
+          },
+        })
+        .returning({ id: vulnPackages.id });
+      if (!storedPackage) continue;
+      for (const { match, cve } of vulnerableMatches) {
+        const [existing] = await db
+          .select({ id: vulnFindings.id })
+          .from(vulnFindings)
+          .where(
+            and(
+              eq(vulnFindings.orgId, orgId),
+              eq(vulnFindings.sensorId, sensorId),
+              eq(vulnFindings.packageName, pkg.packageName),
+              eq(vulnFindings.cveId, cve.cveId),
+            ),
+          )
+          .limit(1);
+        if (existing) continue;
+        await db.insert(vulnFindings).values({
+          orgId,
+          sensorId,
+          packageId: storedPackage.id,
+          source: "nvd_cpe",
+          cveId: cve.cveId,
+          packageName: pkg.packageName,
+          installedVersion: pkg.installedVersion,
+          fixedVersion: match.versionEndIncluding ?? match.versionEndExcluding,
+          severity: cve.severity,
+          cvssScore: cve.cvssScore,
+          cvssVector: cve.cvssVector,
+          epssScore: cve.epssScore,
+          epssPercentile: cve.epssPercentile,
+          epssDate: cve.epssDate,
+          exploitAvailable: cve.exploitAvailable,
+          kevDateAdded: cve.kevDateAdded,
+          description: cve.description,
+          references: cve.references,
+          matchedCpe: match.cpe23,
+          matchedVersionRange: {
+            versionStartIncluding: match.versionStartIncluding,
+            versionStartExcluding: match.versionStartExcluding,
+            versionEndIncluding: match.versionEndIncluding,
+            versionEndExcluding: match.versionEndExcluding,
+          },
+          matchSource: "nvd_cpe",
+          status: "open",
+        });
+        findingsCreated++;
+      }
+    }
+    await db
+      .update(sensorPackageBatches)
+      .set({
+        status: "completed",
+        packagesProcessed: parsed.data.packages.length,
+        findingsCreated,
+        completedAt: new Date(),
+      })
+      .where(and(eq(sensorPackageBatches.id, batch.id), eq(sensorPackageBatches.orgId, orgId)));
+    reply(res, { batchId, packagesProcessed: parsed.data.packages.length, findingsCreated, duplicate: false });
+  } catch (error) {
+    await db
+      .update(sensorPackageBatches)
+      .set({ status: "failed", completedAt: new Date() })
+      .where(and(eq(sensorPackageBatches.id, batch.id), eq(sensorPackageBatches.orgId, orgId)));
+    log.error("Sensor package ingestion failed", { error: String(error), sensorId, orgId, batchId });
+    replyError(res, 500, [{ code: ERROR_CODES.INTERNAL_ERROR, message: "Package inventory ingestion failed." }]);
   }
 }
 
@@ -555,6 +752,75 @@ async function handleCollectorEvents(req: Request, res: Response): Promise<void>
   reply(res, { ...result, batchId });
 }
 
+async function handleCollectorPackages(req: Request, res: Response): Promise<void> {
+  const context = req.collectorAgentContext;
+  if (!context) {
+    replyUnauthenticated(res, "Collector authentication required.", ERROR_CODES.API_KEY_INVALID);
+    return;
+  }
+  const parsed = collectorPackagesSchema.safeParse(req.body);
+  if (!parsed.success) {
+    replyBadRequest(res, "Invalid collector package inventory.", ERROR_CODES.VALIDATION_ERROR);
+    return;
+  }
+  const batchId = parsed.data.batchId ?? `packages-${Date.now()}-${randomUUID()}`;
+  const result = await db.transaction(async (tx) => {
+    const [claimed] = await tx
+      .insert(collectorIngestBatches)
+      .values({ orgId: context.orgId, collectorId: context.collectorId, batchId, accepted: 0 })
+      .onConflictDoNothing({ target: [collectorIngestBatches.collectorId, collectorIngestBatches.batchId] })
+      .returning({ id: collectorIngestBatches.id });
+    if (!claimed) {
+      const [existingBatch] = await tx
+        .select({ accepted: collectorIngestBatches.accepted })
+        .from(collectorIngestBatches)
+        .where(
+          and(
+            eq(collectorIngestBatches.collectorId, context.collectorId),
+            eq(collectorIngestBatches.orgId, context.orgId),
+            eq(collectorIngestBatches.batchId, batchId),
+          ),
+        )
+        .limit(1);
+      return { accepted: existingBatch?.accepted ?? 0, duplicate: true };
+    }
+    const created = await tx
+      .insert(collectorEvents)
+      .values(
+        parsed.data.packages.map((pkg) => ({
+          collectorId: context.collectorId,
+          orgId: context.orgId,
+          eventType: "package_inventory",
+          severity: "info" as const,
+          source: pkg.source ?? pkg.packageManager,
+          rawData: {
+            packageManager: pkg.packageManager,
+            packageName: pkg.packageName,
+            installedVersion: pkg.installedVersion,
+            evidence: pkg.evidence ?? null,
+          },
+        })),
+      )
+      .returning({ id: collectorEvents.id });
+    await tx
+      .update(collectorInstances)
+      .set({ lastDataAt: new Date(), lifecycleState: "receiving-telemetry", updatedAt: new Date() })
+      .where(and(eq(collectorInstances.id, context.collectorId), eq(collectorInstances.orgId, context.orgId)));
+    await tx
+      .update(collectorIngestBatches)
+      .set({ accepted: created.length })
+      .where(
+        and(
+          eq(collectorIngestBatches.id, claimed.id),
+          eq(collectorIngestBatches.orgId, context.orgId),
+          eq(collectorIngestBatches.collectorId, context.collectorId),
+        ),
+      );
+    return { accepted: created.length, duplicate: false };
+  });
+  reply(res, { ...result, batchId });
+}
+
 async function handleEnrollment(req: Request, res: Response): Promise<void> {
   const parsed = enrollSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -708,6 +974,13 @@ export function registerAgentRoutes(app: Express): void {
     handleSensorHeartbeat,
   );
   app.post("/api/agent/v1/sensors/:id/events", agentAuth, sensorLimiter, sensorPathMatchesContext, handleSensorEvents);
+  app.post(
+    "/api/agent/v1/sensors/:id/packages",
+    agentAuth,
+    sensorLimiter,
+    sensorPathMatchesContext,
+    handleSensorPackages,
+  );
   app.get(
     "/api/agent/v1/sensors/:id/pending-actions",
     agentAuth,
@@ -732,6 +1005,7 @@ export function registerAgentRoutes(app: Express): void {
   app.delete("/api/agent/v1/sensors/:id", agentAuth, sensorLimiter, sensorPathMatchesContext, handleDeregisterSensor);
   app.post("/api/agent/v1/collectors/heartbeat", collectorAgentAuth, collectorLimiter, handleCollectorHeartbeat);
   app.post("/api/agent/v1/collectors/events", collectorAgentAuth, collectorLimiter, handleCollectorEvents);
+  app.post("/api/agent/v1/collectors/packages", collectorAgentAuth, collectorLimiter, handleCollectorPackages);
 
   app.post(
     "/api/native-sensors/enrollment-tokens",

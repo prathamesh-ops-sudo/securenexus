@@ -31,7 +31,7 @@ export interface ExploitabilityExposure {
   exploitablePercent: number;
   weaponized: number;
   weaponizedPercent: number;
-  epssAboveThreshold: number;
+  epssAboveThreshold: number | null;
   epssThreshold: number;
   exposureScore: number;
   trend: TrendDirection;
@@ -205,7 +205,7 @@ function buildExploitability(): ExploitabilityExposure {
     exploitablePercent: 24.0,
     weaponized: 31,
     weaponizedPercent: 3.7,
-    epssAboveThreshold: 67,
+    epssAboveThreshold: null,
     epssThreshold: 0.5,
     exposureScore: 34.2,
     trend: "improving",

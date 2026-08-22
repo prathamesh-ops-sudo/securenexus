@@ -33,57 +33,6 @@ export function registerPhase2FeatureRoutes(app: Express): void {
   // 1. CVE BROWSER
   // ==========================================================================
 
-  app.get("/api/v1/cves", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const q = (req.query.q as string) || "";
-      const severity = (Array.isArray(req.query.severity) ? req.query.severity[0] : req.query.severity) as
-        | string
-        | undefined;
-      const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
-      const offsetParam = Array.isArray(req.query.offset) ? req.query.offset[0] : req.query.offset;
-      const limit = Math.min(parseInt(String(limitParam) || "100"), 500);
-      const offset = parseInt(String(offsetParam) || "0");
-
-      const conditions: any[] = [];
-      if (q) {
-        conditions.push(or(ilike(cveEntries.cveId, `%${q}%`), ilike(cveEntries.description, `%${q}%`)));
-      }
-      if (severity && severity !== "all") {
-        conditions.push(eq(cveEntries.severity, severity));
-      }
-
-      const query = db
-        .select()
-        .from(cveEntries)
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .orderBy(desc(cveEntries.cvssScore))
-        .limit(limit)
-        .offset(offset);
-
-      const results = await query;
-
-      const mapped = results.map((c) => ({
-        id: c.id,
-        cveId: c.cveId,
-        description: c.description,
-        severity: c.severity,
-        cvssScore: c.cvssScore,
-        publishedDate: c.publishedDate?.toISOString() || "",
-        modifiedDate: c.modifiedDate?.toISOString() || "",
-        affectedProducts: (c.affectedProducts as string[]) || [],
-        references: (c.references as string[]) || [],
-        cweIds: (c.cweIds as string[]) || [],
-        exploitAvailable: c.exploitAvailable || false,
-      }));
-
-      res.json(mapped);
-    } catch (error) {
-      log.error("Failed to fetch CVEs", { error: String(error) });
-      res.status(500).json({ message: "Failed to fetch CVE data" });
-    }
-  });
-
   // ==========================================================================
   // 2. AI BUDGET CONTROLS
   // ==========================================================================
