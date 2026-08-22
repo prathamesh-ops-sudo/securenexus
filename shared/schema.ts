@@ -6421,12 +6421,12 @@ export const collectorInstances = pgTable(
     apiKey: text("api_key"),
     apiKeyPrefix: text("api_key_prefix"),
     revokedAt: timestamp("revoked_at"),
+    lifecycleState: text("lifecycle_state").notNull().default("enrolled-but-never-heartbeated"),
     hostInfo: jsonb("host_info"),
     metrics: jsonb("metrics").default({
       eventsPerSecond: 0,
       bytesIngested: 0,
       errorsLast24h: 0,
-      uptimePercent: 0,
       latencyP50Ms: 0,
       latencyP99Ms: 0,
       lastEventCount: 0,
@@ -6455,6 +6455,31 @@ export const collectorInstancesRelations = relations(collectorInstances, ({ one 
 
 export type CollectorInstance = typeof collectorInstances.$inferSelect;
 export type InsertCollectorInstance = typeof collectorInstances.$inferInsert;
+
+export const collectorIngestBatches = pgTable(
+  "collector_ingest_batches",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    collectorId: varchar("collector_id")
+      .notNull()
+      .references(() => collectorInstances.id, { onDelete: "cascade" }),
+    batchId: text("batch_id").notNull(),
+    accepted: integer("accepted").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_collector_ingest_batches_collector_batch").on(table.collectorId, table.batchId),
+    index("idx_collector_ingest_batches_org").on(table.orgId),
+  ],
+);
+
+export type CollectorIngestBatch = typeof collectorIngestBatches.$inferSelect;
+export type InsertCollectorIngestBatch = typeof collectorIngestBatches.$inferInsert;
 
 export const collectorEvents = pgTable(
   "collector_events",

@@ -106,6 +106,13 @@
       "when": 1787392616000,
       "tag": "0014_native_agent_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1787392617000,
+      "tag": "0015_collector_lifecycle_state",
+      "breakpoints": true
     }
   ]
 }
