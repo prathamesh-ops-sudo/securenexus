@@ -78,6 +78,27 @@
       "when": 1787348483391,
       "tag": "0010_aromatic_wolverine",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787392613000,
+      "tag": "0011_add_slo_target_org",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787392614000,
+      "tag": "0012_vulnerability_scanner_and_guardrail_simulations",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787392615000,
+      "tag": "0013_native_sensor_and_playbook_workflows",
+      "breakpoints": true
     }
   ]
 }
