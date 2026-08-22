@@ -56,6 +56,7 @@ SERVER_URL=$(printf '%q' "$SERVER_URL")
 AGENT_VERSION=$(printf '%q' "$AGENT_VERSION")
 PLATFORM=$(printf '%q' "$PLATFORM")
 LOG_FILE=$(printf '%q' "$LOG_DIR/agent.log")
+PACKAGE_SENT_FILE=$(printf '%q' "$INSTALL_DIR/package-inventory.sent")
 EOF
 chmod 600 "$CONFIG_FILE"
 
@@ -69,6 +70,7 @@ source /opt/ats-sensor/config.env
 : "${SERVER_URL:?}"
 HOSTNAME_VALUE="$(hostname)"
 EVENTS="[]"
+PACKAGE_SENT_FILE="${PACKAGE_SENT_FILE:-/opt/ats-sensor/package-inventory.sent}"
 
 log() {
   printf '%s [%s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$1" "$2" | tee -a "$LOG_FILE"
@@ -257,6 +259,46 @@ send_events() {
   log "INFO" "Sent $count observed events"
 }
 
+send_package_inventory() {
+  local packages="[]" line name version manager now last_sent
+  now="$(date +%s)"
+  last_sent=0
+  if [[ -r "$PACKAGE_SENT_FILE" ]]; then
+    read -r last_sent <"$PACKAGE_SENT_FILE"
+  fi
+  [[ "$now" -ge "$((last_sent + 21600))" ]] || return 0
+  if [[ "$PLATFORM" == "linux" && -x "$(command -v dpkg-query 2>/dev/null)" ]]; then
+    while IFS=$'\t' read -r name version; do
+      [[ -n "$name" && -n "$version" ]] || continue
+      packages="$(jq --arg manager "apt" --arg name "$name" --arg version "$version" '. + [{packageManager:$manager,packageName:$name,installedVersion:$version,source:"dpkg-query"}]' <<<"$packages")"
+    done < <(dpkg-query -W -f='${binary:Package}\t${Version}\n')
+  fi
+  if [[ "$PLATFORM" == "linux" && -x "$(command -v rpm 2>/dev/null)" ]]; then
+    while IFS=$'\t' read -r name version; do
+      [[ -n "$name" && -n "$version" ]] || continue
+      packages="$(jq --arg manager "rpm" --arg name "$name" --arg version "$version" '. + [{packageManager:$manager,packageName:$name,installedVersion:$version,source:"rpm"}]' <<<"$packages")"
+    done < <(rpm -qa --qf '%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\n')
+  fi
+  if [[ "$PLATFORM" == "linux" && -x "$(command -v apk 2>/dev/null)" ]]; then
+    while IFS= read -r line; do
+      name="${line%%-*}"; version="${line#"$name"-}"
+      [[ -n "$name" && -n "$version" ]] || continue
+      packages="$(jq --arg manager "apk" --arg name "$name" --arg version "$version" '. + [{packageManager:$manager,packageName:$name,installedVersion:$version,source:"apk"}]' <<<"$packages")"
+    done < <(apk info 2>/dev/null)
+  fi
+  if [[ "$PLATFORM" == "macos" && -x "$(command -v brew 2>/dev/null)" ]]; then
+    while IFS=$'\t' read -r name version; do
+      [[ -n "$name" && -n "$version" ]] || continue
+      packages="$(jq --arg manager "brew" --arg name "$name" --arg version "$version" '. + [{packageManager:$manager,packageName:$name,installedVersion:$version,source:"brew"}]' <<<"$packages")"
+    done < <(brew list --versions)
+  fi
+  if [[ "$(jq 'length' <<<"$packages")" -gt 0 ]]; then
+    api_post "/api/agent/v1/sensors/$SENSOR_ID/packages" "$(jq -n --arg batchId "packages-$(date +%s)-$$" --argjson packages "$packages" '{batchId:$batchId,packages:$packages}')" >/dev/null
+    printf '%s\n' "$now" >"$PACKAGE_SENT_FILE"
+    log "INFO" "Sent $(jq 'length' <<<"$packages") observed packages"
+  fi
+}
+
 while :; do
   heartbeat
   collect_process_events
@@ -264,6 +306,7 @@ while :; do
   collect_auth_events
   collect_file_events
   send_events
+  send_package_inventory
   sleep 30
 done
 EOF

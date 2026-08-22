@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 import { apiRequest } from "@/lib/queryClient";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface VulnFinding {
   id: string;
@@ -50,6 +51,14 @@ interface VulnFinding {
   status: string;
   sensorId: string | null;
   source: string;
+  cvssVector: string | null;
+  epssScore: number | null;
+  epssPercentile: number | null;
+  epssDate: string | null;
+  exploitAvailable: boolean | null;
+  kevDateAdded: string | null;
+  matchedCpe: string | null;
+  matchSource: string | null;
   acknowledgedBy: string | null;
   acknowledgedAt: string | null;
   remediatedBy: string | null;
@@ -107,14 +116,11 @@ const statusColors: Record<string, string> = {
   false_positive: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
 };
 
-async function apiFetch(url: string, options?: RequestInit) {
-  const res = await fetch(url, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
+async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
+  const method = options?.method ?? "GET";
+  const body = options?.body ? JSON.parse(String(options.body)) : undefined;
+  const response = await apiRequest(method, url, body);
+  return (await response.json()) as T;
 }
 
 export default function VulnScannerPage() {
@@ -129,13 +135,23 @@ export default function VulnScannerPage() {
 
   const { data: findingsData, isLoading: findingsLoading } = useQuery<FindingsResponse>({
     queryKey: ["/api/native/vuln/findings", severityFilter, statusFilter, sourceFilter, searchQuery],
-    queryFn: () => {
+    queryFn: async () => {
       const params = new URLSearchParams();
       if (severityFilter !== "all") params.set("severity", severityFilter);
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (sourceFilter !== "all") params.set("source", sourceFilter);
       if (searchQuery) params.set("q", searchQuery);
-      return apiFetch(`/api/native/vuln/findings?${params}`);
+      const response = await apiFetch<{ findings: VulnFinding[]; stats: FindingsResponse["stats"] }>(
+        `/api/native/vuln/findings?${params}`,
+      );
+      response.findings.sort((left, right) => {
+        const leftScore =
+          (left.cvssScore ?? 0) * 10 + (left.epssScore ?? 0) * 100 + (left.exploitAvailable === true ? 100 : 0);
+        const rightScore =
+          (right.cvssScore ?? 0) * 10 + (right.epssScore ?? 0) * 100 + (right.exploitAvailable === true ? 100 : 0);
+        return rightScore - leftScore;
+      });
+      return response;
     },
   });
 
@@ -304,20 +320,25 @@ export default function VulnScannerPage() {
                     <TableHead className="text-muted-foreground">Fixed</TableHead>
                     <TableHead className="text-muted-foreground">Severity</TableHead>
                     <TableHead className="text-muted-foreground">CVSS</TableHead>
+                    <TableHead className="text-muted-foreground">Prioritization inputs</TableHead>
                     <TableHead className="text-muted-foreground">Status</TableHead>
                     <TableHead className="text-muted-foreground text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {findingsLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                        Loading findings...
-                      </TableCell>
-                    </TableRow>
+                    <>
+                      {[1, 2, 3].map((row) => (
+                        <TableRow key={row}>
+                          <TableCell colSpan={9}>
+                            <Skeleton className="h-6 w-full" />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </>
                   ) : !findingsData?.findings?.length ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-12">
+                      <TableCell colSpan={9} className="text-center py-12">
                         <div className="flex flex-col items-center gap-2">
                           <ShieldCheck className="h-10 w-10 text-green-400/50" />
                           <p className="text-muted-foreground">No vulnerability findings</p>
@@ -359,6 +380,24 @@ export default function VulnScannerPage() {
                           ) : (
                             "—"
                           )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            <Badge variant="outline" className="text-[10px]">
+                              CVSS {f.cvssScore === null ? "unavailable" : "available"}
+                            </Badge>
+                            <Badge variant="outline" className="text-[10px]">
+                              EPSS {f.epssScore === null ? "unavailable" : "available"}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] ${
+                                f.exploitAvailable === true ? "text-red-400 border-red-500/30" : ""
+                              }`}
+                            >
+                              KEV {f.exploitAvailable === null ? "unavailable" : f.exploitAvailable ? "yes" : "no"}
+                            </Badge>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={statusColors[f.status] || ""}>
@@ -454,17 +493,21 @@ export default function VulnScannerPage() {
                 </TableHeader>
                 <TableBody>
                   {packagesLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                        Loading packages...
-                      </TableCell>
-                    </TableRow>
+                    <>
+                      {[1, 2, 3].map((row) => (
+                        <TableRow key={row}>
+                          <TableCell colSpan={6}>
+                            <Skeleton className="h-6 w-full" />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </>
                   ) : !packagesData?.packages?.length ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-12">
                         <div className="flex flex-col items-center gap-2">
                           <Package className="h-10 w-10 text-muted-foreground/50" />
-                          <p className="text-muted-foreground">No packages reported</p>
+                          <p className="text-muted-foreground">no package inventory yet — install an agent</p>
                           <p className="text-xs text-muted-foreground">
                             Agents will push package inventories during heartbeats
                           </p>
@@ -553,12 +596,16 @@ export default function VulnScannerPage() {
                 <Badge
                   variant="outline"
                   className={
-                    selectedFinding.cvssScore && selectedFinding.cvssScore >= 9
+                    selectedFinding.exploitAvailable === true
                       ? "bg-red-500/20 text-red-400 border-red-500/30"
                       : "bg-zinc-800 border-zinc-700 text-zinc-400"
                   }
                 >
-                  {selectedFinding.cvssScore && selectedFinding.cvssScore >= 9 ? "Exploit Known" : "No Known Exploit"}
+                  {selectedFinding.exploitAvailable === null
+                    ? "KEV unavailable"
+                    : selectedFinding.exploitAvailable
+                      ? "KEV listed"
+                      : "Not in KEV"}
                 </Badge>
               </div>
 
@@ -584,6 +631,22 @@ export default function VulnScannerPage() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Source</span>
                   <span>{selectedFinding.source || "unknown"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">EPSS</span>
+                  <span>
+                    {selectedFinding.epssScore === null
+                      ? "not available"
+                      : `${selectedFinding.epssScore.toFixed(4)}${
+                          selectedFinding.epssDate
+                            ? ` (${new Date(selectedFinding.epssDate).toLocaleDateString()})`
+                            : ""
+                        }`}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Matched CPE</span>
+                  <span className="font-mono text-xs">{selectedFinding.matchedCpe ?? "not available"}</span>
                 </div>
               </div>
 

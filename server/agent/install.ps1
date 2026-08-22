@@ -40,6 +40,7 @@ $config = Get-Content "C:\Program Files\SecureNexus-Sensor\config.json" -Raw | C
 $serverUrl = $config.serverUrl
 $sensorId = $config.sensorId
 $apiKey = $config.apiKey
+$lastPackageSent = [DateTimeOffset]::MinValue
 
 function Invoke-AgentPost([string]$Path, [hashtable]$Body) {
     $headers = @{ Authorization = "Bearer $apiKey" }
@@ -132,6 +133,38 @@ function Get-ObservedEvents {
     return @($events)
 }
 
+function Get-PackageInventory {
+    $packages = @()
+    if ($null -ne (Get-Command Get-Package -ErrorAction SilentlyContinue)) {
+        $packages += @(Get-Package -ErrorAction Stop | ForEach-Object {
+            if ($_.Name -and $_.Version) {
+                @{
+                    packageManager = "windows"
+                    packageName = [string]$_.Name
+                    installedVersion = [string]$_.Version
+                    source = "Get-Package"
+                }
+            }
+        })
+    }
+    foreach ($root in @(
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )) {
+        $packages += @(Get-ItemProperty $root -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.DisplayName -and $_.DisplayVersion) {
+                @{
+                    packageManager = "windows-registry"
+                    packageName = [string]$_.DisplayName
+                    installedVersion = [string]$_.DisplayVersion
+                    source = "uninstall-registry"
+                }
+            }
+        })
+    }
+    return @($packages | Select-Object -First 5000)
+}
+
 while ($true) {
     Invoke-AgentPost "/api/agent/v1/sensors/$sensorId/heartbeat" (Get-Heartbeat) | Out-Null
     $events = @(Get-ObservedEvents)
@@ -140,6 +173,16 @@ while ($true) {
             batchId = "sensor-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())-$PID"
             events = $events
         } | Out-Null
+    }
+    if ([DateTimeOffset]::UtcNow -ge $lastPackageSent.AddHours(6)) {
+        $packages = @(Get-PackageInventory)
+        if ($packages.Count -gt 0) {
+            Invoke-AgentPost "/api/agent/v1/sensors/$sensorId/packages" @{
+                batchId = "packages-$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+                packages = $packages
+            } | Out-Null
+            $lastPackageSent = [DateTimeOffset]::UtcNow
+        }
     }
     Start-Sleep -Seconds 30
 }

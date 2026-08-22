@@ -862,12 +862,45 @@ function Get-ObservedEvents {
   return @($events)
 }
 
+function Get-PackageInventory {
+  $packages = @()
+  if ($null -ne (Get-Command Get-Package -ErrorAction SilentlyContinue)) {
+    $packages += @(Get-Package -ErrorAction Stop | ForEach-Object {
+      if ($_.Name -and $_.Version) {
+        @{
+          packageManager = "windows"
+          packageName = [string]$_.Name
+          installedVersion = [string]$_.Version
+          source = "Get-Package"
+        }
+      }
+    })
+  }
+  foreach ($root in @(
+    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+  )) {
+    $packages += @(Get-ItemProperty $root -ErrorAction SilentlyContinue | ForEach-Object {
+      if ($_.DisplayName -and $_.DisplayVersion) {
+        @{
+          packageManager = "windows-registry"
+          packageName = [string]$_.DisplayName
+          installedVersion = [string]$_.DisplayVersion
+          source = "uninstall-registry"
+        }
+      }
+    })
+  }
+  return @($packages | Select-Object -First 5000)
+}
+
 if ($Worker) {
   if (-not (Test-Path $ConfigFile)) { throw "Collector configuration not found: $ConfigFile" }
   $config = Get-Content $ConfigFile -Raw | ConvertFrom-Json
   $ServerUrl = $config.serverUrl
   $CollectorId = $config.collectorId
   $credential = $config.credential
+  $lastPackageSent = [DateTimeOffset]::MinValue
   while ($true) {
     $heartbeat = @{
       hostInfo = Get-HostInfo
@@ -880,6 +913,16 @@ if ($Worker) {
         batchId = "collector-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())-$PID"
         events = $observed
       } $credential | Out-Null
+    }
+    if ([DateTimeOffset]::UtcNow -ge $lastPackageSent.AddHours(6)) {
+      $packages = @(Get-PackageInventory)
+      if ($packages.Count -gt 0) {
+        Invoke-AgentPost "/api/agent/v1/collectors/packages" @{
+          batchId = "packages-$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+          packages = $packages
+        } $credential | Out-Null
+        $lastPackageSent = [DateTimeOffset]::UtcNow
+      }
     }
     Start-Sleep -Seconds 30
   }
@@ -957,6 +1000,7 @@ set -Eeuo pipefail
 source "\${INSTALL_DIR:-/opt/securenexus-collector}/collector.env"
 EVENTS="[]"
 HOSTNAME_VAL="$(hostname)"
+PACKAGE_SENT_FILE="\${INSTALL_DIR:-/opt/securenexus-collector}/package-inventory.sent"
 
 api_post() {
   local path="$1"
@@ -1080,6 +1124,45 @@ collect_file_events() {
   done
 }
 
+collect_package_inventory() {
+  local packages="[]" line name version now last_sent
+  now="$(date +%s)"
+  last_sent=0
+  if [[ -r "$PACKAGE_SENT_FILE" ]]; then
+    read -r last_sent <"$PACKAGE_SENT_FILE"
+  fi
+  [[ "$now" -ge "$((last_sent + 21600))" ]] || return 0
+  if [[ "$PLATFORM" == "linux" && -x "$(command -v dpkg-query 2>/dev/null)" ]]; then
+    while IFS=$'\t' read -r name version; do
+      [[ -n "$name" && -n "$version" ]] || continue
+      packages="$(jq --arg manager "apt" --arg name "$name" --arg version "$version" '. + [{packageManager:$manager,packageName:$name,installedVersion:$version,source:"dpkg-query"}]' <<<"$packages")"
+    done < <(dpkg-query -W -f='\${binary:Package}\t\${Version}\n')
+  fi
+  if [[ "$PLATFORM" == "linux" && -x "$(command -v rpm 2>/dev/null)" ]]; then
+    while IFS=$'\t' read -r name version; do
+      [[ -n "$name" && -n "$version" ]] || continue
+      packages="$(jq --arg manager "rpm" --arg name "$name" --arg version "$version" '. + [{packageManager:$manager,packageName:$name,installedVersion:$version,source:"rpm"}]' <<<"$packages")"
+    done < <(rpm -qa --qf '%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\n')
+  fi
+  if [[ "$PLATFORM" == "linux" && -x "$(command -v apk 2>/dev/null)" ]]; then
+    while IFS= read -r line; do
+      name="\${line%%-*}"; version="\${line#"\$name-"}"
+      [[ -n "$name" && -n "$version" ]] || continue
+      packages="$(jq --arg manager "apk" --arg name "$name" --arg version "$version" '. + [{packageManager:$manager,packageName:$name,installedVersion:$version,source:"apk"}]' <<<"$packages")"
+    done < <(apk info 2>/dev/null)
+  fi
+  if [[ "$PLATFORM" == "macos" && -x "$(command -v brew 2>/dev/null)" ]]; then
+    while IFS=$'\t' read -r name version; do
+      [[ -n "$name" && -n "$version" ]] || continue
+      packages="$(jq --arg manager "brew" --arg name "$name" --arg version "$version" '. + [{packageManager:$manager,packageName:$name,installedVersion:$version,source:"brew"}]' <<<"$packages")"
+    done < <(brew list --versions)
+  fi
+  if [[ "$(jq 'length' <<<"$packages")" -gt 0 ]]; then
+    api_post "/api/agent/v1/collectors/packages" "$(jq -n --arg batchId "packages-$(date +%s)-$$" --argjson packages "$packages" '{batchId:$batchId,packages:$packages}')"
+    printf '%s\n' "$now" >"$PACKAGE_SENT_FILE"
+  fi
+}
+
 send_events() {
   local count payload
   count="$(jq 'length' <<<"$EVENTS")"
@@ -1095,6 +1178,7 @@ while :; do
   collect_network_events
   collect_auth_events
   collect_file_events
+  collect_package_inventory
   send_events
   sleep 30
 done
