@@ -1,5 +1,5 @@
-import { eq } from "drizzle-orm";
-import { aiReplayRuns } from "@shared/schema";
+import { and, eq } from "drizzle-orm";
+import { aiAnalystDecisions, aiReplayRuns } from "@shared/schema";
 import { db, pool } from "../db";
 import { storage } from "../storage";
 import { buildThreatIntelContext, triageAlert } from "../ai";
@@ -50,6 +50,19 @@ async function updateRun(runId: string, values: Record<string, unknown>): Promis
 async function runOneAlert(run: typeof aiReplayRuns.$inferSelect, alertId: string): Promise<"succeeded" | "failed"> {
   const alert = await storage.getAlert(alertId);
   if (!alert || alert.orgId !== run.orgId) return "failed";
+
+  const [existingDecision] = await db
+    .select({ status: aiAnalystDecisions.status })
+    .from(aiAnalystDecisions)
+    .where(
+      and(
+        eq(aiAnalystDecisions.orgId, run.orgId),
+        eq(aiAnalystDecisions.alertId, alert.id),
+        eq(aiAnalystDecisions.replayRunId, run.id),
+      ),
+    )
+    .limit(1);
+  if (existingDecision) return existingDecision.status === "completed" ? "succeeded" : "failed";
 
   let decisionId: string | undefined;
   try {
