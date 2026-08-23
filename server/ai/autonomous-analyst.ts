@@ -147,6 +147,7 @@ async function triageAlertInternal(
     alertId,
     incidentId: alert.incidentId || null,
     tier: request.forcetier ?? "tier3_assisted",
+    autonomyMode: securitySettings.autonomyMode,
   });
   receiptContext.decisionId = decisionId;
 
@@ -258,6 +259,8 @@ async function triageAlertInternal(
           userId,
           userName: userName || "AI Analyst (Tier 1)",
           storage,
+          decisionId,
+          autonomyMode: securitySettings.autonomyMode,
         };
         const result = await dispatchAction(action.type, action.config, ctx);
         executedActions.push(result);
@@ -494,6 +497,8 @@ export async function approveDecision(decisionId: string, orgId: string, reviewe
         userId: reviewedBy,
         userName: reviewedBy,
         storage,
+        decisionId,
+        autonomyMode: existing.autonomyMode as "observe_only" | "assisted" | "autonomous",
       };
       await dispatchAction(action.type, action.config, ctx);
     } catch (err) {

@@ -3623,6 +3623,7 @@ export const orgAiSecuritySettings = pgTable(
     injectionMode: text("injection_mode").notNull().default("flag_and_gate"),
     piiMasking: text("pii_masking").notNull().default("mask_identifiers"),
     aiEnabled: boolean("ai_enabled").notNull().default(true),
+    autonomyMode: text("autonomy_mode").notNull().default("observe_only"),
     updatedBy: varchar("updated_by"),
     updatedAt: timestamp("updated_at").defaultNow(),
   },
@@ -3662,6 +3663,8 @@ export const aiGuardEvents = pgTable(
 
 export type OrgAiSecuritySettings = typeof orgAiSecuritySettings.$inferSelect;
 export type AiGuardEvent = typeof aiGuardEvents.$inferSelect;
+export const AUTONOMY_MODES = ["observe_only", "assisted", "autonomous"] as const;
+export type AutonomyMode = (typeof AUTONOMY_MODES)[number];
 
 export const aiFewShotExamples = pgTable(
   "ai_few_shot_examples",
@@ -11019,6 +11022,8 @@ export const aiAnalystDecisions = pgTable(
     totalLatencyMs: integer("total_latency_ms"),
     unmeasuredInvocationCount: integer("unmeasured_invocation_count").notNull().default(0),
     proofReceiptCaptured: boolean("proof_receipt_captured").notNull().default(false),
+    autonomyMode: text("autonomy_mode").notNull().default("observe_only"),
+    replayRunId: varchar("replay_run_id"),
     reviewedBy: text("reviewed_by"),
     reviewedAt: timestamp("reviewed_at"),
     createdAt: timestamp("created_at").defaultNow(),
@@ -11032,6 +11037,7 @@ export const aiAnalystDecisions = pgTable(
     index("idx_ai_decisions_outcome").on(table.orgId, table.outcome),
     index("idx_ai_decisions_status").on(table.orgId, table.status),
     index("idx_ai_decisions_created").on(table.orgId, table.createdAt),
+    index("idx_ai_decisions_replay_run").on(table.orgId, table.replayRunId),
   ],
 );
 
@@ -11145,6 +11151,45 @@ export const aiDecisionRedactionReceipts = pgTable(
 
 export type AiDecisionEvidence = typeof aiDecisionEvidence.$inferSelect;
 export type InsertAiDecisionEvidence = typeof aiDecisionEvidence.$inferInsert;
+
+export const aiReplayRuns = pgTable(
+  "ai_replay_runs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    fromAt: timestamp("from_at").notNull(),
+    toAt: timestamp("to_at").notNull(),
+    source: text("source"),
+    severity: text("severity"),
+    reason: text("reason").notNull(),
+    status: text("status").notNull().default("pending"),
+    cursor: integer("cursor").notNull().default(0),
+    totalCount: integer("total_count").notNull().default(0),
+    processedCount: integer("processed_count").notNull().default(0),
+    succeededCount: integer("succeeded_count").notNull().default(0),
+    failedCount: integer("failed_count").notNull().default(0),
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    concurrency: integer("concurrency").notNull().default(1),
+    jobId: varchar("job_id"),
+    error: text("error"),
+    createdBy: varchar("created_by"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ai_replay_runs_org").on(table.orgId),
+    index("idx_ai_replay_runs_org_status").on(table.orgId, table.status),
+  ],
+);
+
+export type AiReplayRun = typeof aiReplayRuns.$inferSelect;
+export type InsertAiReplayRun = typeof aiReplayRuns.$inferInsert;
 export type AiDecisionRedactionReceipt = typeof aiDecisionRedactionReceipts.$inferSelect;
 export type InsertAiDecisionRedactionReceipt = typeof aiDecisionRedactionReceipts.$inferInsert;
 

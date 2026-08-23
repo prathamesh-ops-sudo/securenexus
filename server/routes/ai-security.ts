@@ -14,6 +14,9 @@ import type { PiiMaskingMode } from "../ai/egress-redaction";
 import { getModelPricing } from "../ai/model-gateway";
 import { logger } from "../logger";
 import { config as appConfig } from "../config";
+import { AUTONOMY_MODES } from "@shared/schema";
+import { autonomyLog } from "@shared/schema";
+import { db } from "../db";
 
 const log = logger.child("ai-security-routes");
 
@@ -21,6 +24,7 @@ const settingsSchema = z.object({
   injectionMode: z.enum(["off", "flag_and_gate", "block"]),
   piiMasking: z.enum(["mask_identifiers", "mask_all", "off"]),
   aiEnabled: z.boolean(),
+  autonomyMode: z.enum(AUTONOMY_MODES).default("observe_only"),
 });
 
 const relationshipQuerySchema = z
@@ -64,21 +68,37 @@ export function registerAiSecurityRoutes(app: Express): void {
     try {
       const sessionUser = req.user as Express.User & { id?: string };
       const userId = typeof sessionUser.id === "string" ? sessionUser.id : "unknown";
+      const orgId = getOrgId(req);
+      const previousSettings = await getAiSecuritySettings(orgId);
       if (parsed.data.injectionMode === "off") {
         log.warn("AI injection detection disabled by organization administrator", {
-          orgId: getOrgId(req),
+          orgId,
           userId,
         });
       }
       const settings = await upsertAiSecuritySettings(
-        getOrgId(req),
+        orgId,
         {
           injectionMode: parsed.data.injectionMode as InjectionMode,
           piiMasking: parsed.data.piiMasking as PiiMaskingMode,
           aiEnabled: parsed.data.aiEnabled,
+          autonomyMode: parsed.data.autonomyMode,
         },
         userId,
       );
+      if (settings.autonomyMode !== previousSettings.autonomyMode) {
+        await db.insert(autonomyLog).values({
+          orgId,
+          action: "autonomy_mode_changed",
+          tier: settings.autonomyMode,
+          details: {
+            previousMode: previousSettings.autonomyMode,
+            newMode: settings.autonomyMode,
+            changedBy: userId,
+          },
+          triggeredBy: userId,
+        });
+      }
       return reply(res, {
         ...settings,
         models: {

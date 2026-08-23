@@ -2,6 +2,7 @@ import { pool } from "../db";
 import { logger } from "../logger";
 import type { InjectionSeverity } from "./injection-detector";
 import type { PiiMaskingMode, RedactionCount } from "./egress-redaction";
+import { AUTONOMY_MODES, type AutonomyMode } from "@shared/schema";
 
 const log = logger.child("ai-security-store");
 
@@ -11,6 +12,7 @@ export interface AiSecuritySettings {
   injectionMode: InjectionMode;
   piiMasking: PiiMaskingMode;
   aiEnabled: boolean;
+  autonomyMode: AutonomyMode;
   updatedBy: string | null;
   updatedAt: string | null;
 }
@@ -19,6 +21,7 @@ const DEFAULT_SETTINGS: AiSecuritySettings = {
   injectionMode: "flag_and_gate",
   piiMasking: "mask_identifiers",
   aiEnabled: true,
+  autonomyMode: "observe_only",
   updatedBy: null,
   updatedAt: null,
 };
@@ -26,7 +29,7 @@ const DEFAULT_SETTINGS: AiSecuritySettings = {
 export async function getAiSecuritySettings(orgId: string): Promise<AiSecuritySettings> {
   try {
     const result = await pool.query(
-      `SELECT injection_mode, pii_masking, ai_enabled, updated_by, updated_at
+      `SELECT injection_mode, pii_masking, ai_enabled, autonomy_mode, updated_by, updated_at
        FROM org_ai_security_settings WHERE org_id = $1`,
       [orgId],
     );
@@ -36,6 +39,9 @@ export async function getAiSecuritySettings(orgId: string): Promise<AiSecuritySe
       injectionMode: row.injection_mode as InjectionMode,
       piiMasking: row.pii_masking as PiiMaskingMode,
       aiEnabled: row.ai_enabled as boolean,
+      autonomyMode: AUTONOMY_MODES.includes(row.autonomy_mode as AutonomyMode)
+        ? (row.autonomy_mode as AutonomyMode)
+        : "observe_only",
       updatedBy: (row.updated_by as string) || null,
       updatedAt: row.updated_at ? new Date(row.updated_at as string).toISOString() : null,
     };
@@ -47,19 +53,20 @@ export async function getAiSecuritySettings(orgId: string): Promise<AiSecuritySe
 
 export async function upsertAiSecuritySettings(
   orgId: string,
-  settings: Pick<AiSecuritySettings, "injectionMode" | "piiMasking" | "aiEnabled">,
+  settings: Pick<AiSecuritySettings, "injectionMode" | "piiMasking" | "aiEnabled" | "autonomyMode">,
   updatedBy: string,
 ): Promise<AiSecuritySettings> {
   await pool.query(
-    `INSERT INTO org_ai_security_settings (org_id, injection_mode, pii_masking, ai_enabled, updated_by, updated_at)
-     VALUES ($1, $2, $3, $4, $5, NOW())
+    `INSERT INTO org_ai_security_settings (org_id, injection_mode, pii_masking, ai_enabled, autonomy_mode, updated_by, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())
      ON CONFLICT (org_id) DO UPDATE SET
        injection_mode = EXCLUDED.injection_mode,
        pii_masking = EXCLUDED.pii_masking,
        ai_enabled = EXCLUDED.ai_enabled,
+       autonomy_mode = EXCLUDED.autonomy_mode,
        updated_by = EXCLUDED.updated_by,
        updated_at = NOW()`,
-    [orgId, settings.injectionMode, settings.piiMasking, settings.aiEnabled, updatedBy],
+    [orgId, settings.injectionMode, settings.piiMasking, settings.aiEnabled, settings.autonomyMode, updatedBy],
   );
   return getAiSecuritySettings(orgId);
 }

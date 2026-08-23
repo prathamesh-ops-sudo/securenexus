@@ -1,6 +1,12 @@
 import type { IStorage } from "./storage";
 import { db } from "./db";
-import { agentResponseActions, nativeSensors, ROLE_PERMISSIONS } from "../shared/schema";
+import {
+  agentResponseActions,
+  autonomyLog,
+  nativeSensors,
+  ROLE_PERMISSIONS,
+  type AutonomyMode,
+} from "../shared/schema";
 import { validateResponseActionTimeout } from "./response-action-timeouts";
 import { eq, and, or, ilike, type SQL } from "drizzle-orm";
 import { logger } from "./routes/shared";
@@ -98,11 +104,13 @@ export interface ActionContext {
   dryRun?: boolean;
   callerOrgId?: string;
   callerRole?: string;
+  decisionId?: string;
+  autonomyMode?: AutonomyMode;
 }
 
 export interface ActionResult {
   actionType: string;
-  status: "completed" | "failed" | "simulated" | "pending_approval" | "approved" | "unavailable";
+  status: "completed" | "failed" | "simulated" | "pending_approval" | "approved" | "unavailable" | "withheld";
   message: string;
   details?: Record<string, unknown>;
   executedAt: string;
@@ -137,6 +145,49 @@ export async function dispatchAction(
   const executedAt = new Date().toISOString();
   const startMs = Date.now();
 
+  const permCheck = checkActionPermissions(actionType, context);
+  if (!permCheck.allowed) {
+    const denyResult: ActionResult = {
+      actionType,
+      status: "failed",
+      message: `Permission denied: ${permCheck.reason}`,
+      details: { permissionDenied: true, reason: permCheck.reason },
+      executedAt,
+    };
+    await safeCreateAuditLog(context, actionType, config, denyResult, 0, false, "response_action_permission_denied");
+    return denyResult;
+  }
+
+  if (context.autonomyMode === "observe_only") {
+    const withheldResult: ActionResult = {
+      actionType,
+      status: "withheld",
+      message: `Observe-only mode withheld action: ${actionType}`,
+      details: {
+        actionType,
+        parameters: config,
+        decisionId: context.decisionId ?? null,
+        reason: "observe_only",
+      },
+      executedAt,
+    };
+    if (context.orgId) {
+      await db.insert(autonomyLog).values({
+        orgId: context.orgId,
+        decisionId: context.decisionId ?? null,
+        action: "action_withheld",
+        tier: "observe_only",
+        alertId: context.alertId,
+        incidentId: context.incidentId,
+        details: { actionType, parameters: config, reason: "observe_only" },
+        success: true,
+        triggeredBy: context.userId || "ai_analyst",
+      });
+    }
+    await safeCreateAuditLog(context, actionType, config, withheldResult, 0, false, "response_action_withheld");
+    return withheldResult;
+  }
+
   // Step 1: Validate inputs with Zod schema (per RESP-03)
   const validation = validateActionInput(actionType, config);
   if (!validation.valid) {
@@ -150,20 +201,6 @@ export async function dispatchAction(
     // Audit the validation failure
     await safeCreateAuditLog(context, actionType, config, failResult, 0, false);
     return failResult;
-  }
-
-  // Step 1.5: Check permissions (per RESP-01 gap closure)
-  const permCheck = checkActionPermissions(actionType, context);
-  if (!permCheck.allowed) {
-    const denyResult: ActionResult = {
-      actionType,
-      status: "failed",
-      message: `Permission denied: ${permCheck.reason}`,
-      details: { permissionDenied: true, reason: permCheck.reason },
-      executedAt,
-    };
-    await safeCreateAuditLog(context, actionType, config, denyResult, 0, false, "response_action_permission_denied");
-    return denyResult;
   }
 
   // Step 2: If dry-run, return simulated result without executing (per RESP-01)

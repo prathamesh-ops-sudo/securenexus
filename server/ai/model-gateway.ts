@@ -332,6 +332,7 @@ async function prepareInvocation(opts: ModelInvokeOptions): Promise<PreparedInvo
         injectionMode: "flag_and_gate" as const,
         piiMasking: "mask_identifiers" as const,
         aiEnabled: true,
+        autonomyMode: "observe_only" as const,
         updatedBy: null,
         updatedAt: null,
       };

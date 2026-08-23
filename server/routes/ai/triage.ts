@@ -7,6 +7,7 @@ import { enforcePlanLimit } from "../../middleware/plan-enforcement";
 import { withAiFallback } from "../../ai/fallback";
 import { enqueueJob } from "../../job-queue";
 import { createDecisionReceipt, finalizeDecisionReceipt, persistDecisionEvidence } from "../../ai/decision-receipts";
+import { getAiSecuritySettings } from "../../ai/security-store";
 import type { Alert } from "@shared/schema";
 
 const log = logger.child("routes-ai-triage");
@@ -29,11 +30,13 @@ export function getAiTriageHandler(): (job: any) => Promise<any> {
       }
       if (alert.orgId !== orgId) return { error: "Alert not found", alertId };
       alertForReceipt = alert;
+      const securitySettings = await getAiSecuritySettings(orgId);
       decisionId = await createDecisionReceipt({
         orgId,
         alertId,
         incidentId: alert.incidentId,
         tier: "tier3_assisted",
+        autonomyMode: securitySettings.autonomyMode,
       });
       const threatIntelCtx = await buildThreatIntelContext([alert]);
       retrievalStatus = threatIntelCtx.retrievalUnavailable
@@ -49,6 +52,7 @@ export function getAiTriageHandler(): (job: any) => Promise<any> {
         reasoning: result.reasoning,
         executiveSummary: result.recommendedAction,
         retrievalStatus: result.retrievalStatus ?? (result.retrievalUnavailable ? "unavailable" : "empty"),
+        autonomyMode: securitySettings.autonomyMode,
       });
       await persistDecisionEvidence(orgId, decisionId, alert, null);
 

@@ -26,9 +26,9 @@ export function registerAiModelsRoutes(app: Express): void {
           status: "available",
         },
         {
-          id: "amazon.nova-lite-v1:0",
+          id: "us.amazon.nova-2-lite-v1:0",
           provider: "aws_bedrock",
-          name: "Amazon Nova Lite",
+          name: "Amazon Nova 2 Lite",
           tier: "triage",
           capabilities: ["triage", "classification", "correlation"],
           maxTokens: 4096,
@@ -115,7 +115,7 @@ export function registerAiModelsRoutes(app: Express): void {
         tierAssignments: {
           default: "amazon.nova-pro-v1:0",
           investigation: "amazon.nova-pro-v1:0",
-          triage: "amazon.nova-lite-v1:0",
+          triage: "us.amazon.nova-2-lite-v1:0",
         },
       });
     } catch (error: any) {

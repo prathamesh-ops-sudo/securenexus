@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { logger } from "./logger";
 import { createHash, randomBytes } from "crypto";
 import { sql } from "drizzle-orm";
@@ -27,6 +27,33 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
       return await handler(job);
     } catch (err: any) {
       return { error: err.message || String(err), alertId: job.payload?.alertId };
+    }
+  },
+  historical_replay: async (job) => {
+    try {
+      const { processHistoricalReplay } = await import("./ai/historical-replay");
+      const result = await processHistoricalReplay(job.payload?.runId);
+      if (result.status === "pending") {
+        await enqueueJob("historical_replay", job.orgId, { runId: job.payload?.runId, resume: Date.now() });
+      }
+      return result;
+    } catch (err: any) {
+      if (job.payload?.runId) {
+        await pool
+          .query(
+            `UPDATE ai_replay_runs
+             SET status = 'failed', error = $2, completed_at = NOW(), updated_at = NOW()
+             WHERE id = $1 AND status NOT IN ('completed', 'failed', 'cancelled')`,
+            [job.payload.runId, err.message || String(err)],
+          )
+          .catch((updateError) =>
+            logger.child("job-queue").warn("Failed to persist historical replay terminal error", {
+              runId: job.payload.runId,
+              error: String(updateError),
+            }),
+          );
+      }
+      return { error: err.message || String(err), runId: job.payload?.runId };
     }
   },
   connector_sync: async (job) => {

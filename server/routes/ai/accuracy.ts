@@ -12,6 +12,7 @@ const log = logger.child("routes-ai-accuracy");
 const windowSchema = z.object({
   from: z.coerce.date(),
   to: z.coerce.date(),
+  includeReplay: z.coerce.boolean().default(false),
 });
 
 const adjudicationSchema = z.object({
@@ -37,6 +38,7 @@ export function registerAiAccuracyRoutes(app: Express): void {
           getOrgId(req),
           parsed.data.from.toISOString(),
           parsed.data.to.toISOString(),
+          parsed.data.includeReplay,
         );
         return reply(res, report, { from: parsed.data.from.toISOString(), to: parsed.data.to.toISOString() });
       } catch (error) {

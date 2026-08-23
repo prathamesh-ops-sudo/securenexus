@@ -373,3 +373,44 @@ describe("Permission Checks (RESP-01, RESP-05)", () => {
     );
   });
 });
+
+describe("Autonomy modes", () => {
+  it("withholds allow-listed actions in observe-only mode", async () => {
+    const result = await dispatchAction(
+      "add_tag",
+      { tag: "observe-only" },
+      makeContext({ autonomyMode: "observe_only", decisionId: "decision-1" }),
+    );
+
+    expect(result.status).toBe("withheld");
+    expect(result.details).toEqual(expect.objectContaining({ reason: "observe_only", decisionId: "decision-1" }));
+    expect(storage.updateIncident).not.toHaveBeenCalled();
+  });
+
+  it("blocks unknown actions in observe-only mode", async () => {
+    const result = await dispatchAction(
+      "new_future_action",
+      { target: "example" },
+      makeContext({ autonomyMode: "observe_only", decisionId: "decision-1" }),
+    );
+
+    expect(result.status).toBe("withheld");
+    expect(result.details).toEqual(expect.objectContaining({ reason: "observe_only" }));
+  });
+
+  it("keeps autonomous and assisted modes on existing dispatch behavior", async () => {
+    const autonomous = await dispatchAction(
+      "add_tag",
+      { tag: "autonomous" },
+      makeContext({ autonomyMode: "autonomous", decisionId: "decision-1" }),
+    );
+    const assisted = await dispatchAction(
+      "isolate_host",
+      { hostname: "host.example" },
+      makeContext({ autonomyMode: "assisted", decisionId: "decision-2" }),
+    );
+
+    expect(autonomous.status).toBe("completed");
+    expect(assisted.status).toBe("unavailable");
+  });
+});

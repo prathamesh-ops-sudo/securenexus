@@ -84,6 +84,7 @@ type AccuracyDecision = Pick<AiAnalystDecision, "id" | "orgId" | "outcome" | "co
 
 export interface AccuracyReport {
   window: { from: string; to: string };
+  replayIncluded: boolean;
   decisionsTotal: number;
   adjudicatedCount: number;
   finalCount: number;
@@ -219,6 +220,7 @@ export function calculateAccuracy(
 
   return {
     window: { from, to },
+    replayIncluded: false,
     decisionsTotal: scopedDecisions.length,
     adjudicatedCount,
     finalCount: selected.filter((item) => item.final).length,
@@ -259,11 +261,17 @@ export function calculateAccuracy(
   };
 }
 
-export async function getAccuracyReport(orgId: string, from: string, to: string): Promise<AccuracyReport> {
+export async function getAccuracyReport(
+  orgId: string,
+  from: string,
+  to: string,
+  includeReplay = false,
+): Promise<AccuracyReport> {
+  const replayClause = includeReplay ? "" : " AND replay_run_id IS NULL";
   const decisionsResult = await pool.query<AccuracyDecision>(
     `SELECT id, org_id AS "orgId", outcome, confidence_score AS "confidenceScore", created_at AS "createdAt"
      FROM ai_analyst_decisions
-     WHERE org_id = $1 AND created_at >= $2::timestamptz AND created_at < $3::timestamptz`,
+     WHERE org_id = $1 AND created_at >= $2::timestamptz AND created_at < $3::timestamptz${replayClause}`,
     [orgId, from, to],
   );
   const adjudicationsResult = await pool.query<AiDecisionAdjudication>(
@@ -274,8 +282,11 @@ export async function getAccuracyReport(orgId: string, from: string, to: string)
      JOIN ai_analyst_decisions d ON d.id = a.decision_id AND d.org_id = a.org_id
      WHERE a.org_id = $1
        AND d.created_at >= $2::timestamptz
-       AND d.created_at < $3::timestamptz`,
+       AND d.created_at < $3::timestamptz${includeReplay ? "" : " AND d.replay_run_id IS NULL"}`,
     [orgId, from, to],
   );
-  return calculateAccuracy(decisionsResult.rows, adjudicationsResult.rows, from, to, orgId);
+  return {
+    ...calculateAccuracy(decisionsResult.rows, adjudicationsResult.rows, from, to, orgId),
+    replayIncluded: includeReplay,
+  };
 }

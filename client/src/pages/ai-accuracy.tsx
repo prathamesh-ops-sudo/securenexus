@@ -8,6 +8,7 @@ import { Link } from "wouter";
 
 type Report = {
   window: { from: string; to: string };
+  replayIncluded: boolean;
   decisionsTotal: number;
   adjudicatedCount: number;
   finalCount: number;
@@ -88,7 +89,8 @@ export default function AiAccuracyPage() {
         <h1 className="text-2xl font-semibold">AI Accuracy</h1>
         <p className="text-sm text-muted-foreground">
           Explicit tenant adjudications only · {new Date(data.window.from).toLocaleDateString()}–
-          {new Date(data.window.to).toLocaleDateString()}
+          {new Date(data.window.to).toLocaleDateString()} ·{" "}
+          {data.replayIncluded ? "Replay decisions included." : "Replay decisions excluded."}
         </p>
       </div>
       <Card>

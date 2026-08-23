@@ -112,6 +112,8 @@ interface Decision {
   retrievalStatus: "available" | "empty" | "unavailable" | "not_attempted" | null;
   unmeasuredInvocationCount: number;
   proofReceiptCaptured: boolean;
+  autonomyMode: "observe_only" | "assisted" | "autonomous";
+  replayRunId: string | null;
 }
 
 interface AuditLogEntry {
@@ -773,6 +775,16 @@ function DecisionDetailDialog({ decision, onClose }: { decision: Decision | null
                 {decision.timeToDecisionMs == null ? notRecorded : formatMs(decision.timeToDecisionMs)}
               </p>
             </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Autonomy regime</p>
+              <p className="text-sm font-medium">{decision.autonomyMode.replace("_", " ")}</p>
+            </div>
+            {decision.replayRunId && (
+              <div>
+                <p className="text-xs text-muted-foreground">Replay run</p>
+                <p className="text-sm font-medium">{decision.replayRunId}</p>
+              </div>
+            )}
           </div>
 
           {/* Executive Summary */}

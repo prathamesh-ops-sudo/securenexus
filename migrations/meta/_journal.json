@@ -169,6 +169,13 @@
       "when": 1787482000000,
       "tag": "0023_ai_decision_adjudications",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787483000000,
+      "tag": "0024_batch_c_autonomy_replay",
+      "breakpoints": true
     }
 ]
 }
