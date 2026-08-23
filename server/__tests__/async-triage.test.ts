@@ -252,6 +252,58 @@ describe("Async triage endpoint", () => {
       });
     });
 
+    it("persists model confidence, measured latency, and derived outcome", async () => {
+      const mockAlert = { id: "alert-1", orgId: "org-1", title: "Test" };
+      const mockThreatCtx = { enrichmentResults: [], osintMatches: [] };
+      const mockResult = {
+        severity: "high",
+        priority: 1,
+        confidence: 0.91,
+        falsePositiveLikelihood: 0.05,
+        escalationRequired: true,
+        reasoning: "Evidence supports escalation",
+        recommendedAction: "Escalate",
+      };
+
+      mockStorage.getAlert.mockResolvedValue(mockAlert);
+      mockTriageAlert.mockResolvedValue(mockResult);
+      mockBuildThreatIntelContext.mockResolvedValue(mockThreatCtx);
+
+      const { getAiTriageHandler } = await import("../routes/ai/triage");
+      await getAiTriageHandler()({ id: "job-1", payload: { alertId: "alert-1", orgId: "org-1" } });
+
+      expect(mockFinalizeDecisionReceipt).toHaveBeenCalledWith(
+        "org-1",
+        "decision-1",
+        expect.objectContaining({
+          outcome: "escalate_human",
+          confidenceScore: 0.91,
+          status: "completed",
+        }),
+      );
+      expect(mockFinalizeDecisionReceipt.mock.calls[0][2].timeToDecisionMs).toEqual(expect.any(Number));
+      expect(mockFinalizeDecisionReceipt.mock.calls[0][2].timeToDecisionMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it("keeps confidence null when the model does not return it", async () => {
+      const mockAlert = { id: "alert-1", orgId: "org-1", title: "Test" };
+      mockStorage.getAlert.mockResolvedValue(mockAlert);
+      mockTriageAlert.mockResolvedValue({
+        falsePositiveLikelihood: 0.95,
+        escalationRequired: false,
+        reasoning: "Likely benign",
+        recommendedAction: "Close",
+      });
+      mockBuildThreatIntelContext.mockResolvedValue({ enrichmentResults: [], osintMatches: [] });
+
+      const { getAiTriageHandler } = await import("../routes/ai/triage");
+      await getAiTriageHandler()({ id: "job-1", payload: { alertId: "alert-1", orgId: "org-1" } });
+
+      expect(mockFinalizeDecisionReceipt.mock.calls[0][2]).toEqual(
+        expect.objectContaining({ confidenceScore: null, outcome: "false_positive" }),
+      );
+    });
+
     it("persists a visible failed decision when schema validation fails", async () => {
       const mockAlert = { id: "alert-1", orgId: "org-1", title: "Test" };
       const failure = new Error("AI returned invalid schema");
@@ -263,12 +315,18 @@ describe("Async triage endpoint", () => {
       const result = await getAiTriageHandler()({ id: "job-1", payload: { alertId: "alert-1", orgId: "org-1" } });
 
       expect(result).toEqual({ error: "AI returned invalid schema", alertId: "alert-1", decisionId: "decision-1" });
-      expect(mockFinalizeDecisionReceipt).toHaveBeenCalledWith("org-1", "decision-1", {
-        outcome: null,
-        status: "failed",
-        reasoning: "AI returned invalid schema",
-        retrievalStatus: "empty",
-      });
+      expect(mockFinalizeDecisionReceipt).toHaveBeenCalledWith(
+        "org-1",
+        "decision-1",
+        expect.objectContaining({
+          outcome: null,
+          confidenceScore: null,
+          status: "failed",
+          reasoning: "AI returned invalid schema",
+          retrievalStatus: "empty",
+        }),
+      );
+      expect(mockFinalizeDecisionReceipt.mock.calls[0][2].timeToDecisionMs).toEqual(expect.any(Number));
       expect(persistDecisionEvidence).toHaveBeenCalledWith("org-1", "decision-1", mockAlert, null);
     });
 

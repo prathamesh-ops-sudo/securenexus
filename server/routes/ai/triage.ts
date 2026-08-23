@@ -9,6 +9,7 @@ import { enqueueJob } from "../../job-queue";
 import { createDecisionReceipt, finalizeDecisionReceipt, persistDecisionEvidence } from "../../ai/decision-receipts";
 import { finalizeDecisionIntegrity } from "../../ai/decision-integrity";
 import { getAiSecuritySettings } from "../../ai/security-store";
+import { deriveDecisionOutcome } from "../../ai/decision-outcome";
 import type { Alert } from "@shared/schema";
 
 const log = logger.child("routes-ai-triage");
@@ -19,6 +20,7 @@ const log = logger.child("routes-ai-triage");
  */
 export function getAiTriageHandler(): (job: any) => Promise<any> {
   return async (job: any) => {
+    const startedAt = Date.now();
     const { alertId, orgId } = job.payload;
     let decisionId: string | undefined;
     let alertForReceipt: Alert | undefined;
@@ -48,7 +50,9 @@ export function getAiTriageHandler(): (job: any) => Promise<any> {
         result.retrievalUnavailable = true;
       }
       await finalizeDecisionReceipt(orgId, decisionId, {
-        outcome: "needs_investigation",
+        outcome: deriveDecisionOutcome(result),
+        confidenceScore: result.confidence ?? null,
+        timeToDecisionMs: Date.now() - startedAt,
         status: "completed",
         reasoning: result.reasoning,
         executiveSummary: result.recommendedAction,
@@ -85,6 +89,8 @@ export function getAiTriageHandler(): (job: any) => Promise<any> {
         try {
           await finalizeDecisionReceipt(orgId, decisionId, {
             outcome: null,
+            confidenceScore: null,
+            timeToDecisionMs: Date.now() - startedAt,
             status: "failed",
             reasoning: err.message || String(err),
             retrievalStatus,

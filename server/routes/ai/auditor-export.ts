@@ -105,7 +105,11 @@ async function buildExport(
     redactionReceipts: auditorSection(receipt.redactions, "No redaction receipts were recorded for this decision."),
     actions: auditorSection(actions, "No action, withholding, or approval records were recorded for this decision."),
     adjudications: auditorSection(adjudications, "No adjudications were recorded for this decision."),
-    integrity,
+    integrity: {
+      ...integrity,
+      coverage:
+        "This digest covers the decision, evidence, inference, and redaction records. Adjudications and actions are not covered because they may be added after finalization.",
+    },
     retention: getProofRetentionStatus(decision.createdAt ?? new Date()),
     metadata: {
       exportedBy: exportedBy.id,

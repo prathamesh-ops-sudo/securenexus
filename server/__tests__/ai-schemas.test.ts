@@ -58,6 +58,51 @@ describe("AI output schemas", () => {
     expect(result.success).toBe(true);
   });
 
+  it("preserves an explicitly returned triage confidence", () => {
+    const result = triageOutputSchema.safeParse({
+      severity: "high",
+      priority: 1,
+      category: "credential_access",
+      recommendedAction: "Investigate",
+      reasoning: "Evidence supports malicious activity.",
+      confidence: 0.92,
+      mitreTactic: null,
+      mitreTechnique: null,
+      killChainPhase: null,
+      falsePositiveLikelihood: 0.08,
+      falsePositiveReasoning: "Indicators are consistent with an attack.",
+      relatedIocs: [],
+      nistClassification: "Analysis",
+      escalationRequired: true,
+      containmentAdvice: null,
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.confidence).toBe(0.92);
+  });
+
+  it("allows triage confidence to remain absent", () => {
+    const result = triageOutputSchema.safeParse({
+      severity: "low",
+      priority: 4,
+      category: "policy",
+      recommendedAction: "Review",
+      reasoning: "Insufficient evidence.",
+      mitreTactic: null,
+      mitreTechnique: null,
+      killChainPhase: null,
+      falsePositiveLikelihood: 0.5,
+      falsePositiveReasoning: "Insufficient evidence.",
+      relatedIocs: [],
+      nistClassification: "Analysis",
+      escalationRequired: false,
+      containmentAdvice: null,
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.confidence).toBeUndefined();
+  });
+
   it("continues to reject invalid non-null MITRE techniques", () => {
     const result = triageOutputSchema.safeParse({
       severity: "informational",

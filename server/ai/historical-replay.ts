@@ -7,10 +7,30 @@ import { createDecisionReceipt, finalizeDecisionReceipt, persistDecisionEvidence
 import { finalizeDecisionIntegrity } from "./decision-integrity";
 import { logger } from "../logger";
 import { generateSocRealityReport } from "./soc-reality-report";
+import { deriveDecisionOutcome } from "./decision-outcome";
 
 const log = logger.child("historical-replay");
 const BATCH_SIZE = 20;
 const MAX_CONSECUTIVE_FAILURES = 3;
+
+export function buildReplayDecisionFields(
+  result: {
+    escalationRequired: boolean;
+    falsePositiveLikelihood: number;
+    confidence?: number | null;
+  },
+  timeToDecisionMs: number,
+): {
+  outcome: ReturnType<typeof deriveDecisionOutcome>;
+  confidenceScore: number | null;
+  timeToDecisionMs: number;
+} {
+  return {
+    outcome: deriveDecisionOutcome(result),
+    confidenceScore: result.confidence ?? null,
+    timeToDecisionMs,
+  };
+}
 
 export function buildReplaySelection(run: {
   orgId: string;
@@ -30,15 +50,6 @@ export function buildReplaySelection(run: {
     filters.push(`severity = $${values.length}`);
   }
   return { where: filters.join(" AND "), values };
-}
-
-export function deriveReplayOutcome(result: {
-  escalationRequired: boolean;
-  falsePositiveLikelihood: number;
-}): "false_positive" | "escalate_human" | "needs_investigation" {
-  if (result.falsePositiveLikelihood >= 0.8) return "false_positive";
-  if (result.escalationRequired) return "escalate_human";
-  return "needs_investigation";
 }
 
 async function updateRun(runId: string, values: Record<string, unknown>): Promise<void> {
@@ -61,6 +72,7 @@ async function persistSocRealityReport(runId: string): Promise<void> {
 }
 
 async function runOneAlert(run: typeof aiReplayRuns.$inferSelect, alertId: string): Promise<"succeeded" | "failed"> {
+  const startedAt = Date.now();
   const alert = await storage.getAlert(alertId);
   if (!alert || alert.orgId !== run.orgId) return "failed";
 
@@ -90,7 +102,7 @@ async function runOneAlert(run: typeof aiReplayRuns.$inferSelect, alertId: strin
     const threatIntelContext = await buildThreatIntelContext([alert]);
     const result = await triageAlert(alert, threatIntelContext, run.orgId, decisionId);
     await finalizeDecisionReceipt(run.orgId, decisionId, {
-      outcome: deriveReplayOutcome(result),
+      ...buildReplayDecisionFields(result, Date.now() - startedAt),
       status: "completed",
       reasoning: result.reasoning,
       executiveSummary: result.recommendedAction,
@@ -105,6 +117,8 @@ async function runOneAlert(run: typeof aiReplayRuns.$inferSelect, alertId: strin
     if (decisionId) {
       await finalizeDecisionReceipt(run.orgId, decisionId, {
         outcome: null,
+        confidenceScore: null,
+        timeToDecisionMs: Date.now() - startedAt,
         status: "failed",
         autonomyMode: "observe_only",
         replayRunId: run.id,

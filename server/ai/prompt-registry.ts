@@ -486,7 +486,7 @@ Respond with this exact JSON structure:
 
   await registerPrompt({
     id: "triage",
-    version: 2,
+    version: 3,
     name: "Alert Triage Analyst",
     description:
       "Real-time alert triage with MITRE classification, false positive assessment, and actionable containment advice.",
@@ -523,6 +523,7 @@ Respond with this exact JSON structure:
   "category": "MITRE-aligned category",
   "recommendedAction": "specific actionable next step for the analyst",
   "reasoning": "evidence-based triage reasoning citing specific indicators",
+  "confidence": 0.85,
   "mitreTactic": "MITRE ATT&CK Tactic, or null when the alert has no supportable tactic",
   "mitreTechnique": "T1xxx.xxx, or null when the alert has no supportable technique",
   "killChainPhase": "Kill Chain phase, or null when the alert has no supportable phase",
@@ -539,6 +540,7 @@ Respond with this exact JSON structure:
       category: "string",
       recommendedAction: "string",
       reasoning: "string",
+      confidence: "number 0-1 or null when not returned",
       mitreTactic: "string or null when unsupported by evidence",
       mitreTechnique: "string T1xxx.xxx or null when unsupported by evidence",
       killChainPhase: "string or null when unsupported by evidence",

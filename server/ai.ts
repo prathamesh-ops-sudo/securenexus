@@ -780,6 +780,7 @@ export interface TriageResult {
   category: string;
   recommendedAction: string;
   reasoning: string;
+  confidence?: number | null;
   mitreTactic: string | null;
   mitreTechnique: string | null;
   falsePositiveLikelihood: number;
@@ -1422,7 +1423,7 @@ function buildTriageUserMessage(alertData: Alert): string {
     2,
   );
 
-  return `Triage this security alert with full analytical assessment.\n\nALERT TELEMETRY:\n${telemetry}\n\nRespond with this exact JSON structure:\n{\n  "severity": "critical|high|medium|low|informational",\n  "priority": 1,\n  "category": "MITRE-aligned category",\n  "recommendedAction": "specific actionable next step for the analyst",\n  "reasoning": "evidence-based triage reasoning citing specific indicators",\n  "mitreTactic": "MITRE ATT&CK Tactic, or null when the alert has no supportable tactic",\n  "mitreTechnique": "T1xxx.xxx, or null when the alert has no supportable technique",\n  "killChainPhase": "Kill Chain phase, or null when the alert has no supportable phase",\n  "falsePositiveLikelihood": 0.15,\n  "falsePositiveReasoning": "why this is or is not likely a false positive",\n  "relatedIocs": [{"type": "ip|domain|hash|url", "value": "indicator value"}],\n  "nistClassification": "NIST incident category",\n  "escalationRequired": false,\n  "containmentAdvice": "immediate containment steps if threat is active, otherwise null"\n}`;
+  return `Triage this security alert with full analytical assessment.\n\nALERT TELEMETRY:\n${telemetry}\n\nRespond with this exact JSON structure:\n{\n  "severity": "critical|high|medium|low|informational",\n  "priority": 1,\n  "category": "MITRE-aligned category",\n  "recommendedAction": "specific actionable next step for the analyst",\n  "reasoning": "evidence-based triage reasoning citing specific indicators",\n  "confidence": 0.85,\n  "mitreTactic": "MITRE ATT&CK Tactic, or null when the alert has no supportable tactic",\n  "mitreTechnique": "T1xxx.xxx, or null when the alert has no supportable technique",\n  "killChainPhase": "Kill Chain phase, or null when the alert has no supportable phase",\n  "falsePositiveLikelihood": 0.15,\n  "falsePositiveReasoning": "why this is or is not likely a false positive",\n  "relatedIocs": [{"type": "ip|domain|hash|url", "value": "indicator value"}],\n  "nistClassification": "NIST incident category",\n  "escalationRequired": false,\n  "containmentAdvice": "immediate containment steps if threat is active, otherwise null"\n}`;
 }
 
 export async function checkModelHealth(): Promise<{

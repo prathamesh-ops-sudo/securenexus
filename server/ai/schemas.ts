@@ -22,6 +22,7 @@ export const triageOutputSchema = z.object({
   category: cleanString(128),
   recommendedAction: cleanString(4000),
   reasoning: cleanString(6000),
+  confidence: confidence.nullable().optional(),
   mitreTactic: cleanString(128).nullable(),
   mitreTechnique: technique.nullable(),
   killChainPhase: cleanString(128).nullable(),
