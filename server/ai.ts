@@ -380,24 +380,63 @@ async function invokeWithPrompt(
   let schemaRetryUsed = false;
   if (schema) {
     if (!validateModelJson(result.text, schema)) {
-      const retry = await gatewayInvoke({
-        modelId: modelConfig.modelId,
-        backend: appConfig.ai.backend,
-        systemPrompt: augmentedSystemPrompt,
-        userMessage: `${userMessage}\n\nReturn only valid JSON matching the schema.`,
-        maxTokens: modelConfig.maxTokens,
-        temperature: modelConfig.temperature,
-        topP: appConfig.ai.topP,
-        sagemakerEndpoint: modelConfig.sagemakerEndpoint,
+      await persistInferenceEntry(
+        {
+          tier,
+          model: result.modelId,
+          inputTokensEstimate: result.inputTokensEstimate,
+          outputTokensEstimate: result.outputTokensEstimate,
+          latencyMs: result.latencyMs,
+          costEstimateUsd: result.costEstimateUsd,
+          cached: result.cached,
+          promptId: prompt.id,
+          promptVersion: prompt.version,
+        },
+        false,
+        "schema_validation_failed_before_retry",
         orgId,
-        promptId: prompt.id,
-        promptVersion: prompt.version,
-        tier,
-        skipCache: true,
-        untrustedContent: evidence,
-        ...relationship,
-        decisionId: relationship?.decisionId,
-      });
+        relationship?.decisionId,
+      );
+      let retry: ModelInvokeResult;
+      try {
+        retry = await gatewayInvoke({
+          modelId: modelConfig.modelId,
+          backend: appConfig.ai.backend,
+          systemPrompt: augmentedSystemPrompt,
+          userMessage: `${userMessage}\n\nReturn only valid JSON matching the schema.`,
+          maxTokens: modelConfig.maxTokens,
+          temperature: modelConfig.temperature,
+          topP: appConfig.ai.topP,
+          sagemakerEndpoint: modelConfig.sagemakerEndpoint,
+          orgId,
+          promptId: prompt.id,
+          promptVersion: prompt.version,
+          tier,
+          skipCache: true,
+          untrustedContent: evidence,
+          ...relationship,
+          decisionId: relationship?.decisionId,
+        });
+      } catch (error) {
+        await persistInferenceEntry(
+          {
+            tier,
+            model: modelConfig.modelId,
+            inputTokensEstimate: 0,
+            outputTokensEstimate: 0,
+            latencyMs: 0,
+            costEstimateUsd: null,
+            cached: false,
+            promptId: prompt.id,
+            promptVersion: prompt.version,
+          },
+          false,
+          String(error),
+          orgId,
+          relationship?.decisionId,
+        );
+        throw error;
+      }
       if (retry.withheld) {
         await persistInferenceEntry(
           {
@@ -440,6 +479,7 @@ async function invokeWithPrompt(
         );
         throw new Error("AI returned output that did not match the required schema after one retry.");
       }
+      result = retry;
       result.text = retry.text;
       schemaRetryUsed = true;
     }
