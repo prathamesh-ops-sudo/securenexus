@@ -55,6 +55,30 @@ describe("RAG retrieval truthfulness", () => {
     expect(formatRAGContextForPrompt(context)).not.toContain("HISTORICAL & KNOWLEDGE BASE CONTEXT (RAG)");
   });
 
+  it("marks successful empty and populated searches distinctly", async () => {
+    const { buildRAGContext } = await import("../ai/vector-search");
+
+    const empty = await buildRAGContext({ title: "No matching alert" }, "org-1");
+    expect(empty.retrievalStatus).toBe("empty");
+
+    mocks.query.mockResolvedValue({
+      rows: [
+        {
+          id: "knowledge-1",
+          category: "attack_techniques",
+          source_type: "mitre",
+          source_id: "T1059",
+          title: "Command and Scripting Interpreter",
+          content: "Command execution",
+          metadata: { techniqueId: "T1059" },
+          similarity: "0.9",
+        },
+      ],
+    });
+    const available = await buildRAGContext({ title: "Command execution" }, "org-1");
+    expect(available.retrievalStatus).toBe("available");
+  });
+
   it("marks failed historical retrieval as unavailable without evidence or confidence provenance", async () => {
     const { formatThreatIntelForPrompt } = await import("../ai");
     const prompt = formatThreatIntelForPrompt({

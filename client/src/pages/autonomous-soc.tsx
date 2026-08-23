@@ -101,6 +101,14 @@ interface Decision {
   reviewedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  model: string | null;
+  promptId: string | null;
+  promptVersion: number | null;
+  totalInputTokens: number | null;
+  totalOutputTokens: number | null;
+  totalCostUsd: number | null;
+  totalLatencyMs: number | null;
+  retrievalStatus: "available" | "empty" | "unavailable" | null;
 }
 
 interface AuditLogEntry {
@@ -118,6 +126,36 @@ interface AuditLogEntry {
   error: string | null;
   triggeredBy: string | null;
   createdAt: string;
+}
+
+interface DecisionReceipt {
+  evidence: {
+    id: string;
+    sourceKind: string;
+    sourceTable: string;
+    sourcePrimaryKey: string;
+    evidenceRole: string;
+    evidenceWeight: number | null;
+    valueSnapshot: unknown;
+  }[];
+  inference: {
+    id: number;
+    model: string;
+    promptId: string | null;
+    promptVersion: number | null;
+    inputTokens: number;
+    outputTokens: number;
+    latencyMs: number;
+    costEstimateUsd: number;
+    success: boolean;
+    errorMessage: string | null;
+  }[];
+  redactions: {
+    id: string;
+    invocationId: string;
+    redactedClasses: unknown;
+    redacted: boolean;
+  }[];
 }
 
 const TIER_CONFIG: Record<string, { label: string; color: string; icon: typeof Brain; description: string }> = {
@@ -670,7 +708,18 @@ function DecisionsTab() {
 }
 
 function DecisionDetailDialog({ decision, onClose }: { decision: Decision | null; onClose: () => void }) {
+  const { data: receipt, isLoading: receiptLoading } = useQuery<DecisionReceipt>({
+    queryKey: ["/api/autonomous-soc/decisions", decision?.id, "receipt"],
+    queryFn: async () => {
+      if (!decision) throw new Error("Decision not selected");
+      const res = await apiRequest("GET", `/api/autonomous-soc/decisions/${decision.id}`);
+      const body = await res.json();
+      return body.data ?? body;
+    },
+    enabled: !!decision,
+  });
   if (!decision) return null;
+  const notRecorded = "Not recorded";
 
   return (
     <Dialog open={!!decision} onOpenChange={() => onClose()}>
@@ -702,7 +751,9 @@ function DecisionDetailDialog({ decision, onClose }: { decision: Decision | null
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Decision Time</p>
-              <p className="text-lg font-bold">{formatMs(decision.timeToDecisionMs ?? 0)}</p>
+              <p className="text-lg font-bold">
+                {decision.timeToDecisionMs == null ? notRecorded : formatMs(decision.timeToDecisionMs)}
+              </p>
             </div>
           </div>
 
@@ -751,6 +802,67 @@ function DecisionDetailDialog({ decision, onClose }: { decision: Decision | null
           )}
 
           {/* Metadata */}
+          <div className="rounded-lg border p-3 space-y-3">
+            <p className="text-xs font-medium text-muted-foreground">Proof Receipt</p>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <p>Model: {decision.model ?? notRecorded}</p>
+              <p>Prompt version: {decision.promptVersion ?? notRecorded}</p>
+              <p>Input tokens: {decision.totalInputTokens ?? notRecorded}</p>
+              <p>Output tokens: {decision.totalOutputTokens ?? notRecorded}</p>
+              <p>Total cost: {decision.totalCostUsd == null ? notRecorded : `$${decision.totalCostUsd}`}</p>
+              <p>Total latency: {decision.totalLatencyMs == null ? notRecorded : `${decision.totalLatencyMs} ms`}</p>
+              <p>Retrieval: {decision.retrievalStatus ?? notRecorded}</p>
+            </div>
+            {receiptLoading ? (
+              <p className="text-sm text-muted-foreground">Loading receipt...</p>
+            ) : (
+              <>
+                <p className="text-sm">
+                  Evidence rows: {receipt?.evidence.length ? receipt.evidence.length : notRecorded}
+                </p>
+                {receipt?.evidence.map((item) => (
+                  <div key={item.id} className="rounded border p-2 text-xs">
+                    <p>
+                      {item.evidenceRole} · {item.sourceKind} ·{" "}
+                      <a
+                        className="underline"
+                        href={`/${item.sourceTable === "alerts" ? "alerts" : "incidents"}/${item.sourcePrimaryKey}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {item.sourceTable}:{item.sourcePrimaryKey}
+                      </a>
+                    </p>
+                    <p className="text-muted-foreground">Weight: {item.evidenceWeight ?? notRecorded}</p>
+                  </div>
+                ))}
+                <p className="text-sm">
+                  Invocations: {receipt?.inference.length ? receipt.inference.length : notRecorded}
+                </p>
+                {receipt?.inference.map((item) => (
+                  <div key={item.id} className="rounded border p-2 text-xs">
+                    <p>
+                      {item.model} · {item.promptId ?? notRecorded} v{item.promptVersion ?? notRecorded}
+                    </p>
+                    <p>
+                      {item.success ? "succeeded" : "failed"} · {item.inputTokens + item.outputTokens} tokens ·{" "}
+                      {item.latencyMs} ms
+                    </p>
+                    {item.errorMessage && <p className="text-red-400">{item.errorMessage}</p>}
+                  </div>
+                ))}
+                <p className="text-sm">
+                  Redaction receipts: {receipt?.redactions.length ? receipt.redactions.length : notRecorded}
+                </p>
+                {receipt?.redactions.map((item) => (
+                  <div key={item.id} className="rounded border p-2 text-xs">
+                    Invocation {item.invocationId}: {item.redacted ? "redacted" : "nothing redacted"}
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+
           <div className="text-xs text-muted-foreground space-y-1">
             <p>Decision ID: {decision.id}</p>
             <p>Created: {new Date(decision.createdAt).toLocaleString()}</p>

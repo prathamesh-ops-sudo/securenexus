@@ -8,6 +8,7 @@ import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { getOrgId } from "./shared";
 import { logger } from "../logger";
 import { triageAlert, overrideDecision, approveDecision, getAutonomousSOCStats } from "../ai/autonomous-analyst";
+import { getDecisionReceipt } from "../ai/decision-receipts";
 
 const log = logger.child("autonomous-soc-routes");
 
@@ -178,16 +179,17 @@ export function registerAutonomousSocRoutes(app: Express): void {
         if (!decision) {
           return res.status(404).json({ error: "Decision not found" });
         }
+        const receipt = await getDecisionReceipt(orgId, decisionId);
 
         // Get related autonomy log entries
         const logs = await db
           .select()
           .from(autonomyLog)
-          .where(eq(autonomyLog.decisionId, decisionId))
+          .where(and(eq(autonomyLog.decisionId, decisionId), eq(autonomyLog.orgId, orgId)))
           .orderBy(desc(autonomyLog.createdAt))
           .limit(50);
 
-        return res.json({ decision, logs });
+        return res.json({ decision, logs, ...receipt });
       } catch (error: unknown) {
         const err = error as Error;
         log.error("Failed to fetch decision", { error: err.message });
@@ -394,7 +396,7 @@ export function registerAutonomousSocRoutes(app: Express): void {
             COUNT(*) FILTER (WHERE tier = 'tier1_autonomous') AS tier1_count,
             COUNT(*) FILTER (WHERE outcome = 'false_negative') AS fn_count,
             COUNT(*) FILTER (WHERE outcome IN ('escalate_human','needs_investigation')) AS escalation_count,
-            COUNT(*) FILTER (WHERE is_overridden = true) AS override_count,
+            COUNT(*) FILTER (WHERE human_override = true) AS override_count,
             ROUND(AVG(time_to_decision_ms))::int AS avg_time_ms,
             ROUND(AVG(confidence_score), 3)::float AS avg_confidence
           FROM ai_analyst_decisions

@@ -6,6 +6,8 @@ import { correlateAlerts, buildThreatIntelContext } from "../../ai";
 import { enforcePlanLimit } from "../../middleware/plan-enforcement";
 import { withAiFallback } from "../../ai/fallback";
 import { enqueueJob } from "../../job-queue";
+import { createDecisionReceipt, finalizeDecisionReceipt, persistDecisionEvidence } from "../../ai/decision-receipts";
+import type { Alert } from "@shared/schema";
 
 const log = logger.child("routes-ai-triage");
 
@@ -16,17 +18,35 @@ const log = logger.child("routes-ai-triage");
 export function getAiTriageHandler(): (job: any) => Promise<any> {
   return async (job: any) => {
     const { alertId, orgId } = job.payload;
+    let decisionId: string | undefined;
+    let alertForReceipt: Alert | undefined;
     try {
       const { triageAlert, buildThreatIntelContext } = await import("../../ai");
       const alert = await storage.getAlert(alertId);
       if (!alert) {
         return { error: "Alert not found", alertId };
       }
+      if (alert.orgId !== orgId) return { error: "Alert not found", alertId };
+      alertForReceipt = alert;
+      decisionId = await createDecisionReceipt({
+        orgId,
+        alertId,
+        incidentId: alert.incidentId,
+        tier: "tier3_assisted",
+      });
       const threatIntelCtx = await buildThreatIntelContext([alert]);
-      const result = await triageAlert(alert, threatIntelCtx, orgId);
+      const result = await triageAlert(alert, threatIntelCtx, orgId, decisionId);
       if (threatIntelCtx.retrievalUnavailable) {
         result.retrievalUnavailable = true;
       }
+      await finalizeDecisionReceipt(orgId, decisionId, {
+        outcome: "completed",
+        status: "completed",
+        reasoning: result.reasoning,
+        executiveSummary: result.recommendedAction,
+        retrievalStatus: result.retrievalStatus ?? (result.retrievalUnavailable ? "unavailable" : "empty"),
+      });
+      await persistDecisionEvidence(orgId, decisionId, alert, null);
 
       // Broadcast completion via SSE
       const { broadcastEvent } = await import("../../event-bus");
@@ -36,9 +56,28 @@ export function getAiTriageHandler(): (job: any) => Promise<any> {
         data: { jobId: job.id, alertId, result },
       });
 
-      return { alertId, result };
+      return { alertId, decisionId, result };
     } catch (err: any) {
-      return { error: err.message || String(err), alertId };
+      if (decisionId) {
+        if (alertForReceipt) {
+          try {
+            await persistDecisionEvidence(orgId, decisionId, alertForReceipt, null);
+          } catch (e) {
+            log.warn("Failed to persist failed triage evidence", {
+              error: String(e),
+              orgId,
+              decisionId,
+            });
+          }
+        }
+        await finalizeDecisionReceipt(orgId, decisionId, {
+          outcome: "failed",
+          status: "failed",
+          reasoning: err.message || String(err),
+          retrievalStatus: "unavailable",
+        });
+      }
+      return { error: err.message || String(err), alertId, decisionId };
     }
   };
 }

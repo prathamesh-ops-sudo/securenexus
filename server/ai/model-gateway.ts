@@ -15,6 +15,7 @@ import {
   type AiSecuritySettings,
   type InjectionMode,
 } from "./security-store";
+import { persistRedactionReceipt } from "./decision-receipts";
 
 const log = logger.child("model-gateway");
 
@@ -40,6 +41,7 @@ export interface ModelInvokeOptions {
   untrustedContent?: { label: string; content: string }[];
   alertId?: string;
   incidentId?: string;
+  decisionId?: string;
   fallbackAttempted?: boolean;
 }
 
@@ -382,6 +384,12 @@ async function prepareInvocation(opts: ModelInvokeOptions): Promise<PreparedInvo
       incidentId: opts.incidentId,
     });
   }
+  await persistRedactionReceipt({
+    orgId: opts.orgId,
+    decisionId: opts.decisionId,
+    invocationId,
+    redactions: evidence.redactions,
+  });
   return {
     options: prepared,
     settings,

@@ -10986,7 +10986,7 @@ export const aiAnalystDecisions = pgTable(
     incidentId: varchar("incident_id").references(() => incidents.id, { onDelete: "set null" }),
     tier: text("tier").notNull().default("tier1_autonomous"),
     outcome: text("outcome").notNull(),
-    confidenceScore: real("confidence_score").notNull(),
+    confidenceScore: real("confidence_score"),
     confidenceFactors: jsonb("confidence_factors"),
     enrichmentData: jsonb("enrichment_data"),
     correlationResults: jsonb("correlation_results"),
@@ -11005,6 +11005,14 @@ export const aiAnalystDecisions = pgTable(
     humanOverrideAt: timestamp("human_override_at"),
     status: text("status").notNull().default("pending"),
     safetyVetoes: jsonb("safety_vetoes"),
+    retrievalStatus: text("retrieval_status"),
+    model: text("model"),
+    promptId: text("prompt_id"),
+    promptVersion: integer("prompt_version"),
+    totalInputTokens: integer("total_input_tokens"),
+    totalOutputTokens: integer("total_output_tokens"),
+    totalCostUsd: doublePrecision("total_cost_usd"),
+    totalLatencyMs: integer("total_latency_ms"),
     reviewedBy: text("reviewed_by"),
     reviewedAt: timestamp("reviewed_at"),
     createdAt: timestamp("created_at").defaultNow(),
@@ -11079,6 +11087,60 @@ export type AiAnalystDecision = typeof aiAnalystDecisions.$inferSelect;
 export type InsertAiAnalystDecision = typeof aiAnalystDecisions.$inferInsert;
 export type AutonomyLogEntry = typeof autonomyLog.$inferSelect;
 export type InsertAutonomyLogEntry = typeof autonomyLog.$inferInsert;
+
+export const aiDecisionEvidence = pgTable(
+  "ai_decision_evidence",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    decisionId: varchar("decision_id")
+      .notNull()
+      .references(() => aiAnalystDecisions.id, { onDelete: "cascade" }),
+    sourceKind: text("source_kind").notNull(),
+    sourceTable: text("source_table").notNull(),
+    sourcePrimaryKey: text("source_primary_key").notNull(),
+    evidenceRole: text("evidence_role").notNull(),
+    evidenceWeight: real("evidence_weight"),
+    valueSnapshot: jsonb("value_snapshot").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ai_decision_evidence_org_decision").on(table.orgId, table.decisionId),
+    index("idx_ai_decision_evidence_source").on(table.orgId, table.sourceTable, table.sourcePrimaryKey),
+  ],
+);
+
+export const aiDecisionRedactionReceipts = pgTable(
+  "ai_decision_redaction_receipts",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    decisionId: varchar("decision_id")
+      .notNull()
+      .references(() => aiAnalystDecisions.id, { onDelete: "cascade" }),
+    invocationId: varchar("invocation_id").notNull(),
+    redactedClasses: jsonb("redacted_classes").notNull(),
+    redacted: boolean("redacted").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_ai_redaction_receipts_org_decision").on(table.orgId, table.decisionId),
+    index("idx_ai_redaction_receipts_invocation").on(table.invocationId),
+  ],
+);
+
+export type AiDecisionEvidence = typeof aiDecisionEvidence.$inferSelect;
+export type InsertAiDecisionEvidence = typeof aiDecisionEvidence.$inferInsert;
+export type AiDecisionRedactionReceipt = typeof aiDecisionRedactionReceipts.$inferSelect;
+export type InsertAiDecisionRedactionReceipt = typeof aiDecisionRedactionReceipts.$inferInsert;
 
 // ── Developer Security (Shift-Left Platform) ──────────────────────
 
@@ -13500,6 +13562,7 @@ export const aiInferenceLog = pgTable(
   "ai_inference_log",
   {
     id: serial("id").primaryKey(),
+    decisionId: varchar("decision_id").references(() => aiAnalystDecisions.id, { onDelete: "set null" }),
     tier: varchar("tier").notNull(),
     model: varchar("model").notNull(),
     promptId: varchar("prompt_id"),
@@ -13518,6 +13581,7 @@ export const aiInferenceLog = pgTable(
     index("idx_ai_inference_log_tier").on(table.tier),
     index("idx_ai_inference_log_created").on(table.createdAt),
     index("idx_ai_inference_log_org").on(table.orgId),
+    index("idx_ai_inference_log_decision").on(table.orgId, table.decisionId),
   ],
 );
 

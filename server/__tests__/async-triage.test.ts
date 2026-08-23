@@ -47,6 +47,12 @@ vi.mock("../ai/fallback", () => ({
   withAiFallback: vi.fn(),
 }));
 
+vi.mock("../ai/decision-receipts", () => ({
+  createDecisionReceipt: vi.fn().mockResolvedValue("decision-1"),
+  finalizeDecisionReceipt: vi.fn().mockResolvedValue(undefined),
+  persistDecisionEvidence: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../event-bus", () => ({
   broadcastEvent: vi.fn(),
 }));
@@ -95,6 +101,7 @@ import { storage } from "../storage";
 import { enqueueJob } from "../job-queue";
 import { triageAlert, buildThreatIntelContext } from "../ai";
 import { broadcastEvent } from "../event-bus";
+import { createDecisionReceipt, finalizeDecisionReceipt, persistDecisionEvidence } from "../ai/decision-receipts";
 import { registerAiTriageRoutes } from "../routes/ai/triage";
 
 const mockStorage = storage as any;
@@ -102,6 +109,8 @@ const mockEnqueueJob = enqueueJob as any;
 const mockTriageAlert = triageAlert as any;
 const mockBuildThreatIntelContext = buildThreatIntelContext as any;
 const mockBroadcastEvent = broadcastEvent as any;
+const mockCreateDecisionReceipt = createDecisionReceipt as any;
+const mockFinalizeDecisionReceipt = finalizeDecisionReceipt as any;
 
 function createApp() {
   const app = express();
@@ -232,8 +241,34 @@ describe("Async triage endpoint", () => {
 
       expect(mockStorage.getAlert).toHaveBeenCalledWith("alert-1");
       expect(mockBuildThreatIntelContext).toHaveBeenCalledWith([mockAlert]);
-      expect(mockTriageAlert).toHaveBeenCalledWith(mockAlert, mockThreatCtx, "org-1");
-      expect(result).toEqual({ alertId: "alert-1", result: mockResult });
+      expect(mockTriageAlert).toHaveBeenCalledWith(mockAlert, mockThreatCtx, "org-1", "decision-1");
+      expect(result).toEqual({ alertId: "alert-1", decisionId: "decision-1", result: mockResult });
+      expect(mockCreateDecisionReceipt).toHaveBeenCalledWith({
+        orgId: "org-1",
+        alertId: "alert-1",
+        incidentId: undefined,
+        tier: "tier3_assisted",
+      });
+    });
+
+    it("persists a visible failed decision when schema validation fails", async () => {
+      const mockAlert = { id: "alert-1", orgId: "org-1", title: "Test" };
+      const failure = new Error("AI returned invalid schema");
+      mockStorage.getAlert.mockResolvedValue(mockAlert);
+      mockBuildThreatIntelContext.mockResolvedValue({ enrichmentResults: [], osintMatches: [] });
+      mockTriageAlert.mockRejectedValue(failure);
+
+      const { getAiTriageHandler } = await import("../routes/ai/triage");
+      const result = await getAiTriageHandler()({ id: "job-1", payload: { alertId: "alert-1", orgId: "org-1" } });
+
+      expect(result).toEqual({ error: "AI returned invalid schema", alertId: "alert-1", decisionId: "decision-1" });
+      expect(mockFinalizeDecisionReceipt).toHaveBeenCalledWith("org-1", "decision-1", {
+        outcome: "failed",
+        status: "failed",
+        reasoning: "AI returned invalid schema",
+        retrievalStatus: "unavailable",
+      });
+      expect(persistDecisionEvidence).toHaveBeenCalledWith("org-1", "decision-1", mockAlert, null);
     });
 
     it("broadcasts ai:triage_complete SSE event on success", async () => {
@@ -287,6 +322,7 @@ describe("Async triage endpoint", () => {
 
       expect(result).toEqual({
         alertId: "alert-1",
+        decisionId: "decision-1",
         result: { severity: "high", priority: 1, retrievalUnavailable: true },
       });
     });
@@ -302,7 +338,7 @@ describe("Async triage endpoint", () => {
       const job = { id: "job-1", payload: { alertId: "alert-1", orgId: "org-1" } };
       const result = await handler(job);
 
-      expect(result).toEqual({ error: "AI model timeout", alertId: "alert-1" });
+      expect(result).toEqual({ error: "AI model timeout", alertId: "alert-1", decisionId: "decision-1" });
     });
   });
 });

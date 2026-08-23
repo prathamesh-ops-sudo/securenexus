@@ -903,7 +903,7 @@ export interface RAGContext {
   relatedAttackTechniques: VectorSearchResult[];
   relevantCveAdvisories: VectorSearchResult[];
   ragSummary: string;
-  retrievalStatus: "available" | "unavailable";
+  retrievalStatus: "available" | "empty" | "unavailable";
   retrievalError: string | null;
 }
 
@@ -929,7 +929,7 @@ export async function buildRAGContext(
     relatedAttackTechniques: [],
     relevantCveAdvisories: [],
     ragSummary: "",
-    retrievalStatus: "available",
+    retrievalStatus: "empty",
     retrievalError: null,
   };
 
@@ -994,6 +994,14 @@ export async function buildRAGContext(
       summaryParts.push(
         `Relevant CVE(s): ${result.relevantCveAdvisories.map((c) => `${c.metadata?.cveId} (${c.metadata?.name})`).join(", ")}`,
       );
+    }
+
+    if (
+      result.similarPastIncidents.length > 0 ||
+      result.relatedAttackTechniques.length > 0 ||
+      result.relevantCveAdvisories.length > 0
+    ) {
+      result.retrievalStatus = "available";
     }
 
     if (summaryParts.length > 0) {

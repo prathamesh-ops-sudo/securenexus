@@ -77,11 +77,12 @@ async function persistInferenceEntry(
   success: boolean = true,
   errorMessage?: string,
   orgId?: string,
+  decisionId?: string,
 ): Promise<void> {
   try {
     await pool.query(
-      `INSERT INTO ai_inference_log (tier, model, prompt_id, prompt_version, input_tokens, output_tokens, latency_ms, cost_estimate_usd, cached, success, error_message, org_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      `INSERT INTO ai_inference_log (tier, model, prompt_id, prompt_version, input_tokens, output_tokens, latency_ms, cost_estimate_usd, cached, success, error_message, org_id, decision_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         metrics.tier,
         metrics.model,
@@ -95,6 +96,7 @@ async function persistInferenceEntry(
         success,
         errorMessage || null,
         orgId || null,
+        decisionId || null,
       ],
     );
   } catch (err) {
@@ -266,7 +268,7 @@ async function invokeWithPrompt(
   maxTokensOverride?: number,
   untrustedContent: { label: string; content: string }[] = [],
   schema?: z.ZodType,
-  relationship?: { alertId?: string; incidentId?: string },
+  relationship?: { alertId?: string; incidentId?: string; decisionId?: string },
 ): Promise<{
   text: string;
   metrics: InferenceMetrics;
@@ -318,24 +320,59 @@ async function invokeWithPrompt(
     log.warn("Failed to build few-shot augmented prompt", { promptId, tier, error: String(err) });
   }
 
-  const result: ModelInvokeResult = await gatewayInvoke({
-    modelId: modelConfig.modelId,
-    backend: appConfig.ai.backend,
-    systemPrompt: augmentedSystemPrompt,
-    userMessage,
-    maxTokens: modelConfig.maxTokens,
-    temperature: modelConfig.temperature,
-    topP: appConfig.ai.topP,
-    sagemakerEndpoint: modelConfig.sagemakerEndpoint,
-    orgId,
-    promptId: prompt.id,
-    promptVersion: prompt.version,
-    tier,
-    untrustedContent: evidence,
-    ...relationship,
-  });
+  let result: ModelInvokeResult;
+  try {
+    result = await gatewayInvoke({
+      modelId: modelConfig.modelId,
+      backend: appConfig.ai.backend,
+      systemPrompt: augmentedSystemPrompt,
+      userMessage,
+      maxTokens: modelConfig.maxTokens,
+      temperature: modelConfig.temperature,
+      topP: appConfig.ai.topP,
+      sagemakerEndpoint: modelConfig.sagemakerEndpoint,
+      orgId,
+      promptId: prompt.id,
+      promptVersion: prompt.version,
+      tier,
+      untrustedContent: evidence,
+      ...relationship,
+      decisionId: relationship?.decisionId,
+    });
+  } catch (error) {
+    await persistInferenceEntry(
+      {
+        tier,
+        model: modelConfig.modelId,
+        inputTokensEstimate: 0,
+        outputTokensEstimate: 0,
+        latencyMs: 0,
+        costEstimateUsd: null,
+        cached: false,
+        promptId: prompt.id,
+        promptVersion: prompt.version,
+      },
+      false,
+      String(error),
+      orgId,
+      relationship?.decisionId,
+    );
+    throw error;
+  }
 
   if (result.withheld) {
+    const withheldMetrics: InferenceMetrics = {
+      tier,
+      model: result.modelId,
+      inputTokensEstimate: result.inputTokensEstimate,
+      outputTokensEstimate: result.outputTokensEstimate,
+      latencyMs: result.latencyMs,
+      costEstimateUsd: result.costEstimateUsd,
+      cached: result.cached,
+      promptId: prompt.id,
+      promptVersion: prompt.version,
+    };
+    await persistInferenceEntry(withheldMetrics, false, "withheld_by_guardrail", orgId, relationship?.decisionId);
     const error = new Error("AI analysis was withheld because the evidence requires a human review.");
     Object.assign(error, { aiGuard: result.aiGuard });
     throw error;
@@ -359,13 +396,48 @@ async function invokeWithPrompt(
         skipCache: true,
         untrustedContent: evidence,
         ...relationship,
+        decisionId: relationship?.decisionId,
       });
       if (retry.withheld) {
+        await persistInferenceEntry(
+          {
+            tier,
+            model: retry.modelId,
+            inputTokensEstimate: retry.inputTokensEstimate,
+            outputTokensEstimate: retry.outputTokensEstimate,
+            latencyMs: retry.latencyMs,
+            costEstimateUsd: retry.costEstimateUsd,
+            cached: retry.cached,
+            promptId: prompt.id,
+            promptVersion: prompt.version,
+          },
+          false,
+          "withheld_by_guardrail",
+          orgId,
+          relationship?.decisionId,
+        );
         const error = new Error("AI analysis was withheld because the evidence requires a human review.");
         Object.assign(error, { aiGuard: retry.aiGuard });
         throw error;
       }
       if (!validateModelJson(retry.text, schema)) {
+        await persistInferenceEntry(
+          {
+            tier,
+            model: retry.modelId,
+            inputTokensEstimate: retry.inputTokensEstimate,
+            outputTokensEstimate: retry.outputTokensEstimate,
+            latencyMs: retry.latencyMs,
+            costEstimateUsd: retry.costEstimateUsd,
+            cached: retry.cached,
+            promptId: prompt.id,
+            promptVersion: prompt.version,
+          },
+          false,
+          "schema_validation_failed_after_retry",
+          orgId,
+          relationship?.decisionId,
+        );
         throw new Error("AI returned output that did not match the required schema after one retry.");
       }
       result.text = retry.text;
@@ -394,9 +466,7 @@ async function invokeWithPrompt(
   };
 
   // Persist to DB (non-blocking) — no in-memory array needed
-  persistInferenceEntry(metrics, true, undefined, orgId).catch((err) =>
-    log.warn("Failed to persist inference entry", { error: String(err), orgId }),
-  );
+  await persistInferenceEntry(metrics, true, undefined, orgId, relationship?.decisionId);
 
   return {
     text: result.text,
@@ -681,6 +751,8 @@ export interface TriageResult {
   containmentAdvice: string;
   threatIntelSources?: string[];
   retrievalUnavailable?: boolean;
+  retrievalStatus?: "available" | "empty" | "unavailable";
+  inferenceMetrics?: InferenceMetrics[];
   humanReviewRequired?: boolean;
   aiGuard?: ModelInvokeResult["aiGuard"];
 }
@@ -1253,12 +1325,13 @@ export async function triageAlert(
   alertData: Alert,
   threatIntelCtx?: ThreatIntelContext,
   orgId?: string,
+  decisionId?: string,
 ): Promise<TriageResult> {
   const userMessage = buildTriageUserMessage(alertData);
   const threatIntelBlock = threatIntelCtx ? formatThreatIntelForPrompt(threatIntelCtx) : "";
   const finalUserMessage = threatIntelBlock ? `${userMessage}\n\n${threatIntelBlock}` : userMessage;
 
-  const { text, aiGuard } = await invokeWithPrompt(
+  const { text, aiGuard, metrics } = await invokeWithPrompt(
     "triage",
     "Triage the supplied security-alert evidence and return the requested JSON.",
     "triage",
@@ -1266,13 +1339,15 @@ export async function triageAlert(
     undefined,
     [{ label: "alert_and_threat_intelligence_evidence", content: finalUserMessage }],
     triageOutputSchema,
-    { alertId: alertData.id },
+    { alertId: alertData.id, decisionId },
   );
   return {
     ...parseValidatedModelJson(text, triageOutputSchema),
     retrievalUnavailable: threatIntelCtx?.retrievalUnavailable === true,
+    retrievalStatus: threatIntelCtx?.historicalContext?.retrievalStatus ?? (threatIntelCtx ? "empty" : "unavailable"),
     humanReviewRequired: aiGuard?.humanReviewRequired ?? false,
     aiGuard,
+    inferenceMetrics: [metrics],
   };
 }
 

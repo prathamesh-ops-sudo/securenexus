@@ -18,6 +18,7 @@ import { dispatchAction, type ActionContext, type ActionResult } from "../action
 import { getAiSecuritySettings } from "./security-store";
 import { getGuardVetoes } from "./safety-vetoes";
 import { triageAlert as runAiTriage } from "../ai";
+import { createDecisionReceipt, finalizeDecisionReceipt, persistDecisionEvidence } from "./decision-receipts";
 
 const log = logger.child("autonomous-analyst");
 
@@ -84,6 +85,7 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
   const { alertId, orgId, userId, userName } = request;
   const securitySettings = await getAiSecuritySettings(orgId);
   const safetyVetoes: string[] = [];
+  let retrievalStatus: "available" | "empty" | "unavailable" = "unavailable";
   if (!securitySettings.aiEnabled) safetyVetoes.push("organization_ai_kill_switch");
   const guardMetadata: NonNullable<TriageResult["guardMetadata"]> = [];
 
@@ -93,10 +95,17 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
   const alert = await storage.getAlert(alertId);
   if (!alert) throw new Error(`Alert ${alertId} not found`);
   if (alert.orgId !== orgId) throw new Error("Alert does not belong to this organization");
+  const decisionId = await createDecisionReceipt({
+    orgId,
+    alertId,
+    incidentId: alert.incidentId || null,
+    tier: request.forcetier ?? "tier3_assisted",
+  });
 
   if (securitySettings.aiEnabled) {
     try {
-      const aiTriage = await runAiTriage(alert, undefined, orgId);
+      const aiTriage = await runAiTriage(alert, undefined, orgId, decisionId);
+      retrievalStatus = aiTriage.retrievalStatus ?? (aiTriage.retrievalUnavailable ? "unavailable" : "empty");
       if (aiTriage.aiGuard) {
         const guard = aiTriage.aiGuard;
         guardMetadata.push(guard);
@@ -237,31 +246,30 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
 
   // 8. Persist decision
   const timeToDecisionMs = Date.now() - startTime;
-  const [decision] = await db
-    .insert(aiAnalystDecisions)
-    .values({
-      orgId,
-      alertId,
-      incidentId: alert.incidentId || null,
-      tier,
-      outcome,
-      confidenceScore: confidence.overall,
-      confidenceFactors: confidence.factors,
-      enrichmentData: investigation?.enrichment ?? null,
-      correlationResults: investigation?.correlations ?? null,
-      hypotheses: investigation?.hypotheses ?? null,
-      reasoning,
-      executiveSummary,
-      recommendedActions,
-      executedActions: executedActions.length > 0 ? executedActions : null,
-      mitreTactics: alert.mitreTactic ? [alert.mitreTactic] : null,
-      mitreTechniques: alert.mitreTechnique ? [alert.mitreTechnique] : null,
-      relatedAlertIds: investigation?.correlations.relatedAlerts.map((r) => r.id) ?? null,
-      timeToDecisionMs,
-      status: tier === "tier1_autonomous" && safetyVetoes.length === 0 ? "completed" : "pending_review",
-      safetyVetoes,
-    })
-    .returning();
+  await finalizeDecisionReceipt(orgId, decisionId, {
+    orgId,
+    alertId,
+    incidentId: alert.incidentId || null,
+    tier,
+    outcome,
+    confidenceScore: confidence.overall,
+    confidenceFactors: confidence.factors,
+    enrichmentData: investigation?.enrichment ?? null,
+    correlationResults: investigation?.correlations ?? null,
+    hypotheses: investigation?.hypotheses ?? null,
+    reasoning,
+    executiveSummary,
+    recommendedActions,
+    executedActions: executedActions.length > 0 ? executedActions : null,
+    mitreTactics: alert.mitreTactic ? [alert.mitreTactic] : null,
+    mitreTechniques: alert.mitreTechnique ? [alert.mitreTechnique] : null,
+    relatedAlertIds: investigation?.correlations.relatedAlerts.map((r) => r.id) ?? null,
+    timeToDecisionMs,
+    status: tier === "tier1_autonomous" && safetyVetoes.length === 0 ? "completed" : "pending_review",
+    safetyVetoes,
+    retrievalStatus,
+  });
+  if (investigation) await persistDecisionEvidence(orgId, decisionId, alert, investigation);
 
   // 9. If Tier 1 auto-resolved, update alert status
   if (tier === "tier1_autonomous" && confidence.shouldAutoAct && safetyVetoes.length === 0) {
@@ -277,7 +285,7 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
         action: "case_closed",
         tier,
         alertId,
-        decisionId: decision.id,
+        decisionId,
         confidenceAfter: confidence.overall,
         details: { outcome, autoResolved: true },
         triggeredBy: "ai_analyst",
@@ -294,7 +302,7 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
       action: "escalated",
       tier,
       alertId,
-      decisionId: decision.id,
+      decisionId,
       details: {
         reason:
           confidence.escalationReason || `Confidence ${Math.round(confidence.overall * 100)}% below tier 1 threshold`,
@@ -305,7 +313,7 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
   }
 
   return {
-    decisionId: decision.id,
+    decisionId,
     tier,
     outcome,
     confidenceScore: confidence.overall,
