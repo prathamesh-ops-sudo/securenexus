@@ -34,6 +34,7 @@ import {
   Database,
   Globe,
   ShieldAlert,
+  FileText,
 } from "lucide-react";
 import atsLogo from "@/assets/logo.png";
 import { useLocation, Link } from "wouter";
@@ -159,7 +160,10 @@ const navGroups: NavGroup[] = [
         label: "AI Platform",
         items: [
           { title: "AI Platform", url: "/ai-platform", icon: Brain },
+          { title: "AI Security", url: "/ai-security", icon: ShieldCheck },
           { title: "AI Accuracy", url: "/ai-accuracy", icon: Brain },
+          { title: "Historical Replay", url: "/ai-replay", icon: History },
+          { title: "SOC Reality Report", url: "/soc-reality-report", icon: FileText },
         ],
       },
     ],

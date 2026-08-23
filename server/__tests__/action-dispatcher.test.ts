@@ -375,6 +375,18 @@ describe("Permission Checks (RESP-01, RESP-05)", () => {
 });
 
 describe("Autonomy modes", () => {
+  it("validates action input before observe-only withholding", async () => {
+    const result = await dispatchAction(
+      "block_ip",
+      { ip: "not-an-ip" },
+      makeContext({ autonomyMode: "observe_only", decisionId: "decision-invalid" }),
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toContain("Validation failed");
+    expect(result.details).toHaveProperty("validationErrors");
+  });
+
   it("withholds allow-listed actions in observe-only mode", async () => {
     const result = await dispatchAction(
       "add_tag",
@@ -383,7 +395,14 @@ describe("Autonomy modes", () => {
     );
 
     expect(result.status).toBe("withheld");
-    expect(result.details).toEqual(expect.objectContaining({ reason: "observe_only", decisionId: "decision-1" }));
+    expect(result.details).toEqual(
+      expect.objectContaining({
+        actionType: "add_tag",
+        parameters: { tag: "observe-only" },
+        reason: "observe_only",
+        decisionId: "decision-1",
+      }),
+    );
     expect(storage.updateIncident).not.toHaveBeenCalled();
   });
 

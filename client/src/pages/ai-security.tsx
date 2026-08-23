@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldCheck, AlertTriangle, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { ShieldCheck, AlertTriangle, Loader2, ChevronLeft, ChevronRight, Lock, CheckCircle2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -10,11 +10,22 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { apiRequest } from "@/lib/queryClient";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface SecuritySettings {
   injectionMode: "off" | "flag_and_gate" | "block";
   piiMasking: "mask_identifiers" | "mask_all" | "off";
   aiEnabled: boolean;
+  autonomyMode: "observe_only" | "assisted" | "autonomous";
   models: {
     default: string;
     triage: string;
@@ -23,7 +34,7 @@ interface SecuritySettings {
   modelPricing: Record<string, { input: number; output: number } | null>;
 }
 
-type SecuritySettingsUpdate = Pick<SecuritySettings, "injectionMode" | "piiMasking" | "aiEnabled">;
+type SecuritySettingsUpdate = Pick<SecuritySettings, "injectionMode" | "piiMasking" | "aiEnabled" | "autonomyMode">;
 
 interface GuardEvent {
   id: string;
@@ -65,6 +76,7 @@ export default function AiSecurityPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
+  const [pendingAutonomyMode, setPendingAutonomyMode] = useState<SecuritySettings["autonomyMode"] | null>(null);
   const settingsQuery = useQuery<SecuritySettings>({
     queryKey: ["/api/ai/security-settings"],
     queryFn: async () => (await fetchEnvelope<SecuritySettings>("/api/ai/security-settings")).data,
@@ -115,6 +127,7 @@ export default function AiSecurityPage() {
       injectionMode: settings.injectionMode,
       piiMasking: settings.piiMasking,
       aiEnabled: settings.aiEnabled,
+      autonomyMode: settings.autonomyMode,
       ...change,
     });
   const events = eventsQuery.data?.events ?? [];
@@ -157,6 +170,86 @@ export default function AiSecurityPage() {
             Redactions protect provider egress and are recorded per event; redaction alone does not gate autonomous
             decisions.
           </p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Lock className="h-5 w-5" /> Autonomy mode
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            This tenant-level control governs whether AI recommendations can dispatch response actions.
+          </p>
+          <div className="grid gap-3 md:grid-cols-3">
+            {[
+              ["observe_only", "Observe-only", "AI investigates and recommends; it executes nothing."],
+              ["assisted", "Assisted", "AI investigates and recommends; every action requires approval."],
+              ["autonomous", "Autonomous", "AI can execute only the existing allow-listed actions."],
+            ].map(([value, label, description]) => (
+              <div
+                key={value}
+                className={`rounded-lg border p-3 ${settings.autonomyMode === value ? "border-primary bg-primary/5" : ""}`}
+              >
+                <p className="font-medium">{label}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+                {settings.autonomyMode === value && (
+                  <p className="mt-2 flex items-center gap-1 text-xs text-primary">
+                    <CheckCircle2 className="h-3 w-3" /> Current mode
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="min-w-[220px] flex-1 space-y-2 text-sm">
+              <span className="font-medium">Change mode</span>
+              <Select
+                value={settings.autonomyMode}
+                onValueChange={(value) => {
+                  if (value === settings.autonomyMode) return;
+                  setPendingAutonomyMode(value as SecuritySettings["autonomyMode"]);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="observe_only">Observe-only</SelectItem>
+                  <SelectItem value="assisted">Assisted</SelectItem>
+                  <SelectItem value="autonomous">Autonomous</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+            <AlertDialog
+              open={pendingAutonomyMode !== null}
+              onOpenChange={(open) => !open && setPendingAutonomyMode(null)}
+            >
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Confirm autonomy mode change</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Changing this tenant setting changes how AI recommendations can dispatch actions in this
+                    organization. The change will be recorded in the autonomy audit log.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Keep current mode</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      if (pendingAutonomyMode) update({ autonomyMode: pendingAutonomyMode });
+                      setPendingAutonomyMode(null);
+                    }}
+                  >
+                    Confirm change
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            {settingsMutation.isSuccess && <span className="text-sm text-emerald-600">Mode saved.</span>}
+          </div>
+          {settingsMutation.isError && <p className="text-sm text-destructive">{settingsMutation.error.message}</p>}
         </CardContent>
       </Card>
       <Card>

@@ -158,6 +158,19 @@ export async function dispatchAction(
     return denyResult;
   }
 
+  const validation = validateActionInput(actionType, config);
+  if (!validation.valid) {
+    const failResult: ActionResult = {
+      actionType,
+      status: "failed",
+      message: `Validation failed: ${validation.errors.issues.map((i) => i.message).join(", ")}`,
+      details: { validationErrors: validation.errors.issues },
+      executedAt,
+    };
+    await safeCreateAuditLog(context, actionType, config, failResult, 0, false);
+    return failResult;
+  }
+
   if (context.autonomyMode === "observe_only") {
     const withheldResult: ActionResult = {
       actionType,
@@ -188,22 +201,7 @@ export async function dispatchAction(
     return withheldResult;
   }
 
-  // Step 1: Validate inputs with Zod schema (per RESP-03)
-  const validation = validateActionInput(actionType, config);
-  if (!validation.valid) {
-    const failResult: ActionResult = {
-      actionType,
-      status: "failed",
-      message: `Validation failed: ${validation.errors.issues.map((i) => i.message).join(", ")}`,
-      details: { validationErrors: validation.errors.issues },
-      executedAt,
-    };
-    // Audit the validation failure
-    await safeCreateAuditLog(context, actionType, config, failResult, 0, false);
-    return failResult;
-  }
-
-  // Step 2: If dry-run, return simulated result without executing (per RESP-01)
+  // If dry-run, return simulated result without executing (per RESP-01)
   if (context.dryRun) {
     const dryResult: ActionResult = {
       actionType,

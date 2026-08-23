@@ -112,7 +112,7 @@ interface Decision {
   retrievalStatus: "available" | "empty" | "unavailable" | "not_attempted" | null;
   unmeasuredInvocationCount: number;
   proofReceiptCaptured: boolean;
-  autonomyMode: "observe_only" | "assisted" | "autonomous";
+  autonomyMode: "observe_only" | "assisted" | "autonomous" | null;
   replayRunId: string | null;
 }
 
@@ -161,6 +161,7 @@ interface DecisionReceipt {
     redactedClasses: unknown;
     redacted: boolean;
   }[];
+  logs?: AuditLogEntry[];
 }
 
 const TIER_CONFIG: Record<string, { label: string; color: string; icon: typeof Brain; description: string }> = {
@@ -740,6 +741,7 @@ function DecisionDetailDialog({ decision, onClose }: { decision: Decision | null
   });
   if (!decision) return null;
   const notRecorded = "Not recorded";
+  const withheldActions = receipt?.logs?.filter((entry) => entry.action === "action_withheld") ?? [];
 
   return (
     <Dialog open={!!decision} onOpenChange={() => onClose()}>
@@ -777,7 +779,9 @@ function DecisionDetailDialog({ decision, onClose }: { decision: Decision | null
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Autonomy regime</p>
-              <p className="text-sm font-medium">{decision.autonomyMode.replace("_", " ")}</p>
+              <p className="text-sm font-medium">
+                {decision.autonomyMode ? decision.autonomyMode.replace("_", " ") : "Autonomy regime not recorded"}
+              </p>
             </div>
             {decision.replayRunId && (
               <div>
@@ -786,6 +790,30 @@ function DecisionDetailDialog({ decision, onClose }: { decision: Decision | null
               </div>
             )}
           </div>
+
+          {withheldActions.length > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+              <p className="text-xs font-medium text-amber-500 mb-2">Withheld actions</p>
+              <div className="space-y-3">
+                {withheldActions.map((entry) => {
+                  const details = entry.details ?? {};
+                  return (
+                    <div key={entry.id} className="rounded border p-2 text-sm">
+                      <p className="font-medium">
+                        {String(details.actionType ?? entry.action)} · Withheld by observe-only
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Reason: {String(details.reason ?? "observe_only")}
+                      </p>
+                      <pre className="mt-2 overflow-x-auto text-xs text-muted-foreground">
+                        {JSON.stringify(details.parameters ?? {}, null, 2)}
+                      </pre>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Executive Summary */}
           {decision.executiveSummary && (

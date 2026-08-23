@@ -11022,7 +11022,7 @@ export const aiAnalystDecisions = pgTable(
     totalLatencyMs: integer("total_latency_ms"),
     unmeasuredInvocationCount: integer("unmeasured_invocation_count").notNull().default(0),
     proofReceiptCaptured: boolean("proof_receipt_captured").notNull().default(false),
-    autonomyMode: text("autonomy_mode").notNull().default("observe_only"),
+    autonomyMode: text("autonomy_mode"),
     replayRunId: varchar("replay_run_id"),
     reviewedBy: text("reviewed_by"),
     reviewedAt: timestamp("reviewed_at"),
@@ -11181,6 +11181,7 @@ export const aiReplayRuns = pgTable(
     completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
+    report: jsonb("report"),
   },
   (table) => [
     index("idx_ai_replay_runs_org").on(table.orgId),

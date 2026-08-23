@@ -5,6 +5,7 @@ import { storage } from "../storage";
 import { buildThreatIntelContext, triageAlert } from "../ai";
 import { createDecisionReceipt, finalizeDecisionReceipt, persistDecisionEvidence } from "./decision-receipts";
 import { logger } from "../logger";
+import { generateSocRealityReport } from "./soc-reality-report";
 
 const log = logger.child("historical-replay");
 const BATCH_SIZE = 20;
@@ -45,6 +46,17 @@ async function updateRun(runId: string, values: Record<string, unknown>): Promis
     runId,
     ...Object.values(values),
   ]);
+}
+
+async function persistSocRealityReport(runId: string): Promise<void> {
+  try {
+    const [run] = await db.select().from(aiReplayRuns).where(eq(aiReplayRuns.id, runId)).limit(1);
+    if (!run) return;
+    const report = await generateSocRealityReport(run.orgId, run);
+    await updateRun(runId, { report });
+  } catch (error) {
+    log.warn("Failed to persist SOC Reality Report", { runId, error: String(error) });
+  }
 }
 
 async function runOneAlert(run: typeof aiReplayRuns.$inferSelect, alertId: string): Promise<"succeeded" | "failed"> {
@@ -132,6 +144,7 @@ async function processHistoricalReplayLocked(runId: string): Promise<Record<stri
       total_count: totalCount,
       completed_at: new Date(),
     });
+    await persistSocRealityReport(runId);
     return { runId, status: "completed", processedCount: run.processedCount, totalCount };
   }
 
@@ -161,6 +174,7 @@ async function processHistoricalReplayLocked(runId: string): Promise<Record<stri
         }
       : {}),
   });
+  if (terminalFailure) await persistSocRealityReport(runId);
   return {
     runId,
     status: terminalFailure ? "failed" : "pending",

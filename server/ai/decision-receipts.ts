@@ -101,7 +101,7 @@ export async function createDecisionReceipt(params: {
   alertId: string;
   incidentId?: string | null;
   tier: string;
-  autonomyMode?: string;
+  autonomyMode?: string | null;
   replayRunId?: string | null;
 }): Promise<string> {
   const [decision] = await db
@@ -115,7 +115,7 @@ export async function createDecisionReceipt(params: {
       confidenceScore: null,
       status: "processing",
       proofReceiptCaptured: true,
-      autonomyMode: params.autonomyMode ?? "observe_only",
+      autonomyMode: params.autonomyMode ?? null,
       replayRunId: params.replayRunId ?? null,
     })
     .returning({ id: aiAnalystDecisions.id });

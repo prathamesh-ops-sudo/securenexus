@@ -498,7 +498,7 @@ export async function approveDecision(decisionId: string, orgId: string, reviewe
         userName: reviewedBy,
         storage,
         decisionId,
-        autonomyMode: existing.autonomyMode as "observe_only" | "assisted" | "autonomous",
+        autonomyMode: "assisted",
       };
       await dispatchAction(action.type, action.config, ctx);
     } catch (err) {

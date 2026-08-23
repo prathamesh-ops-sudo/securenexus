@@ -20,12 +20,14 @@ import { db } from "../db";
 
 const log = logger.child("ai-security-routes");
 
-const settingsSchema = z.object({
-  injectionMode: z.enum(["off", "flag_and_gate", "block"]),
-  piiMasking: z.enum(["mask_identifiers", "mask_all", "off"]),
-  aiEnabled: z.boolean(),
-  autonomyMode: z.enum(AUTONOMY_MODES).default("observe_only"),
-});
+const settingsSchema = z
+  .object({
+    injectionMode: z.enum(["off", "flag_and_gate", "block"]).optional(),
+    piiMasking: z.enum(["mask_identifiers", "mask_all", "off"]).optional(),
+    aiEnabled: z.boolean().optional(),
+    autonomyMode: z.enum(AUTONOMY_MODES).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, "At least one setting must be supplied.");
 
 const relationshipQuerySchema = z
   .object({
@@ -70,7 +72,13 @@ export function registerAiSecurityRoutes(app: Express): void {
       const userId = typeof sessionUser.id === "string" ? sessionUser.id : "unknown";
       const orgId = getOrgId(req);
       const previousSettings = await getAiSecuritySettings(orgId);
-      if (parsed.data.injectionMode === "off") {
+      const nextSettings = {
+        injectionMode: parsed.data.injectionMode ?? previousSettings.injectionMode,
+        piiMasking: parsed.data.piiMasking ?? previousSettings.piiMasking,
+        aiEnabled: parsed.data.aiEnabled ?? previousSettings.aiEnabled,
+        autonomyMode: parsed.data.autonomyMode ?? previousSettings.autonomyMode,
+      };
+      if (nextSettings.injectionMode === "off" && parsed.data.injectionMode !== undefined) {
         log.warn("AI injection detection disabled by organization administrator", {
           orgId,
           userId,
@@ -79,10 +87,10 @@ export function registerAiSecurityRoutes(app: Express): void {
       const settings = await upsertAiSecuritySettings(
         orgId,
         {
-          injectionMode: parsed.data.injectionMode as InjectionMode,
-          piiMasking: parsed.data.piiMasking as PiiMaskingMode,
-          aiEnabled: parsed.data.aiEnabled,
-          autonomyMode: parsed.data.autonomyMode,
+          injectionMode: nextSettings.injectionMode as InjectionMode,
+          piiMasking: nextSettings.piiMasking as PiiMaskingMode,
+          aiEnabled: nextSettings.aiEnabled,
+          autonomyMode: nextSettings.autonomyMode,
         },
         userId,
       );

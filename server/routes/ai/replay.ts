@@ -8,6 +8,7 @@ import { db, pool } from "../../db";
 import { aiReplayRuns } from "@shared/schema";
 import { enqueueJob } from "../../job-queue";
 import { and, desc, eq } from "drizzle-orm";
+import { generateSocRealityReport } from "../../ai/soc-reality-report";
 
 const log = logger.child("routes-ai-replay");
 const replaySchema = z.object({
@@ -108,6 +109,39 @@ export function registerAiReplayRoutes(app: Express): void {
       } catch (error) {
         log.error("Failed to read historical replay", { error: String(error) });
         return replyError(res, 500, [{ code: "REPLAY_QUERY_FAILED", message: "Failed to read historical replay." }]);
+      }
+    },
+  );
+
+  app.get(
+    "/api/ai/replays/:id/report",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const [run] = await db
+          .select()
+          .from(aiReplayRuns)
+          .where(and(eq(aiReplayRuns.id, String(req.params.id)), eq(aiReplayRuns.orgId, orgId)))
+          .limit(1);
+        if (!run) return replyError(res, 404, [{ code: "NOT_FOUND", message: "Replay run not found." }]);
+        if (run.status !== "completed" && run.status !== "failed") {
+          return replyError(res, 409, [{ code: "REPORT_UNAVAILABLE", message: "The replay report is not ready yet." }]);
+        }
+        const report = await generateSocRealityReport(orgId, run);
+        await db
+          .update(aiReplayRuns)
+          .set({ report, updatedAt: new Date() })
+          .where(and(eq(aiReplayRuns.id, run.id), eq(aiReplayRuns.orgId, orgId)));
+        return reply(res, report);
+      } catch (error) {
+        log.error("Failed to generate SOC Reality Report", { error: String(error) });
+        return replyError(res, 500, [
+          { code: "REPORT_GENERATION_FAILED", message: "Failed to generate SOC Reality Report." },
+        ]);
       }
     },
   );

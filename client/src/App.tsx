@@ -168,6 +168,8 @@ const AiDetectionRulesPage = lazy(() => import("@/pages/ai-detection-rules"));
 const MsspPartnerPortalPage = lazy(() => import("@/pages/mssp-partner-portal"));
 const AutonomousSOCPage = lazy(() => import("@/pages/autonomous-soc"));
 const AiAccuracyPage = lazy(() => import("@/pages/ai-accuracy"));
+const AiReplayPage = lazy(() => import("@/pages/ai-replay"));
+const SocRealityReportPage = lazy(() => import("@/pages/soc-reality-report"));
 const DeveloperSecurityPage = lazy(() => import("@/pages/developer-security"));
 const TprmPage = lazy(() => import("@/pages/tprm"));
 const DarkWebMonitoringPage = lazy(() => import("@/pages/dark-web-monitoring"));
@@ -507,6 +509,8 @@ function AuthenticatedApp() {
                         <Route path="/ai-prompt-registry" component={AiPromptRegistryPage} />
                         <Route path="/ai-feedback" component={AiFeedbackFormPage} />
                         <Route path="/ai-accuracy" component={AiAccuracyPage} />
+                        <Route path="/ai-replay" component={AiReplayPage} />
+                        <Route path="/soc-reality-report" component={SocRealityReportPage} />
                         <Route path="/ai-budget-controls" component={AiBudgetControlsPage} />
                         <Route path="/connectors" component={ConnectorsPage} />
                         <Route path="/integration-marketplace" component={IntegrationMarketplacePage} />

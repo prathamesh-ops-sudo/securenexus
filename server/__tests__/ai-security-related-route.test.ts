@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { requiredRoles, listAiGuardEvents, getAlert, getIncident } = vi.hoisted(() => ({
-  requiredRoles: [] as string[],
-  listAiGuardEvents: vi.fn(),
-  getAlert: vi.fn(),
-  getIncident: vi.fn(),
-}));
+const { requiredRoles, listAiGuardEvents, getAlert, getIncident, getAiSecuritySettings, upsertAiSecuritySettings } =
+  vi.hoisted(() => ({
+    requiredRoles: [] as string[],
+    listAiGuardEvents: vi.fn(),
+    getAlert: vi.fn(),
+    getIncident: vi.fn(),
+    getAiSecuritySettings: vi.fn(),
+    upsertAiSecuritySettings: vi.fn(),
+  }));
 
 vi.mock("../auth", () => ({
   isAuthenticated: (_req: unknown, _res: unknown, next: () => void) => next(),
@@ -26,9 +29,9 @@ vi.mock("../routes/shared", () => ({
 }));
 
 vi.mock("../ai/security-store", () => ({
-  getAiSecuritySettings: vi.fn(),
+  getAiSecuritySettings,
   listAiGuardEvents,
-  upsertAiSecuritySettings: vi.fn(),
+  upsertAiSecuritySettings,
 }));
 
 vi.mock("../ai/model-gateway", () => ({
@@ -124,5 +127,27 @@ describe("relationship-scoped AI guard events", () => {
       meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
       errors: null,
     });
+  });
+
+  it("preserves autonomy mode when an unrelated setting is updated", async () => {
+    const routes = captureRoutes();
+    const handlers = routes.get("PUT /api/ai/security-settings")!;
+    const prior = {
+      injectionMode: "flag_and_gate",
+      piiMasking: "mask_identifiers",
+      aiEnabled: true,
+      autonomyMode: "autonomous",
+    };
+    getAiSecuritySettings.mockResolvedValue(prior);
+    upsertAiSecuritySettings.mockImplementation(async (_orgId: string, settings: unknown) => settings);
+    const res = response();
+
+    await handlers[4]({ orgId: "org-a", user: { id: "user-a" }, body: { piiMasking: "mask_all" } }, res);
+
+    expect(upsertAiSecuritySettings).toHaveBeenCalledWith(
+      "org-a",
+      expect.objectContaining({ piiMasking: "mask_all", autonomyMode: "autonomous" }),
+      "user-a",
+    );
   });
 });
