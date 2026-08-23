@@ -50,7 +50,8 @@ export function getConnectorScheduleUpdate(
   const priorFailures = connector.consecutiveFailures ?? 0;
 
   if (jobRun.status === "success" || jobRun.status === "partial") {
-    const shouldRestoreAutoSync = connector.autoSyncEnabled || connector.autoSyncPausedByAuth;
+    const shouldRestoreAutoSync =
+      connector.status !== "inactive" && (connector.autoSyncEnabled || connector.autoSyncPausedByAuth);
     return {
       autoSyncEnabled: shouldRestoreAutoSync,
       effectivePollingIntervalMin: baseInterval,
@@ -59,7 +60,7 @@ export function getConnectorScheduleUpdate(
       scheduleReason: shouldRestoreAutoSync ? "scheduled" : "auto_sync_off",
       needsReconnection: false,
       autoSyncPausedByAuth: false,
-      status: "active",
+      status: connector.status === "inactive" ? "inactive" : "active",
     };
   }
 

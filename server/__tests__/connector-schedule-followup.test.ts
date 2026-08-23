@@ -107,6 +107,18 @@ describe("connector schedule hardening", () => {
     expect(update.status).toBe("error");
   });
 
+  it("preserves an operator-deactivated connector after a successful sync", () => {
+    const update = getConnectorScheduleUpdate(
+      connector({ status: "inactive", autoSyncEnabled: false, nextSyncAt: null }),
+      failedRun({ status: "success", errorType: null, httpStatus: null, throttled: false }),
+      new Date(0),
+    );
+
+    expect(update.status).toBe("inactive");
+    expect(update.autoSyncEnabled).toBe(false);
+    expect(update.nextSyncAt).toBeNull();
+  });
+
   it("rejects pollingIntervalMin on the general connector update schema", () => {
     const result = bodySchemas.connectorUpdate.safeParse({ pollingIntervalMin: 15 });
 
