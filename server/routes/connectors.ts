@@ -16,7 +16,7 @@ import {
 } from "../connector-engine";
 import { parsePaginationParams } from "../db-performance";
 import { cacheInvalidate } from "../query-cache";
-import { enforcePlanLimit } from "../middleware/plan-enforcement";
+import { enforcePlanLimit, incrementAndCheck } from "../middleware/plan-enforcement";
 import { sendEmail } from "../email-service";
 import { getConnectorHealthStatus } from "../connector-health-loop";
 import {
@@ -24,6 +24,7 @@ import {
   getCircuitBreakerState,
   resetConnectorCircuitBreaker,
 } from "../connector-circuit-breaker";
+import { applyConnectorJobScheduleResult, clampConnectorInterval } from "../connector-schedule";
 
 export function registerConnectorsRoutes(app: Express): void {
   // Connector Engine Routes
@@ -299,7 +300,10 @@ export function registerConnectorsRoutes(app: Express): void {
           type,
           authType,
           config,
-          pollingIntervalMin: pollingIntervalMin || 5,
+          pollingIntervalMin: clampConnectorInterval(pollingIntervalMin),
+          effectivePollingIntervalMin: clampConnectorInterval(pollingIntervalMin),
+          autoSyncEnabled: false,
+          scheduleReason: "auto_sync_off",
           createdBy: (req as any).user?.id,
           orgId: (req as any).orgId,
         });
@@ -340,21 +344,31 @@ export function registerConnectorsRoutes(app: Express): void {
         if (!connector || !orgId || connector.orgId !== orgId) {
           return res.status(404).json({ message: "Connector not found" });
         }
-        const { name, config, status, pollingIntervalMin } = (req as any).validatedBody;
+        const { name, config, status } = (req as any).validatedBody;
         const updateData: any = {};
         if (name) updateData.name = name;
         if (config) {
           const existingConfig = connector.config as ConnectorConfig;
           const newConfig = { ...existingConfig };
+          let credentialsChanged = false;
           for (const [key, value] of Object.entries(config)) {
             if (value !== "••••••••" && value !== undefined) {
               (newConfig as any)[key] = value;
+              credentialsChanged = true;
             }
           }
           updateData.config = newConfig;
+          if (credentialsChanged) updateData.needsReconnection = false;
         }
         if (status) updateData.status = status;
-        if (pollingIntervalMin) updateData.pollingIntervalMin = pollingIntervalMin;
+        if (status && status !== "active" && connector.autoSyncEnabled) {
+          updateData.nextSyncAt = null;
+          updateData.scheduleReason = "connector_inactive";
+        }
+        if (status === "active" && connector.autoSyncEnabled && !connector.needsReconnection) {
+          updateData.nextSyncAt = new Date();
+          updateData.scheduleReason = "scheduled";
+        }
         const updated = await storage.updateConnector(p(req.params.id), updateData);
         if (!updated) {
           return res.status(404).json({ message: "Connector not found" });
@@ -363,6 +377,66 @@ export function registerConnectorsRoutes(app: Express): void {
       } catch (error: any) {
         logger.child("routes").error("Route error", { error: String(error) });
         res.status(500).json({ message: "Failed to update connector. Please try again." });
+      }
+    },
+  );
+
+  app.patch(
+    "/api/connectors/:id/schedule",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    validatePathId("id"),
+    validateBody(bodySchemas.connectorSchedule),
+    async (req, res) => {
+      try {
+        const orgId = (req as any).orgId;
+        const connector = await storage.getConnector(p(req.params.id));
+        if (!connector || connector.orgId !== orgId) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "Connector not found" }],
+          });
+        }
+
+        const { autoSyncEnabled, pollingIntervalMin } = (req as any).validatedBody;
+        const effectiveInterval = clampConnectorInterval(pollingIntervalMin);
+        const enabled = autoSyncEnabled && connector.status === "active" && !connector.needsReconnection;
+        const updated = await storage.updateConnector(connector.id, {
+          autoSyncEnabled,
+          pollingIntervalMin: effectiveInterval,
+          effectivePollingIntervalMin: effectiveInterval,
+          nextSyncAt: enabled ? new Date() : null,
+          scheduleReason: enabled
+            ? "scheduled"
+            : connector.needsReconnection
+              ? "needs_reconnection"
+              : autoSyncEnabled
+                ? "connector_inactive"
+                : "auto_sync_off",
+          needsReconnection: connector.needsReconnection,
+        });
+
+        await storage.createAuditLog({
+          orgId,
+          userId: (req as any).user?.id,
+          userName: (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "Analyst",
+          action: "connector_schedule_updated",
+          resourceType: "connector",
+          resourceId: connector.id,
+          details: { autoSyncEnabled, pollingIntervalMin: effectiveInterval },
+        });
+
+        return sendEnvelope(res, updated ? { ...updated, config: sanitizeConfig(updated.config) } : null);
+      } catch (error: unknown) {
+        logger.child("routes").error("Connector schedule update failed", { error: String(error) });
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "CONNECTOR_SCHEDULE_UPDATE_FAILED", message: "Failed to update connector schedule" }],
+        });
       }
     },
   );
@@ -462,6 +536,15 @@ export function registerConnectorsRoutes(app: Express): void {
           return res.status(404).json({ message: "Connector not found" });
         }
 
+        const quota = await incrementAndCheck(orgId, "connector_syncs");
+        if (!quota.allowed) {
+          return sendEnvelope(res, null, {
+            status: 429,
+            errors: [{ code: "PLAN_LIMIT_REACHED", message: "Plan quota exhausted for connector syncs" }],
+            meta: { current: quota.current, limit: quota.limit },
+          });
+        }
+
         await storage.updateConnector(connector.id, { status: "syncing" } as any);
 
         const { jobRun, syncResult } = await syncConnectorWithRetry(connector);
@@ -488,6 +571,7 @@ export function registerConnectorsRoutes(app: Express): void {
         const totalSynced = (connector.totalAlertsSynced || 0) + created;
         const syncStatus = syncResult.errors.length > 0 && created === 0 ? "error" : "success";
 
+        await applyConnectorJobScheduleResult(connector, jobRun);
         await storage.updateConnectorSyncStatus(connector.id, {
           lastSyncAt: new Date(),
           lastSyncStatus: syncStatus,
@@ -835,27 +919,19 @@ export function registerConnectorsRoutes(app: Express): void {
         (j) => j.startedAt && new Date(j.startedAt).getTime() > Date.now() - 3600000,
       );
 
-      res.json({
+      return sendEnvelope(res, {
         connectorId: connector.id,
         connectorName: connector.name,
+        autoSyncEnabled: connector.autoSyncEnabled,
         pollingIntervalMin: connector.pollingIntervalMin || 5,
+        effectiveIntervalMin: connector.effectivePollingIntervalMin || connector.pollingIntervalMin || 5,
+        nextSyncAt: connector.nextSyncAt,
+        deferralReason: connector.scheduleReason || "not available",
+        needsReconnection: connector.needsReconnection,
         throttleCount: metrics?.throttleCount ?? 0,
         errorRate: metrics?.errorRate ?? 0,
         recentThrottles: recentThrottles.length,
         totalThrottledJobs: throttledJobs.length,
-        adaptiveThrottling: {
-          enabled: true,
-          currentMultiplier: recentThrottles.length > 3 ? 2.0 : recentThrottles.length > 0 ? 1.5 : 1.0,
-          effectiveIntervalMin:
-            (connector.pollingIntervalMin || 5) *
-            (recentThrottles.length > 3 ? 2.0 : recentThrottles.length > 0 ? 1.5 : 1.0),
-          reason:
-            recentThrottles.length > 3
-              ? "Heavy throttling detected — interval doubled"
-              : recentThrottles.length > 0
-                ? "Moderate throttling — interval increased 50%"
-                : "No throttling — operating at full speed",
-        },
       });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch rate limit status" });

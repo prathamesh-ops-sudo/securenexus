@@ -32,11 +32,13 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
   connector_sync: async (job) => {
     try {
       const { syncConnectorWithRetry } = await import("./connector-engine");
+      const { applyConnectorJobScheduleResult } = await import("./connector-schedule");
       const connector = await storage.getConnector(job.payload?.connectorId);
       if (!connector) {
         return { synced: false, error: "Connector not found" };
       }
       const { jobRun, syncResult } = await syncConnectorWithRetry(connector);
+      await applyConnectorJobScheduleResult(connector, jobRun);
 
       // Persist normalized alerts to DB — replicates the upsert loop from routes/connectors.ts
       let created = 0;
@@ -71,7 +73,10 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
       });
 
       await storage.updateConnector(connector.id, {
-        status: syncStatus === "error" ? "error" : "active",
+        status:
+          jobRun.errorType === "auth_error" || jobRun.httpStatus === 401 || jobRun.httpStatus === 403
+            ? "error"
+            : "active",
       } as any);
 
       // Log ingestion result

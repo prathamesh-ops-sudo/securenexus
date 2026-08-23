@@ -34,6 +34,7 @@ export interface SyncResult {
   alertsFailed: number;
   errors: string[];
   rawAlerts: Partial<InsertAlert>[];
+  errorStatus?: number;
 }
 
 export type AuthType = "oauth2" | "basic" | "api_key" | "token" | "aws_credentials";
@@ -64,6 +65,32 @@ export interface ConnectorPlugin {
   test(config: ConnectorConfig): Promise<ConnectorTestResult>;
   fetch(config: ConnectorConfig, since?: Date): Promise<unknown[]>;
   normalize(raw: unknown): Partial<InsertAlert>;
+}
+
+const MAX_ERROR_BODY_LENGTH = 1_000;
+
+export class ConnectorHttpError extends Error {
+  readonly status: number;
+  readonly responseBody: string;
+  readonly retryAfter: string | null;
+
+  constructor(status: number, url: string, responseBody: string, retryAfter: string | null) {
+    super(`Connector upstream returned HTTP ${status} for ${url}`);
+    this.name = "ConnectorHttpError";
+    this.status = status;
+    this.responseBody = responseBody.slice(0, MAX_ERROR_BODY_LENGTH);
+    this.retryAfter = retryAfter;
+  }
+}
+
+export function getConnectorTestErrorMessage(error: unknown): string {
+  if (error instanceof ConnectorHttpError) {
+    if (error.status === 401 || error.status === 403) return "Authentication failed — verify vendor credentials.";
+    if (error.status === 429) return "Vendor rate limit reached. Try again later.";
+    return `Vendor returned HTTP ${error.status}.`;
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return "Connection failed";
 }
 
 const registry = new Map<string, ConnectorPlugin>();
@@ -112,6 +139,9 @@ export function httpRequest(
     .then(async (res) => {
       clearTimeout(timeoutId);
       const text = await res.text();
+      if (!res.ok) {
+        throw new ConnectorHttpError(res.status, url, text, res.headers.get("retry-after"));
+      }
       let data: unknown;
       try {
         data = JSON.parse(text);

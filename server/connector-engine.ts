@@ -23,6 +23,12 @@ import type { ConnectorConfig, SyncResult, ConnectorTestResult } from "./connect
 
 initializeConnectorPlugins();
 
+function getStructuredHttpStatus(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null || !("status" in error)) return undefined;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
+}
+
 const BATCH_SIZE = 50;
 const DEFAULT_MAX_CONCURRENCY = 3;
 const SLOT_POLL_INTERVAL_MS = 500;
@@ -181,8 +187,16 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
       rawAlerts = await plugin.fetch(config, since || undefined);
     } catch (err: unknown) {
       recordConnectorFailure(connector.id);
+      const errorStatus = getStructuredHttpStatus(err);
       const msg = ((err as Error).message || "").toLowerCase();
-      if (msg.includes("429") || msg.includes("rate limit") || msg.includes("throttl") || msg.includes("503")) {
+      if (
+        errorStatus === 429 ||
+        errorStatus === 503 ||
+        msg.includes("rate limit") ||
+        msg.includes("throttl") ||
+        msg.includes("429") ||
+        msg.includes("503")
+      ) {
         await applyProviderBackoff(type);
       }
       return {
@@ -192,6 +206,7 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
         alertsFailed: 0,
         errors: [(err as Error).message],
         rawAlerts: [],
+        errorStatus,
       };
     }
 
@@ -220,17 +235,26 @@ export async function syncConnector(connector: Connector): Promise<SyncResult> {
   }
 }
 
-function classifyError(errorMessage: string): {
+export function classifyError(
+  error: unknown,
+  statusOverride?: number,
+): {
   errorType: string;
   throttled: boolean;
   httpStatus: number | undefined;
 } {
+  const errorMessage = error instanceof Error ? error.message : String(error);
   const errorLower = errorMessage.toLowerCase();
   let errorType = "api_error";
   let throttled = false;
-  let httpStatus: number | undefined;
+  let httpStatus = statusOverride ?? getStructuredHttpStatus(error);
 
-  if (
+  if (httpStatus === 429 || httpStatus === 503) {
+    errorType = "throttle";
+    throttled = true;
+  } else if (httpStatus === 401 || httpStatus === 403) {
+    errorType = "auth_error";
+  } else if (
     errorLower.includes("429") ||
     errorLower.includes("503") ||
     errorLower.includes("rate limit") ||
@@ -238,8 +262,10 @@ function classifyError(errorMessage: string): {
   ) {
     errorType = "throttle";
     throttled = true;
-    if (errorLower.includes("429")) httpStatus = 429;
-    if (errorLower.includes("503")) httpStatus = 503;
+    if (httpStatus === undefined) {
+      if (errorLower.includes("429")) httpStatus = 429;
+      else if (errorLower.includes("503")) httpStatus = 503;
+    }
   } else if (
     errorLower.includes("401") ||
     errorLower.includes("403") ||
@@ -247,8 +273,10 @@ function classifyError(errorMessage: string): {
     errorLower.includes("forbidden")
   ) {
     errorType = "auth_error";
-    if (errorLower.includes("401")) httpStatus = 401;
-    if (errorLower.includes("403")) httpStatus = 403;
+    if (httpStatus === undefined) {
+      if (errorLower.includes("401")) httpStatus = 401;
+      else if (errorLower.includes("403")) httpStatus = 403;
+    }
   } else if (
     errorLower.includes("timeout") ||
     errorLower.includes("econnreset") ||
@@ -320,7 +348,7 @@ export async function syncConnectorWithRetry(
       }
 
       lastErrorMessage = syncResult.errors[0] || "Unknown error";
-      const { errorType, throttled, httpStatus } = classifyError(lastErrorMessage);
+      const { errorType, throttled, httpStatus } = classifyError(lastErrorMessage, syncResult.errorStatus);
 
       if (currentAttempt >= maxAttempts) {
         const latencyMs = Date.now() - startTime;

@@ -1,5 +1,6 @@
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
+import { getConnectorTestErrorMessage } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
 
 function mapSeverity(sev?: number | string): string {
@@ -36,10 +37,9 @@ export const qualysPlugin: ConnectorPlugin = {
       const res = await httpRequest(`${config.baseUrl}/api/2.0/fo/activity_log/?action=list&output_format=JSON`, {
         headers: { Authorization: `Basic ${auth}`, "X-Requested-With": "fetch" },
       });
-      if (res.status >= 400) throw new Error(`Qualys returned ${res.status}`);
       return { success: true, message: "Successfully connected to qualys", latencyMs: Date.now() - start };
     } catch (err: unknown) {
-      return { success: false, message: (err as Error).message || "Connection failed", latencyMs: Date.now() - start };
+      return { success: false, message: getConnectorTestErrorMessage(err), latencyMs: Date.now() - start };
     }
   },
 

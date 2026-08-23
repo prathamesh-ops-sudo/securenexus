@@ -1,5 +1,6 @@
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
+import { getConnectorTestErrorMessage } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
 
 async function getToken(config: ConnectorConfig): Promise<string> {
@@ -54,7 +55,7 @@ export const defenderPlugin: ConnectorPlugin = {
       await getToken(config);
       return { success: true, message: "Successfully connected to defender", latencyMs: Date.now() - start };
     } catch (err: unknown) {
-      return { success: false, message: (err as Error).message || "Connection failed", latencyMs: Date.now() - start };
+      return { success: false, message: getConnectorTestErrorMessage(err), latencyMs: Date.now() - start };
     }
   },
 

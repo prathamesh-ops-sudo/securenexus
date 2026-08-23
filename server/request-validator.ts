@@ -120,7 +120,11 @@ export const bodySchemas = {
     name: z.string().min(1).max(MAX_NAME).optional(),
     config: z.record(z.unknown()).optional(),
     status: z.string().max(64).optional(),
-    pollingIntervalMin: z.number().int().min(1).max(1440).optional(),
+  }),
+
+  connectorSchedule: z.object({
+    autoSyncEnabled: z.boolean(),
+    pollingIntervalMin: z.number().int().min(1).max(1440),
   }),
 
   connectorTest: z.object({

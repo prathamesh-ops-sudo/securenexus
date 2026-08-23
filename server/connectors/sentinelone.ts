@@ -1,5 +1,6 @@
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
+import { getConnectorTestErrorMessage } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
 
 function mapSeverity(level?: string): string {
@@ -48,10 +49,9 @@ export const sentinelonePlugin: ConnectorPlugin = {
       const res = await httpRequest(`${config.baseUrl}/web/api/v2.1/system/status`, {
         headers: { Authorization: `ApiToken ${config.apiKey}` },
       });
-      if (res.status >= 400) throw new Error(`SentinelOne returned ${res.status}`);
       return { success: true, message: "Successfully connected to sentinelone", latencyMs: Date.now() - start };
     } catch (err: unknown) {
-      return { success: false, message: (err as Error).message || "Connection failed", latencyMs: Date.now() - start };
+      return { success: false, message: getConnectorTestErrorMessage(err), latencyMs: Date.now() - start };
     }
   },
 

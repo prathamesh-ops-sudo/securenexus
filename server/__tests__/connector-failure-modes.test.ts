@@ -71,13 +71,9 @@ vi.mock("../connectors/registry", () => ({
 // We use the REAL circuit breaker module for some tests
 // but must mock the logger dependency it uses (already done above)
 
-import {
-  isCircuitOpen,
-  resetConnectorCircuitBreaker,
-  getAllCircuitBreakerStates,
-} from "../connector-circuit-breaker";
+import { isCircuitOpen, resetConnectorCircuitBreaker, getAllCircuitBreakerStates } from "../connector-circuit-breaker";
 
-import { syncConnector, syncConnectorWithRetry } from "../connector-engine";
+import { classifyError, syncConnector, syncConnectorWithRetry } from "../connector-engine";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -162,6 +158,19 @@ describe("connector-failure-modes", () => {
   // =========================================================================
 
   describe("Error classification", () => {
+    it("classifies a structured HTTP status without parsing the message", () => {
+      expect(classifyError({ message: "vendor request failed", status: 401 })).toEqual({
+        errorType: "auth_error",
+        throttled: false,
+        httpStatus: 401,
+      });
+      expect(classifyError({ message: "vendor request failed", status: 429 })).toEqual({
+        errorType: "throttle",
+        throttled: true,
+        httpStatus: 429,
+      });
+    });
+
     it("classifies timeout errors as network_error", async () => {
       const connector = makeConnector({ id: "conn-timeout-1" });
       vi.useFakeTimers();

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -86,6 +87,12 @@ interface ConnectorItem {
   config: Record<string, any>;
   status: string;
   pollingIntervalMin: number | null;
+  autoSyncEnabled: boolean;
+  effectivePollingIntervalMin: number;
+  nextSyncAt: string | null;
+  consecutiveFailures: number;
+  scheduleReason: string;
+  needsReconnection: boolean;
   lastSyncAt: string | null;
   lastSyncStatus: string | null;
   lastSyncAlerts: number | null;
@@ -1334,12 +1341,11 @@ interface RateLimitStatus {
   errorRate: number;
   recentThrottles: number;
   totalThrottledJobs: number;
-  adaptiveThrottling: {
-    enabled: boolean;
-    currentMultiplier: number;
-    effectiveIntervalMin: number;
-    reason: string;
-  };
+  autoSyncEnabled: boolean;
+  effectiveIntervalMin: number;
+  nextSyncAt: string | null;
+  deferralReason: string;
+  needsReconnection: boolean;
 }
 
 function ConnectorRateLimitPanel({ connectorId }: { connectorId: string }) {
@@ -1348,7 +1354,8 @@ function ConnectorRateLimitPanel({ connectorId }: { connectorId: string }) {
     queryFn: async () => {
       const res = await fetch(`/api/connectors/${connectorId}/rate-limit-status`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch rate limit");
-      return res.json();
+      const body = await res.json();
+      return body.data ?? body;
     },
   });
 
@@ -1372,18 +1379,21 @@ function ConnectorRateLimitPanel({ connectorId }: { connectorId: string }) {
         </div>
         <div className="p-2 rounded border">
           <p className="text-muted-foreground">Effective Interval</p>
-          <p className="font-bold">{rateLimit.adaptiveThrottling.effectiveIntervalMin.toFixed(1)}m</p>
+          <p className="font-bold">{rateLimit.effectiveIntervalMin}m</p>
         </div>
         <div className="p-2 rounded border">
-          <p className="text-muted-foreground">Multiplier</p>
-          <p className="font-bold">{rateLimit.adaptiveThrottling.currentMultiplier}x</p>
+          <p className="text-muted-foreground">Next Run</p>
+          <p className="font-bold">{rateLimit.nextSyncAt ? formatDateTime(rateLimit.nextSyncAt) : "not available"}</p>
         </div>
         <div className="p-2 rounded border">
           <p className="text-muted-foreground">Total Throttles</p>
           <p className="font-bold">{rateLimit.throttleCount}</p>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">{rateLimit.adaptiveThrottling.reason}</p>
+      <p className="text-xs text-muted-foreground">
+        Schedule: {rateLimit.deferralReason.replaceAll("_", " ")}
+        {rateLimit.needsReconnection ? " — reconnect credentials to resume" : ""}
+      </p>
     </div>
   );
 }
@@ -1412,6 +1422,7 @@ export default function ConnectorsPage() {
   const [healthCheckingId, setHealthCheckingId] = useState<string | null>(null);
   const [expandedConnectorId, setExpandedConnectorId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("all-connectors");
+  const [scheduleIntervals, setScheduleIntervals] = useState<Record<string, string>>({});
 
   const { data: connectorTypes, isLoading: typesLoading } = useQuery<ConnectorType[]>({
     queryKey: ["/api/connectors/types"],
@@ -1548,6 +1559,23 @@ export default function ConnectorsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/v1/connectors"] });
+    },
+  });
+
+  const scheduleMutation = useMutation({
+    mutationFn: async ({ id, enabled, interval }: { id: string; enabled: boolean; interval: number }) => {
+      const res = await apiRequest("PATCH", `/api/connectors/${id}/schedule`, {
+        autoSyncEnabled: enabled,
+        pollingIntervalMin: interval,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/connectors"] });
+      toast({ title: "Automatic sync schedule updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Schedule update failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1759,6 +1787,20 @@ export default function ConnectorsPage() {
                       const IconComp = getIcon(meta?.icon || "");
                       const isExpanded = expandedConnectorId === connector.id;
                       const hasDeadLetters = deadLetterConnectorIds.has(connector.id);
+                      const scheduleState = !connector.autoSyncEnabled
+                        ? "Automatic sync off"
+                        : connector.needsReconnection
+                          ? "Paused — needs reconnection"
+                          : connector.scheduleReason === "quota_exhausted"
+                            ? "Skipped — plan quota exhausted"
+                            : connector.consecutiveFailures > 0
+                              ? "Backing off after failures"
+                              : !connector.lastSyncAt
+                                ? "Never synced"
+                                : "Scheduled";
+                      const scheduleInterval = Number(
+                        scheduleIntervals[connector.id] ?? connector.pollingIntervalMin ?? 5,
+                      );
                       return (
                         <>
                           <TableRow
@@ -1925,6 +1967,62 @@ export default function ConnectorsPage() {
                                 <ConnectorPipelineStatus connectorId={connector.id} />
                                 <ConnectorSyncHistory connectorId={connector.id} connectorName={connector.name} />
                                 <ConnectorRateLimitPanel connectorId={connector.id} />
+                                <div className="px-4 py-3 border-t space-y-3">
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    <div className="flex items-center gap-2">
+                                      <Switch
+                                        checked={connector.autoSyncEnabled}
+                                        onCheckedChange={(enabled) =>
+                                          scheduleMutation.mutate({
+                                            id: connector.id,
+                                            enabled,
+                                            interval: scheduleInterval,
+                                          })
+                                        }
+                                        disabled={scheduleMutation.isPending}
+                                        data-testid={`switch-auto-sync-${connector.id}`}
+                                      />
+                                      <Label>Automatic sync</Label>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Label htmlFor={`schedule-interval-${connector.id}`}>Interval (minutes)</Label>
+                                      <Input
+                                        id={`schedule-interval-${connector.id}`}
+                                        type="number"
+                                        min="5"
+                                        max="1440"
+                                        className="w-24"
+                                        value={scheduleInterval}
+                                        onChange={(event) =>
+                                          setScheduleIntervals((previous) => ({
+                                            ...previous,
+                                            [connector.id]: event.target.value,
+                                          }))
+                                        }
+                                        data-testid={`input-schedule-interval-${connector.id}`}
+                                      />
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={scheduleMutation.isPending}
+                                        onClick={() =>
+                                          scheduleMutation.mutate({
+                                            id: connector.id,
+                                            enabled: connector.autoSyncEnabled,
+                                            interval: scheduleInterval,
+                                          })
+                                        }
+                                      >
+                                        Save
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">{scheduleState}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    Next scheduled run:{" "}
+                                    {connector.nextSyncAt ? formatDateTime(connector.nextSyncAt) : "not available"}
+                                  </p>
+                                </div>
                                 <ConnectorSecretRotationPanel connectorId={connector.id} />
                               </TableCell>
                             </TableRow>

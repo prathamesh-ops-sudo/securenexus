@@ -2,6 +2,7 @@
 import { randomBytes } from "crypto";
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
+import { getConnectorTestErrorMessage } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
 
 function mapSeverity(sev?: string | number): string {
@@ -82,7 +83,6 @@ export const checkpointPlugin: ConnectorPlugin = {
           headers: { "Content-Type": "application/json" },
           body: { user: config.username, password: config.password },
         });
-        if (loginRes.status >= 400) throw new Error(`Check Point login returned ${loginRes.status}`);
       } else {
         const headers = await authenticate(config);
         const res = await httpRequest(`${config.baseUrl}/web_api/show-session`, {
@@ -90,11 +90,10 @@ export const checkpointPlugin: ConnectorPlugin = {
           headers,
           body: {},
         });
-        if (res.status >= 400) throw new Error(`Check Point returned ${res.status}`);
       }
       return { success: true, message: "Successfully connected to checkpoint", latencyMs: Date.now() - start };
     } catch (err: unknown) {
-      return { success: false, message: (err as Error).message || "Connection failed", latencyMs: Date.now() - start };
+      return { success: false, message: getConnectorTestErrorMessage(err), latencyMs: Date.now() - start };
     }
   },
 

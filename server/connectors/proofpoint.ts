@@ -1,5 +1,6 @@
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
+import { getConnectorTestErrorMessage } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
 
 function mapSeverity(score?: number): string {
@@ -46,10 +47,9 @@ export const proofpointPlugin: ConnectorPlugin = {
       const res = await httpRequest(`${config.baseUrl}/v2/siem/messages/delivered?sinceSeconds=60&format=JSON`, {
         headers: { Authorization: `Basic ${auth}` },
       });
-      if (res.status >= 400) throw new Error(`Proofpoint returned ${res.status}`);
       return { success: true, message: "Successfully connected to proofpoint", latencyMs: Date.now() - start };
     } catch (err: unknown) {
-      return { success: false, message: (err as Error).message || "Connection failed", latencyMs: Date.now() - start };
+      return { success: false, message: getConnectorTestErrorMessage(err), latencyMs: Date.now() - start };
     }
   },
 

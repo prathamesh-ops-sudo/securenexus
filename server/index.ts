@@ -44,6 +44,7 @@ import { startResponseActionTimeoutScheduler } from "./response-action-timeouts"
 import { startNativeSensorLifecycleScheduler } from "./native-sensor-lifecycle";
 import { startNativeCollectorLifecycleScheduler } from "./native-collector-lifecycle";
 import { startCveSyncScheduler } from "./cve-sync";
+import { startConnectorPollingScheduler } from "./connector-polling-scheduler";
 
 const startedAt = Date.now();
 
@@ -249,6 +250,7 @@ export function log(message: string, source = "express") {
       startNativeSensorLifecycleScheduler();
       startNativeCollectorLifecycleScheduler();
       startCveSyncScheduler();
+      startConnectorPollingScheduler();
       startConnectorHealthLoop();
       registerShutdownHandler("job-worker", stopJobWorker);
       registerShutdownHandler("connector-health-loop", async () => stopConnectorHealthLoop());

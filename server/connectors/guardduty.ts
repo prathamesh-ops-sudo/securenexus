@@ -1,5 +1,6 @@
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
+import { getConnectorTestErrorMessage } from "./connector-plugin";
 
 function mapSeverity(sev?: number): string {
   if (!sev) return "medium";
@@ -56,7 +57,7 @@ export const guarddutyPlugin: ConnectorPlugin = {
       if (!res.DetectorIds?.length) throw new Error("No GuardDuty detectors found");
       return { success: true, message: "Successfully connected to guardduty", latencyMs: Date.now() - start };
     } catch (err: unknown) {
-      return { success: false, message: (err as Error).message || "Connection failed", latencyMs: Date.now() - start };
+      return { success: false, message: getConnectorTestErrorMessage(err), latencyMs: Date.now() - start };
     }
   },
 

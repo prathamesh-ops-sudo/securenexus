@@ -2,6 +2,7 @@
 import { randomBytes } from "crypto";
 import type { InsertAlert } from "@shared/schema";
 import type { ConnectorPlugin, ConnectorConfig, ConnectorTestResult } from "./connector-plugin";
+import { getConnectorTestErrorMessage } from "./connector-plugin";
 import { httpRequest } from "./connector-plugin";
 
 function mapSeverity(sev?: string | number): string {
@@ -64,10 +65,9 @@ export const elasticPlugin: ConnectorPlugin = {
     try {
       const headers = buildAuthHeaders(config);
       const res = await httpRequest(`${config.baseUrl}/_cluster/health`, { headers });
-      if (res.status >= 400) throw new Error(`Elastic returned ${res.status}`);
       return { success: true, message: "Successfully connected to elastic", latencyMs: Date.now() - start };
     } catch (err: unknown) {
-      return { success: false, message: (err as Error).message || "Connection failed", latencyMs: Date.now() - start };
+      return { success: false, message: getConnectorTestErrorMessage(err), latencyMs: Date.now() - start };
     }
   },
 
