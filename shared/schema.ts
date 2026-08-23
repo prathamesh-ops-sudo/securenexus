@@ -646,6 +646,7 @@ export const connectors = pgTable(
     status: text("status").notNull().default("inactive"),
     pollingIntervalMin: integer("polling_interval_min").default(5),
     autoSyncEnabled: boolean("auto_sync_enabled").notNull().default(false),
+    autoSyncPausedByAuth: boolean("auto_sync_paused_by_auth").notNull().default(false),
     effectivePollingIntervalMin: integer("effective_polling_interval_min").notNull().default(5),
     nextSyncAt: timestamp("next_sync_at"),
     consecutiveFailures: integer("consecutive_failures").notNull().default(0),

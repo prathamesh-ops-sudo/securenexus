@@ -72,13 +72,6 @@ const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
         totalAlertsSynced: totalSynced,
       });
 
-      await storage.updateConnector(connector.id, {
-        status:
-          jobRun.errorType === "auth_error" || jobRun.httpStatus === 401 || jobRun.httpStatus === 403
-            ? "error"
-            : "active",
-      } as any);
-
       // Log ingestion result
       await storage.createIngestionLog({
         source: connector.type,

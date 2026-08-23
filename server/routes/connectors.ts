@@ -300,10 +300,12 @@ export function registerConnectorsRoutes(app: Express): void {
           type,
           authType,
           config,
+          status: "active",
           pollingIntervalMin: clampConnectorInterval(pollingIntervalMin),
           effectivePollingIntervalMin: clampConnectorInterval(pollingIntervalMin),
-          autoSyncEnabled: false,
-          scheduleReason: "auto_sync_off",
+          autoSyncEnabled: true,
+          scheduleReason: "scheduled",
+          nextSyncAt: new Date(Date.now() + clampConnectorInterval(pollingIntervalMin) * 60_000),
           createdBy: (req as any).user?.id,
           orgId: (req as any).orgId,
         });
@@ -416,6 +418,7 @@ export function registerConnectorsRoutes(app: Express): void {
                 ? "connector_inactive"
                 : "auto_sync_off",
           needsReconnection: connector.needsReconnection,
+          autoSyncPausedByAuth: connector.needsReconnection ? autoSyncEnabled : false,
         });
 
         await storage.createAuditLog({
@@ -571,7 +574,7 @@ export function registerConnectorsRoutes(app: Express): void {
         const totalSynced = (connector.totalAlertsSynced || 0) + created;
         const syncStatus = syncResult.errors.length > 0 && created === 0 ? "error" : "success";
 
-        await applyConnectorJobScheduleResult(connector, jobRun);
+        const scheduleUpdate = await applyConnectorJobScheduleResult(connector, jobRun);
         await storage.updateConnectorSyncStatus(connector.id, {
           lastSyncAt: new Date(),
           lastSyncStatus: syncStatus,
@@ -580,7 +583,9 @@ export function registerConnectorsRoutes(app: Express): void {
           totalAlertsSynced: totalSynced,
         });
 
-        await storage.updateConnector(connector.id, { status: syncStatus === "error" ? "error" : "active" } as any);
+        await storage.updateConnector(connector.id, {
+          status: scheduleUpdate.status,
+        } as any);
 
         await storage.createIngestionLog({
           source: connector.type,

@@ -4,7 +4,7 @@ import { db } from "./db";
 import { logger } from "./logger";
 import { enqueueJob } from "./job-queue";
 import { registerShutdownHandler } from "./scaling-state";
-import { incrementAndCheck } from "./middleware/plan-enforcement";
+import { checkQuota, consumeQuota } from "./middleware/plan-enforcement";
 import { getQuotaExhaustedScheduleUpdate, MIN_CONNECTOR_INTERVAL_MIN } from "./connector-schedule";
 import { connectors } from "@shared/schema";
 
@@ -16,11 +16,12 @@ const MAX_CONNECTORS_PER_TICK = 100;
 export interface ConnectorPollingDependencies {
   claimDueConnectors: () => Promise<Connector[]>;
   enqueue: (connector: Connector) => Promise<unknown>;
-  meter: (orgId: string) => Promise<{ allowed: boolean }>;
+  checkQuota: (orgId: string) => Promise<{ allowed: boolean }>;
+  consumeQuota: (orgId: string) => Promise<void>;
   markQuotaExhausted: (connector: Connector) => Promise<void>;
 }
 
-async function claimDueConnectors(): Promise<Connector[]> {
+export async function claimDueConnectors(): Promise<Connector[]> {
   return db.transaction(async (tx) => {
     const lockResult = await tx.execute(sql`SELECT pg_try_advisory_xact_lock(${TICK_ADVISORY_LOCK}) AS locked`);
     const locked = Boolean((lockResult.rows as Array<{ locked: boolean }>)[0]?.locked);
@@ -56,6 +57,7 @@ async function claimDueConnectors(): Promise<Connector[]> {
       status: String(row.status),
       pollingIntervalMin: row.polling_interval_min as number | null,
       autoSyncEnabled: Boolean(row.auto_sync_enabled),
+      autoSyncPausedByAuth: Boolean(row.auto_sync_paused_by_auth),
       effectivePollingIntervalMin: Number(row.effective_polling_interval_min),
       nextSyncAt: row.next_sync_at as Date | null,
       consecutiveFailures: Number(row.consecutive_failures),
@@ -86,7 +88,10 @@ async function markQuotaExhausted(connector: Connector): Promise<void> {
 const defaultDependencies: ConnectorPollingDependencies = {
   claimDueConnectors,
   enqueue: async (connector) => enqueueJob("connector_sync", connector.orgId as string, { connectorId: connector.id }),
-  meter: async (orgId) => incrementAndCheck(orgId, "connector_syncs"),
+  checkQuota: async (orgId) => checkQuota(orgId, "connector_syncs"),
+  consumeQuota: async (orgId) => {
+    await consumeQuota(orgId, "connector_syncs");
+  },
   markQuotaExhausted,
 };
 
@@ -111,7 +116,7 @@ export async function runConnectorPollingTick(
       continue;
     }
 
-    const quota = await dependencies.meter(connector.orgId);
+    const quota = await dependencies.checkQuota(connector.orgId);
     if (!quota.allowed) {
       await dependencies.markQuotaExhausted(connector);
       log.warn("Scheduled connector sync skipped because plan quota is exhausted", {
@@ -122,8 +127,19 @@ export async function runConnectorPollingTick(
     }
 
     try {
-      await dependencies.enqueue(connector);
-      enqueued++;
+      const job = await dependencies.enqueue(connector);
+      if (job !== null) {
+        enqueued++;
+        try {
+          await dependencies.consumeQuota(connector.orgId);
+        } catch (error: unknown) {
+          log.error("Scheduled connector sync was enqueued but quota metering failed", {
+            connectorId: connector.id,
+            orgId: connector.orgId,
+            error: String(error),
+          });
+        }
+      }
     } catch (error: unknown) {
       await db
         .update(connectors)

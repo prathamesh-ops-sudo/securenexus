@@ -3,6 +3,7 @@ import { storage } from "./storage";
 
 export const MIN_CONNECTOR_INTERVAL_MIN = 5;
 export const MAX_CONNECTOR_INTERVAL_MIN = 1440;
+export const CONNECTOR_FAILURE_STATUS_THRESHOLD = 3;
 
 export function clampConnectorInterval(intervalMin: number | null | undefined): number {
   const value = Number.isFinite(intervalMin) ? Math.trunc(intervalMin as number) : MIN_CONNECTOR_INTERVAL_MIN;
@@ -27,6 +28,8 @@ export interface ConnectorScheduleUpdate {
   consecutiveFailures: number;
   scheduleReason: ConnectorScheduleReason;
   needsReconnection: boolean;
+  autoSyncPausedByAuth: boolean;
+  status: string;
 }
 
 function isAuthenticationFailure(jobRun: ConnectorJobRun): boolean {
@@ -47,16 +50,16 @@ export function getConnectorScheduleUpdate(
   const priorFailures = connector.consecutiveFailures ?? 0;
 
   if (jobRun.status === "success" || jobRun.status === "partial") {
+    const shouldRestoreAutoSync = connector.autoSyncEnabled || connector.autoSyncPausedByAuth;
     return {
-      autoSyncEnabled: connector.autoSyncEnabled || connector.needsReconnection,
+      autoSyncEnabled: shouldRestoreAutoSync,
       effectivePollingIntervalMin: baseInterval,
-      nextSyncAt:
-        connector.autoSyncEnabled || connector.needsReconnection
-          ? new Date(now.getTime() + baseInterval * 60_000)
-          : null,
+      nextSyncAt: shouldRestoreAutoSync ? new Date(now.getTime() + baseInterval * 60_000) : null,
       consecutiveFailures: 0,
-      scheduleReason: connector.autoSyncEnabled || connector.needsReconnection ? "scheduled" : "auto_sync_off",
+      scheduleReason: shouldRestoreAutoSync ? "scheduled" : "auto_sync_off",
       needsReconnection: false,
+      autoSyncPausedByAuth: false,
+      status: "active",
     };
   }
 
@@ -69,6 +72,8 @@ export function getConnectorScheduleUpdate(
       consecutiveFailures,
       scheduleReason: "needs_reconnection",
       needsReconnection: true,
+      autoSyncPausedByAuth: connector.autoSyncEnabled || connector.autoSyncPausedByAuth,
+      status: "error",
     };
   }
 
@@ -80,6 +85,8 @@ export function getConnectorScheduleUpdate(
     consecutiveFailures,
     scheduleReason: jobRun.throttled ? "throttled" : "backing_off_after_failure",
     needsReconnection: false,
+    autoSyncPausedByAuth: connector.autoSyncPausedByAuth,
+    status: consecutiveFailures >= CONNECTOR_FAILURE_STATUS_THRESHOLD ? "error" : "active",
   };
 }
 
@@ -87,9 +94,10 @@ export async function applyConnectorJobScheduleResult(
   connector: Connector,
   jobRun: ConnectorJobRun,
   now = new Date(),
-): Promise<void> {
+): Promise<ConnectorScheduleUpdate> {
   const update = getConnectorScheduleUpdate(connector, jobRun, now);
   await storage.updateConnector(connector.id, update);
+  return update;
 }
 
 export function getQuotaExhaustedScheduleUpdate(

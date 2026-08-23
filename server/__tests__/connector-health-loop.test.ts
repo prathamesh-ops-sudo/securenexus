@@ -60,6 +60,7 @@ function makeConnector(overrides: Partial<Connector> = {}): Connector {
     config: { baseUrl: "https://splunk.example.com", apiKey: "test-key" },
     status: "active",
     pollingIntervalMin: 5,
+    autoSyncPausedByAuth: false,
     lastSyncAt: null,
     lastSyncStatus: null,
     lastSyncAlerts: null,

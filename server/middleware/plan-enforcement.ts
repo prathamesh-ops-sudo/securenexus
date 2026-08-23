@@ -189,11 +189,27 @@ export async function incrementAndCheck(
   metric: string,
   amount: number = 1,
 ): Promise<{ allowed: boolean; current: number; limit: number; pct: number }> {
+  const quota = await checkQuota(orgId, metric, amount);
+  if (!quota.allowed) return quota;
+
+  const updated = await consumeQuota(orgId, metric, amount);
+  return {
+    allowed: true,
+    current: updated.current,
+    limit: quota.limit,
+    pct: updated.limit > 0 ? Math.round((updated.current / updated.limit) * 100) : 0,
+  };
+}
+
+export async function checkQuota(
+  orgId: string,
+  metric: string,
+  amount: number = 1,
+): Promise<{ allowed: boolean; current: number; limit: number; pct: number }> {
   const { limits } = await resolveOrgLimits(orgId);
   const limit = limits[metric];
 
   if (limit === undefined || limit === -1) {
-    await storage.incrementUsage(orgId, metric, amount);
     return { allowed: true, current: 0, limit: -1, pct: 0 };
   }
 
@@ -204,8 +220,16 @@ export async function incrementAndCheck(
   if (current + amount > limit) {
     return { allowed: false, current, limit, pct: Math.round((current / limit) * 100) };
   }
+  return { allowed: true, current, limit, pct: Math.round((current / limit) * 100) };
+}
 
+export async function consumeQuota(
+  orgId: string,
+  metric: string,
+  amount: number = 1,
+): Promise<{ current: number; limit: number }> {
+  const { limits } = await resolveOrgLimits(orgId);
+  const limit = limits[metric] ?? -1;
   const updated = await storage.incrementUsage(orgId, metric, amount);
-  const pct = limit > 0 ? Math.round((updated.value / limit) * 100) : 0;
-  return { allowed: true, current: updated.value, limit, pct };
+  return { current: updated.value, limit };
 }

@@ -15,7 +15,11 @@ vi.mock("../logger", () => ({
 vi.mock("../db", () => ({ db: {} }));
 vi.mock("../job-queue", () => ({ enqueueJob: vi.fn() }));
 vi.mock("../scaling-state", () => ({ registerShutdownHandler: vi.fn() }));
-vi.mock("../middleware/plan-enforcement", () => ({ incrementAndCheck: vi.fn() }));
+vi.mock("../middleware/plan-enforcement", () => ({
+  checkQuota: vi.fn(),
+  consumeQuota: vi.fn(),
+  incrementAndCheck: vi.fn(),
+}));
 vi.mock("../storage", () => ({ storage: { updateConnector: vi.fn() } }));
 
 import { getConnectorScheduleUpdate } from "../connector-schedule";
@@ -32,6 +36,7 @@ function connector(overrides: Partial<Connector> = {}): Connector {
     status: "active",
     pollingIntervalMin: 5,
     autoSyncEnabled: true,
+    autoSyncPausedByAuth: false,
     effectivePollingIntervalMin: 5,
     nextSyncAt: new Date(0),
     consecutiveFailures: 0,
@@ -88,12 +93,14 @@ describe("connector polling scheduler", () => {
 
   it("enqueues due connectors and never schedules disabled connectors", async () => {
     const enqueue = vi.fn().mockResolvedValue({ id: "job-1" });
+    const consumeQuota = vi.fn().mockResolvedValue(undefined);
     const deps: ConnectorPollingDependencies = {
       claimDueConnectors: vi
         .fn()
         .mockResolvedValue([connector(), connector({ id: "disabled", autoSyncEnabled: false })]),
       enqueue,
-      meter: vi.fn().mockResolvedValue({ allowed: true }),
+      checkQuota: vi.fn().mockResolvedValue({ allowed: true }),
+      consumeQuota,
       markQuotaExhausted: vi.fn(),
     };
 
@@ -101,6 +108,7 @@ describe("connector polling scheduler", () => {
 
     expect(enqueue).toHaveBeenCalledTimes(1);
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ id: "connector-1" }));
+    expect(consumeQuota).toHaveBeenCalledTimes(1);
   });
 
   it("does not double enqueue when concurrent ticks contend for the database claim", async () => {
@@ -116,7 +124,8 @@ describe("connector polling scheduler", () => {
     const deps: ConnectorPollingDependencies = {
       claimDueConnectors: claim,
       enqueue,
-      meter: vi.fn().mockResolvedValue({ allowed: true }),
+      checkQuota: vi.fn().mockResolvedValue({ allowed: true }),
+      consumeQuota: vi.fn().mockResolvedValue(undefined),
       markQuotaExhausted: vi.fn(),
     };
 
@@ -162,10 +171,12 @@ describe("connector polling scheduler", () => {
 
   it("persists quota exhaustion instead of silently omitting the connector", async () => {
     const markQuotaExhausted = vi.fn();
+    const consumeQuota = vi.fn().mockResolvedValue(undefined);
     const deps: ConnectorPollingDependencies = {
       claimDueConnectors: vi.fn().mockResolvedValue([connector()]),
       enqueue: vi.fn(),
-      meter: vi.fn().mockResolvedValue({ allowed: false }),
+      checkQuota: vi.fn().mockResolvedValue({ allowed: false }),
+      consumeQuota,
       markQuotaExhausted,
     };
 
@@ -173,5 +184,21 @@ describe("connector polling scheduler", () => {
 
     expect(deps.enqueue).not.toHaveBeenCalled();
     expect(markQuotaExhausted).toHaveBeenCalledWith(expect.objectContaining({ id: "connector-1" }));
+    expect(consumeQuota).not.toHaveBeenCalled();
+  });
+
+  it("does not consume quota when enqueue is deduplicated", async () => {
+    const consumeQuota = vi.fn().mockResolvedValue(undefined);
+    const deps: ConnectorPollingDependencies = {
+      claimDueConnectors: vi.fn().mockResolvedValue([connector()]),
+      enqueue: vi.fn().mockResolvedValue(null),
+      checkQuota: vi.fn().mockResolvedValue({ allowed: true }),
+      consumeQuota,
+      markQuotaExhausted: vi.fn(),
+    };
+
+    await runConnectorPollingTick(deps);
+
+    expect(consumeQuota).not.toHaveBeenCalled();
   });
 });

@@ -116,11 +116,16 @@ export const bodySchemas = {
     pollingIntervalMin: z.number().int().min(1).max(1440).optional(),
   }),
 
-  connectorUpdate: z.object({
-    name: z.string().min(1).max(MAX_NAME).optional(),
-    config: z.record(z.unknown()).optional(),
-    status: z.string().max(64).optional(),
-  }),
+  connectorUpdate: z
+    .object({
+      name: z.string().min(1).max(MAX_NAME).optional(),
+      config: z.record(z.unknown()).optional(),
+      status: z.string().max(64).optional(),
+      pollingIntervalMin: z
+        .never({ message: "Use /api/connectors/:id/schedule to change pollingIntervalMin." })
+        .optional(),
+    })
+    .strict(),
 
   connectorSchedule: z.object({
     autoSyncEnabled: z.boolean(),

@@ -141,6 +141,13 @@
       "when": 1787405500000,
       "tag": "0019_connector_polling_schedule",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1787479117893,
+      "tag": "0020_connector_polling_hardening",
+      "breakpoints": true
     }
   ]
 }
