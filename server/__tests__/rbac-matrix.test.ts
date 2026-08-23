@@ -448,4 +448,22 @@ describe("write-route authorization coverage", () => {
 
     expect(failures).toEqual([]);
   });
+
+  it("protects native collector and vulnerability package routes with their intended minimum roles", () => {
+    const nativeCollectors = fs.readFileSync(path.resolve(process.cwd(), "server/routes/native-collectors.ts"), "utf8");
+    const vulnScanner = fs.readFileSync(path.resolve(process.cwd(), "server/routes/vuln-scanner.ts"), "utf8");
+
+    expect(nativeCollectors).toMatch(
+      /app\.post\(\s*["']\/api\/native-collectors\/instances\/:id\/scan["'][\s\S]*?requireMinRole\("admin"\)/,
+    );
+    expect(nativeCollectors).toMatch(
+      /app\.post\(\s*["']\/api\/native-collectors\/instances\/:id\/deploy-script["'][\s\S]*?requireMinRole\("admin"\)/,
+    );
+    expect(vulnScanner).toMatch(
+      /app\.get\(\s*["']\/api\/native\/vuln\/packages["'][\s\S]*?requireMinRole\("analyst"\)/,
+    );
+
+    expect(ROLE_PERMISSIONS).toHaveProperty("admin");
+    expect(ROLE_PERMISSIONS).toHaveProperty("analyst");
+  });
 });

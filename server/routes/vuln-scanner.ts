@@ -24,12 +24,19 @@ export function registerVulnScannerRoutes(app: Express): void {
   // PACKAGE INVENTORY — Agent pushes installed packages
   // ==========================================================================
 
-  app.post("/api/native/vuln/packages", isAuthenticated, (_req, res) => {
-    res.status(410).json({
-      message:
-        "This ingest route is retired. Use the authenticated agent package endpoint /api/agent/v1/sensors/:id/packages.",
-    });
-  });
+  app.post(
+    "/api/native/vuln/packages",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    (_req, res) => {
+      res.status(410).json({
+        message:
+          "This ingest route is retired. Use the authenticated agent package endpoint /api/agent/v1/sensors/:id/packages.",
+      });
+    },
+  );
 
   // ==========================================================================
   // FINDINGS — Analyst view
@@ -160,30 +167,36 @@ export function registerVulnScannerRoutes(app: Express): void {
   );
 
   // List packages for a sensor (package inventory tab)
-  app.get("/api/native/vuln/packages", isAuthenticated, resolveOrgContext, requireOrgId, async (req, res) => {
-    try {
-      const orgId = getOrgId(req);
-      const sensorId = req.query.sensorId as string | undefined;
-      const vulnerable = req.query.vulnerable as string | undefined;
-      const limitParam = parseInt(String(req.query.limit || "100"));
-      const offsetParam = parseInt(String(req.query.offset || "0"));
-      const limit = Math.min(Number.isNaN(limitParam) ? 100 : limitParam, 500);
-      const offset = Number.isNaN(offsetParam) ? 0 : offsetParam;
+  app.get(
+    "/api/native/vuln/packages",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("analyst"),
+    async (req, res) => {
+      try {
+        const orgId = getOrgId(req);
+        const sensorId = req.query.sensorId as string | undefined;
+        const vulnerable = req.query.vulnerable as string | undefined;
+        const limitParam = parseInt(String(req.query.limit || "100"));
+        const offsetParam = parseInt(String(req.query.offset || "0"));
+        const limit = Math.min(Number.isNaN(limitParam) ? 100 : limitParam, 500);
+        const offset = Number.isNaN(offsetParam) ? 0 : offsetParam;
 
-      const conditions: unknown[] = [eq(vulnPackages.orgId, orgId)];
-      if (sensorId) conditions.push(eq(vulnPackages.sensorId, sensorId));
-      if (vulnerable === "true") conditions.push(eq(vulnPackages.isVulnerable, true));
-      if (vulnerable === "false") conditions.push(eq(vulnPackages.isVulnerable, false));
+        const conditions: unknown[] = [eq(vulnPackages.orgId, orgId)];
+        if (sensorId) conditions.push(eq(vulnPackages.sensorId, sensorId));
+        if (vulnerable === "true") conditions.push(eq(vulnPackages.isVulnerable, true));
+        if (vulnerable === "false") conditions.push(eq(vulnPackages.isVulnerable, false));
 
-      const packages = await db
-        .select()
-        .from(vulnPackages)
-        .where(and(...(conditions as any[])))
-        .orderBy(desc(vulnPackages.isVulnerable), desc(vulnPackages.cveCount))
-        .limit(limit)
-        .offset(offset);
+        const packages = await db
+          .select()
+          .from(vulnPackages)
+          .where(and(...(conditions as any[])))
+          .orderBy(desc(vulnPackages.isVulnerable), desc(vulnPackages.cveCount))
+          .limit(limit)
+          .offset(offset);
 
-      const statsResult = await db.execute(sql`
+        const statsResult = await db.execute(sql`
           SELECT
             COUNT(*) AS total,
             COUNT(*) FILTER (WHERE is_vulnerable = true) AS vulnerable_count,
@@ -192,22 +205,23 @@ export function registerVulnScannerRoutes(app: Express): void {
           FROM vuln_packages
           WHERE org_id = ${orgId}
         `);
-      const s = (statsResult as any).rows?.[0] || {};
+        const s = (statsResult as any).rows?.[0] || {};
 
-      res.json({
-        packages,
-        stats: {
-          total: parseInt(s.total || "0"),
-          vulnerableCount: parseInt(s.vulnerable_count || "0"),
-          cleanCount: parseInt(s.clean_count || "0"),
-          hostCount: parseInt(s.host_count || "0"),
-        },
-      });
-    } catch (error) {
-      log.error("Failed to list packages", { error: String(error) });
-      res.status(500).json({ message: "Failed to list packages" });
-    }
-  });
+        res.json({
+          packages,
+          stats: {
+            total: parseInt(s.total || "0"),
+            vulnerableCount: parseInt(s.vulnerable_count || "0"),
+            cleanCount: parseInt(s.clean_count || "0"),
+            hostCount: parseInt(s.host_count || "0"),
+          },
+        });
+      } catch (error) {
+        log.error("Failed to list packages", { error: String(error) });
+        res.status(500).json({ message: "Failed to list packages" });
+      }
+    },
+  );
 
   // Get the known CVE database (for reference)
   app.get("/api/native/vuln/cve-database", isAuthenticated, resolveOrgContext, requireOrgId, async (_req, res) => {

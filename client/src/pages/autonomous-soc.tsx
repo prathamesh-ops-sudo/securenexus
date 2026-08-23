@@ -47,6 +47,7 @@ import {
   Download,
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/page-skeleton";
+import { summarizeTenantIntegrity, type TenantIntegrityResult } from "@/lib/ai-integrity";
 
 interface SOCStats {
   totalDecisions: number;
@@ -264,6 +265,113 @@ function StatusBadge({ status }: { status: string }) {
   const config = STATUS_LABELS[status];
   if (!config) return <span className="text-muted-foreground">{status}</span>;
   return <span className={config.color}>{config.label}</span>;
+}
+
+function TenantIntegrityCard() {
+  const { data, isLoading, isError, refetch } = useQuery<{ results: TenantIntegrityResult[] }>({
+    queryKey: ["/api/ai/integrity"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/ai/integrity");
+      const body = await response.json();
+      return (body.data ?? body) as { results: TenantIntegrityResult[] };
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-4 text-sm text-muted-foreground">Checking tenant decision integrity...</CardContent>
+      </Card>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <Card className="border-amber-500/30">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            Tenant-wide integrity verification unavailable
+          </CardTitle>
+          <CardDescription>
+            The verification request failed. No claim about this tenant&apos;s decision chain is being made.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Retry verification
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const summary = summarizeTenantIntegrity(data.results ?? []);
+  const noDigests = summary.digestedCount === 0;
+  const chainBroken = summary.mismatchedCount > 0;
+
+  return (
+    <Card className={chainBroken ? "border-red-500/40" : noDigests ? "border-amber-500/30" : ""}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          {chainBroken ? (
+            <XCircle className="h-4 w-4 text-red-500" />
+          ) : noDigests ? (
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+          ) : (
+            <CheckCircle className="h-4 w-4 text-emerald-500" />
+          )}
+          Tenant-wide decision integrity
+        </CardTitle>
+        <CardDescription>
+          This verifies stored decision, evidence, inference, and redaction records for the selected tenant. It does not
+          cover adjudications or actions added after finalization.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {noDigests ? (
+          <p className="rounded border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300">
+            Nothing to verify yet: this tenant has no digested decisions. Historical decisions that predate digest
+            capture are not a clean or verified chain.
+          </p>
+        ) : chainBroken ? (
+          <p className="rounded border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-700 dark:text-red-300">
+            Mismatch detected in the stored decision history. First mismatched sequence:{" "}
+            {summary.firstMismatchSequence ?? "not recorded"}.
+            {summary.chainBreakSequence != null ? ` Chain break sequence: ${summary.chainBreakSequence}.` : ""}
+            {summary.chainBreakReason ? ` ${summary.chainBreakReason}` : ""}
+          </p>
+        ) : (
+          <p className="rounded border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+            All digested decisions in this tenant matched their stored integrity records.
+          </p>
+        )}
+        <div className="grid gap-3 sm:grid-cols-4">
+          <div className="rounded border p-3">
+            <p className="text-xs text-muted-foreground">Verified</p>
+            <p className="text-2xl font-semibold">{summary.verifiedCount}</p>
+          </div>
+          <div className="rounded border p-3">
+            <p className="text-xs text-muted-foreground">Mismatched</p>
+            <p className="text-2xl font-semibold">{summary.mismatchedCount}</p>
+          </div>
+          <div className="rounded border p-3">
+            <p className="text-xs text-muted-foreground">Unverifiable</p>
+            <p className="text-2xl font-semibold">{summary.unverifiableCount}</p>
+            <p className="text-[11px] text-muted-foreground">Predates digest capture</p>
+          </div>
+          <div className="rounded border p-3">
+            <p className="text-xs text-muted-foreground">First chain break</p>
+            <p className="text-2xl font-semibold">{summary.chainBreakSequence ?? "—"}</p>
+            <p className="text-[11px] text-muted-foreground">
+              {summary.chainBreakSequence != null ? "Sequence where chain link breaks" : "No chain break reported"}
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 // ═══════════════════════════════════════════════
@@ -1644,6 +1752,8 @@ export default function AutonomousSOCPage() {
           Zero human touch for Tier 1, &lt;2 minute approval for Tier 2.
         </p>
       </div>
+
+      <TenantIntegrityCard />
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="space-y-4">

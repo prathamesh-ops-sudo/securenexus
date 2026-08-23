@@ -117,11 +117,18 @@ const ingestSchema = z.object({
 });
 
 export function registerNativeCollectorRoutes(app: Express): void {
-  app.post("/api/native-collectors/instances/:id/scan", isAuthenticated, (_req, res) => {
-    return replyError(res, 410, [
-      { code: "NOT_FOUND", message: "Collector scans require a real scanner or collector agent." },
-    ]);
-  });
+  app.post(
+    "/api/native-collectors/instances/:id/scan",
+    isAuthenticated,
+    resolveOrgContext,
+    requireOrgId,
+    requireMinRole("admin"),
+    (_req, res) => {
+      return replyError(res, 410, [
+        { code: "NOT_FOUND", message: "Collector scans require a real scanner or collector agent." },
+      ]);
+    },
+  );
 
   // ─── Templates (static catalog) ───────────────────────────────────────────
   app.get("/api/native-collectors/templates", isAuthenticated, resolveOrgContext, requireOrgId, (_req, res) => {
@@ -432,6 +439,7 @@ export function registerNativeCollectorRoutes(app: Express): void {
     isAuthenticated,
     resolveOrgContext,
     requireOrgId,
+    requireMinRole("admin"),
     async (req, res) => {
       try {
         const orgId = getOrgId(req);
