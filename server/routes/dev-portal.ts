@@ -58,6 +58,8 @@ const SENSITIVE_TABLE_COLUMNS = new Set([
   "sessions:sid",
   "org_sso_configs:certificate",
   "outbound_webhooks:headers",
+  // This short identifier helps correlate a collector, but it is derived from an authentication key.
+  "collector_instances:api_key_prefix",
 ]);
 const SENSITIVE_WORD_PATTERN =
   /(^|_)(secret|secrets|token|tokens|api_?key|apikey|credential|credentials|private_?key|key_hash|passphrase|password|certificate|certificates?|backup_?codes?|recovery_?codes?|sid|session|sessions|otp|pin)(_|$)/i;

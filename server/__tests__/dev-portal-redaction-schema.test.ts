@@ -75,6 +75,13 @@ const REVIEWED_NON_SENSITIVE_COLUMNS = new Set([
   "users.password_changed_at",
 ]);
 
+const REVIEWED_SENSITIVE_COLUMNS = new Map([
+  [
+    "collector_instances.api_key_prefix",
+    "A short collector-key identifier useful for correlation, but still a fragment of an authentication secret; redaction is safe in the generic database browser.",
+  ],
+]);
+
 const OPERATIONAL_COLUMNS_MUST_REMAIN_VISIBLE = [
   "org_security_policies.password_min_length",
   "org_security_policies.password_expiry_days",
@@ -97,6 +104,15 @@ const OPERATIONAL_COLUMNS_MUST_REMAIN_VISIBLE = [
 ];
 
 describe("dev-portal redaction schema coverage", () => {
+  it("redacts reviewed secret-derived metadata", () => {
+    for (const [qualifiedColumn] of REVIEWED_SENSITIVE_COLUMNS) {
+      const separator = qualifiedColumn.indexOf(".");
+      const tableName = qualifiedColumn.slice(0, separator);
+      const columnName = qualifiedColumn.slice(separator + 1);
+      expect(isSensitiveColumn(tableName, columnName), qualifiedColumn).toBe(true);
+    }
+  });
+
   it("keeps reviewed operational metadata visible", () => {
     for (const qualifiedColumn of OPERATIONAL_COLUMNS_MUST_REMAIN_VISIBLE) {
       const separator = qualifiedColumn.indexOf(".");
