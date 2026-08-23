@@ -9,7 +9,13 @@
 import { db, pool } from "../db";
 import { storage } from "../storage";
 import { aiAnalystDecisions, autonomyLog, alerts as alertsTable } from "@shared/schema";
-import type { Alert, Incident, InsertAiAnalystDecision, InsertAutonomyLogEntry } from "@shared/schema";
+import type {
+  Alert,
+  AiAnalystDecision,
+  Incident,
+  InsertAiAnalystDecision,
+  InsertAutonomyLogEntry,
+} from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { logger } from "../logger";
 import { computeConfidence, quickConfidence, estimateFpRate, type ConfidenceResult } from "./confidence-scorer";
@@ -68,6 +74,37 @@ export interface RecommendedAction {
   description: string;
   config: Record<string, unknown>;
   autoExecute: boolean;
+}
+
+export interface DecisionMeasurementSummary {
+  avgConfidence: number | null;
+  confidenceMeasuredCount: number;
+  avgTimeToDecisionMs: number | null;
+  decisionTimeMeasuredCount: number;
+}
+
+export function summarizeDecisionMeasurements(
+  decisions: Array<Pick<AiAnalystDecision, "confidenceScore" | "timeToDecisionMs">>,
+): DecisionMeasurementSummary {
+  const measuredConfidence = decisions.flatMap((decision) =>
+    decision.confidenceScore == null ? [] : [decision.confidenceScore],
+  );
+  const measuredDecisionTimes = decisions.flatMap((decision) =>
+    decision.timeToDecisionMs == null ? [] : [decision.timeToDecisionMs],
+  );
+
+  return {
+    avgConfidence:
+      measuredConfidence.length > 0
+        ? measuredConfidence.reduce((sum, score) => sum + score, 0) / measuredConfidence.length
+        : null,
+    confidenceMeasuredCount: measuredConfidence.length,
+    avgTimeToDecisionMs:
+      measuredDecisionTimes.length > 0
+        ? measuredDecisionTimes.reduce((sum, time) => sum + time, 0) / measuredDecisionTimes.length
+        : null,
+    decisionTimeMeasuredCount: measuredDecisionTimes.length,
+  };
 }
 
 const AUTONOMOUS_ACTION_ALLOWLIST = new Set([
@@ -543,16 +580,7 @@ export async function getAutonomousSOCStats(orgId: string) {
   const tier2 = decisions.filter((d) => d.tier === "tier2_semi_autonomous");
   const tier3 = decisions.filter((d) => d.tier === "tier3_assisted");
 
-  const measuredConfidence = decisions.flatMap((decision) =>
-    decision.confidenceScore == null ? [] : [decision.confidenceScore],
-  );
-  const avgConfidence =
-    measuredConfidence.length > 0
-      ? measuredConfidence.reduce((sum, score) => sum + score, 0) / measuredConfidence.length
-      : null;
-
-  const avgTimeToDecision =
-    decisions.length > 0 ? decisions.reduce((sum, d) => sum + (d.timeToDecisionMs ?? 0), 0) / decisions.length : 0;
+  const measurementSummary = summarizeDecisionMeasurements(decisions);
 
   const outcomes: Record<string, number> = {};
   for (const d of decisions) {
@@ -580,8 +608,12 @@ export async function getAutonomousSOCStats(orgId: string) {
     tier2Count: tier2.length,
     tier3Count: tier3.length,
     tier1Percentage: decisions.length > 0 ? Math.round((tier1.length / decisions.length) * 100) : 0,
-    avgConfidence: avgConfidence == null ? null : Math.round(avgConfidence * 100) / 100,
-    avgTimeToDecisionMs: Math.round(avgTimeToDecision),
+    avgConfidence:
+      measurementSummary.avgConfidence == null ? null : Math.round(measurementSummary.avgConfidence * 100) / 100,
+    confidenceMeasuredCount: measurementSummary.confidenceMeasuredCount,
+    avgTimeToDecisionMs:
+      measurementSummary.avgTimeToDecisionMs == null ? null : Math.round(measurementSummary.avgTimeToDecisionMs),
+    decisionTimeMeasuredCount: measurementSummary.decisionTimeMeasuredCount,
     outcomes,
     overrideCount: overrides.length,
     overrideRate: decisions.length > 0 ? Math.round((overrides.length / decisions.length) * 100) / 100 : 0,

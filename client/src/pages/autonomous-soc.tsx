@@ -48,6 +48,7 @@ import {
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 import { summarizeTenantIntegrity, type TenantIntegrityResult } from "@/lib/ai-integrity";
+import { formatOutcomeLabel, splitOutcomeCounts } from "@/lib/autonomous-soc";
 
 interface SOCStats {
   totalDecisions: number;
@@ -56,7 +57,9 @@ interface SOCStats {
   tier3Count: number;
   tier1Percentage: number;
   avgConfidence: number | null;
-  avgTimeToDecisionMs: number;
+  confidenceMeasuredCount: number;
+  avgTimeToDecisionMs: number | null;
+  decisionTimeMeasuredCount: number;
   outcomes: Record<string, number>;
   overrideCount: number;
   overrideRate: number;
@@ -220,7 +223,8 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   overridden: { label: "Overridden", color: "text-red-400" },
 };
 
-function formatMs(ms: number): string {
+function formatMs(ms: number | null): string {
+  if (ms == null) return "Not recorded";
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60000).toFixed(1)}m`;
@@ -257,8 +261,8 @@ function TierBadge({ tier }: { tier: string }) {
 function OutcomeBadge({ outcome }: { outcome: string | null }) {
   if (!outcome) return <Badge variant="outline">Not recorded</Badge>;
   const config = OUTCOME_LABELS[outcome];
-  if (!config) return <Badge variant="outline">{outcome}</Badge>;
-  return <Badge variant={config.variant}>{config.label}</Badge>;
+  if (!config) return <Badge variant="outline">{formatOutcomeLabel(outcome)}</Badge>;
+  return <Badge variant={config.variant}>{formatOutcomeLabel(outcome)}</Badge>;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -397,6 +401,8 @@ function OverviewTab() {
     );
   }
 
+  const outcomeGroups = splitOutcomeCounts(stats.outcomes);
+
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
@@ -430,6 +436,9 @@ function OverviewTab() {
               <div>
                 <p className="text-sm text-muted-foreground">Avg Confidence</p>
                 <p className="text-3xl font-bold">{formatConfidence(stats.avgConfidence)}</p>
+                <p className="text-xs text-muted-foreground">
+                  Measured for {stats.confidenceMeasuredCount} of {stats.totalDecisions} decisions
+                </p>
               </div>
               <Target className="h-8 w-8 text-blue-400 opacity-80" />
             </div>
@@ -441,6 +450,9 @@ function OverviewTab() {
               <div>
                 <p className="text-sm text-muted-foreground">Avg Decision Time</p>
                 <p className="text-3xl font-bold">{formatMs(stats.avgTimeToDecisionMs)}</p>
+                <p className="text-xs text-muted-foreground">
+                  Measured for {stats.decisionTimeMeasuredCount} of {stats.totalDecisions} decisions
+                </p>
               </div>
               <Clock className="h-8 w-8 text-amber-400 opacity-80" />
             </div>
@@ -485,19 +497,36 @@ function OverviewTab() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Decision Outcomes</CardTitle>
-            <CardDescription>Breakdown by outcome type</CardDescription>
+            <CardDescription>Verdicts and lifecycle states are reported separately</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {Object.entries(stats.outcomes).map(([outcome, count]) => (
-                <div key={outcome} className="flex items-center justify-between">
-                  <OutcomeBadge outcome={outcome} />
-                  <span className="text-sm font-medium">{count}</span>
-                </div>
-              ))}
-              {Object.keys(stats.outcomes).length === 0 && (
-                <p className="text-sm text-muted-foreground">No decisions yet</p>
-              )}
+            <div className="space-y-5">
+              <div className="space-y-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Verdicts</p>
+                {outcomeGroups.verdicts.map(({ outcome, count }) => (
+                  <div key={outcome} className="flex items-center justify-between">
+                    <OutcomeBadge outcome={outcome} />
+                    <span className="text-sm font-medium">{count}</span>
+                  </div>
+                ))}
+                {outcomeGroups.verdicts.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No verdicts recorded</p>
+                )}
+              </div>
+              <div className="space-y-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Lifecycle states — no verdict produced
+                </p>
+                {outcomeGroups.lifecycle.map(({ outcome, count }) => (
+                  <div key={outcome} className="flex items-center justify-between">
+                    <OutcomeBadge outcome={outcome} />
+                    <span className="text-sm font-medium">{count}</span>
+                  </div>
+                ))}
+                {outcomeGroups.lifecycle.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No lifecycle-only states recorded</p>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
