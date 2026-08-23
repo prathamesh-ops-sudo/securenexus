@@ -4,6 +4,7 @@ import { db, pool } from "../db";
 import { storage } from "../storage";
 import { buildThreatIntelContext, triageAlert } from "../ai";
 import { createDecisionReceipt, finalizeDecisionReceipt, persistDecisionEvidence } from "./decision-receipts";
+import { finalizeDecisionIntegrity } from "./decision-integrity";
 import { logger } from "../logger";
 import { generateSocRealityReport } from "./soc-reality-report";
 
@@ -98,6 +99,7 @@ async function runOneAlert(run: typeof aiReplayRuns.$inferSelect, alertId: strin
       retrievalStatus: result.retrievalStatus ?? (result.retrievalUnavailable ? "unavailable" : "empty"),
     });
     await persistDecisionEvidence(run.orgId, decisionId, alert, null);
+    await finalizeDecisionIntegrity(run.orgId, decisionId);
     return "succeeded";
   } catch (error) {
     if (decisionId) {
@@ -110,6 +112,13 @@ async function runOneAlert(run: typeof aiReplayRuns.$inferSelect, alertId: strin
         retrievalStatus: "unavailable",
       }).catch((finalizationError) =>
         log.warn("Failed to finalize replay decision", { runId: run.id, decisionId, error: String(finalizationError) }),
+      );
+      await finalizeDecisionIntegrity(run.orgId, decisionId).catch((integrityError) =>
+        log.warn("Failed to finalize replay decision integrity", {
+          runId: run.id,
+          decisionId,
+          error: String(integrityError),
+        }),
       );
     }
     log.warn("Historical replay alert failed", { runId: run.id, alertId, error: String(error) });

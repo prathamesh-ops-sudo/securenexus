@@ -17,8 +17,19 @@ type Report = {
   partialCoverage: boolean;
   alertsInWindow: { total: number; bySource: Array<{ source: string; count: number }> };
   replayCoverage: { replayed: number; inWindow: number; rate: number | null; rateReason: string | null };
-  dispositionMix: { counts: Record<string, number>; abstentionCount: number; decisionIds: string[] };
-  autoCloseCandidates: { count: number; threshold: number; decisionIds: string[] };
+  dispositionMix: {
+    counts: Record<string, number>;
+    abstentionCount: number;
+    verdictBelowActionThresholdCount: number;
+    confidenceUnavailableCount: number;
+    decisionIds: string[];
+  };
+  autoCloseCandidates: {
+    count: number | null;
+    threshold: number | null;
+    decisionIds: string[];
+    unavailableReason: string | null;
+  };
   humanAgreement: {
     agreed: number;
     definitive: number;
@@ -31,6 +42,7 @@ type Report = {
     sampleSize: number;
     unresolvedExcluded: number;
     unavailableReason: string | null;
+    measurementDefinition: string;
   };
   whatWeCouldNotSee: {
     replayedDecisions: number;
@@ -200,7 +212,10 @@ export default function SocRealityReportPage() {
               <CardHeader>
                 <CardTitle>AI disposition mix</CardTitle>
                 <CardDescription>
-                  Abstentions: {report.dispositionMix.abstentionCount} (failed, unmappable, or below acting threshold)
+                  Abstentions: {report.dispositionMix.abstentionCount} (failed or unmappable) · verdicts below action
+                  threshold: {report.dispositionMix.verdictBelowActionThresholdCount} (not eligible for automatic
+                  action) · confidence unavailable: {report.dispositionMix.confidenceUnavailableCount} (not eligible for
+                  automatic action)
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -223,12 +238,15 @@ export default function SocRealityReportPage() {
               <CardHeader>
                 <CardTitle>Would have been auto-closed under this policy</CardTitle>
                 <CardDescription>
-                  Benign decisions at or above {Math.round(report.autoCloseCandidates.threshold * 100)}% confidence with
-                  no safety veto.
+                  {report.autoCloseCandidates.threshold == null
+                    ? report.autoCloseCandidates.unavailableReason
+                    : `Benign decisions at or above ${Math.round(report.autoCloseCandidates.threshold * 100)}% confidence with no safety veto.`}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-semibold">{report.autoCloseCandidates.count}</p>
+                <p className="text-2xl font-semibold">
+                  {report.autoCloseCandidates.count == null ? "Unavailable" : report.autoCloseCandidates.count}
+                </p>
               </CardContent>
             </Card>
             <Card>
@@ -254,6 +272,7 @@ export default function SocRealityReportPage() {
             <Card>
               <CardHeader>
                 <CardTitle>MTTR baseline</CardTitle>
+                <CardDescription>{report.mttrBaseline.measurementDefinition}</CardDescription>
               </CardHeader>
               <CardContent>
                 {report.mttrBaseline.averageMinutes == null ? (
@@ -262,7 +281,7 @@ export default function SocRealityReportPage() {
                   <p className="text-2xl font-semibold">{report.mttrBaseline.averageMinutes.toFixed(1)} minutes</p>
                 )}
                 <p className="text-sm text-muted-foreground">
-                  Sample size: {report.mttrBaseline.sampleSize}; unresolved excluded:{" "}
+                  Sample size: {report.mttrBaseline.sampleSize}; alerts without a linked resolved incident excluded:{" "}
                   {report.mttrBaseline.unresolvedExcluded}
                 </p>
               </CardContent>

@@ -11024,6 +11024,10 @@ export const aiAnalystDecisions = pgTable(
     proofReceiptCaptured: boolean("proof_receipt_captured").notNull().default(false),
     autonomyMode: text("autonomy_mode"),
     replayRunId: varchar("replay_run_id"),
+    integrityDigest: text("integrity_digest"),
+    integrityPreviousDigest: text("integrity_previous_digest"),
+    integritySequence: integer("integrity_sequence"),
+    integrityFinalizedAt: timestamp("integrity_finalized_at"),
     reviewedBy: text("reviewed_by"),
     reviewedAt: timestamp("reviewed_at"),
     createdAt: timestamp("created_at").defaultNow(),
@@ -11038,6 +11042,7 @@ export const aiAnalystDecisions = pgTable(
     index("idx_ai_decisions_status").on(table.orgId, table.status),
     index("idx_ai_decisions_created").on(table.orgId, table.createdAt),
     index("idx_ai_decisions_replay_run").on(table.orgId, table.replayRunId),
+    uniqueIndex("idx_ai_decisions_org_integrity_sequence").on(table.orgId, table.integritySequence),
   ],
 );
 

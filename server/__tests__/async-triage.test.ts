@@ -248,6 +248,7 @@ describe("Async triage endpoint", () => {
         alertId: "alert-1",
         incidentId: undefined,
         tier: "tier3_assisted",
+        autonomyMode: "observe_only",
       });
     });
 

@@ -1,5 +1,5 @@
 import { pool } from "../db";
-import { mapAiOutcome } from "./accuracy";
+import { mapAiOutcome, selectLatestAdjudication } from "./accuracy";
 
 const MINIMUM_RATE_SAMPLE = 20;
 
@@ -18,12 +18,15 @@ export interface SocRealityReport {
   dispositionMix: {
     counts: Record<string, number>;
     abstentionCount: number;
+    verdictBelowActionThresholdCount: number;
+    confidenceUnavailableCount: number;
     decisionIds: string[];
   };
   autoCloseCandidates: {
-    count: number;
-    threshold: number;
+    count: number | null;
+    threshold: number | null;
     decisionIds: string[];
+    unavailableReason: string | null;
   };
   humanAgreement: {
     agreed: number;
@@ -37,6 +40,7 @@ export interface SocRealityReport {
     sampleSize: number;
     unresolvedExcluded: number;
     unavailableReason: string | null;
+    measurementDefinition: string;
   };
   whatWeCouldNotSee: {
     replayedDecisions: number;
@@ -132,9 +136,10 @@ export async function generateSocRealityReport(
       decisionId: string;
       adjudicatedOutcome: string;
       adjudicatedAt: Date;
+      isFinal: boolean;
     }>(
       `SELECT decision_id AS "decisionId", adjudicated_outcome AS "adjudicatedOutcome",
-              adjudicated_at AS "adjudicatedAt"
+              adjudicated_at AS "adjudicatedAt", is_final AS "isFinal"
        FROM ai_decision_adjudications
        WHERE org_id = $1
          AND decision_id IN (
@@ -195,25 +200,44 @@ export async function generateSocRealityReport(
   const alertCounts = alerts.rows.map((row) => ({ source: row.source, count: Number(row.count) }));
   const inWindow = alertCounts.reduce((sum, row) => sum + row.count, 0);
   const coverageRate = gatedRate(run.processedCount, inWindow);
-  const threshold = Number(policy.rows[0]?.threshold ?? 0.85);
+  const thresholdValue = policy.rows[0]?.threshold;
+  const threshold = thresholdValue == null ? null : Number(thresholdValue);
   const counts: Record<string, number> = {};
   let abstentionCount = 0;
+  let verdictBelowActionThresholdCount = 0;
+  let confidenceUnavailableCount = 0;
   const autoCloseIds: string[] = [];
   for (const decision of decisionRows) {
     if (decision.outcome) counts[decision.outcome] = (counts[decision.outcome] ?? 0) + 1;
     const mapped = mapAiOutcome(decision.outcome);
-    const belowThreshold = decision.confidenceScore == null || decision.confidenceScore < threshold;
-    const failed = decision.outcome == null;
-    if (failed || !mapped || belowThreshold) abstentionCount++;
+    const belowThreshold =
+      threshold != null && decision.confidenceScore != null && decision.confidenceScore < threshold;
+    if (!mapped) abstentionCount++;
+    if (belowThreshold) verdictBelowActionThresholdCount++;
+    if (mapped && decision.confidenceScore == null) confidenceUnavailableCount++;
     const vetoes = parseJsonArray(decision.safetyVetoes);
-    if (mapped === "benign" && !belowThreshold && vetoes.length === 0) autoCloseIds.push(decision.id);
+    if (
+      threshold != null &&
+      mapped === "benign" &&
+      decision.confidenceScore != null &&
+      !belowThreshold &&
+      vetoes.length === 0
+    )
+      autoCloseIds.push(decision.id);
   }
-  counts.abstention = abstentionCount;
 
-  const latestAdjudication = new Map<string, string>();
+  const adjudicationsByDecision = new Map<string, typeof adjudications.rows>();
   for (const row of adjudications.rows) {
-    if (!latestAdjudication.has(row.decisionId)) latestAdjudication.set(row.decisionId, row.adjudicatedOutcome);
+    const entries = adjudicationsByDecision.get(row.decisionId) ?? [];
+    entries.push(row);
+    adjudicationsByDecision.set(row.decisionId, entries);
   }
+  const latestAdjudication = new Map(
+    Array.from(adjudicationsByDecision.entries()).map(([decisionId, rows]) => {
+      const selection = selectLatestAdjudication(rows);
+      return [decisionId, selection.final?.adjudicatedOutcome ?? selection.provisional?.adjudicatedOutcome ?? null];
+    }),
+  );
   let agreed = 0;
   let definitive = 0;
   for (const decision of decisionRows) {
@@ -257,8 +281,22 @@ export async function generateSocRealityReport(
       rate: coverageRate.rate,
       rateReason: coverageRate.rateReason,
     },
-    dispositionMix: { counts, abstentionCount, decisionIds },
-    autoCloseCandidates: { count: autoCloseIds.length, threshold, decisionIds: autoCloseIds },
+    dispositionMix: {
+      counts,
+      abstentionCount,
+      verdictBelowActionThresholdCount,
+      confidenceUnavailableCount,
+      decisionIds,
+    },
+    autoCloseCandidates:
+      threshold == null
+        ? {
+            count: null,
+            threshold: null,
+            decisionIds: [],
+            unavailableReason: "Unavailable: no active auto-response policy is configured for this tenant.",
+          }
+        : { count: autoCloseIds.length, threshold, decisionIds: autoCloseIds, unavailableReason: null },
     humanAgreement: {
       agreed,
       definitive,
@@ -271,6 +309,8 @@ export async function generateSocRealityReport(
       sampleSize,
       unresolvedExcluded,
       unavailableReason: sampleSize === 0 ? "No alerts in the window reached a terminal resolved state." : null,
+      measurementDefinition:
+        "Alert creation to linked incident resolution; alerts without a linked resolved incident are excluded.",
     },
     whatWeCouldNotSee: {
       replayedDecisions: decisionRows.length,

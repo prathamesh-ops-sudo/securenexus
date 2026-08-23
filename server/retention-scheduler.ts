@@ -135,11 +135,29 @@ export async function runRetentionCleanup(): Promise<
   // Global TTL cleanup for ai_inference_log (30-day retention, not per-org)
   try {
     const inferenceCleanupResult = await db.execute(
-      sql`DELETE FROM ai_inference_log WHERE created_at < NOW() - INTERVAL '30 days'`,
+      sql`DELETE FROM ai_inference_log WHERE created_at < NOW() - INTERVAL '30 days' RETURNING org_id`,
     );
+    const deletedByOrg = new Map<string, number>();
+    for (const row of ((inferenceCleanupResult as any).rows || []) as Array<{ org_id: string | null }>) {
+      if (row.org_id) deletedByOrg.set(row.org_id, (deletedByOrg.get(row.org_id) ?? 0) + 1);
+    }
     const inferenceDeleted = Number(inferenceCleanupResult.rowCount) || 0;
     if (inferenceDeleted > 0) {
       logger.child("retention-scheduler").info("AI inference log TTL cleanup", { inferenceDeleted, retentionDays: 30 });
+      for (const [orgId, deletedCount] of Array.from(deletedByOrg.entries())) {
+        await storage.createAuditLog({
+          orgId,
+          userId: "system",
+          userName: "Retention Scheduler",
+          action: "retention_cleanup",
+          resourceType: "ai_inference_log",
+          details: {
+            recordClass: "inference",
+            deletedCount,
+            policy: "global 30-day AI inference retention",
+          },
+        });
+      }
     }
   } catch (inferenceErr) {
     // Table may not exist yet if AI has never been used — safe to ignore

@@ -7,6 +7,7 @@ import { enforcePlanLimit } from "../../middleware/plan-enforcement";
 import { withAiFallback } from "../../ai/fallback";
 import { enqueueJob } from "../../job-queue";
 import { createDecisionReceipt, finalizeDecisionReceipt, persistDecisionEvidence } from "../../ai/decision-receipts";
+import { finalizeDecisionIntegrity } from "../../ai/decision-integrity";
 import { getAiSecuritySettings } from "../../ai/security-store";
 import type { Alert } from "@shared/schema";
 
@@ -55,6 +56,9 @@ export function getAiTriageHandler(): (job: any) => Promise<any> {
         autonomyMode: securitySettings.autonomyMode,
       });
       await persistDecisionEvidence(orgId, decisionId, alert, null);
+      await finalizeDecisionIntegrity(orgId, decisionId).catch((error) =>
+        log.warn("Failed to finalize AI decision integrity", { error: String(error), orgId, decisionId }),
+      );
 
       // Broadcast completion via SSE
       const { broadcastEvent } = await import("../../event-bus");
@@ -85,6 +89,9 @@ export function getAiTriageHandler(): (job: any) => Promise<any> {
             reasoning: err.message || String(err),
             retrievalStatus,
           });
+          await finalizeDecisionIntegrity(orgId, decisionId).catch((error) =>
+            log.warn("Failed to finalize failed AI decision integrity", { error: String(error), orgId, decisionId }),
+          );
         } catch (finalizationError) {
           log.error("Failed to finalize failed triage decision", {
             error: String(finalizationError),

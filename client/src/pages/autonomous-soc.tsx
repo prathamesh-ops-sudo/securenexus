@@ -44,6 +44,7 @@ import {
   AlertCircle,
   RefreshCw,
   BookOpen,
+  Download,
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/page-skeleton";
 
@@ -114,6 +115,8 @@ interface Decision {
   proofReceiptCaptured: boolean;
   autonomyMode: "observe_only" | "assisted" | "autonomous" | null;
   replayRunId: string | null;
+  integrityDigest: string | null;
+  integritySequence: number | null;
 }
 
 interface AuditLogEntry {
@@ -162,6 +165,18 @@ interface DecisionReceipt {
     redacted: boolean;
   }[];
   logs?: AuditLogEntry[];
+}
+
+interface DecisionIntegrity {
+  status: "verified" | "mismatched" | "unverifiable";
+  digest: string | null;
+  reason: string | null;
+  sequence: number | null;
+  retention?: {
+    effectiveRetentionDays: number;
+    fullExportHorizon: string;
+    completeExportAvailable: boolean;
+  };
 }
 
 const TIER_CONFIG: Record<string, { label: string; color: string; icon: typeof Brain; description: string }> = {
@@ -729,6 +744,7 @@ function DecisionsTab() {
 }
 
 function DecisionDetailDialog({ decision, onClose }: { decision: Decision | null; onClose: () => void }) {
+  const { toast } = useToast();
   const { data: receipt, isLoading: receiptLoading } = useQuery<DecisionReceipt>({
     queryKey: ["/api/autonomous-soc/decisions", decision?.id, "receipt"],
     queryFn: async () => {
@@ -739,6 +755,42 @@ function DecisionDetailDialog({ decision, onClose }: { decision: Decision | null
     },
     enabled: !!decision,
   });
+  const { data: integrity } = useQuery<DecisionIntegrity>({
+    queryKey: ["/api/ai/decisions", decision?.id, "integrity"],
+    queryFn: async () => {
+      if (!decision) throw new Error("Decision not selected");
+      const res = await apiRequest("GET", `/api/ai/decisions/${decision.id}/integrity`);
+      const body = await res.json();
+      return (body.data ?? body) as DecisionIntegrity;
+    },
+    enabled: !!decision,
+  });
+  const [exporting, setExporting] = useState(false);
+  const exportDecision = async () => {
+    if (!decision) return;
+    setExporting(true);
+    try {
+      const res = await apiRequest("GET", `/api/ai/decisions/${decision.id}/export`);
+      const body = await res.json();
+      const payload = body.data ?? body;
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ai-decision-${decision.id}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Auditor export downloaded" });
+    } catch (error) {
+      toast({
+        title: "Could not export decision",
+        description: error instanceof Error ? error.message : "Export failed",
+        variant: "destructive",
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
   if (!decision) return null;
   const notRecorded = "Not recorded";
   const withheldActions = receipt?.logs?.filter((entry) => entry.action === "action_withheld") ?? [];
@@ -862,6 +914,31 @@ function DecisionDetailDialog({ decision, onClose }: { decision: Decision | null
           {/* Metadata */}
           <div className="rounded-lg border p-3 space-y-3">
             <p className="text-xs font-medium text-muted-foreground">Proof Receipt</p>
+            <div className="flex items-center justify-between gap-3 rounded border border-cyan-500/30 bg-cyan-500/5 p-2">
+              <div>
+                <p className="text-xs font-medium">Stored-record integrity</p>
+                <p className="text-xs text-muted-foreground">
+                  {integrity?.status === "verified"
+                    ? "Verified: stored decision and receipt components match."
+                    : integrity?.status === "mismatched"
+                      ? "Mismatch detected: stored data differs from its digest."
+                      : "Unverifiable: this decision predates integrity digest capture."}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  This detects stored-record changes; it is not external notarization.
+                </p>
+                {integrity?.retention && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Complete export horizon: {new Date(integrity.retention.fullExportHorizon).toLocaleDateString()} (
+                    {integrity.retention.completeExportAvailable ? "currently available" : "may be incomplete"})
+                  </p>
+                )}
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={exportDecision} disabled={exporting}>
+                <Download className="mr-2 h-4 w-4" />
+                {exporting ? "Exporting..." : "Export JSON"}
+              </Button>
+            </div>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <p>Model: {decision.model ?? notRecorded}</p>
               <p>Prompt: {decision.promptId ?? notRecorded}</p>

@@ -25,6 +25,7 @@ import {
   finalizeDecisionReceipt,
   persistDecisionEvidence,
 } from "./decision-receipts";
+import { finalizeDecisionIntegrity } from "./decision-integrity";
 
 const log = logger.child("autonomous-analyst");
 
@@ -111,6 +112,13 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
           reasoning: error instanceof Error ? error.message : String(error),
           retrievalStatus: "unavailable",
         });
+        await finalizeDecisionIntegrity(request.orgId, receiptContext.decisionId).catch((integrityError) =>
+          log.warn("Failed to finalize failed autonomous decision integrity", {
+            error: String(integrityError),
+            orgId: request.orgId,
+            decisionId: receiptContext.decisionId,
+          }),
+        );
       } catch (finalizationError) {
         log.error("Failed to finalize failed autonomous triage", {
           error: String(finalizationError),
@@ -321,6 +329,9 @@ async function triageAlertInternal(
     retrievalStatus,
   });
   if (investigation) await persistDecisionEvidence(orgId, decisionId, alert, investigation);
+  await finalizeDecisionIntegrity(orgId, decisionId).catch((error) =>
+    log.warn("Failed to finalize autonomous decision integrity", { error: String(error), orgId, decisionId }),
+  );
 
   // 9. If Tier 1 auto-resolved, update alert status
   if (tier === "tier1_autonomous" && confidence.shouldAutoAct && safetyVetoes.length === 0) {
