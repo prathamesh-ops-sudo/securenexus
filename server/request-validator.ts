@@ -236,16 +236,29 @@ export const bodySchemas = {
     status: z.enum(PLAYBOOK_STATUSES).optional(),
   }),
 
-  aiFeedback: z.object({
-    resourceType: z.string().min(1).max(64),
-    resourceId: z.string().max(255).optional(),
-    rating: z.number().int().min(1).max(5),
-    comment: z.string().max(MAX_STRING).optional(),
-    aiOutput: z.unknown().optional(),
-    correctionReason: z.string().max(MAX_STRING).optional(),
-    correctedSeverity: z.string().max(64).optional(),
-    correctedCategory: z.string().max(64).optional(),
-  }),
+  aiFeedback: z
+    .object({
+      resourceType: z.string().min(1).max(64),
+      resourceId: z.string().max(255).optional(),
+      rating: z.number().int().min(1).max(5),
+      comment: z.string().max(MAX_STRING).optional(),
+      aiOutput: z.unknown().optional(),
+      correctionReason: z.string().max(MAX_STRING).optional(),
+      correctedSeverity: z.string().max(64).optional(),
+      correctedCategory: z.string().max(64).optional(),
+      adjudicatedOutcome: z.enum(["malicious", "benign", "inconclusive"]).optional(),
+      adjudicationRationale: z.string().max(MAX_STRING).optional(),
+      adjudicationFinal: z.boolean().optional(),
+    })
+    .superRefine((value, context) => {
+      if (value.adjudicatedOutcome && !value.adjudicationRationale?.trim()) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["adjudicationRationale"],
+          message: "Rationale is required for an explicit adjudication",
+        });
+      }
+    }),
 
   approvalDecision: z.object({
     decision: z.enum(["approved", "rejected"]),

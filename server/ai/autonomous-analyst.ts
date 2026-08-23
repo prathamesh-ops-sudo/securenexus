@@ -6,7 +6,7 @@
  * Tier 3 (AI-Assisted): <70% → AI provides context, human leads investigation
  */
 
-import { db } from "../db";
+import { db, pool } from "../db";
 import { storage } from "../storage";
 import { aiAnalystDecisions, autonomyLog, alerts as alertsTable } from "@shared/schema";
 import type { Alert, Incident, InsertAiAnalystDecision, InsertAutonomyLogEntry } from "@shared/schema";
@@ -18,6 +18,7 @@ import { dispatchAction, type ActionContext, type ActionResult } from "../action
 import { getAiSecuritySettings } from "./security-store";
 import { getGuardVetoes } from "./safety-vetoes";
 import { triageAlert as runAiTriage } from "../ai";
+import { createAdjudication, mapAiOutcome } from "./accuracy";
 import {
   assertDecisionOutcome,
   createDecisionReceipt,
@@ -396,18 +397,38 @@ export async function overrideDecision(
   if (!existing) throw new Error("Decision not found");
   assertDecisionOutcome(newOutcome);
 
-  await db
-    .update(aiAnalystDecisions)
-    .set({
-      humanOverride: true,
-      humanOverrideBy: overrideBy,
-      humanOverrideReason: overrideReason,
-      humanOverrideAt: new Date(),
-      outcome: newOutcome,
-      status: "overridden",
-      updatedAt: new Date(),
-    })
-    .where(eq(aiAnalystDecisions.id, decisionId));
+  const adjudicatedOutcome = mapAiOutcome(newOutcome);
+  if (!adjudicatedOutcome) throw new Error("Override outcome cannot establish a mapped adjudication");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `UPDATE ai_analyst_decisions
+       SET human_override = true, human_override_by = $1::varchar,
+           human_override_reason = $2::text, human_override_at = NOW(),
+           outcome = $3::text, status = 'overridden', updated_at = NOW()
+       WHERE id = $4::varchar AND org_id = $5::varchar`,
+      [overrideBy, overrideReason, newOutcome, decisionId, orgId],
+    );
+    await createAdjudication(
+      {
+        orgId,
+        decisionId,
+        adjudicatedOutcome,
+        source: "analyst_override",
+        actorUserId: overrideBy,
+        rationale: overrideReason,
+        isFinal: true,
+      },
+      client,
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 
   await writeAutonomyLog({
     orgId,

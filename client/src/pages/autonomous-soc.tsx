@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -561,6 +562,8 @@ function DecisionsTab() {
   const [tierFilter, setTierFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedDecision, setSelectedDecision] = useState<Decision | null>(null);
+  const search = useSearch();
+  const requestedDecisionId = new URLSearchParams(search).get("decisionId");
 
   const params = new URLSearchParams();
   if (tierFilter !== "all") params.set("tier", tierFilter);
@@ -573,6 +576,13 @@ function DecisionsTab() {
       return res.json();
     },
   });
+
+  useEffect(() => {
+    if (requestedDecisionId && data?.decisions) {
+      const requested = data.decisions.find((item) => item.id === requestedDecisionId);
+      if (requested) setSelectedDecision(requested);
+    }
+  }, [data?.decisions, requestedDecisionId]);
 
   const approveMutation = useMutation({
     mutationFn: async (decisionId: string) => {

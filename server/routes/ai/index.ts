@@ -13,6 +13,7 @@ import { registerAiInvestigationRoutes } from "./investigation";
 import { registerAiContextRoutes } from "./context";
 import { registerAiModelsRoutes } from "./models";
 import { registerAiDetectionRulesRoutes } from "./detection-rules";
+import { registerAiAccuracyRoutes } from "./accuracy";
 import { isAuthenticated } from "../../auth";
 import { requireMinRole, requireOrgId, resolveOrgContext } from "../../rbac";
 import { correlateAlerts, generateIncidentNarrative, triageAlert } from "../../ai";
@@ -99,4 +100,5 @@ export function registerAiRoutes(app: Express): void {
   registerAiContextRoutes(app);
   registerAiModelsRoutes(app);
   registerAiDetectionRulesRoutes(app);
+  registerAiAccuracyRoutes(app);
 }

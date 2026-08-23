@@ -486,7 +486,7 @@ Respond with this exact JSON structure:
 
   await registerPrompt({
     id: "triage",
-    version: 1,
+    version: 2,
     name: "Alert Triage Analyst",
     description:
       "Real-time alert triage with MITRE classification, false positive assessment, and actionable containment advice.",
@@ -523,15 +523,15 @@ Respond with this exact JSON structure:
   "category": "MITRE-aligned category",
   "recommendedAction": "specific actionable next step for the analyst",
   "reasoning": "evidence-based triage reasoning citing specific indicators",
-  "mitreTactic": "MITRE ATT&CK Tactic",
-  "mitreTechnique": "T1xxx.xxx",
-  "killChainPhase": "Kill Chain phase",
+  "mitreTactic": "MITRE ATT&CK Tactic, or null when the alert has no supportable tactic",
+  "mitreTechnique": "T1xxx.xxx, or null when the alert has no supportable technique",
+  "killChainPhase": "Kill Chain phase, or null when the alert has no supportable phase",
   "falsePositiveLikelihood": 0.15,
   "falsePositiveReasoning": "why this is or is not likely a false positive",
   "relatedIocs": [{"type": "ip|domain|hash|url", "value": "indicator value"}],
   "nistClassification": "NIST incident category",
   "escalationRequired": false,
-  "containmentAdvice": "immediate containment steps if threat is active"
+  "containmentAdvice": "immediate containment steps if threat is active, otherwise null"
 }`,
     outputSchema: {
       severity: "string enum",
@@ -539,13 +539,13 @@ Respond with this exact JSON structure:
       category: "string",
       recommendedAction: "string",
       reasoning: "string",
-      mitreTactic: "string",
-      mitreTechnique: "string T1xxx.xxx",
-      killChainPhase: "string",
+      mitreTactic: "string or null when unsupported by evidence",
+      mitreTechnique: "string T1xxx.xxx or null when unsupported by evidence",
+      killChainPhase: "string or null when unsupported by evidence",
       falsePositiveLikelihood: "number 0-1",
       relatedIocs: "array of IOC objects",
       escalationRequired: "boolean",
-      containmentAdvice: "string",
+      containmentAdvice: "string or null when no containment is indicated",
     },
     maxTokens: 2048,
     temperature: 0.05,

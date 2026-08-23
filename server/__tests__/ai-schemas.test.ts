@@ -36,4 +36,46 @@ describe("AI output schemas", () => {
   it("extracts JSON wrapped in a markdown json fence", () => {
     expect(extractJson('```json\n{"severity":"high"}\n```')).toBe('{"severity":"high"}');
   });
+
+  it("accepts explicit nulls for unsupported analytical fields", () => {
+    const result = triageOutputSchema.safeParse({
+      severity: "informational",
+      priority: 5,
+      category: "Informational",
+      recommendedAction: "Review the alert.",
+      reasoning: "The alert contains no indicators that support a MITRE mapping.",
+      mitreTactic: null,
+      mitreTechnique: null,
+      killChainPhase: null,
+      falsePositiveLikelihood: 0.95,
+      falsePositiveReasoning: "The alert is a known synthetic test.",
+      relatedIocs: [],
+      nistClassification: "Informational",
+      escalationRequired: false,
+      containmentAdvice: null,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("continues to reject invalid non-null MITRE techniques", () => {
+    const result = triageOutputSchema.safeParse({
+      severity: "informational",
+      priority: 5,
+      category: "Informational",
+      recommendedAction: "Review the alert.",
+      reasoning: "Reasoning.",
+      mitreTactic: null,
+      mitreTechnique: "unknown",
+      killChainPhase: null,
+      falsePositiveLikelihood: 0.95,
+      falsePositiveReasoning: "Reasoning.",
+      relatedIocs: [],
+      nistClassification: "Informational",
+      escalationRequired: false,
+      containmentAdvice: null,
+    });
+
+    expect(result.success).toBe(false);
+  });
 });

@@ -162,6 +162,13 @@
       "when": 1787481000000,
       "tag": "0022_ai_proof_receipt_honesty",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1787482000000,
+      "tag": "0023_ai_decision_adjudications",
+      "breakpoints": true
     }
 ]
 }

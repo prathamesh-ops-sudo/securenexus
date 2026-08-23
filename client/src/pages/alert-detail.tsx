@@ -59,8 +59,8 @@ interface TriageResult {
   category: string;
   recommendedAction: string;
   reasoning: string;
-  mitreTactic: string;
-  mitreTechnique: string;
+  mitreTactic: string | null;
+  mitreTechnique: string | null;
   falsePositiveLikelihood: number;
   relatedIocs: (string | { type: string; value: string })[];
   threatIntelSources?: string[];

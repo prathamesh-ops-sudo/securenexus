@@ -6,6 +6,8 @@ import { bodySchemas, querySchemas, validateBody, validateQuery } from "../../re
 import { recordFeedbackOutcome } from "../../ai/active-learning";
 import { config as appConfig } from "../../config";
 import { invokeModel as gatewayInvoke } from "../../ai/model-gateway";
+import { createAdjudication } from "../../ai/accuracy";
+import { pool } from "../../db";
 
 const log = logger.child("routes-ai-feedback");
 
@@ -29,7 +31,13 @@ export function registerAiFeedbackRoutes(app: Express): void {
           correctionReason,
           correctedSeverity,
           correctedCategory,
+          adjudicatedOutcome,
+          adjudicationRationale,
+          adjudicationFinal,
         } = (req as any).validatedBody;
+        if (adjudicatedOutcome && !adjudicationRationale?.trim()) {
+          throw new Error("Explicit feedback adjudication requires a rationale");
+        }
         const feedbackData: any = {
           orgId: getOrgId(req),
           userId: (req as any).user?.id,
@@ -45,7 +53,65 @@ export function registerAiFeedbackRoutes(app: Express): void {
         if (correctionReason) feedbackData.correctionReason = correctionReason;
         if (correctedSeverity) feedbackData.correctedSeverity = correctedSeverity;
         if (correctedCategory) feedbackData.correctedCategory = correctedCategory;
-        const feedback = await storage.createAiFeedback(feedbackData);
+        let feedback;
+        if (adjudicatedOutcome) {
+          const client = await pool.connect();
+          try {
+            await client.query("BEGIN");
+            const decision = await client.query<{ id: string }>(
+              `SELECT id FROM ai_analyst_decisions
+               WHERE org_id = $1::varchar AND (id = $2::varchar OR alert_id = $2::varchar)
+               ORDER BY created_at DESC LIMIT 1`,
+              [getOrgId(req), resourceId],
+            );
+            if (!decision.rows[0]) throw new Error("Decision not found for explicit feedback adjudication");
+            const feedbackResult = await client.query(
+              `INSERT INTO ai_feedback
+                (org_id, user_id, user_name, resource_type, resource_id, rating, comment,
+                 correction_reason, corrected_severity, corrected_category, ai_output)
+               VALUES ($1::varchar, $2::varchar, $3::text, $4::text, $5::varchar, $6::integer, $7::text,
+                       $8::text, $9::text, $10::text, $11::jsonb)
+               RETURNING id, org_id AS "orgId", user_id AS "userId", user_name AS "userName",
+                 resource_type AS "resourceType", resource_id AS "resourceId", rating, comment,
+                 correction_reason AS "correctionReason", corrected_severity AS "correctedSeverity",
+                 corrected_category AS "correctedCategory", ai_output AS "aiOutput", created_at AS "createdAt"`,
+              [
+                feedbackData.orgId,
+                feedbackData.userId ?? null,
+                feedbackData.userName ?? null,
+                feedbackData.resourceType,
+                feedbackData.resourceId ?? null,
+                feedbackData.rating,
+                feedbackData.comment ?? null,
+                feedbackData.correctionReason ?? null,
+                feedbackData.correctedSeverity ?? null,
+                feedbackData.correctedCategory ?? null,
+                feedbackData.aiOutput == null ? null : JSON.stringify(feedbackData.aiOutput),
+              ],
+            );
+            feedback = feedbackResult.rows[0];
+            await createAdjudication(
+              {
+                orgId: getOrgId(req),
+                decisionId: decision.rows[0].id,
+                adjudicatedOutcome,
+                source: "analyst_feedback",
+                actorUserId: (req as any).user?.id,
+                rationale: adjudicationRationale.trim(),
+                isFinal: adjudicationFinal ?? false,
+              },
+              client,
+            );
+            await client.query("COMMIT");
+          } catch (error) {
+            await client.query("ROLLBACK");
+            throw error;
+          } finally {
+            client.release();
+          }
+        } else {
+          feedback = await storage.createAiFeedback(feedbackData);
+        }
         await storage.createAuditLog({
           userId: (req as any).user?.id,
           userName: (req as any).user?.firstName

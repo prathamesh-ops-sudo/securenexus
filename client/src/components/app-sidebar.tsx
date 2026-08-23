@@ -157,7 +157,10 @@ const navGroups: NavGroup[] = [
     sections: [
       {
         label: "AI Platform",
-        items: [{ title: "AI Platform", url: "/ai-platform", icon: Brain }],
+        items: [
+          { title: "AI Platform", url: "/ai-platform", icon: Brain },
+          { title: "AI Accuracy", url: "/ai-accuracy", icon: Brain },
+        ],
       },
     ],
   },

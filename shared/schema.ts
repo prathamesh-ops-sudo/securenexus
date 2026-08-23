@@ -10961,6 +10961,8 @@ export const AI_DECISION_OUTCOMES = [
 ] as const;
 
 export const AI_RETRIEVAL_STATUSES = ["not_attempted", "empty", "unavailable", "available"] as const;
+export const ADJUDICATED_OUTCOMES = ["malicious", "benign", "inconclusive"] as const;
+export const ADJUDICATION_SOURCES = ["analyst_override", "analyst_feedback", "manual_review", "external"] as const;
 export const AUTONOMY_LOG_ACTIONS = [
   "alert_triaged",
   "alert_enriched",
@@ -11145,6 +11147,39 @@ export type AiDecisionEvidence = typeof aiDecisionEvidence.$inferSelect;
 export type InsertAiDecisionEvidence = typeof aiDecisionEvidence.$inferInsert;
 export type AiDecisionRedactionReceipt = typeof aiDecisionRedactionReceipts.$inferSelect;
 export type InsertAiDecisionRedactionReceipt = typeof aiDecisionRedactionReceipts.$inferInsert;
+
+export const aiDecisionAdjudications = pgTable(
+  "ai_decision_adjudications",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    decisionId: varchar("decision_id")
+      .notNull()
+      .references(() => aiAnalystDecisions.id, { onDelete: "cascade" }),
+    alertId: varchar("alert_id").references(() => alerts.id, { onDelete: "set null" }),
+    adjudicatedOutcome: text("adjudicated_outcome").notNull(),
+    source: text("source").notNull(),
+    actorUserId: varchar("actor_user_id"),
+    rationale: text("rationale").notNull(),
+    adjudicatedAt: timestamp("adjudicated_at").notNull().defaultNow(),
+    isFinal: boolean("is_final").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_ai_adjudications_org_decision").on(table.orgId, table.decisionId),
+    index("idx_ai_adjudications_org_time").on(table.orgId, table.adjudicatedAt),
+    uniqueIndex("idx_ai_adjudications_one_final")
+      .on(table.decisionId)
+      .where(sql`${table.isFinal} = true`),
+  ],
+);
+
+export type AiDecisionAdjudication = typeof aiDecisionAdjudications.$inferSelect;
+export type InsertAiDecisionAdjudication = typeof aiDecisionAdjudications.$inferInsert;
 
 // ── Developer Security (Shift-Left Platform) ──────────────────────
 
