@@ -105,6 +105,7 @@ export interface AccuracyReport {
   calibration: {
     label: string;
     count: number;
+    inconclusiveCount: number;
     observedMaliciousRate: number | null;
     bucketMidpoint: number;
     insufficientData: boolean;
@@ -154,34 +155,43 @@ export function calculateAccuracy(
   const calibration = Array.from({ length: 10 }, (_, index) => ({
     label: `${(index / 10).toFixed(1)}–${((index + 1) / 10).toFixed(1)}`,
     count: 0,
+    inconclusiveCount: 0,
     malicious: 0,
     bucketMidpoint: Number((index / 10 + 0.05).toFixed(2)),
   }));
 
   for (const { decision, adjudication } of selected) {
-    const predicted = mapAiOutcome(decision.outcome);
-    if (!predicted) unmappedCount++;
-    if (adjudication.adjudicatedOutcome === "inconclusive") {
+    const isInconclusive = adjudication.adjudicatedOutcome === "inconclusive";
+    if (isInconclusive) {
       inconclusiveCount++;
-    } else if (predicted) {
-      if (predicted === "malicious" && adjudication.adjudicatedOutcome === "malicious") matrix.truePositive++;
-      if (predicted === "benign" && adjudication.adjudicatedOutcome === "benign") matrix.trueNegative++;
-      if (predicted === "malicious" && adjudication.adjudicatedOutcome === "benign") matrix.falsePositive++;
-      if (predicted === "benign" && adjudication.adjudicatedOutcome === "malicious") matrix.falseNegative++;
-      if (predicted !== adjudication.adjudicatedOutcome) {
-        disagreements.push({
-          decisionId: decision.id,
-          predictedClass: predicted,
-          adjudicatedClass: adjudication.adjudicatedOutcome as "malicious" | "benign",
-          confidenceScore: decision.confidenceScore,
-          createdAt: decision.createdAt,
-        });
+    } else {
+      const predicted = mapAiOutcome(decision.outcome);
+      if (!predicted) {
+        unmappedCount++;
+      } else {
+        if (predicted === "malicious" && adjudication.adjudicatedOutcome === "malicious") matrix.truePositive++;
+        if (predicted === "benign" && adjudication.adjudicatedOutcome === "benign") matrix.trueNegative++;
+        if (predicted === "malicious" && adjudication.adjudicatedOutcome === "benign") matrix.falsePositive++;
+        if (predicted === "benign" && adjudication.adjudicatedOutcome === "malicious") matrix.falseNegative++;
+        if (predicted !== adjudication.adjudicatedOutcome) {
+          disagreements.push({
+            decisionId: decision.id,
+            predictedClass: predicted,
+            adjudicatedClass: adjudication.adjudicatedOutcome as "malicious" | "benign",
+            confidenceScore: decision.confidenceScore,
+            createdAt: decision.createdAt,
+          });
+        }
       }
     }
     if (decision.confidenceScore != null && decision.confidenceScore >= 0 && decision.confidenceScore <= 1) {
       const bucket = calibration[Math.min(9, Math.floor(decision.confidenceScore * 10))];
-      bucket.count++;
-      if (adjudication.adjudicatedOutcome === "malicious") bucket.malicious++;
+      if (isInconclusive) {
+        bucket.inconclusiveCount++;
+      } else {
+        bucket.count++;
+        if (adjudication.adjudicatedOutcome === "malicious") bucket.malicious++;
+      }
     }
   }
 
@@ -235,6 +245,7 @@ export function calculateAccuracy(
     calibration: calibration.map((bucket) => ({
       label: bucket.label,
       count: bucket.count,
+      inconclusiveCount: bucket.inconclusiveCount,
       observedMaliciousRate: bucket.count === 0 ? null : Number((bucket.malicious / bucket.count).toFixed(4)),
       bucketMidpoint: bucket.bucketMidpoint,
       insufficientData: bucket.count < 10,
@@ -256,12 +267,15 @@ export async function getAccuracyReport(orgId: string, from: string, to: string)
     [orgId, from, to],
   );
   const adjudicationsResult = await pool.query<AiDecisionAdjudication>(
-    `SELECT id, org_id AS "orgId", decision_id AS "decisionId", alert_id AS "alertId",
-            adjudicated_outcome AS "adjudicatedOutcome", source, actor_user_id AS "actorUserId",
-            rationale, adjudicated_at AS "adjudicatedAt", is_final AS "isFinal", created_at AS "createdAt"
-     FROM ai_decision_adjudications
-     WHERE org_id = $1 AND adjudicated_at <= $2::timestamptz`,
-    [orgId, to],
+    `SELECT a.id, a.org_id AS "orgId", a.decision_id AS "decisionId", a.alert_id AS "alertId",
+            a.adjudicated_outcome AS "adjudicatedOutcome", a.source, a.actor_user_id AS "actorUserId",
+            a.rationale, a.adjudicated_at AS "adjudicatedAt", a.is_final AS "isFinal", a.created_at AS "createdAt"
+     FROM ai_decision_adjudications a
+     JOIN ai_analyst_decisions d ON d.id = a.decision_id AND d.org_id = a.org_id
+     WHERE a.org_id = $1
+       AND d.created_at >= $2::timestamptz
+       AND d.created_at < $3::timestamptz`,
+    [orgId, from, to],
   );
   return calculateAccuracy(decisionsResult.rows, adjudicationsResult.rows, from, to, orgId);
 }

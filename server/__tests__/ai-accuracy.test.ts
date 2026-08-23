@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { ACCURACY_MINIMUM_SAMPLE, calculateAccuracy, mapAiOutcome, selectLatestAdjudication } from "../ai/accuracy";
+import { describe, expect, it, vi } from "vitest";
+import {
+  ACCURACY_MINIMUM_SAMPLE,
+  calculateAccuracy,
+  getAccuracyReport,
+  mapAiOutcome,
+  selectLatestAdjudication,
+} from "../ai/accuracy";
+import { pool } from "../db";
 import { bodySchemas } from "../request-validator";
 
 const decision = (id: string, outcome: string | null, confidenceScore = 0.8) => ({
@@ -37,6 +44,28 @@ describe("AI accuracy", () => {
       "org-a",
     );
     expect(report.unmappedCount).toBe(1);
+  });
+
+  it("keeps inconclusive and unmapped counts disjoint and reconcilable", () => {
+    const report = calculateAccuracy(
+      [
+        decision("tp", "true_positive"),
+        decision("inconclusive", "future_outcome"),
+        decision("unmapped", "future_outcome"),
+      ],
+      [
+        adjudication("tp", "malicious"),
+        adjudication("inconclusive", "inconclusive"),
+        adjudication("unmapped", "benign"),
+      ],
+      "2026-08-01",
+      "2026-09-01",
+      "org-a",
+    );
+    const matrixTotal = Object.values(report.matrix).reduce((total, count) => total + count, 0);
+    expect(report.inconclusiveCount).toBe(1);
+    expect(report.unmappedCount).toBe(1);
+    expect(matrixTotal + report.inconclusiveCount + report.unmappedCount).toBe(report.adjudicatedCount);
   });
 
   it("computes TP, TN, FP, FN and hides rates below the named threshold", () => {
@@ -118,9 +147,52 @@ describe("AI accuracy", () => {
     expect(report.calibration[8]).toMatchObject({
       label: "0.8–0.9",
       count: 1,
+      inconclusiveCount: 0,
       observedMaliciousRate: 0,
       bucketMidpoint: 0.85,
       insufficientData: true,
     });
+  });
+
+  it("excludes inconclusive adjudications from calibration denominators", () => {
+    const report = calculateAccuracy(
+      [decision("known", "true_positive", 0.55), decision("unknown", "true_positive", 0.55)],
+      [adjudication("known", "malicious"), adjudication("unknown", "inconclusive")],
+      "2026-08-01",
+      "2026-09-01",
+      "org-a",
+    );
+    expect(report.calibration[5]).toMatchObject({
+      count: 1,
+      inconclusiveCount: 1,
+      observedMaliciousRate: 1,
+      insufficientData: true,
+    });
+  });
+
+  it("loads adjudications for decisions in the window even when judgements postdate it", async () => {
+    const query = vi.spyOn(pool, "query");
+    query
+      .mockResolvedValueOnce({
+        rows: [decision("1", "true_positive")],
+      } as never)
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            ...adjudication("1", "malicious"),
+            adjudicatedAt: new Date("2026-09-15T00:00:00Z"),
+          },
+        ],
+      } as never);
+
+    try {
+      const report = await getAccuracyReport("org-a", "2026-08-01T00:00:00Z", "2026-09-01T00:00:00Z");
+      expect(report.adjudicatedCount).toBe(1);
+      expect(query.mock.calls[1]?.[0]).toContain("d.created_at >= $2::timestamptz");
+      expect(query.mock.calls[1]?.[0]).toContain("d.created_at < $3::timestamptz");
+      expect(query.mock.calls[1]?.[1]).toEqual(["org-a", "2026-08-01T00:00:00Z", "2026-09-01T00:00:00Z"]);
+    } finally {
+      query.mockRestore();
+    }
   });
 });

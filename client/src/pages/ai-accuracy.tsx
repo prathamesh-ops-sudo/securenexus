@@ -23,6 +23,7 @@ type Report = {
   calibration: {
     label: string;
     count: number;
+    inconclusiveCount: number;
     observedMaliciousRate: number | null;
     bucketMidpoint: number;
     insufficientData: boolean;
@@ -36,6 +37,24 @@ type Report = {
 };
 
 const toIso = (date: Date): string => date.toISOString();
+const matrixLabels = {
+  truePositive: {
+    label: "True positive",
+    definition: "AI called it malicious and the analyst agreed.",
+  },
+  trueNegative: {
+    label: "True negative",
+    definition: "AI called it benign and the analyst agreed.",
+  },
+  falsePositive: {
+    label: "False positive",
+    definition: "AI called it malicious, but the analyst found it benign.",
+  },
+  falseNegative: {
+    label: "False negative",
+    definition: "AI called it benign, but the analyst found it malicious.",
+  },
+} as const;
 
 export default function AiAccuracyPage() {
   usePageTitle("AI Accuracy");
@@ -58,6 +77,10 @@ export default function AiAccuracyPage() {
   if (isError || !data) return <div className="p-6 text-destructive">AI accuracy could not be loaded.</div>;
   const percentage = (value: number | null): string =>
     value == null ? "Not recorded" : `${(value * 100).toFixed(1)}%`;
+  const rateLabel = (value: number | null): string =>
+    value == null && data.insufficientData
+      ? `Withheld until ${data.minimumSample.threshold} adjudicated decisions`
+      : percentage(value);
 
   return (
     <main className="container mx-auto space-y-6 p-6">
@@ -83,7 +106,7 @@ export default function AiAccuracyPage() {
           {(["agreementRate", "precision", "recall"] as const).map((key) => (
             <div key={key}>
               <p className="text-sm capitalize text-muted-foreground">{key.replace("Rate", " rate")}</p>
-              <p className="text-2xl">{percentage(data.rates[key])}</p>
+              <p className="text-2xl">{rateLabel(data.rates[key])}</p>
               {data.rates[`${key}Reason` as keyof Report["rates"]] && (
                 <p className="text-xs">{data.rates[`${key}Reason` as keyof Report["rates"]]}</p>
               )}
@@ -94,12 +117,16 @@ export default function AiAccuracyPage() {
       <Card>
         <CardHeader>
           <CardTitle>Confusion matrix</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Judgements may postdate the decision window; the window selects decisions.
+          </p>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          {Object.entries(data.matrix).map(([label, count]) => (
-            <div key={label} className="rounded border p-3">
-              <p className="text-xs text-muted-foreground">{label}</p>
-              <p className="text-xl">{count}</p>
+          {(Object.keys(matrixLabels) as (keyof typeof matrixLabels)[]).map((key) => (
+            <div key={key} className="rounded border p-3">
+              <p className="text-xs text-muted-foreground">{matrixLabels[key].label}</p>
+              <p className="text-xl">{data.matrix[key]}</p>
+              <p className="text-xs text-muted-foreground">{matrixLabels[key].definition}</p>
             </div>
           ))}
           <p className="col-span-full text-sm text-muted-foreground">
@@ -122,7 +149,8 @@ export default function AiAccuracyPage() {
                 <span>{bucket.label}</span>
                 {bucket.insufficientData && <Badge variant="outline">Sparse</Badge>}
               </div>
-              <p>{bucket.count} adjudicated</p>
+              <p>{bucket.count} definitive adjudications</p>
+              <p>Excluded inconclusive: {bucket.inconclusiveCount}</p>
               <p>{bucket.observedMaliciousRate == null ? "Not recorded" : percentage(bucket.observedMaliciousRate)}</p>
             </div>
           ))}
