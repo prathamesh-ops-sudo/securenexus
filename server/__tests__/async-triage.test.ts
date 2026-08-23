@@ -263,10 +263,10 @@ describe("Async triage endpoint", () => {
 
       expect(result).toEqual({ error: "AI returned invalid schema", alertId: "alert-1", decisionId: "decision-1" });
       expect(mockFinalizeDecisionReceipt).toHaveBeenCalledWith("org-1", "decision-1", {
-        outcome: "failed",
+        outcome: null,
         status: "failed",
         reasoning: "AI returned invalid schema",
-        retrievalStatus: "unavailable",
+        retrievalStatus: "empty",
       });
       expect(persistDecisionEvidence).toHaveBeenCalledWith("org-1", "decision-1", mockAlert, null);
     });

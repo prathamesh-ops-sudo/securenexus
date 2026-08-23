@@ -10959,6 +10959,8 @@ export const AI_DECISION_OUTCOMES = [
   "auto_resolved",
   "auto_contained",
 ] as const;
+
+export const AI_RETRIEVAL_STATUSES = ["not_attempted", "empty", "unavailable", "available"] as const;
 export const AUTONOMY_LOG_ACTIONS = [
   "alert_triaged",
   "alert_enriched",
@@ -10985,7 +10987,7 @@ export const aiAnalystDecisions = pgTable(
     alertId: varchar("alert_id").references(() => alerts.id, { onDelete: "set null" }),
     incidentId: varchar("incident_id").references(() => incidents.id, { onDelete: "set null" }),
     tier: text("tier").notNull().default("tier1_autonomous"),
-    outcome: text("outcome").notNull(),
+    outcome: text("outcome"),
     confidenceScore: real("confidence_score"),
     confidenceFactors: jsonb("confidence_factors"),
     enrichmentData: jsonb("enrichment_data"),
@@ -11013,6 +11015,8 @@ export const aiAnalystDecisions = pgTable(
     totalOutputTokens: integer("total_output_tokens"),
     totalCostUsd: doublePrecision("total_cost_usd"),
     totalLatencyMs: integer("total_latency_ms"),
+    unmeasuredInvocationCount: integer("unmeasured_invocation_count").notNull().default(0),
+    proofReceiptCaptured: boolean("proof_receipt_captured").notNull().default(false),
     reviewedBy: text("reviewed_by"),
     reviewedAt: timestamp("reviewed_at"),
     createdAt: timestamp("created_at").defaultNow(),
@@ -11101,8 +11105,8 @@ export const aiDecisionEvidence = pgTable(
       .notNull()
       .references(() => aiAnalystDecisions.id, { onDelete: "cascade" }),
     sourceKind: text("source_kind").notNull(),
-    sourceTable: text("source_table").notNull(),
-    sourcePrimaryKey: text("source_primary_key").notNull(),
+    sourceTable: text("source_table"),
+    sourcePrimaryKey: text("source_primary_key"),
     evidenceRole: text("evidence_role").notNull(),
     evidenceWeight: real("evidence_weight"),
     valueSnapshot: jsonb("value_snapshot").notNull(),
@@ -13567,10 +13571,10 @@ export const aiInferenceLog = pgTable(
     model: varchar("model").notNull(),
     promptId: varchar("prompt_id"),
     promptVersion: integer("prompt_version"),
-    inputTokens: integer("input_tokens").notNull().default(0),
-    outputTokens: integer("output_tokens").notNull().default(0),
-    latencyMs: integer("latency_ms").notNull().default(0),
-    costEstimateUsd: doublePrecision("cost_estimate_usd").notNull().default(0),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    latencyMs: integer("latency_ms"),
+    costEstimateUsd: doublePrecision("cost_estimate_usd"),
     cached: boolean("cached").notNull().default(false),
     success: boolean("success").notNull().default(true),
     errorMessage: text("error_message"),

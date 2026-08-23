@@ -20,6 +20,7 @@ export function getAiTriageHandler(): (job: any) => Promise<any> {
     const { alertId, orgId } = job.payload;
     let decisionId: string | undefined;
     let alertForReceipt: Alert | undefined;
+    let retrievalStatus: "available" | "empty" | "unavailable" | "not_attempted" = "not_attempted";
     try {
       const { triageAlert, buildThreatIntelContext } = await import("../../ai");
       const alert = await storage.getAlert(alertId);
@@ -35,12 +36,15 @@ export function getAiTriageHandler(): (job: any) => Promise<any> {
         tier: "tier3_assisted",
       });
       const threatIntelCtx = await buildThreatIntelContext([alert]);
+      retrievalStatus = threatIntelCtx.retrievalUnavailable
+        ? "unavailable"
+        : (threatIntelCtx.historicalContext?.retrievalStatus ?? "empty");
       const result = await triageAlert(alert, threatIntelCtx, orgId, decisionId);
       if (threatIntelCtx.retrievalUnavailable) {
         result.retrievalUnavailable = true;
       }
       await finalizeDecisionReceipt(orgId, decisionId, {
-        outcome: "completed",
+        outcome: "needs_investigation",
         status: "completed",
         reasoning: result.reasoning,
         executiveSummary: result.recommendedAction,
@@ -70,12 +74,20 @@ export function getAiTriageHandler(): (job: any) => Promise<any> {
             });
           }
         }
-        await finalizeDecisionReceipt(orgId, decisionId, {
-          outcome: "failed",
-          status: "failed",
-          reasoning: err.message || String(err),
-          retrievalStatus: "unavailable",
-        });
+        try {
+          await finalizeDecisionReceipt(orgId, decisionId, {
+            outcome: null,
+            status: "failed",
+            reasoning: err.message || String(err),
+            retrievalStatus,
+          });
+        } catch (finalizationError) {
+          log.error("Failed to finalize failed triage decision", {
+            error: String(finalizationError),
+            orgId,
+            decisionId,
+          });
+        }
       }
       return { error: err.message || String(err), alertId, decisionId };
     }
@@ -166,7 +178,12 @@ export function registerAiTriageRoutes(app: Express): void {
         return res.json({ status: "completed", result: job.result });
       }
       if (job.status === "failed" || job.status === "dead_letter") {
-        return res.json({ status: "failed", error: job.lastError || "Unknown error" });
+        const decisionId = (job.result as { decisionId?: string } | null | undefined)?.decisionId;
+        return res.json({
+          status: "failed",
+          error: job.lastError || "Unknown error",
+          decisionId,
+        });
       }
       res.json({ status: job.status }); // pending, running
     } catch (error: any) {

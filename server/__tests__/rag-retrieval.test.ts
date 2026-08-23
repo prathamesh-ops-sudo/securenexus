@@ -102,4 +102,11 @@ describe("RAG retrieval truthfulness", () => {
     expect(prompt).not.toContain("SIMILAR PAST INCIDENTS:");
     expect(prompt).not.toContain("Matched 0");
   });
+
+  it("keeps retrieval unattempted distinct when no context was supplied", async () => {
+    const { resolveRetrievalStatus } = await import("../ai");
+
+    expect(resolveRetrievalStatus()).toBe("not_attempted");
+    expect(resolveRetrievalStatus({ enrichmentResults: [], osintMatches: [] } as any)).toBe("empty");
+  });
 });

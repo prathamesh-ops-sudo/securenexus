@@ -52,7 +52,7 @@ interface SOCStats {
   tier2Count: number;
   tier3Count: number;
   tier1Percentage: number;
-  avgConfidence: number;
+  avgConfidence: number | null;
   avgTimeToDecisionMs: number;
   outcomes: Record<string, number>;
   overrideCount: number;
@@ -63,9 +63,9 @@ interface SOCStats {
     alertId: string;
     tier: string;
     outcome: string;
-    confidenceScore: number;
+    confidenceScore: number | null;
     status: string;
-    timeToDecisionMs: number;
+    timeToDecisionMs: number | null;
     humanOverride: boolean;
     createdAt: string;
   }[];
@@ -77,7 +77,7 @@ interface Decision {
   alertId: string | null;
   incidentId: string | null;
   tier: string;
-  outcome: string;
+  outcome: string | null;
   confidenceScore: number | null;
   confidenceFactors: unknown;
   enrichmentData: unknown;
@@ -108,7 +108,9 @@ interface Decision {
   totalOutputTokens: number | null;
   totalCostUsd: number | null;
   totalLatencyMs: number | null;
-  retrievalStatus: "available" | "empty" | "unavailable" | null;
+  retrievalStatus: "available" | "empty" | "unavailable" | "not_attempted" | null;
+  unmeasuredInvocationCount: number;
+  proofReceiptCaptured: boolean;
 }
 
 interface AuditLogEntry {
@@ -132,8 +134,8 @@ interface DecisionReceipt {
   evidence: {
     id: string;
     sourceKind: string;
-    sourceTable: string;
-    sourcePrimaryKey: string;
+    sourceTable: string | null;
+    sourcePrimaryKey: string | null;
     evidenceRole: string;
     evidenceWeight: number | null;
     valueSnapshot: unknown;
@@ -143,10 +145,10 @@ interface DecisionReceipt {
     model: string;
     promptId: string | null;
     promptVersion: number | null;
-    inputTokens: number;
-    outputTokens: number;
-    latencyMs: number;
-    costEstimateUsd: number;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    latencyMs: number | null;
+    costEstimateUsd: number | null;
     success: boolean;
     errorMessage: string | null;
   }[];
@@ -205,8 +207,25 @@ function formatMs(ms: number): string {
 }
 
 function formatConfidence(score: number | null): string {
-  if (score === null || score === undefined) return "N/A";
+  if (score === null || score === undefined) return "Not recorded";
   return `${Math.round(score * 100)}%`;
+}
+
+function formatCurrency(amount: number | null): string {
+  if (amount == null) return "Not recorded";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 5,
+    maximumFractionDigits: 8,
+  }).format(amount);
+}
+
+function confidenceClass(score: number | null): string {
+  if (score == null) return "text-muted-foreground";
+  if (score >= 0.95) return "text-emerald-400";
+  if (score >= 0.7) return "text-amber-400";
+  return "text-red-400";
 }
 
 function TierBadge({ tier }: { tier: string }) {
@@ -215,7 +234,8 @@ function TierBadge({ tier }: { tier: string }) {
   return <Badge className={`${config.color} border`}>{config.label}</Badge>;
 }
 
-function OutcomeBadge({ outcome }: { outcome: string }) {
+function OutcomeBadge({ outcome }: { outcome: string | null }) {
+  if (!outcome) return <Badge variant="outline">Not recorded</Badge>;
   const config = OUTCOME_LABELS[outcome];
   if (!config) return <Badge variant="outline">{outcome}</Badge>;
   return <Badge variant={config.variant}>{config.label}</Badge>;
@@ -503,22 +523,14 @@ function OverviewTab() {
                     <OutcomeBadge outcome={d.outcome} />
                   </TableCell>
                   <TableCell>
-                    <span
-                      className={
-                        (d.confidenceScore ?? 0) >= 0.95
-                          ? "text-emerald-400"
-                          : (d.confidenceScore ?? 0) >= 0.7
-                            ? "text-amber-400"
-                            : "text-red-400"
-                      }
-                    >
-                      {formatConfidence(d.confidenceScore)}
-                    </span>
+                    <span className={confidenceClass(d.confidenceScore)}>{formatConfidence(d.confidenceScore)}</span>
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={d.status} />
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{formatMs(d.timeToDecisionMs)}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {d.timeToDecisionMs == null ? "Not recorded" : formatMs(d.timeToDecisionMs)}
+                  </TableCell>
                   <TableCell className="text-muted-foreground text-xs">
                     {new Date(d.createdAt).toLocaleString()}
                   </TableCell>
@@ -644,13 +656,7 @@ function DecisionsTab() {
                   </TableCell>
                   <TableCell>
                     <span
-                      className={
-                        (d.confidenceScore ?? 0) >= 0.95
-                          ? "text-emerald-400 font-medium"
-                          : (d.confidenceScore ?? 0) >= 0.7
-                            ? "text-amber-400"
-                            : "text-red-400"
-                      }
+                      className={`${confidenceClass(d.confidenceScore)}${d.confidenceScore != null ? " font-medium" : ""}`}
                     >
                       {formatConfidence(d.confidenceScore)}
                     </span>
@@ -658,7 +664,9 @@ function DecisionsTab() {
                   <TableCell>
                     <StatusBadge status={d.status} />
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{formatMs(d.timeToDecisionMs ?? 0)}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {d.timeToDecisionMs == null ? "Not recorded" : formatMs(d.timeToDecisionMs)}
+                  </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
                       {d.status === "pending_review" && (
@@ -806,32 +814,66 @@ function DecisionDetailDialog({ decision, onClose }: { decision: Decision | null
             <p className="text-xs font-medium text-muted-foreground">Proof Receipt</p>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <p>Model: {decision.model ?? notRecorded}</p>
+              <p>Prompt: {decision.promptId ?? notRecorded}</p>
               <p>Prompt version: {decision.promptVersion ?? notRecorded}</p>
               <p>Input tokens: {decision.totalInputTokens ?? notRecorded}</p>
               <p>Output tokens: {decision.totalOutputTokens ?? notRecorded}</p>
-              <p>Total cost: {decision.totalCostUsd == null ? notRecorded : `$${decision.totalCostUsd}`}</p>
+              <p>Total cost: {formatCurrency(decision.totalCostUsd)}</p>
               <p>Total latency: {decision.totalLatencyMs == null ? notRecorded : `${decision.totalLatencyMs} ms`}</p>
-              <p>Retrieval: {decision.retrievalStatus ?? notRecorded}</p>
+              <p>
+                Retrieval:{" "}
+                {decision.retrievalStatus === "not_attempted"
+                  ? "Not attempted"
+                  : decision.retrievalStatus === "unavailable"
+                    ? "Attempted but unavailable"
+                    : decision.retrievalStatus === "empty"
+                      ? "Attempted; no results"
+                      : decision.retrievalStatus === "available"
+                        ? "Attempted; results returned"
+                        : notRecorded}
+              </p>
             </div>
             {receiptLoading ? (
               <p className="text-sm text-muted-foreground">Loading receipt...</p>
             ) : (
               <>
-                <p className="text-sm">
-                  Evidence rows: {receipt?.evidence.length ? receipt.evidence.length : notRecorded}
-                </p>
+                {!decision.proofReceiptCaptured ? (
+                  <p className="text-sm text-muted-foreground">This decision predates proof receipt capture.</p>
+                ) : (
+                  <p className="text-sm">
+                    Evidence rows: {receipt?.evidence.length ?? 0}
+                    {receipt?.evidence.length === 0 ? " (no source rows recorded)" : ""}
+                  </p>
+                )}
                 {receipt?.evidence.map((item) => (
                   <div key={item.id} className="rounded border p-2 text-xs">
                     <p>
                       {item.evidenceRole} · {item.sourceKind} ·{" "}
-                      <a
-                        className="underline"
-                        href={`/${item.sourceTable === "alerts" ? "alerts" : "incidents"}/${item.sourcePrimaryKey}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {item.sourceTable}:{item.sourcePrimaryKey}
-                      </a>
+                      {item.sourceTable && item.sourcePrimaryKey && item.sourceTable === "alerts" ? (
+                        <a
+                          className="underline"
+                          href={`/alerts/${item.sourcePrimaryKey}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {item.sourceTable}:{item.sourcePrimaryKey}
+                        </a>
+                      ) : item.sourceTable && item.sourcePrimaryKey && item.sourceTable === "incidents" ? (
+                        <a
+                          className="underline"
+                          href={`/incidents/${item.sourcePrimaryKey}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {item.sourceTable}:{item.sourcePrimaryKey}
+                        </a>
+                      ) : item.sourceTable && item.sourcePrimaryKey ? (
+                        <span>
+                          {item.sourceTable}:{item.sourcePrimaryKey}
+                        </span>
+                      ) : (
+                        <span>Analytical conclusion</span>
+                      )}
                     </p>
                     <p className="text-muted-foreground">Weight: {item.evidenceWeight ?? notRecorded}</p>
                   </div>
@@ -845,20 +887,28 @@ function DecisionDetailDialog({ decision, onClose }: { decision: Decision | null
                       {item.model} · {item.promptId ?? notRecorded} v{item.promptVersion ?? notRecorded}
                     </p>
                     <p>
-                      {item.success ? "succeeded" : "failed"} · {item.inputTokens + item.outputTokens} tokens ·{" "}
-                      {item.latencyMs} ms
+                      {item.success ? "succeeded" : "failed"} ·{" "}
+                      {item.inputTokens == null || item.outputTokens == null
+                        ? "tokens not recorded"
+                        : `${item.inputTokens + item.outputTokens} tokens`}{" "}
+                      · {item.latencyMs == null ? "latency not recorded" : `${item.latencyMs} ms`}
                     </p>
+                    <p>Cost: {formatCurrency(item.costEstimateUsd)}</p>
                     {item.errorMessage && <p className="text-red-400">{item.errorMessage}</p>}
                   </div>
                 ))}
-                <p className="text-sm">
-                  Redaction receipts: {receipt?.redactions.length ? receipt.redactions.length : notRecorded}
-                </p>
+                <p className="text-sm">Redaction receipts: {receipt?.redactions.length ?? 0}</p>
                 {receipt?.redactions.map((item) => (
                   <div key={item.id} className="rounded border p-2 text-xs">
                     Invocation {item.invocationId}: {item.redacted ? "redacted" : "nothing redacted"}
                   </div>
                 ))}
+                {decision.unmeasuredInvocationCount > 0 && (
+                  <p className="text-sm text-amber-400">
+                    Aggregate measurements incomplete: {decision.unmeasuredInvocationCount} invocation
+                    {decision.unmeasuredInvocationCount === 1 ? "" : "s"} had unmeasured values.
+                  </p>
+                )}
               </>
             )}
           </div>

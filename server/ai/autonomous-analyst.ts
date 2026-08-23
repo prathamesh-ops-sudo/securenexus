@@ -18,7 +18,12 @@ import { dispatchAction, type ActionContext, type ActionResult } from "../action
 import { getAiSecuritySettings } from "./security-store";
 import { getGuardVetoes } from "./safety-vetoes";
 import { triageAlert as runAiTriage } from "../ai";
-import { createDecisionReceipt, finalizeDecisionReceipt, persistDecisionEvidence } from "./decision-receipts";
+import {
+  assertDecisionOutcome,
+  createDecisionReceipt,
+  finalizeDecisionReceipt,
+  persistDecisionEvidence,
+} from "./decision-receipts";
 
 const log = logger.child("autonomous-analyst");
 
@@ -81,11 +86,51 @@ const AUTONOMOUS_ACTION_ALLOWLIST = new Set([
  * Main entry point: triage an alert through the autonomous analyst
  */
 export async function triageAlert(request: TriageRequest): Promise<TriageResult> {
+  const receiptContext: {
+    decisionId?: string;
+    alert?: Alert;
+  } = {};
+  try {
+    return await triageAlertInternal(request, receiptContext);
+  } catch (error) {
+    if (receiptContext.decisionId) {
+      if (receiptContext.alert) {
+        await persistDecisionEvidence(request.orgId, receiptContext.decisionId, receiptContext.alert, null).catch((e) =>
+          log.warn("Failed to persist failed autonomous triage evidence", {
+            error: String(e),
+            orgId: request.orgId,
+            decisionId: receiptContext.decisionId,
+          }),
+        );
+      }
+      try {
+        await finalizeDecisionReceipt(request.orgId, receiptContext.decisionId, {
+          outcome: null,
+          status: "failed",
+          reasoning: error instanceof Error ? error.message : String(error),
+          retrievalStatus: "unavailable",
+        });
+      } catch (finalizationError) {
+        log.error("Failed to finalize failed autonomous triage", {
+          error: String(finalizationError),
+          orgId: request.orgId,
+          decisionId: receiptContext.decisionId,
+        });
+      }
+    }
+    throw error;
+  }
+}
+
+async function triageAlertInternal(
+  request: TriageRequest,
+  receiptContext: { decisionId?: string; alert?: Alert },
+): Promise<TriageResult> {
   const startTime = Date.now();
   const { alertId, orgId, userId, userName } = request;
   const securitySettings = await getAiSecuritySettings(orgId);
   const safetyVetoes: string[] = [];
-  let retrievalStatus: "available" | "empty" | "unavailable" = "unavailable";
+  let retrievalStatus: "available" | "empty" | "unavailable" | "not_attempted" = "not_attempted";
   if (!securitySettings.aiEnabled) safetyVetoes.push("organization_ai_kill_switch");
   const guardMetadata: NonNullable<TriageResult["guardMetadata"]> = [];
 
@@ -95,12 +140,14 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
   const alert = await storage.getAlert(alertId);
   if (!alert) throw new Error(`Alert ${alertId} not found`);
   if (alert.orgId !== orgId) throw new Error("Alert does not belong to this organization");
+  receiptContext.alert = alert;
   const decisionId = await createDecisionReceipt({
     orgId,
     alertId,
     incidentId: alert.incidentId || null,
     tier: request.forcetier ?? "tier3_assisted",
   });
+  receiptContext.decisionId = decisionId;
 
   if (securitySettings.aiEnabled) {
     try {
@@ -240,7 +287,7 @@ export async function triageAlert(request: TriageRequest): Promise<TriageResult>
   }
 
   // 7. Determine outcome
-  const outcome = safetyVetoes.length > 0 ? "pending_review" : determineOutcome(confidence, investigation, tier);
+  const outcome = determineOutcome(confidence, investigation, tier);
   const reasoning = buildReasoning(alert, confidence, investigation);
   const executiveSummary = buildExecutiveSummary(alert, confidence, investigation, outcome);
 
@@ -347,6 +394,7 @@ export async function overrideDecision(
     .limit(1);
 
   if (!existing) throw new Error("Decision not found");
+  assertDecisionOutcome(newOutcome);
 
   await db
     .update(aiAnalystDecisions)
@@ -458,15 +506,21 @@ export async function getAutonomousSOCStats(orgId: string) {
   const tier2 = decisions.filter((d) => d.tier === "tier2_semi_autonomous");
   const tier3 = decisions.filter((d) => d.tier === "tier3_assisted");
 
+  const measuredConfidence = decisions.flatMap((decision) =>
+    decision.confidenceScore == null ? [] : [decision.confidenceScore],
+  );
   const avgConfidence =
-    decisions.length > 0 ? decisions.reduce((sum, d) => sum + (d.confidenceScore ?? 0), 0) / decisions.length : 0;
+    measuredConfidence.length > 0
+      ? measuredConfidence.reduce((sum, score) => sum + score, 0) / measuredConfidence.length
+      : null;
 
   const avgTimeToDecision =
     decisions.length > 0 ? decisions.reduce((sum, d) => sum + (d.timeToDecisionMs ?? 0), 0) / decisions.length : 0;
 
   const outcomes: Record<string, number> = {};
   for (const d of decisions) {
-    outcomes[d.outcome] = (outcomes[d.outcome] || 0) + 1;
+    const outcomeKey = d.outcome || "not_recorded";
+    outcomes[outcomeKey] = (outcomes[outcomeKey] || 0) + 1;
   }
 
   const overrides = decisions.filter((d) => d.humanOverride);
@@ -489,7 +543,7 @@ export async function getAutonomousSOCStats(orgId: string) {
     tier2Count: tier2.length,
     tier3Count: tier3.length,
     tier1Percentage: decisions.length > 0 ? Math.round((tier1.length / decisions.length) * 100) : 0,
-    avgConfidence: Math.round(avgConfidence * 100) / 100,
+    avgConfidence: avgConfidence == null ? null : Math.round(avgConfidence * 100) / 100,
     avgTimeToDecisionMs: Math.round(avgTimeToDecision),
     outcomes,
     overrideCount: overrides.length,

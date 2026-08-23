@@ -425,10 +425,13 @@ async function processJob(job: any): Promise<void> {
       "job.orgId": job.orgId ?? "",
       "job.attempt": job.attempts ?? 1,
     });
+    const resultStatus = getJobResultStatus(result);
+    const failedResult = resultStatus === "failed";
     const res = await db.execute(sql`
       UPDATE job_queue
-      SET status = 'completed',
+        SET status = ${resultStatus},
           result = ${JSON.stringify(result)}::jsonb,
+          last_error = ${failedResult ? String((result as { error: string }).error) : null},
           completed_at = NOW(),
           locked_by = NULL,
           locked_until = NULL
@@ -437,7 +440,9 @@ async function processJob(job: any): Promise<void> {
     if ((res as any).rowCount === 0) {
       logger.child("job-queue").warn(`Lease lost for job ${job.id} — completed result discarded`);
     } else {
-      logger.child("job-queue").info(`Completed job ${job.id}`);
+      logger
+        .child("job-queue")
+        .info(failedResult ? `Job ${job.id} completed with an error result` : `Completed job ${job.id}`);
     }
   } catch (err: any) {
     const attempts = job.attempts || 0;
@@ -478,6 +483,19 @@ async function processJob(job: any): Promise<void> {
       }
     }
   }
+}
+
+export function isErrorBearingJobResult(result: unknown): result is { error: string } {
+  return (
+    result != null &&
+    typeof result === "object" &&
+    "error" in result &&
+    typeof (result as { error?: unknown }).error === "string"
+  );
+}
+
+export function getJobResultStatus(result: unknown): "failed" | "completed" {
+  return isErrorBearingJobResult(result) ? "failed" : "completed";
 }
 
 export function getWorkerStatus(): {

@@ -9,14 +9,66 @@ import {
   type InsertAiDecisionEvidence,
 } from "@shared/schema";
 import type { InvestigationResult } from "./investigation-runner";
+import { AI_DECISION_OUTCOMES } from "@shared/schema";
+
+export type RetrievalStatus = "available" | "empty" | "unavailable" | "not_attempted";
+
+export function assertDecisionOutcome(outcome: string | null | undefined): void {
+  if (outcome != null && !(AI_DECISION_OUTCOMES as readonly string[]).includes(outcome)) {
+    throw new Error(`Invalid AI decision outcome: ${outcome}`);
+  }
+}
+
+export function summarizeInferenceEntries(
+  totals: Array<{
+    model: string;
+    promptId: string | null;
+    promptVersion: number | null;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    cost: number | null;
+    latency: number | null;
+  }>,
+): {
+  model: string | null;
+  promptId: string | null;
+  promptVersion: number | null;
+  totalInputTokens: number | null;
+  totalOutputTokens: number | null;
+  totalCostUsd: number | null;
+  totalLatencyMs: number | null;
+  unmeasuredInvocationCount: number;
+} {
+  const distinct = <T>(items: (T | null | undefined)[]): T[] =>
+    Array.from(new Set(items.filter((item): item is T => item != null)));
+  const models = distinct(totals.map((row) => row.model));
+  const promptIds = distinct(totals.map((row) => row.promptId));
+  const promptVersions = distinct(totals.map((row) => row.promptVersion));
+  const sumNullable = (valuesToSum: (number | null)[]): number | null => {
+    const measured = valuesToSum.filter((value): value is number => value != null);
+    return measured.length > 0 ? measured.reduce((sum, value) => sum + value, 0) : null;
+  };
+  return {
+    model: models.length === 1 ? models[0] : models.length > 1 ? "multiple" : null,
+    promptId: promptIds.length === 1 ? promptIds[0] : promptIds.length > 1 ? "multiple" : null,
+    promptVersion: promptVersions.length === 1 ? promptVersions[0] : null,
+    totalInputTokens: sumNullable(totals.map((row) => row.inputTokens)),
+    totalOutputTokens: sumNullable(totals.map((row) => row.outputTokens)),
+    totalCostUsd: sumNullable(totals.map((row) => row.cost)),
+    totalLatencyMs: sumNullable(totals.map((row) => row.latency)),
+    unmeasuredInvocationCount: totals.filter(
+      (row) => row.inputTokens == null || row.outputTokens == null || row.cost == null || row.latency == null,
+    ).length,
+  };
+}
 
 export async function persistInferenceEntry(
   metrics: {
     tier: string;
     model: string;
-    inputTokensEstimate: number;
-    outputTokensEstimate: number;
-    latencyMs: number;
+    inputTokensEstimate: number | null;
+    outputTokensEstimate: number | null;
+    latencyMs: number | null;
     costEstimateUsd: number | null;
     cached: boolean;
     promptId?: string;
@@ -35,7 +87,7 @@ export async function persistInferenceEntry(
     inputTokens: metrics.inputTokensEstimate,
     outputTokens: metrics.outputTokensEstimate,
     latencyMs: metrics.latencyMs,
-    costEstimateUsd: metrics.costEstimateUsd ?? 0,
+    costEstimateUsd: metrics.costEstimateUsd,
     cached: metrics.cached,
     success,
     errorMessage,
@@ -57,9 +109,10 @@ export async function createDecisionReceipt(params: {
       alertId: params.alertId,
       incidentId: params.incidentId ?? null,
       tier: params.tier,
-      outcome: "pending",
+      outcome: null,
       confidenceScore: null,
       status: "processing",
+      proofReceiptCaptured: true,
     })
     .returning({ id: aiAnalystDecisions.id });
   return decision.id;
@@ -89,8 +142,8 @@ export async function persistDecisionEvidence(
         orgId,
         decisionId,
         sourceKind: "investigation_analysis",
-        sourceTable: "alerts",
-        sourcePrimaryKey: alert.id,
+        sourceTable: null,
+        sourcePrimaryKey: null,
         evidenceRole: "supporting",
         evidenceWeight: evidence.weight,
         valueSnapshot: { hypothesis: hypothesis.id, ...evidence },
@@ -101,8 +154,8 @@ export async function persistDecisionEvidence(
         orgId,
         decisionId,
         sourceKind: "investigation_analysis",
-        sourceTable: "alerts",
-        sourcePrimaryKey: alert.id,
+        sourceTable: null,
+        sourcePrimaryKey: null,
         evidenceRole: "contradicting",
         evidenceWeight: evidence.weight,
         valueSnapshot: { hypothesis: hypothesis.id, ...evidence },
@@ -157,6 +210,7 @@ export async function finalizeDecisionReceipt(
   decisionId: string,
   values: Partial<typeof aiAnalystDecisions.$inferInsert>,
 ): Promise<void> {
+  assertDecisionOutcome(values.outcome);
   const totals = await db
     .select({
       model: aiInferenceLog.model,
@@ -170,20 +224,19 @@ export async function finalizeDecisionReceipt(
     .from(aiInferenceLog)
     .where(and(eq(aiInferenceLog.orgId, orgId), eq(aiInferenceLog.decisionId, decisionId)))
     .orderBy(desc(aiInferenceLog.createdAt));
-  const model = totals[0]?.model ?? null;
-  const promptVersion = totals[0]?.promptVersion ?? null;
-  const promptId = totals[0]?.promptId ?? null;
+  const summary = summarizeInferenceEntries(totals);
   await db
     .update(aiAnalystDecisions)
     .set({
       ...values,
-      model: values.model ?? model,
-      promptId: values.promptId ?? promptId,
-      promptVersion: values.promptVersion ?? promptVersion,
-      totalInputTokens: totals.length > 0 ? totals.reduce((sum, row) => sum + row.inputTokens, 0) : null,
-      totalOutputTokens: totals.length > 0 ? totals.reduce((sum, row) => sum + row.outputTokens, 0) : null,
-      totalCostUsd: totals.length > 0 ? totals.reduce((sum, row) => sum + Number(row.cost), 0) : null,
-      totalLatencyMs: totals.length > 0 ? totals.reduce((sum, row) => sum + row.latency, 0) : null,
+      model: totals.length > 0 ? summary.model : (values.model ?? null),
+      promptId: totals.length > 0 ? summary.promptId : (values.promptId ?? null),
+      promptVersion: totals.length > 0 ? summary.promptVersion : (values.promptVersion ?? null),
+      totalInputTokens: summary.totalInputTokens,
+      totalOutputTokens: summary.totalOutputTokens,
+      totalCostUsd: summary.totalCostUsd,
+      totalLatencyMs: summary.totalLatencyMs,
+      unmeasuredInvocationCount: summary.unmeasuredInvocationCount,
       updatedAt: new Date(),
     })
     .where(and(eq(aiAnalystDecisions.id, decisionId), eq(aiAnalystDecisions.orgId, orgId)));

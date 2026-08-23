@@ -903,7 +903,7 @@ export interface RAGContext {
   relatedAttackTechniques: VectorSearchResult[];
   relevantCveAdvisories: VectorSearchResult[];
   ragSummary: string;
-  retrievalStatus: "available" | "empty" | "unavailable";
+  retrievalStatus: "available" | "empty" | "unavailable" | "not_attempted";
   retrievalError: string | null;
 }
 

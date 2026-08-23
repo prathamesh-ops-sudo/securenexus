@@ -416,8 +416,8 @@ export function registerAutonomousSocRoutes(app: Express): void {
           escalationPercentage: totalDec > 0 ? Number(((escalationCount / totalDec) * 100).toFixed(1)) : 0,
           overridePercentage: totalDec > 0 ? Number(((overrideCount / totalDec) * 100).toFixed(1)) : 0,
           timeSavedMinutes: tier1Count * 15,
-          avgDecisionTimeMs: Number(row.avg_time_ms) || 0,
-          avgConfidence: Number(row.avg_confidence) || 0,
+          avgDecisionTimeMs: row.avg_time_ms == null ? null : Number(row.avg_time_ms),
+          avgConfidence: row.avg_confidence == null ? null : Number(row.avg_confidence),
         });
       } catch (error: unknown) {
         const err = error as Error;
@@ -480,7 +480,7 @@ export function registerAutonomousSocRoutes(app: Express): void {
           const key = o.outcome || "unknown";
           if (!patterns[key]) patterns[key] = { count: 0, avgConfidence: 0, totalConf: 0 };
           patterns[key].count++;
-          patterns[key].totalConf += o.confidenceScore ?? 0;
+          if (o.confidenceScore != null) patterns[key].totalConf += o.confidenceScore;
         }
         for (const key of Object.keys(patterns)) {
           patterns[key].avgConfidence =

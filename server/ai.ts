@@ -56,9 +56,9 @@ type InferenceTier = "triage" | "narrative" | "correlation" | "investigation";
 export interface InferenceMetrics {
   tier: InferenceTier;
   model: string;
-  inputTokensEstimate: number;
-  outputTokensEstimate: number;
-  latencyMs: number;
+  inputTokensEstimate: number | null;
+  outputTokensEstimate: number | null;
+  latencyMs: number | null;
   costEstimateUsd: number | null;
   cached: boolean;
   promptId?: string;
@@ -116,9 +116,9 @@ export async function getInferenceHistory(options: {
     model: string;
     promptId: string | null;
     promptVersion: number | null;
-    inputTokens: number;
-    outputTokens: number;
-    latencyMs: number;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    latencyMs: number | null;
     costEstimateUsd: number | null;
     cached: boolean;
     success: boolean;
@@ -344,9 +344,9 @@ async function invokeWithPrompt(
       {
         tier,
         model: modelConfig.modelId,
-        inputTokensEstimate: 0,
-        outputTokensEstimate: 0,
-        latencyMs: 0,
+        inputTokensEstimate: null,
+        outputTokensEstimate: null,
+        latencyMs: null,
         costEstimateUsd: null,
         cached: false,
         promptId: prompt.id,
@@ -422,9 +422,9 @@ async function invokeWithPrompt(
           {
             tier,
             model: modelConfig.modelId,
-            inputTokensEstimate: 0,
-            outputTokensEstimate: 0,
-            latencyMs: 0,
+            inputTokensEstimate: null,
+            outputTokensEstimate: null,
+            latencyMs: null,
             costEstimateUsd: null,
             cached: false,
             promptId: prompt.id,
@@ -791,7 +791,7 @@ export interface TriageResult {
   containmentAdvice: string;
   threatIntelSources?: string[];
   retrievalUnavailable?: boolean;
-  retrievalStatus?: "available" | "empty" | "unavailable";
+  retrievalStatus?: "available" | "empty" | "unavailable" | "not_attempted";
   inferenceMetrics?: InferenceMetrics[];
   humanReviewRequired?: boolean;
   aiGuard?: ModelInvokeResult["aiGuard"];
@@ -1384,11 +1384,17 @@ export async function triageAlert(
   return {
     ...parseValidatedModelJson(text, triageOutputSchema),
     retrievalUnavailable: threatIntelCtx?.retrievalUnavailable === true,
-    retrievalStatus: threatIntelCtx?.historicalContext?.retrievalStatus ?? (threatIntelCtx ? "empty" : "unavailable"),
+    retrievalStatus: resolveRetrievalStatus(threatIntelCtx),
     humanReviewRequired: aiGuard?.humanReviewRequired ?? false,
     aiGuard,
     inferenceMetrics: [metrics],
   };
+}
+
+export function resolveRetrievalStatus(
+  threatIntelCtx?: ThreatIntelContext,
+): "available" | "empty" | "unavailable" | "not_attempted" {
+  return threatIntelCtx?.historicalContext?.retrievalStatus ?? (threatIntelCtx ? "empty" : "not_attempted");
 }
 
 function buildTriageUserMessage(alertData: Alert): string {
