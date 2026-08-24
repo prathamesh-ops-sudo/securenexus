@@ -442,25 +442,19 @@ export function stopJobWorker(): void {
   logger.child("job-queue").info(`Stopped worker ${workerId}`);
 }
 
-async function processJob(job: any): Promise<void> {
-  const handler = JOB_HANDLERS[job.type];
-  if (!handler) {
-    const res = await db.execute(sql`
-      UPDATE job_queue
-      SET status = 'failed',
-          last_error = ${`Unknown job type: ${job.type}`},
-          completed_at = NOW(),
-          locked_by = NULL,
-          locked_until = NULL
-      WHERE id = ${job.id} AND locked_by = ${workerId}
-    `);
-    if ((res as any).rowCount === 0) {
-      logger.child("job-queue").warn(`Lease lost for job ${job.id} — skipping failed update`);
-    }
-    return;
-  }
-
+export async function processJob(job: any): Promise<void> {
   try {
+    const handler = JOB_HANDLERS[job.type];
+    if (!handler) {
+      const error = new Error(`Unknown job type: ${job.type}`);
+      logger.child("job-queue").error("Unrecognized job type; returning job through retry handling", {
+        jobId: job.id,
+        jobType: job.type,
+        attempt: job.attempts ?? 1,
+      });
+      throw error;
+    }
+
     logger.child("job-queue").info(`Processing job ${job.id} (${job.type}) [worker=${workerId}]`);
     const result = await startSpan("job-queue", `job:${job.type}`, () => handler(job), {
       "job.id": job.id,

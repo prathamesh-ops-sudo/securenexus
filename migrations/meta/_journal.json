@@ -218,6 +218,13 @@
       "when": 1787571000000,
       "tag": "0030_alert_policy_action_context",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1787572000000,
+      "tag": "0031_legacy_sensor_supersession_basis",
+      "breakpoints": true
     }
 ]
 }

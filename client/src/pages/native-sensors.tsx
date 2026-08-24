@@ -227,6 +227,7 @@ interface Sensor {
   machineIdentitySource: string | null;
   supersededAt: string | null;
   supersededBySensorId: string | null;
+  supersessionMatchBasis: string | null;
 }
 
 interface LogSource {
@@ -2580,6 +2581,14 @@ export default function NativeSensorsPage() {
                           <div className="mt-1 text-[11px] text-muted-foreground">
                             Identity: {sensor.machineIdentitySource || "legacy (not reported)"}
                           </div>
+                          {sensor.supersessionMatchBasis && (
+                            <div className="text-[11px] text-amber-500">
+                              Supersession basis:{" "}
+                              {sensor.supersessionMatchBasis === "hostname_platform_legacy"
+                                ? "hostname + platform (legacy fallback)"
+                                : "machine identity"}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-4 text-sm">

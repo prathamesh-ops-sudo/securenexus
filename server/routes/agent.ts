@@ -1,7 +1,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { randomBytes, randomUUID } from "node:crypto";
-import { and, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
 import {
@@ -43,6 +43,7 @@ import {
   replyUnauthenticated,
 } from "../api-response";
 import { evaluateInventoryPackages, type InventoryPackage } from "../vulnerability-evaluation";
+import { getSensorSupersessionMatchBasis } from "../native-sensor-identity";
 
 const log = logger.child("agent-api");
 const MAX_SENSOR_EVENTS = 500;
@@ -948,32 +949,49 @@ async function handleEnrollment(req: Request, res: Response): Promise<void> {
       const { key, hash } = createSensorAgentKey(sensorId);
       const machineIdentity = parsed.data.machineIdentity ?? null;
       const machineIdentitySource = parsed.data.machineIdentitySource ?? null;
-      const priorConditions = machineIdentity
-        ? machineIdentitySource === "hostname_fallback"
+      const identityCondition =
+        machineIdentity && machineIdentitySource
           ? and(
-              eq(nativeSensors.orgId, claimed.orgId),
               eq(nativeSensors.machineIdentity, machineIdentity),
-              eq(nativeSensors.machineIdentitySource, "hostname_fallback"),
-              eq(nativeSensors.platform, parsed.data.platform),
-              isNull(nativeSensors.revokedAt),
-              sql`${nativeSensors.status} <> 'superseded'`,
+              eq(nativeSensors.machineIdentitySource, machineIdentitySource),
             )
-          : and(
-              eq(nativeSensors.orgId, claimed.orgId),
-              eq(nativeSensors.machineIdentity, machineIdentity),
-              eq(nativeSensors.machineIdentitySource, machineIdentitySource as "machine_id" | "dmi_product_uuid"),
-              isNull(nativeSensors.revokedAt),
-              sql`${nativeSensors.status} <> 'superseded'`,
-            )
+          : null;
+      const legacyCondition = and(
+        isNull(nativeSensors.machineIdentity),
+        isNull(nativeSensors.machineIdentitySource),
+        eq(nativeSensors.hostname, parsed.data.hostname),
+        eq(nativeSensors.platform, parsed.data.platform),
+      );
+      const priorConditions = and(
+        eq(nativeSensors.orgId, claimed.orgId),
+        isNull(nativeSensors.revokedAt),
+        sql`${nativeSensors.status} <> 'superseded'`,
+        identityCondition ? or(identityCondition, legacyCondition) : legacyCondition,
+      );
+      const priorCandidates = await tx
+        .select({
+          id: nativeSensors.id,
+          hostname: nativeSensors.hostname,
+          platform: nativeSensors.platform,
+          machineIdentity: nativeSensors.machineIdentity,
+          machineIdentitySource: nativeSensors.machineIdentitySource,
+        })
+        .from(nativeSensors)
+        .where(priorConditions)
+        .orderBy(
+          sql`CASE WHEN ${nativeSensors.machineIdentity} IS NULL THEN 1 ELSE 0 END`,
+          desc(nativeSensors.createdAt),
+        );
+      const priorCandidate = priorCandidates[0];
+      const supersessionMatchBasis = priorCandidate
+        ? getSensorSupersessionMatchBasis(priorCandidate, {
+            hostname: parsed.data.hostname,
+            platform: parsed.data.platform,
+            machineIdentity,
+            machineIdentitySource,
+          })
         : null;
-      const [prior] = priorConditions
-        ? await tx
-            .select({ id: nativeSensors.id })
-            .from(nativeSensors)
-            .where(priorConditions)
-            .orderBy(sql`${nativeSensors.createdAt} DESC`)
-            .limit(1)
-        : [];
+      const prior = priorCandidate && supersessionMatchBasis ? priorCandidate : null;
       if (prior) {
         await tx
           .update(nativeSensors)
@@ -998,6 +1016,7 @@ async function handleEnrollment(req: Request, res: Response): Promise<void> {
           agentVersion: parsed.data.agentVersion ?? null,
           machineIdentity,
           machineIdentitySource,
+          supersessionMatchBasis,
           apiKey: hash,
           status: "provisioning",
         })

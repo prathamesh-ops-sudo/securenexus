@@ -6334,6 +6334,7 @@ export const nativeSensors = pgTable(
     machineIdentitySource: text("machine_identity_source"),
     supersededAt: timestamp("superseded_at"),
     supersededBySensorId: varchar("superseded_by_sensor_id"),
+    supersessionMatchBasis: text("supersession_match_basis"),
     revokedAt: timestamp("revoked_at"),
     status: text("status").notNull().default("provisioning"),
     ipAddress: text("ip_address"),
