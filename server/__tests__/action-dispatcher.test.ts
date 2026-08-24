@@ -87,6 +87,7 @@ function makeContext(overrides: Partial<ActionContext> = {}): ActionContext {
     userId: "user-1",
     userName: "testuser",
     storage: storage as any,
+    autonomyMode: "autonomous",
     ...overrides,
   };
 }
@@ -375,6 +376,21 @@ describe("Permission Checks (RESP-01, RESP-05)", () => {
 });
 
 describe("Autonomy modes", () => {
+  it("refuses to execute when autonomy mode cannot be resolved", async () => {
+    const result = await dispatchAction(
+      "add_tag",
+      { tag: "missing-mode" },
+      {
+        ...makeContext(),
+        autonomyMode: undefined,
+        orgId: undefined,
+      },
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.details).toEqual(expect.objectContaining({ reason: "autonomy_mode_unresolved" }));
+  });
+
   it("validates action input before observe-only withholding", async () => {
     const result = await dispatchAction(
       "block_ip",

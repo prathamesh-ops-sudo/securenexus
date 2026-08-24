@@ -21,7 +21,19 @@ case "$(uname -s)" in
   *) echo "ERROR: unsupported OS: $(uname -s)" >&2; exit 1 ;;
 esac
 
-for command_name in curl jq hostname; do
+if ! command -v jq >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y -qq jq
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y jq
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y jq
+  else
+    echo "ERROR: jq is required and no supported package manager is available." >&2
+    exit 1
+  fi
+fi
+for command_name in curl hostname; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "ERROR: $command_name is required; install it and rerun." >&2
     exit 1
@@ -57,6 +69,7 @@ AGENT_VERSION=$(printf '%q' "$AGENT_VERSION")
 PLATFORM=$(printf '%q' "$PLATFORM")
 LOG_FILE=$(printf '%q' "$LOG_DIR/agent.log")
 PACKAGE_SENT_FILE=$(printf '%q' "$INSTALL_DIR/package-inventory.sent")
+AUTH_STATE_DIR=$(printf '%q' "$INSTALL_DIR/auth-state")
 EOF
 chmod 600 "$CONFIG_FILE"
 
@@ -71,6 +84,8 @@ source /opt/ats-sensor/config.env
 HOSTNAME_VALUE="$(hostname)"
 EVENTS="[]"
 PACKAGE_SENT_FILE="${PACKAGE_SENT_FILE:-/opt/ats-sensor/package-inventory.sent}"
+AUTH_STATE_DIR="${AUTH_STATE_DIR:-/opt/ats-sensor/auth-state}"
+install -d -m 700 "$AUTH_STATE_DIR"
 
 log() {
   printf '%s [%s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$1" "$2" | tee -a "$LOG_FILE"
@@ -198,25 +213,36 @@ collect_network_events() {
 }
 
 collect_auth_events() {
-  local auth_log
+  local auth_log auth_key state_file pending_file inode size saved_inode offset line user ip method
   for auth_log in /var/log/auth.log /var/log/secure; do
     [[ -r "$auth_log" ]] || continue
+    auth_key="$(printf '%s' "$auth_log" | tr '/' '_')"
+    state_file="$AUTH_STATE_DIR/$auth_key.offset"
+    pending_file="$AUTH_STATE_DIR/$auth_key.pending"
+    read -r inode size < <(stat -c '%i %s' "$auth_log")
+    saved_inode=""; offset=0
+    if [[ -r "$state_file" ]]; then read -r saved_inode offset <"$state_file"; fi
+    if [[ "$saved_inode" != "$inode" || ! "$offset" =~ ^[0-9]+$ || "$offset" -gt "$size" ]]; then offset=0; fi
     while IFS= read -r line; do
       [[ -n "$line" ]] || continue
-      add_event "$(jq -n \
-        --arg line "$line" \
-        --arg source "$auth_log" \
-        --arg timestamp "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
-        '{
-          eventType:"auth",
-          authAction:"log",
-          authResult:"observed",
-          logSource:$source,
-          logMessage:$line,
-          rawData:{line:$line},
-          timestamp:$timestamp
-        }')"
-    done < <(tail -n 20 "$auth_log")
+      user=""; ip=""; method="ssh"
+      if [[ "$line" =~ (Failed\ password|Invalid\ user).*from[[:space:]]+[0-9a-fA-F:.]+ ]]; then
+        [[ "$line" =~ for\ invalid\ user\ ([^[:space:]]+) ]] && user="${BASH_REMATCH[1]}"
+        [[ -z "$user" && "$line" =~ for\ ([^[:space:]]+) ]] && user="${BASH_REMATCH[1]}"
+        [[ -z "$user" && "$line" =~ Invalid\ user\ ([^[:space:]]+) ]] && user="${BASH_REMATCH[1]}"
+        [[ "$line" =~ from\ ([0-9a-fA-F:.]+) ]] && ip="${BASH_REMATCH[1]}"
+        add_event "$(jq -n --arg user "$user" --arg ip "$ip" --arg method "$method" --arg line "$line" --arg source "$auth_log" --arg timestamp "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+          '{eventType:"auth",authAction:"login",authResult:"failure",authMethod:$method,userName:$user,srcIp:$ip,logSource:$source,logMessage:$line,rawData:{line:$line},timestamp:$timestamp}')"
+      elif [[ "$line" =~ Accepted[[:space:]]+([^[:space:]]+)[[:space:]]+for[[:space:]]+([^[:space:]]+)[[:space:]]+from[[:space:]]+([0-9a-fA-F:.]+) ]]; then
+        method="${BASH_REMATCH[1]}"; user="${BASH_REMATCH[2]}"; ip="${BASH_REMATCH[3]}"
+        add_event "$(jq -n --arg user "$user" --arg ip "$ip" --arg method "$method" --arg line "$line" --arg source "$auth_log" --arg timestamp "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+          '{eventType:"auth",authAction:"login",authResult:"success",authMethod:$method,userName:$user,srcIp:$ip,logSource:$source,logMessage:$line,rawData:{line:$line},timestamp:$timestamp}')"
+      fi
+    done < <(dd if="$auth_log" bs=1 skip="$offset" 2>/dev/null)
+    if read -r end_inode end_size < <(stat -c '%i %s' "$auth_log") && [[ "$end_inode" == "$inode" ]]; then
+      size="$end_size"
+    fi
+    printf '%s %s\n' "$inode" "$size" >"$pending_file"
   done
 }
 
@@ -251,11 +277,15 @@ collect_file_events() {
 send_events() {
   local count payload batch_id
   count="$(jq 'length' <<<"$EVENTS")"
-  [[ "$count" -gt 0 ]] || return 0
+  if [[ "$count" -eq 0 ]]; then
+    for pending in "$AUTH_STATE_DIR"/*.pending; do [[ -e "$pending" ]] || continue; mv "$pending" "${pending%.pending}.offset"; done
+    return 0
+  fi
   batch_id="sensor-$(date +%s)-$$"
   payload="$(jq -n --arg batchId "$batch_id" --argjson events "$EVENTS" '{batchId:$batchId,events:$events}')"
   api_post "/api/agent/v1/sensors/$SENSOR_ID/events" "$payload" >/dev/null
   EVENTS="[]"
+  for pending in "$AUTH_STATE_DIR"/*.pending; do [[ -e "$pending" ]] || continue; mv "$pending" "${pending%.pending}.offset"; done
   log "INFO" "Sent $count observed events"
 }
 

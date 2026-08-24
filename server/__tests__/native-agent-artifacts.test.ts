@@ -13,6 +13,12 @@ describe("native agent artifacts", () => {
     expect(installer).toContain("/var/log/auth.log");
     expect(installer).toContain("ss ");
     expect(installer).toContain("sha256sum");
+    expect(installer).toContain("apt-get install -y -qq jq");
+    expect(installer).toContain("AUTH_STATE_DIR");
+    expect(installer).toContain('authResult:"failure"');
+    expect(installer).toContain("(Failed\\ password|Invalid\\ user).*from");
+    expect(installer).toContain('dd if="$auth_log"');
+    expect(installer).not.toContain("tail -n 20");
     expect(installer).not.toContain("cpuUsage:0");
     expect(installer).not.toContain('agent:"ats-sensor"');
   });
@@ -28,6 +34,12 @@ describe("native agent artifacts", () => {
     expect(script).toContain("sha256sum");
     expect(script).toContain("cpuCount");
     expect(script).toContain("memoryGb");
+    expect(script).toContain("apt-get install -y -qq jq");
+    expect(script).toContain("AUTH_STATE_DIR");
+    expect(script).toContain('authResult:"failure"');
+    expect(script).toContain("(Failed password|Invalid user).*from");
+    expect(script).toContain('dd if="$auth_log"');
+    expect(script).not.toContain("tail -n 20");
     expect(script).not.toContain('ipAddress:"127.0.0.1"');
     expect(script).not.toContain('arch:"unknown"');
     expect(script).not.toContain("memoryGb:0");

@@ -13,6 +13,7 @@ import { logger } from "./routes/shared";
 import { validateWebhookUrl } from "./outbound-security";
 import { validateActionInput } from "./action-schemas";
 import { createAuditLog } from "./storage/audit";
+import { getAiSecuritySettings } from "./ai/security-store";
 
 const log = logger.child("action-dispatcher");
 
@@ -144,6 +145,20 @@ export async function dispatchAction(
 ): Promise<ActionResult> {
   const executedAt = new Date().toISOString();
   const startMs = Date.now();
+  const autonomyMode =
+    context.autonomyMode ?? (context.orgId ? (await getAiSecuritySettings(context.orgId)).autonomyMode : null);
+
+  if (!autonomyMode) {
+    const refusedResult: ActionResult = {
+      actionType,
+      status: "failed",
+      message: "Response action refused: tenant autonomy mode could not be resolved safely.",
+      details: { reason: "autonomy_mode_unresolved" },
+      executedAt,
+    };
+    await safeCreateAuditLog(context, actionType, config, refusedResult, 0, false, "response_action_refused");
+    return refusedResult;
+  }
 
   const permCheck = checkActionPermissions(actionType, context);
   if (!permCheck.allowed) {
@@ -171,7 +186,7 @@ export async function dispatchAction(
     return failResult;
   }
 
-  if (context.autonomyMode === "observe_only") {
+  if (autonomyMode === "observe_only") {
     const withheldResult: ActionResult = {
       actionType,
       status: "withheld",

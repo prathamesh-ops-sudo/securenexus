@@ -6964,6 +6964,8 @@ export const vulnPackages = pgTable(
     hostPlatform: text("host_platform"),
     inventorySource: text("inventory_source"),
     evidence: jsonb("evidence"),
+    evaluationStatus: text("evaluation_status").notNull().default("unevaluated"),
+    evaluationReason: text("evaluation_reason"),
     isVulnerable: boolean("is_vulnerable").notNull().default(false),
     cveCount: integer("cve_count").notNull().default(0),
     reportedAt: timestamp("reported_at").defaultNow(),

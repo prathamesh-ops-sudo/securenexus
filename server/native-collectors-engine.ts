@@ -55,6 +55,41 @@ export interface ConfigField {
   placeholder?: string;
 }
 
+export interface ParsedLinuxAuthLogLine {
+  authAction: "login";
+  authResult: "failure" | "success";
+  authMethod: string;
+  userName: string;
+  srcIp: string;
+  logSource: string;
+}
+
+export function parseLinuxAuthLogLine(line: string, logSource: string): ParsedLinuxAuthLogLine | null {
+  const failure = line.match(
+    /(?:Failed password(?: for(?: invalid user)?|)|Invalid user)\s+([^\s]+).*?\bfrom\s+([0-9a-fA-F:.]+)/,
+  );
+  if (failure) {
+    return {
+      authAction: "login",
+      authResult: "failure",
+      authMethod: "ssh",
+      userName: failure[1],
+      srcIp: failure[2],
+      logSource,
+    };
+  }
+  const success = line.match(/Accepted\s+([^\s]+)\s+for\s+([^\s]+)\s+from\s+([0-9a-fA-F:.]+)/);
+  if (!success) return null;
+  return {
+    authAction: "login",
+    authResult: "success",
+    authMethod: success[1],
+    userName: success[2],
+    srcIp: success[3],
+    logSource,
+  };
+}
+
 export interface CollectorInstance {
   id: string;
   templateSlug: string;
@@ -982,7 +1017,19 @@ if [[ -z "$SERVER_URL" || -z "$ENROLLMENT_TOKEN" ]]; then
   echo "ERROR: SERVER_URL and ENROLLMENT_TOKEN are required." >&2
   exit 1
 fi
-for command_name in curl jq hostname; do
+if ! command -v jq >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y -qq jq
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y jq
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y jq
+  else
+    echo "ERROR: jq is required and no supported package manager is available." >&2
+    exit 1
+  fi
+fi
+for command_name in curl hostname; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "ERROR: $command_name is required." >&2
     exit 1
@@ -1006,6 +1053,8 @@ source "\${INSTALL_DIR:-/opt/securenexus-collector}/collector.env"
 EVENTS="[]"
 HOSTNAME_VAL="$(hostname)"
 PACKAGE_SENT_FILE="\${INSTALL_DIR:-/opt/securenexus-collector}/package-inventory.sent"
+AUTH_STATE_DIR="\${INSTALL_DIR:-/opt/securenexus-collector}/auth-state"
+mkdir -p "$AUTH_STATE_DIR"
 
 api_post() {
   local path="$1"
@@ -1102,13 +1151,36 @@ collect_network_events() {
 }
 
 collect_auth_events() {
-  local auth_log
+  local auth_log auth_key state_file pending_file inode size saved_inode offset line user ip method
   for auth_log in /var/log/auth.log /var/log/secure; do
     [[ -r "$auth_log" ]] || continue
+    auth_key="$(printf '%s' "$auth_log" | tr '/' '_')"
+    state_file="$AUTH_STATE_DIR/$auth_key.offset"
+    pending_file="$AUTH_STATE_DIR/$auth_key.pending"
+    read -r inode size < <(stat -c '%i %s' "$auth_log")
+    saved_inode=""; offset=0
+    if [[ -r "$state_file" ]]; then read -r saved_inode offset <"$state_file"; fi
+    if [[ "$saved_inode" != "$inode" || ! "$offset" =~ ^[0-9]+$ || "$offset" -gt "$size" ]]; then offset=0; fi
     while IFS= read -r line; do
       [[ -n "$line" ]] || continue
-      add_event "$(jq -n --arg source "$HOSTNAME_VAL" --arg logSource "$auth_log" --arg line "$line" '{eventType:"auth",severity:"info",source:$source,rawData:{logSource:$logSource,line:$line}}')"
-    done < <(tail -n 20 "$auth_log")
+      user=""; ip=""; method="ssh"
+      if [[ "$line" =~ (Failed\ password|Invalid\ user).*from[[:space:]]+[0-9a-fA-F:.]+ ]]; then
+        [[ "$line" =~ for\ invalid\ user\ ([^[:space:]]+) ]] && user="\${BASH_REMATCH[1]}"
+        [[ -z "$user" && "$line" =~ for\ ([^[:space:]]+) ]] && user="\${BASH_REMATCH[1]}"
+        [[ -z "$user" && "$line" =~ Invalid\ user\ ([^[:space:]]+) ]] && user="\${BASH_REMATCH[1]}"
+        [[ "$line" =~ from\ ([0-9a-fA-F:.]+) ]] && ip="\${BASH_REMATCH[1]}"
+        add_event "$(jq -n --arg user "$user" --arg ip "$ip" --arg method "$method" --arg line "$line" --arg source "$auth_log" --arg timestamp "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+          '{eventType:"auth",severity:"info",source:$source,authAction:"login",authResult:"failure",authMethod:$method,userName:$user,srcIp:$ip,logSource:$source,logMessage:$line,rawData:{line:$line},timestamp:$timestamp}')"
+      elif [[ "$line" =~ Accepted[[:space:]]+([^[:space:]]+)[[:space:]]+for[[:space:]]+([^[:space:]]+)[[:space:]]+from[[:space:]]+([0-9a-fA-F:.]+) ]]; then
+        method="\${BASH_REMATCH[1]}"; user="\${BASH_REMATCH[2]}"; ip="\${BASH_REMATCH[3]}"
+        add_event "$(jq -n --arg user "$user" --arg ip "$ip" --arg method "$method" --arg line "$line" --arg source "$auth_log" --arg timestamp "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+          '{eventType:"auth",severity:"info",source:$source,authAction:"login",authResult:"success",authMethod:$method,userName:$user,srcIp:$ip,logSource:$source,logMessage:$line,rawData:{line:$line},timestamp:$timestamp}')"
+      fi
+    done < <(dd if="$auth_log" bs=1 skip="$offset" 2>/dev/null)
+    if read -r end_inode end_size < <(stat -c '%i %s' "$auth_log") && [[ "$end_inode" == "$inode" ]]; then
+      size="$end_size"
+    fi
+    printf '%s %s\n' "$inode" "$size" >"$pending_file"
   done
 }
 
@@ -1176,10 +1248,14 @@ collect_package_inventory() {
 send_events() {
   local count payload
   count="$(jq 'length' <<<"$EVENTS")"
-  [[ "$count" -gt 0 ]] || return 0
+  if [[ "$count" -eq 0 ]]; then
+    for pending in "$AUTH_STATE_DIR"/*.pending; do [[ -e "$pending" ]] || continue; mv "$pending" "\${pending%.pending}.offset"; done
+    return 0
+  fi
   payload="$(jq -n --arg batchId "collector-$(date +%s)-$$" --argjson events "$EVENTS" '{batchId:$batchId,events:$events}')"
   api_post "/api/agent/v1/collectors/events" "$payload" >/dev/null
   EVENTS="[]"
+  for pending in "$AUTH_STATE_DIR"/*.pending; do [[ -e "$pending" ]] || continue; mv "$pending" "\${pending%.pending}.offset"; done
 }
 
 while :; do

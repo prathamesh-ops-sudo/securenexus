@@ -2,6 +2,7 @@
 import type { Express } from "express";
 import { randomBytes } from "crypto";
 import { isAuthenticated } from "../auth";
+import type { SessionUser } from "../auth/session";
 import { storage } from "../storage";
 import { dispatchAction } from "../action-dispatcher";
 import { runInvestigation } from "../investigation-agent";
@@ -10,6 +11,8 @@ import { z } from "zod";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { getOrgId } from "./shared";
+import { reply, replyBadRequest, replyInternal } from "../api-response";
+import { getAiSecuritySettings } from "../ai/security-store";
 
 const log = logger.child("autonomous-routes");
 
@@ -354,25 +357,27 @@ export function registerAutonomousRoutes(app: Express): void {
 
         const { actionType, config, incidentId, alertId } = req.body;
 
-        if (!actionType) {
-          return res.status(400).json({ error: "actionType is required" });
-        }
+        if (!actionType) return replyBadRequest(res, "actionType is required");
+        const user = req.user as SessionUser;
+        const autonomyMode = (await getAiSecuritySettings(orgId)).autonomyMode ?? undefined;
 
         const result = await dispatchAction(actionType, config || {}, {
           orgId,
           incidentId,
           alertId,
-          userId: (req as any).user?.id,
-          userName: (req as any).user?.name || (req as any).user?.email,
+          userId: user.id,
+          userName: user.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : (user.email ?? user.id),
+          callerRole: user.orgRole ?? undefined,
           storage,
+          autonomyMode,
         });
 
         log.info("Manually executed response action", { orgId, actionType, status: result.status });
 
-        return res.json({ result });
+        return reply(res, { result });
       } catch (error: any) {
         log.error("Failed to execute response action", { error: error.message });
-        return res.status(500).json({ error: "Failed to execute response action" });
+        return replyInternal(res, "Failed to execute response action");
       }
     },
   );

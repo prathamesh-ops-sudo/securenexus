@@ -214,6 +214,9 @@ const OUTCOME_LABELS: Record<string, { label: string; variant: "default" | "seco
     escalate_tier3: { label: "Escalated → T3", variant: "outline" },
     escalate_human: { label: "Escalated → Human", variant: "outline" },
     needs_investigation: { label: "Needs Investigation", variant: "outline" },
+    failed: { label: "Analysis Failed", variant: "outline" },
+    pending_review: { label: "Pending Review (No Verdict)", variant: "outline" },
+    not_recorded: { label: "No Verdict Recorded", variant: "outline" },
   };
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {

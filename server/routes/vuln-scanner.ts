@@ -15,6 +15,7 @@ import {
   VULN_PKG_MANAGERS,
   VULN_FINDING_STATUSES,
   VULN_SEVERITIES,
+  cveSyncStates,
 } from "../../shared/schema";
 
 const log = logger.child("vuln-scanner");
@@ -185,8 +186,12 @@ export function registerVulnScannerRoutes(app: Express): void {
 
         const conditions: unknown[] = [eq(vulnPackages.orgId, orgId)];
         if (sensorId) conditions.push(eq(vulnPackages.sensorId, sensorId));
-        if (vulnerable === "true") conditions.push(eq(vulnPackages.isVulnerable, true));
-        if (vulnerable === "false") conditions.push(eq(vulnPackages.isVulnerable, false));
+        if (vulnerable === "true") {
+          conditions.push(eq(vulnPackages.isVulnerable, true), eq(vulnPackages.evaluationStatus, "evaluated"));
+        }
+        if (vulnerable === "false") {
+          conditions.push(eq(vulnPackages.isVulnerable, false), eq(vulnPackages.evaluationStatus, "evaluated"));
+        }
 
         const packages = await db
           .select()
@@ -199,13 +204,17 @@ export function registerVulnScannerRoutes(app: Express): void {
         const statsResult = await db.execute(sql`
           SELECT
             COUNT(*) AS total,
-            COUNT(*) FILTER (WHERE is_vulnerable = true) AS vulnerable_count,
-            COUNT(*) FILTER (WHERE is_vulnerable = false) AS clean_count,
+            COUNT(*) FILTER (WHERE evaluation_status = 'evaluated' AND is_vulnerable = true) AS vulnerable_count,
+            COUNT(*) FILTER (WHERE evaluation_status = 'evaluated' AND is_vulnerable = false) AS clean_count,
+            COUNT(*) FILTER (WHERE evaluation_status = 'unevaluated') AS unevaluated_count,
+            COUNT(*) FILTER (WHERE evaluation_status = 'unsupported') AS unsupported_count,
+            COUNT(*) FILTER (WHERE evaluation_status = 'evaluated') AS evaluated_count,
             COUNT(DISTINCT sensor_id) AS host_count
           FROM vuln_packages
           WHERE org_id = ${orgId}
         `);
         const s = (statsResult as any).rows?.[0] || {};
+        const syncStates = await db.select({ lastStatus: cveSyncStates.lastStatus }).from(cveSyncStates);
 
         res.json({
           packages,
@@ -213,7 +222,11 @@ export function registerVulnScannerRoutes(app: Express): void {
             total: parseInt(s.total || "0"),
             vulnerableCount: parseInt(s.vulnerable_count || "0"),
             cleanCount: parseInt(s.clean_count || "0"),
+            unevaluatedCount: parseInt(s.unevaluated_count || "0"),
+            unsupportedCount: parseInt(s.unsupported_count || "0"),
+            evaluatedCount: parseInt(s.evaluated_count || "0"),
             hostCount: parseInt(s.host_count || "0"),
+            catalogueSynced: syncStates.some((state) => state.lastStatus !== "never"),
           },
         });
       } catch (error) {

@@ -45,6 +45,7 @@ import { startNativeSensorLifecycleScheduler } from "./native-sensor-lifecycle";
 import { startNativeCollectorLifecycleScheduler } from "./native-collector-lifecycle";
 import { startCveSyncScheduler } from "./cve-sync";
 import { startConnectorPollingScheduler } from "./connector-polling-scheduler";
+import { seedBuiltinRules } from "./native-detections";
 
 const startedAt = Date.now();
 
@@ -164,6 +165,7 @@ export function log(message: string, source = "express") {
 
   const { seedDatabase } = await import("./seed");
   await seedDatabase();
+  await seedBuiltinRules();
 
   await bootstrapSuperAdmin();
 

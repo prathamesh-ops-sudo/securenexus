@@ -498,6 +498,7 @@ function AuthenticatedApp() {
                         <Route path="/security-posture" component={SecurityPosturePage} />
                         <Route path="/native-sensors" component={NativeSensorsPage} />
                         <Route path="/vuln-scanner" component={VulnScannerPage} />
+                        <Route path="/vulnerabilities" component={VulnScannerPage} />
                         <Route path="/identity-governance" component={IdentityGovernancePage} />
                         <Route path="/jit-secret-access" component={JitSecretAccessPage} />
                         <Route path="/secret-rotation-overview" component={SecretRotationOverviewPage} />

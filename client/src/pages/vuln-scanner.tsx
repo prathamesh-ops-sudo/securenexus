@@ -75,6 +75,8 @@ interface VulnPackage {
   packageManager: string;
   packageName: string;
   installedVersion: string;
+  evaluationStatus: "evaluated" | "unevaluated" | "unsupported";
+  evaluationReason: string | null;
   isVulnerable: boolean;
   cveCount: number;
   sensorId: string;
@@ -101,7 +103,11 @@ interface PackagesResponse {
     total: number;
     vulnerableCount: number;
     cleanCount: number;
+    unevaluatedCount: number;
+    unsupportedCount: number;
+    evaluatedCount: number;
     hostCount: number;
+    catalogueSynced: boolean;
   };
 }
 
@@ -346,14 +352,22 @@ export default function VulnScannerPage() {
                         <div className="flex flex-col items-center gap-2">
                           <ShieldCheck className="h-10 w-10 text-green-400/50" />
                           <p className="text-muted-foreground">
-                            {pkgStats?.total === 0
-                              ? "no package inventory yet — install an agent"
-                              : "No vulnerability findings"}
+                            {stats?.total === 0
+                              ? pkgStats?.total && pkgStats.evaluatedCount === 0
+                                ? "Package inventory has not been evaluated"
+                                : "No vulnerability findings"
+                              : pkgStats && (pkgStats.unevaluatedCount > 0 || pkgStats.unsupportedCount > 0)
+                                ? "No findings in fully supported inventory"
+                                : "No vulnerability findings in evaluated inventory"}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {pkgStats?.total === 0
-                              ? "Findings will appear after an authenticated agent reports installed packages."
-                              : "The synchronized catalogue has no applicable findings for this inventory."}
+                            {stats?.total === 0
+                              ? pkgStats?.total && pkgStats.evaluatedCount === 0
+                                ? "Run package evaluation to distinguish clean packages from applicable findings."
+                                : "Findings will appear after an authenticated agent reports installed packages."
+                              : pkgStats && (pkgStats.unevaluatedCount > 0 || pkgStats.unsupportedCount > 0)
+                                ? "Some reported packages are unevaluated or have no advisory source."
+                                : "The evaluated inventory has no applicable findings."}
                           </p>
                         </div>
                       </TableCell>
@@ -449,13 +463,31 @@ export default function VulnScannerPage() {
 
         {/* PACKAGES TAB */}
         <TabsContent value="packages" className="mt-4 space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <Card className="bg-zinc-900/50 border-zinc-800">
               <CardContent className="p-4 flex items-center gap-3">
                 <Package className="h-8 w-8 text-blue-400" />
                 <div>
                   <div className="text-xs text-muted-foreground">Total Packages</div>
                   <div className="text-xl font-semibold">{pkgStats?.total ?? 0}</div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-zinc-900/50 border-zinc-800">
+              <CardContent className="p-4 flex items-center gap-3">
+                <Clock className="h-8 w-8 text-zinc-400" />
+                <div>
+                  <div className="text-xs text-muted-foreground">Not Evaluated</div>
+                  <div className="text-xl font-semibold">{pkgStats?.unevaluatedCount ?? 0}</div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-zinc-900/50 border-zinc-800">
+              <CardContent className="p-4 flex items-center gap-3">
+                <AlertTriangle className="h-8 w-8 text-amber-400" />
+                <div>
+                  <div className="text-xs text-muted-foreground">No Advisory Source</div>
+                  <div className="text-xl font-semibold text-amber-400">{pkgStats?.unsupportedCount ?? 0}</div>
                 </div>
               </CardContent>
             </Card>
@@ -517,9 +549,23 @@ export default function VulnScannerPage() {
                       <TableCell colSpan={6} className="text-center py-12">
                         <div className="flex flex-col items-center gap-2">
                           <Package className="h-10 w-10 text-muted-foreground/50" />
-                          <p className="text-muted-foreground">no package inventory yet — install an agent</p>
+                          <p className="text-muted-foreground">
+                            {pkgStats?.total === 0
+                              ? "No package inventory has been reported"
+                              : pkgStats?.catalogueSynced === false
+                                ? "Vulnerability catalogue has not been synchronized"
+                                : pkgStats?.evaluatedCount === 0 && (pkgStats?.unevaluatedCount ?? 0) > 0
+                                  ? "Package inventory has not been evaluated"
+                                  : "No package inventory matches the current filters"}
+                          </p>
                           <p className="text-xs text-muted-foreground">
-                            Agents will push package inventories on their inventory schedule
+                            {pkgStats?.total === 0
+                              ? "Agents will push package inventories on their inventory schedule."
+                              : pkgStats?.catalogueSynced === false
+                                ? "The vulnerability catalogue must be synchronized before advisory coverage can be assessed."
+                                : pkgStats?.evaluatedCount === 0 && (pkgStats?.unevaluatedCount ?? 0) > 0
+                                  ? "Run package evaluation to distinguish clean packages from applicable findings."
+                                  : "Try clearing the current package filters."}
                           </p>
                         </div>
                       </TableCell>
@@ -535,7 +581,15 @@ export default function VulnScannerPage() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {pkg.isVulnerable ? (
+                          {pkg.evaluationStatus === "unsupported" ? (
+                            <Badge variant="outline" className="bg-amber-500/20 text-amber-400 border-amber-500/30">
+                              No advisory source
+                            </Badge>
+                          ) : pkg.evaluationStatus === "unevaluated" ? (
+                            <Badge variant="outline" className="bg-zinc-500/20 text-zinc-300 border-zinc-500/30">
+                              Not evaluated
+                            </Badge>
+                          ) : pkg.isVulnerable ? (
                             <Badge variant="outline" className="bg-red-500/20 text-red-400 border-red-500/30">
                               Vulnerable
                             </Badge>
@@ -543,6 +597,9 @@ export default function VulnScannerPage() {
                             <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/30">
                               Clean
                             </Badge>
+                          )}
+                          {pkg.evaluationReason && (
+                            <p className="mt-1 text-xs text-muted-foreground">{pkg.evaluationReason}</p>
                           )}
                         </TableCell>
                         <TableCell>
