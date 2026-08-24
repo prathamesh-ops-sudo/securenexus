@@ -43,7 +43,7 @@ import {
   replyUnauthenticated,
 } from "../api-response";
 import { evaluateInventoryPackages, type InventoryPackage } from "../vulnerability-evaluation";
-import { getSensorSupersessionMatchBasis } from "../native-sensor-identity";
+import { getSensorSupersessionMatches } from "../native-sensor-identity";
 
 const log = logger.child("agent-api");
 const MAX_SENSOR_EVENTS = 500;
@@ -982,29 +982,15 @@ async function handleEnrollment(req: Request, res: Response): Promise<void> {
           sql`CASE WHEN ${nativeSensors.machineIdentity} IS NULL THEN 1 ELSE 0 END`,
           desc(nativeSensors.createdAt),
         );
-      const priorCandidate = priorCandidates[0];
-      const supersessionMatchBasis = priorCandidate
-        ? getSensorSupersessionMatchBasis(priorCandidate, {
-            hostname: parsed.data.hostname,
-            platform: parsed.data.platform,
-            machineIdentity,
-            machineIdentitySource,
-          })
-        : null;
-      const prior = priorCandidate && supersessionMatchBasis ? priorCandidate : null;
-      if (prior) {
-        await tx
-          .update(nativeSensors)
-          .set({ status: "superseded", supersededAt: now, updatedAt: now })
-          .where(
-            and(
-              eq(nativeSensors.id, prior.id),
-              eq(nativeSensors.orgId, claimed.orgId),
-              isNull(nativeSensors.revokedAt),
-              sql`${nativeSensors.status} <> 'superseded'`,
-            ),
-          );
-      }
+      const supersessionMatches = getSensorSupersessionMatches(priorCandidates, {
+        hostname: parsed.data.hostname,
+        platform: parsed.data.platform,
+        machineIdentity,
+        machineIdentitySource,
+      });
+      const supersessionBases = new Set(supersessionMatches.map(({ basis }) => basis));
+      const supersessionMatchBasis =
+        supersessionBases.size === 0 ? null : supersessionBases.size === 1 ? supersessionMatches[0].basis : "multiple";
       const [sensor] = await tx
         .insert(nativeSensors)
         .values({
@@ -1022,18 +1008,22 @@ async function handleEnrollment(req: Request, res: Response): Promise<void> {
         })
         .returning({ id: nativeSensors.id, orgId: nativeSensors.orgId, hostname: nativeSensors.hostname });
       if (!sensor) throw new EnrollmentError("Failed to create sensor.", "ENROLLMENT_FAILED");
-      if (prior) {
+      for (const { candidate, basis } of supersessionMatches) {
         await tx
           .update(nativeSensors)
           .set({
+            status: "superseded",
+            supersededAt: now,
             supersededBySensorId: sensor.id,
+            supersessionMatchBasis: basis,
             updatedAt: now,
           })
           .where(
             and(
-              eq(nativeSensors.id, prior.id),
+              eq(nativeSensors.id, candidate.id),
               eq(nativeSensors.orgId, claimed.orgId),
               isNull(nativeSensors.revokedAt),
+              sql`${nativeSensors.status} <> 'superseded'`,
             ),
           );
       }

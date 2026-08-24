@@ -76,6 +76,7 @@ const OPERATIONAL_COLUMN_PATTERNS = [
   /^secret_field$/i,
   /^submitted_credentials$/i,
   /^accessed_credential$/i,
+  /^supersession_match_basis$/i,
 ];
 
 type FilterPrimitive = string | number | boolean;

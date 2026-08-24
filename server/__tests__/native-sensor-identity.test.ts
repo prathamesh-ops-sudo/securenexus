@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getSensorSupersessionMatchBasis } from "../native-sensor-identity";
+import { getSensorSupersessionMatchBasis, getSensorSupersessionMatches } from "../native-sensor-identity";
 
 const current = {
   hostname: "demo-host",
@@ -48,5 +48,24 @@ describe("native sensor supersession identity", () => {
       machineIdentitySource: "hostname_fallback",
     };
     expect(getSensorSupersessionMatchBasis(fallback, fallback)).toBe("hostname_platform_legacy");
+  });
+
+  it("returns every matching stale row with its own basis", () => {
+    const matches = getSensorSupersessionMatches(
+      [
+        { id: "machine-row", ...current },
+        { id: "legacy-row", ...current, machineIdentity: null, machineIdentitySource: null },
+        { id: "different-machine-row", ...current, machineIdentity: "machine-b" },
+      ],
+      current,
+    );
+
+    expect(matches).toEqual([
+      { candidate: { id: "machine-row", ...current }, basis: "machine_identity" },
+      {
+        candidate: { id: "legacy-row", ...current, machineIdentity: null, machineIdentitySource: null },
+        basis: "hostname_platform_legacy",
+      },
+    ]);
   });
 });

@@ -2586,7 +2586,9 @@ export default function NativeSensorsPage() {
                               Supersession basis:{" "}
                               {sensor.supersessionMatchBasis === "hostname_platform_legacy"
                                 ? "hostname + platform (legacy fallback)"
-                                : "machine identity"}
+                                : sensor.supersessionMatchBasis === "multiple"
+                                  ? "multiple matching evidence bases"
+                                  : "machine identity"}
                             </div>
                           )}
                         </div>

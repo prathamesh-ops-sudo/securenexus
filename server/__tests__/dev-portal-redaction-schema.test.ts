@@ -46,6 +46,7 @@ const REVIEWED_NON_SENSITIVE_COLUMNS = new Set([
   "jit_secret_access_requests.secret_name",
   "log_sources.field_mappings",
   "marketplace_instances.field_mappings",
+  "native_sensors.supersession_match_basis",
   "org_ai_budgets.daily_input_tokens",
   "org_ai_budgets.daily_output_tokens",
   "org_plan_limits.ai_tokens_per_month",

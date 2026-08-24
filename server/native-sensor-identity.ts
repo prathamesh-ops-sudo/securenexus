@@ -7,6 +7,11 @@ export interface SensorIdentityRecord {
   machineIdentitySource: string | null;
 }
 
+export interface SensorSupersessionMatch<T extends SensorIdentityRecord = SensorIdentityRecord> {
+  candidate: T;
+  basis: SensorSupersessionMatchBasis;
+}
+
 export function getSensorSupersessionMatchBasis(
   prior: SensorIdentityRecord,
   current: SensorIdentityRecord,
@@ -30,4 +35,14 @@ export function getSensorSupersessionMatchBasis(
   }
 
   return null;
+}
+
+export function getSensorSupersessionMatches<T extends SensorIdentityRecord>(
+  priorCandidates: T[],
+  current: SensorIdentityRecord,
+): SensorSupersessionMatch<T>[] {
+  return priorCandidates.flatMap((candidate) => {
+    const basis = getSensorSupersessionMatchBasis(candidate, current);
+    return basis ? [{ candidate, basis }] : [];
+  });
 }
