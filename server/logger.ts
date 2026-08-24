@@ -85,7 +85,7 @@ const SENSITIVE_KEYS = new Set([
 function redactDeep(obj: unknown, depth: number = 0): unknown {
   if (depth > 8) return "[DEPTH_LIMIT]";
   if (obj === null || obj === undefined) return obj;
-  if (typeof obj === "string") return redact(obj);
+  if (typeof obj === "string") return redactLogText(obj);
   if (typeof obj !== "object") return obj;
   if (Array.isArray(obj)) return obj.map((item) => redactDeep(item, depth + 1));
   const result: Record<string, unknown> = {};
@@ -99,7 +99,7 @@ function redactDeep(obj: unknown, depth: number = 0): unknown {
   return result;
 }
 
-function redact(input: string): string {
+export function redactLogText(input: string): string {
   let result = input;
   for (const { pattern, replacement } of REDACT_PATTERNS) {
     pattern.lastIndex = 0;
@@ -123,12 +123,12 @@ function emit(level: LogLevel, source: string, message: string, extra?: Record<s
   const entry: LogEntry = {
     timestamp: new Date().toISOString(),
     level,
-    message: redact(message),
+    message: redactLogText(message),
     source,
     context: ctx,
   };
 
-  const serialized = redact(JSON.stringify(entry));
+  const serialized = redactLogText(JSON.stringify(entry));
 
   switch (level) {
     case "error":

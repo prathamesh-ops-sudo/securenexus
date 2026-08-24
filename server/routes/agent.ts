@@ -44,6 +44,7 @@ import {
 } from "../api-response";
 import { evaluateInventoryPackages, type InventoryPackage } from "../vulnerability-evaluation";
 import { getSensorSupersessionMatches } from "../native-sensor-identity";
+import { getDatabaseErrorDiagnostics } from "../error-diagnostics";
 
 const log = logger.child("agent-api");
 const MAX_SENSOR_EVENTS = 500;
@@ -362,7 +363,12 @@ async function handleSensorEvents(req: Request, res: Response): Promise<void> {
       .update(sensorIngestBatches)
       .set({ status: "failed", completedAt: new Date() })
       .where(and(eq(sensorIngestBatches.id, batch.id), eq(sensorIngestBatches.orgId, orgId)));
-    log.error("Sensor event ingestion failed", { error: String(error), sensorId, orgId, batchId });
+    log.error("Sensor event ingestion failed", {
+      databaseError: getDatabaseErrorDiagnostics(error),
+      sensorId,
+      orgId,
+      batchId,
+    });
     replyError(res, 500, [{ code: ERROR_CODES.INTERNAL_ERROR, message: "Event ingestion failed." }]);
   }
 }
@@ -564,7 +570,12 @@ async function handleSensorPackages(req: Request, res: Response): Promise<void> 
       .update(sensorPackageBatches)
       .set({ status: "failed", completedAt: new Date() })
       .where(and(eq(sensorPackageBatches.id, batch.id), eq(sensorPackageBatches.orgId, orgId)));
-    log.error("Sensor package ingestion failed", { error: String(error), sensorId, orgId, batchId });
+    log.error("Sensor package ingestion failed", {
+      databaseError: getDatabaseErrorDiagnostics(error),
+      sensorId,
+      orgId,
+      batchId,
+    });
     replyError(res, 500, [{ code: ERROR_CODES.INTERNAL_ERROR, message: "Package inventory ingestion failed." }]);
   }
 }
@@ -1060,7 +1071,7 @@ async function handleEnrollment(req: Request, res: Response): Promise<void> {
       replyError(res, 400, [{ code: error.code, message: error.message }]);
       return;
     }
-    log.error("Sensor enrollment failed", { error: String(error) });
+    log.error("Sensor enrollment failed", { databaseError: getDatabaseErrorDiagnostics(error) });
     replyError(res, 500, [{ code: ERROR_CODES.INTERNAL_ERROR, message: "Sensor enrollment failed." }]);
   }
 }
