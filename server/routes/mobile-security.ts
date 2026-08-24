@@ -4,6 +4,7 @@ import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, resolveOrgContext, requireOrgId } from "../rbac";
 import { db } from "../db";
+import { publishAlertCreated } from "../alert-events";
 import {
   mobileDevices,
   devicePostureChecks,
@@ -1210,21 +1211,25 @@ export function registerMobileSecurityRoutes(app: Express): void {
 
         // Create alert for high-risk sessions
         if (riskData.score >= 50) {
-          await db.insert(alerts).values({
-            orgId,
-            source: "mobile_mtd",
-            category: "anomaly",
-            severity: riskData.score >= 75 ? "high" : "medium",
-            title: `[Remote Worker] High-risk session detected`,
-            description: `Risk factors: ${riskData.factors.join(", ")}. User: ${userId}, IP: ${ipAddress || "unknown"}, Country: ${country || "unknown"}`,
-            sourceIp: ipAddress || null,
-            status: "new",
-            rawData: { sessionId: session.id, riskScore: riskData.score, riskFactors: riskData.factors } as Record<
-              string,
-              unknown
-            >,
-            detectedAt: new Date(),
-          });
+          const [createdAlert] = await db
+            .insert(alerts)
+            .values({
+              orgId,
+              source: "mobile_mtd",
+              category: "anomaly",
+              severity: riskData.score >= 75 ? "high" : "medium",
+              title: `[Remote Worker] High-risk session detected`,
+              description: `Risk factors: ${riskData.factors.join(", ")}. User: ${userId}, IP: ${ipAddress || "unknown"}, Country: ${country || "unknown"}`,
+              sourceIp: ipAddress || null,
+              status: "new",
+              rawData: { sessionId: session.id, riskScore: riskData.score, riskFactors: riskData.factors } as Record<
+                string,
+                unknown
+              >,
+              detectedAt: new Date(),
+            })
+            .returning();
+          if (createdAlert) await publishAlertCreated(createdAlert);
         }
 
         res.status(201).json(session);

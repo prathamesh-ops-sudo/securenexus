@@ -5,6 +5,7 @@ import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 
 import { db } from "../db";
+import { publishAlertCreated } from "../alert-events";
 import {
   otAssets,
   otConnections,
@@ -472,6 +473,7 @@ export function registerOtSecurityRoutes(app: Express): void {
               detectedAt: new Date(),
             })
             .returning();
+          await publishAlertCreated(alert);
 
           // Link alert back to anomaly
           await db.update(otAnomalies).set({ alertId: alert.id }).where(eq(otAnomalies.id, anomaly.id));

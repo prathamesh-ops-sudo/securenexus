@@ -15,6 +15,7 @@ import {
   tags,
 } from "@shared/schema";
 import { db } from "../db";
+import { publishAlertCreated } from "../alert-events";
 import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 
 export async function getAlerts(orgId?: string): Promise<Alert[]> {
@@ -31,6 +32,7 @@ export async function getAlert(id: string): Promise<Alert | undefined> {
 
 export async function createAlert(alert: InsertAlert): Promise<Alert> {
   const [created] = await db.insert(alerts).values(alert).returning();
+  if (created && !created.suppressed) await publishAlertCreated(created);
   return created;
 }
 
@@ -68,7 +70,11 @@ export async function getAlertsByIncident(incidentId: string): Promise<Alert[]> 
   return db.select().from(alerts).where(eq(alerts.incidentId, incidentId)).orderBy(desc(alerts.detectedAt));
 }
 
-export async function findAlertByDedup(orgId: string | null, source: string, sourceEventId: string): Promise<Alert | undefined> {
+export async function findAlertByDedup(
+  orgId: string | null,
+  source: string,
+  sourceEventId: string,
+): Promise<Alert | undefined> {
   if (!sourceEventId) return undefined;
   const conditions = [eq(alerts.source, source), eq(alerts.sourceEventId, sourceEventId)];
   if (orgId) conditions.push(eq(alerts.orgId, orgId));
@@ -231,7 +237,10 @@ export async function createAlertDedupCluster(cluster: InsertAlertDedupCluster):
   return created;
 }
 
-export async function updateAlertDedupCluster(id: string, data: Partial<AlertDedupCluster>): Promise<AlertDedupCluster | undefined> {
+export async function updateAlertDedupCluster(
+  id: string,
+  data: Partial<AlertDedupCluster>,
+): Promise<AlertDedupCluster | undefined> {
   const [updated] = await db.update(alertDedupClusters).set(data).where(eq(alertDedupClusters.id, id)).returning();
   return updated;
 }

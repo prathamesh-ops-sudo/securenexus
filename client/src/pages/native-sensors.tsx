@@ -73,6 +73,7 @@ const STATUS_COLORS: Record<string, string> = {
   offline: "bg-red-500/10 text-red-500 border-red-500/20",
   degraded: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
   provisioning: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  superseded: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
 };
 
 const LOG_SOURCE_STATUS_COLORS: Record<string, string> = {
@@ -222,6 +223,10 @@ interface Sensor {
   eventsIngested: number;
   alertsGenerated: number;
   createdAt: string;
+  machineIdentity: string | null;
+  machineIdentitySource: string | null;
+  supersededAt: string | null;
+  supersededBySensorId: string | null;
 }
 
 interface LogSource {
@@ -2500,6 +2505,7 @@ export default function NativeSensorsPage() {
                 <SelectItem value="offline">Offline</SelectItem>
                 <SelectItem value="degraded">Degraded</SelectItem>
                 <SelectItem value="provisioning">Provisioning</SelectItem>
+                <SelectItem value="superseded">Superseded</SelectItem>
               </SelectContent>
             </Select>
             <Select value={platformFilter} onValueChange={setPlatformFilter}>
@@ -2564,6 +2570,15 @@ export default function NativeSensorsPage() {
                               <Clock className="h-3 w-3" />
                               {timeAgo(sensor.lastHeartbeat)}
                             </span>
+                          </div>
+                          {sensor.lifecycleState === "superseded" && (
+                            <div className="mt-1 text-xs text-amber-500">
+                              Historical sensor superseded{" "}
+                              {sensor.supersededAt ? timeAgo(sensor.supersededAt) : "at an unknown time"}
+                            </div>
+                          )}
+                          <div className="mt-1 text-[11px] text-muted-foreground">
+                            Identity: {sensor.machineIdentitySource || "legacy (not reported)"}
                           </div>
                         </div>
                       </div>

@@ -184,8 +184,19 @@ export function registerVulnScannerRoutes(app: Express): void {
         const limit = Math.min(Number.isNaN(limitParam) ? 100 : limitParam, 500);
         const offset = Number.isNaN(offsetParam) ? 0 : offsetParam;
 
+        const includeSuperseded = req.query.includeSuperseded === "true";
         const conditions: unknown[] = [eq(vulnPackages.orgId, orgId)];
         if (sensorId) conditions.push(eq(vulnPackages.sensorId, sensorId));
+        if (!includeSuperseded) {
+          conditions.push(
+            sql`EXISTS (
+              SELECT 1 FROM native_sensors
+              WHERE native_sensors.id = vuln_packages.sensor_id
+                AND native_sensors.org_id = ${orgId}
+                AND native_sensors.status <> 'superseded'
+            )`,
+          );
+        }
         if (vulnerable === "true") {
           conditions.push(eq(vulnPackages.isVulnerable, true), eq(vulnPackages.evaluationStatus, "evaluated"));
         }
@@ -214,6 +225,16 @@ export function registerVulnScannerRoutes(app: Express): void {
             COUNT(DISTINCT sensor_id) AS host_count
           FROM vuln_packages
           WHERE org_id = ${orgId}
+            ${
+              !includeSuperseded
+                ? sql`AND EXISTS (
+                  SELECT 1 FROM native_sensors
+                  WHERE native_sensors.id = vuln_packages.sensor_id
+                    AND native_sensors.org_id = ${orgId}
+                    AND native_sensors.status <> 'superseded'
+                )`
+                : sql``
+            }
         `);
         const s = (statsResult as any).rows?.[0] || {};
         const syncStates = await db.select({ lastStatus: cveSyncStates.lastStatus }).from(cveSyncStates);
@@ -530,6 +551,7 @@ export function registerVulnScannerRoutes(app: Express): void {
         FROM vuln_packages vp
         LEFT JOIN native_sensors ns ON ns.id = vp.sensor_id AND ns.org_id = ${orgId}
         WHERE vp.org_id = ${orgId}
+          AND (ns.status IS NULL OR ns.status <> 'superseded')
       `);
 
         const hosts = ((hostsResult as any).rows || []) as Array<{

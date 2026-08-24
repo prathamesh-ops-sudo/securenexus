@@ -40,14 +40,41 @@ for command_name in curl hostname; do
   fi
 done
 
+get_machine_identity() {
+  local value
+  if [[ -r /etc/machine-id ]]; then
+    value="$(tr -d '[:space:]' </etc/machine-id)"
+    if [[ -n "$value" ]]; then
+      MACHINE_IDENTITY="$value"
+      MACHINE_IDENTITY_SOURCE="machine_id"
+      return
+    fi
+  fi
+  if [[ -r /sys/class/dmi/id/product_uuid ]]; then
+    value="$(tr -d '[:space:]' </sys/class/dmi/id/product_uuid)"
+    if [[ -n "$value" ]]; then
+      MACHINE_IDENTITY="$value"
+      MACHINE_IDENTITY_SOURCE="dmi_product_uuid"
+      return
+    fi
+  fi
+  MACHINE_IDENTITY="$(hostname)"
+  MACHINE_IDENTITY_SOURCE="hostname_fallback"
+}
+
 HOSTNAME_VALUE="$(hostname)"
+MACHINE_IDENTITY=""
+MACHINE_IDENTITY_SOURCE=""
+get_machine_identity
 PAYLOAD="$(jq -n \
   --arg token "$ENROLLMENT_TOKEN" \
   --arg hostname "$HOSTNAME_VALUE" \
   --arg platform "$PLATFORM" \
   --arg os "$(uname -sr)" \
   --arg version "$AGENT_VERSION" \
-  '{enrollmentToken:$token,hostname:$hostname,platform:$platform,osVersion:$os,agentVersion:$version}')"
+  --arg machineIdentity "$MACHINE_IDENTITY" \
+  --arg machineIdentitySource "$MACHINE_IDENTITY_SOURCE" \
+  '{enrollmentToken:$token,hostname:$hostname,platform:$platform,osVersion:$os,agentVersion:$version,machineIdentity:$machineIdentity,machineIdentitySource:$machineIdentitySource}')"
 RESPONSE="$(curl --fail-with-body --silent --show-error --max-time 30 -X POST \
   "$SERVER_URL/api/agent/v1/enroll" \
   -H "Content-Type: application/json" \

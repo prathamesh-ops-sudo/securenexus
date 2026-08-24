@@ -96,6 +96,7 @@ export function registerNativeSensorRoutes(app: Express): void {
           COALESCE(SUM(alerts_generated), 0) AS total_alerts
         FROM native_sensors
         WHERE org_id = ${orgId}
+          AND status <> 'superseded'
       `);
       const statsRow = (statsResult as any).rows?.[0] || {};
 

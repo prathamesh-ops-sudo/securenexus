@@ -56,15 +56,27 @@ const enrollmentTokenSchema = z.object({
   platformHint: z.enum(SENSOR_PLATFORMS).optional(),
 });
 
-const enrollSchema = z.object({
-  agentType: z.enum(["sensor", "collector"]).default("sensor"),
-  collectorId: z.string().uuid().optional(),
-  enrollmentToken: z.string().trim().min(1).max(300),
-  hostname: z.string().trim().min(1).max(200),
-  platform: z.enum(SENSOR_PLATFORMS),
-  osVersion: z.string().trim().max(200).optional(),
-  agentVersion: z.string().trim().max(100).optional(),
-});
+const enrollSchema = z
+  .object({
+    agentType: z.enum(["sensor", "collector"]).default("sensor"),
+    collectorId: z.string().uuid().optional(),
+    enrollmentToken: z.string().trim().min(1).max(300),
+    hostname: z.string().trim().min(1).max(200),
+    platform: z.enum(SENSOR_PLATFORMS),
+    osVersion: z.string().trim().max(200).optional(),
+    agentVersion: z.string().trim().max(100).optional(),
+    machineIdentity: z.string().trim().min(1).max(300).optional(),
+    machineIdentitySource: z.enum(["machine_id", "dmi_product_uuid", "hostname_fallback"]).optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.agentType === "sensor" && Boolean(value.machineIdentity) !== Boolean(value.machineIdentitySource)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["machineIdentity"],
+        message: "machineIdentity and machineIdentitySource must be supplied together.",
+      });
+    }
+  });
 
 const heartbeatSchema = z.object({
   cpuUsage: z.number().finite().min(0).max(100).optional(),
@@ -934,6 +946,47 @@ async function handleEnrollment(req: Request, res: Response): Promise<void> {
       }
       const sensorId = randomUUID();
       const { key, hash } = createSensorAgentKey(sensorId);
+      const machineIdentity = parsed.data.machineIdentity ?? null;
+      const machineIdentitySource = parsed.data.machineIdentitySource ?? null;
+      const priorConditions = machineIdentity
+        ? machineIdentitySource === "hostname_fallback"
+          ? and(
+              eq(nativeSensors.orgId, claimed.orgId),
+              eq(nativeSensors.machineIdentity, machineIdentity),
+              eq(nativeSensors.machineIdentitySource, "hostname_fallback"),
+              eq(nativeSensors.platform, parsed.data.platform),
+              isNull(nativeSensors.revokedAt),
+              sql`${nativeSensors.status} <> 'superseded'`,
+            )
+          : and(
+              eq(nativeSensors.orgId, claimed.orgId),
+              eq(nativeSensors.machineIdentity, machineIdentity),
+              eq(nativeSensors.machineIdentitySource, machineIdentitySource as "machine_id" | "dmi_product_uuid"),
+              isNull(nativeSensors.revokedAt),
+              sql`${nativeSensors.status} <> 'superseded'`,
+            )
+        : null;
+      const [prior] = priorConditions
+        ? await tx
+            .select({ id: nativeSensors.id })
+            .from(nativeSensors)
+            .where(priorConditions)
+            .orderBy(sql`${nativeSensors.createdAt} DESC`)
+            .limit(1)
+        : [];
+      if (prior) {
+        await tx
+          .update(nativeSensors)
+          .set({ status: "superseded", supersededAt: now, updatedAt: now })
+          .where(
+            and(
+              eq(nativeSensors.id, prior.id),
+              eq(nativeSensors.orgId, claimed.orgId),
+              isNull(nativeSensors.revokedAt),
+              sql`${nativeSensors.status} <> 'superseded'`,
+            ),
+          );
+      }
       const [sensor] = await tx
         .insert(nativeSensors)
         .values({
@@ -943,11 +996,28 @@ async function handleEnrollment(req: Request, res: Response): Promise<void> {
           platform: parsed.data.platform,
           osVersion: parsed.data.osVersion ?? null,
           agentVersion: parsed.data.agentVersion ?? null,
+          machineIdentity,
+          machineIdentitySource,
           apiKey: hash,
           status: "provisioning",
         })
         .returning({ id: nativeSensors.id, orgId: nativeSensors.orgId, hostname: nativeSensors.hostname });
       if (!sensor) throw new EnrollmentError("Failed to create sensor.", "ENROLLMENT_FAILED");
+      if (prior) {
+        await tx
+          .update(nativeSensors)
+          .set({
+            supersededBySensorId: sensor.id,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(nativeSensors.id, prior.id),
+              eq(nativeSensors.orgId, claimed.orgId),
+              isNull(nativeSensors.revokedAt),
+            ),
+          );
+      }
       return { sensor, key, orgId: claimed.orgId, createdBy: claimed.createdBy };
     });
 

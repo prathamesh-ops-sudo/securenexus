@@ -45,6 +45,7 @@ function runStatusBadge(status: string) {
     running: "bg-blue-500/10 text-blue-500 border-blue-500/20",
     completed: "bg-green-500/10 text-green-500 border-green-500/20",
     failed: "bg-red-500/10 text-red-500 border-red-500/20",
+    withheld: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   };
   return styles[status] || "bg-muted text-muted-foreground border-muted";
 }
@@ -74,6 +75,11 @@ function PoliciesTab() {
   const { toast } = useToast();
   const [globalCooldown, setGlobalCooldown] = useState("30");
   const [globalRatePerHour, setGlobalRatePerHour] = useState("10");
+  const [policyName, setPolicyName] = useState("");
+  const [policySeverity, setPolicySeverity] = useState("critical");
+  const [policyCategory, setPolicyCategory] = useState("");
+  const [policySource, setPolicySource] = useState("");
+  const [policyAction, setPolicyAction] = useState("notify");
 
   const {
     data: policies,
@@ -122,6 +128,30 @@ function PoliciesTab() {
     onError: (err: Error) => {
       toast({ title: "Delete failed", description: err.message, variant: "destructive" });
     },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () =>
+      apiRequest("POST", "/api/autonomous/policies", {
+        name: policyName.trim(),
+        triggerType: "alert_created",
+        severityFilter: policySeverity ? [policySeverity] : [],
+        conditions: {
+          categories: policyCategory ? [policyCategory] : [],
+          sources: policySource ? [policySource] : [],
+        },
+        actions: [{ actionType: policyAction, config: {}, requireApproval: false }],
+        cooldownMinutes: 30,
+        maxActionsPerHour: 10,
+        status: "active",
+      }),
+    onSuccess: () => {
+      setPolicyName("");
+      queryClient.invalidateQueries({ queryKey: ["/api/autonomous/policies"] });
+      toast({ title: "Alert policy created" });
+    },
+    onError: (err: Error) =>
+      toast({ title: "Policy creation failed", description: err.message, variant: "destructive" }),
   });
 
   const applyGlobalControls = useMutation({
@@ -205,6 +235,54 @@ function PoliciesTab() {
         </CardContent>
       </Card>
 
+      <Card data-testid="card-alert-policy-form">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Create alert-triggered policy</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Alert policies match persisted severity, category, and source fields. Confidence is not applicable because
+            alerts do not require a confidence score.
+          </p>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-5">
+          <Input placeholder="Policy name" value={policyName} onChange={(event) => setPolicyName(event.target.value)} />
+          <Select value={policySeverity} onValueChange={setPolicySeverity}>
+            <SelectTrigger>
+              <SelectValue placeholder="Severity" />
+            </SelectTrigger>
+            <SelectContent>
+              {["critical", "high", "medium", "low", "informational"].map((severity) => (
+                <SelectItem key={severity} value={severity}>
+                  {formatType(severity)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            placeholder="Category (optional)"
+            value={policyCategory}
+            onChange={(event) => setPolicyCategory(event.target.value)}
+          />
+          <Input
+            placeholder="Source (optional)"
+            value={policySource}
+            onChange={(event) => setPolicySource(event.target.value)}
+          />
+          <div className="flex gap-2">
+            <Input
+              placeholder="Action"
+              value={policyAction}
+              onChange={(event) => setPolicyAction(event.target.value)}
+            />
+            <Button
+              onClick={() => createMutation.mutate()}
+              disabled={createMutation.isPending || !policyName.trim() || !policyAction.trim()}
+            >
+              Create
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {!policies || policies.length === 0 ? (
         <Card data-testid="empty-policies">
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
@@ -259,7 +337,7 @@ function PoliciesTab() {
                             <span className="font-medium text-foreground">{formatType(policy.triggerType)}</span>
                           </span>
                         )}
-                        {policy.confidenceThreshold != null && (
+                        {policy.confidenceThreshold != null && policy.triggerType !== "alert_created" && (
                           <span data-testid={`text-confidence-${policy.id || idx}`}>
                             Confidence:{" "}
                             <span className="font-medium text-foreground">
@@ -270,6 +348,23 @@ function PoliciesTab() {
                         {policy.severityFilter && (
                           <span data-testid={`text-severity-${policy.id || idx}`}>
                             Severity: <span className="font-medium text-foreground">{policy.severityFilter}</span>
+                          </span>
+                        )}
+                        {policy.triggerType === "alert_created" && (
+                          <span data-testid={`text-confidence-inapplicable-${policy.id || idx}`}>
+                            Confidence: <span className="font-medium text-foreground">Not applicable for alerts</span>
+                          </span>
+                        )}
+                        {_conditions.categories?.length > 0 && (
+                          <span>
+                            Category:{" "}
+                            <span className="font-medium text-foreground">{_conditions.categories.join(", ")}</span>
+                          </span>
+                        )}
+                        {_conditions.sources?.length > 0 && (
+                          <span>
+                            Source:{" "}
+                            <span className="font-medium text-foreground">{_conditions.sources.join(", ")}</span>
                           </span>
                         )}
                       </div>
@@ -395,6 +490,12 @@ function ActionTimelineTab() {
                     <span>
                       {" "}
                       · Incident: <span className="text-foreground font-medium">{action.incidentId}</span>
+                    </span>
+                  ) : null}
+                  {action.alertId ? (
+                    <span>
+                      {" "}
+                      · Alert: <span className="text-foreground font-medium">{action.alertId}</span>
                     </span>
                   ) : null}
                 </div>

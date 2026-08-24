@@ -21,6 +21,9 @@ describe("native agent artifacts", () => {
     expect(installer).toContain("journalctl -u sshd");
     expect(installer).toContain("journal_sshd.cursor");
     expect(installer).toContain("journal_sshd.pending");
+    expect(installer).toContain("/etc/machine-id");
+    expect(installer).toContain("/sys/class/dmi/id/product_uuid");
+    expect(installer).toContain("machineIdentitySource");
     expect(installer).not.toContain("tail -n 20");
     expect(installer).not.toContain("cpuUsage:0");
     expect(installer).not.toContain('agent:"ats-sensor"');

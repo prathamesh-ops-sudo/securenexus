@@ -157,6 +157,7 @@ export const AUTO_RESPONSE_POLICY_STATUSES = ["active", "inactive", "testing"] a
 export const AUTO_RESPONSE_TRIGGER_TYPES = [
   "incident_created",
   "incident_severity_change",
+  "alert_created",
   "alert_critical",
   "correlation_detected",
 ] as const;
@@ -6307,7 +6308,7 @@ export type InsertThreatReport = typeof threatReports.$inferInsert;
 // NATIVE SENSOR AGENT PROTOCOL
 // ==========================================
 
-export const SENSOR_STATUSES = ["online", "offline", "degraded", "provisioning", "revoked"] as const;
+export const SENSOR_STATUSES = ["online", "offline", "degraded", "provisioning", "revoked", "superseded"] as const;
 export const SENSOR_PLATFORMS = ["linux", "windows", "macos", "ios", "android", "docker", "kubernetes"] as const;
 export const SENSOR_EVENT_TYPES = ["process", "network", "file", "auth", "dns", "log"] as const;
 
@@ -6326,6 +6327,10 @@ export const nativeSensors = pgTable(
     agentVersion: text("agent_version"),
     registrationToken: text("registration_token"),
     apiKey: text("api_key"),
+    machineIdentity: text("machine_identity"),
+    machineIdentitySource: text("machine_identity_source"),
+    supersededAt: timestamp("superseded_at"),
+    supersededBySensorId: varchar("superseded_by_sensor_id"),
     revokedAt: timestamp("revoked_at"),
     status: text("status").notNull().default("provisioning"),
     ipAddress: text("ip_address"),
@@ -6348,6 +6353,7 @@ export const nativeSensors = pgTable(
     index("idx_native_sensors_status").on(table.orgId, table.status),
     index("idx_native_sensors_hostname").on(table.orgId, table.hostname),
     uniqueIndex("idx_native_sensors_token").on(table.registrationToken),
+    index("idx_native_sensors_machine_identity").on(table.orgId, table.machineIdentity),
   ],
 );
 

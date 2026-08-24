@@ -353,6 +353,7 @@ export function registerInvestigationsRoutes(app: Express): void {
         const allAlerts = await storage.getAlerts(orgId);
         const incidentAlerts = allAlerts.filter((a) => a.incidentId === incId);
         const matches = await evaluatePolicies({
+          kind: "incident",
           incident,
           alerts: incidentAlerts,
           orgId: orgId,

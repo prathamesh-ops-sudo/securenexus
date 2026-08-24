@@ -4,6 +4,7 @@ import {
   agentResponseActions,
   autonomyLog,
   nativeSensors,
+  responseActions,
   ROLE_PERMISSIONS,
   type AutonomyMode,
 } from "../shared/schema";
@@ -210,6 +211,17 @@ export async function dispatchAction(
         details: { actionType, parameters: config, reason: "observe_only" },
         success: true,
         triggeredBy: context.userId || "ai_analyst",
+      });
+      await db.insert(responseActions).values({
+        orgId: context.orgId,
+        actionType,
+        alertId: context.alertId,
+        incidentId: context.incidentId,
+        status: "withheld",
+        requestPayload: config,
+        responsePayload: withheldResult,
+        errorMessage: "observe_only",
+        executedBy: context.userId || "ai_analyst",
       });
     }
     await safeCreateAuditLog(context, actionType, config, withheldResult, 0, false, "response_action_withheld");

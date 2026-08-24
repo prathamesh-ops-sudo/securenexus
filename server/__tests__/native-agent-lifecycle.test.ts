@@ -40,6 +40,15 @@ describe("native sensor agent lifecycle", () => {
         lastTelemetryAt: heartbeat,
       }),
     ).toBe("revoked");
+    expect(
+      getSensorLifecycleState({
+        createdAt,
+        status: "superseded",
+        revokedAt: null,
+        lastHeartbeat: heartbeat,
+        lastTelemetryAt: heartbeat,
+      }),
+    ).toBe("superseded");
   });
 
   it("creates a credential bound to the sensor id without exposing the hash", () => {

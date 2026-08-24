@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { db } from "./db";
 import { logger } from "./logger";
+import { publishAlertCreated } from "./alert-events";
 
 const log = logger.child("deception-engine");
 import { eq, and, sql } from "drizzle-orm";
@@ -226,7 +227,6 @@ export async function processDeceptionHit(
       hitAt: new Date(),
     })
     .returning();
-
   // 2. Update hit count on the source token/asset
   if (canaryTokenId) {
     await db
@@ -298,6 +298,7 @@ export async function processDeceptionHit(
       detectedAt: new Date(),
     })
     .returning();
+  await publishAlertCreated(alert);
 
   // 4. Link the alert back to the hit
   await db.update(deceptionHits).set({ alertId: alert.id }).where(eq(deceptionHits.id, hit.id));

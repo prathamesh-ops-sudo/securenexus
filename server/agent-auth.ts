@@ -68,12 +68,13 @@ export async function agentAuth(req: Request, res: Response, next: NextFunction)
       orgId: nativeSensors.orgId,
       apiKey: nativeSensors.apiKey,
       revokedAt: nativeSensors.revokedAt,
+      status: nativeSensors.status,
     })
     .from(nativeSensors)
     .where(and(eq(nativeSensors.id, sensorId), isNull(nativeSensors.revokedAt)))
     .limit(1);
 
-  if (!sensor || !safeHashEqual(sensor.apiKey, hashApiKey(credential))) {
+  if (!sensor || sensor.status === "superseded" || !safeHashEqual(sensor.apiKey, hashApiKey(credential))) {
     replyUnauthenticated(res, "Invalid or revoked sensor credential.", ERROR_CODES.API_KEY_INVALID);
     return;
   }

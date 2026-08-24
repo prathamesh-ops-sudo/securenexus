@@ -5,6 +5,7 @@ import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { storage, logger, getOrgId, sendEnvelope } from "./shared";
 import { db } from "../db";
+import { publishAlertCreated } from "../alert-events";
 import { sql, eq, desc, and, ilike, or, count } from "drizzle-orm";
 import { assetReferencesMatch } from "../asset-linkage";
 import { z } from "zod";
@@ -1938,6 +1939,7 @@ export function registerStandalonePlatformRoutes(app: Express): void {
                 status: "new",
               })
               .returning();
+            await publishAlertCreated(alert);
 
             // Link the alert back to the threat report
             await db.update(threatReports).set({ linkedAlertId: alert.id }).where(eq(threatReports.id, report.id));

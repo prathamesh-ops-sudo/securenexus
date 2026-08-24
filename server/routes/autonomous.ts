@@ -11,7 +11,7 @@ import { z } from "zod";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { enforcePlanLimit } from "../middleware/plan-enforcement";
 import { getOrgId } from "./shared";
-import { reply, replyBadRequest, replyInternal } from "../api-response";
+import { reply, replyBadRequest, replyInternal, replyNotFound, replyValidation } from "../api-response";
 import { getAiSecuritySettings } from "../ai/security-store";
 
 const log = logger.child("autonomous-routes");
@@ -20,13 +20,16 @@ const log = logger.child("autonomous-routes");
 const policySchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().optional(),
-  enabled: z.boolean().default(true),
-  triggerCondition: z.object({
-    severity: z.array(z.string()).optional(),
-    category: z.array(z.string()).optional(),
-    source: z.array(z.string()).optional(),
-    mitreTactic: z.array(z.string()).optional(),
-  }),
+  triggerType: z.enum(["incident_created", "incident_severity_change", "alert_created"]).default("alert_created"),
+  severityFilter: z.array(z.string()).optional(),
+  conditions: z
+    .object({
+      categories: z.array(z.string()).optional(),
+      sources: z.array(z.string()).optional(),
+      minAlertCount: z.number().int().nonnegative().optional(),
+      minSources: z.number().int().nonnegative().optional(),
+    })
+    .default({}),
   actions: z.array(
     z.object({
       actionType: z.string(),
@@ -35,7 +38,9 @@ const policySchema = z.object({
     }),
   ),
   cooldownMinutes: z.number().min(0).max(10080).default(60),
-  maxExecutionsPerDay: z.number().min(1).max(1000).default(100),
+  maxActionsPerHour: z.number().min(1).max(1000).default(10),
+  status: z.enum(["active", "inactive", "testing"]).default("active"),
+  confidenceThreshold: z.number().min(0).max(1).optional(),
 });
 
 const rollbackSchema = z.object({
@@ -64,17 +69,10 @@ export function registerAutonomousRoutes(app: Express): void {
 
         const policies = await storage.getAutoResponsePolicies(orgId);
 
-        return res.json({
-          policies: policies || [],
-          summary: {
-            total: policies?.length || 0,
-            enabled: policies?.filter((p: any) => p.enabled).length || 0,
-            disabled: policies?.filter((p: any) => !p.enabled).length || 0,
-          },
-        });
+        return reply(res, policies || [], { total: policies?.length || 0 });
       } catch (error: any) {
         log.error("Failed to fetch autonomous policies", { error: error.message });
-        return res.status(500).json({ error: "Failed to fetch autonomous policies" });
+        return replyInternal(res, "Failed to fetch autonomous policies");
       }
     },
   );
@@ -185,19 +183,24 @@ export function registerAutonomousRoutes(app: Express): void {
 
         const created = [];
         for (const policy of defaultPolicies) {
-          const created_policy = await storage.createAutoResponsePolicy(policy as any);
+          const created_policy = await storage.createAutoResponsePolicy({
+            ...policy,
+            triggerType: "incident_created",
+            conditions: policy.triggerCondition,
+            severityFilter: policy.triggerCondition.severity,
+            confidenceThreshold: 0.85,
+            maxActionsPerHour: policy.maxExecutionsPerDay,
+            status: policy.enabled ? "active" : "inactive",
+          } as any);
           created.push({ ...policy, id: created_policy.id });
         }
 
         log.info("Seeded default autonomous policies", { orgId, count: created.length });
 
-        return res.json({
-          message: `Created ${created.length} default autonomous response policies`,
-          policies: created,
-        });
+        return reply(res, created);
       } catch (error: any) {
         log.error("Failed to seed default policies", { error: error.message });
-        return res.status(500).json({ error: "Failed to seed default policies" });
+        return replyInternal(res, "Failed to seed default policies");
       }
     },
   );
@@ -222,17 +225,24 @@ export function registerAutonomousRoutes(app: Express): void {
         const policy = await storage.createAutoResponsePolicy({
           orgId,
           ...validated,
+          confidenceThreshold: validated.confidenceThreshold ?? 0,
         } as any);
 
         log.info("Created autonomous policy", { orgId, policyId: policy.id, name: validated.name });
 
-        return res.status(201).json({ policy });
+        return reply(res, policy, {}, 201);
       } catch (error: any) {
         if (error.name === "ZodError") {
-          return res.status(400).json({ error: "Invalid policy data", details: error.errors });
+          return replyValidation(
+            res,
+            error.errors.map((issue: { message: string; path: (string | number)[] }) => ({
+              message: issue.message,
+              field: issue.path.join("."),
+            })),
+          );
         }
         log.error("Failed to create autonomous policy", { error: error.message });
-        return res.status(500).json({ error: "Failed to create autonomous policy" });
+        return replyInternal(res, "Failed to create autonomous policy");
       }
     },
   );
@@ -255,7 +265,7 @@ export function registerAutonomousRoutes(app: Express): void {
         const existing = await storage.getAutoResponsePolicy(policyId);
 
         if (!existing || existing.orgId !== orgId) {
-          return res.status(404).json({ error: "Policy not found" });
+          return replyNotFound(res, "Policy not found");
         }
 
         const updates = policySchema.partial().parse(req.body);
@@ -264,13 +274,19 @@ export function registerAutonomousRoutes(app: Express): void {
 
         log.info("Updated autonomous policy", { orgId, policyId });
 
-        return res.json({ policy: updated });
+        return reply(res, updated);
       } catch (error: any) {
         if (error.name === "ZodError") {
-          return res.status(400).json({ error: "Invalid policy data", details: error.errors });
+          return replyValidation(
+            res,
+            error.errors.map((issue: { message: string; path: (string | number)[] }) => ({
+              message: issue.message,
+              field: issue.path.join("."),
+            })),
+          );
         }
         log.error("Failed to update autonomous policy", { error: error.message });
-        return res.status(500).json({ error: "Failed to update autonomous policy" });
+        return replyInternal(res, "Failed to update autonomous policy");
       }
     },
   );
@@ -293,17 +309,17 @@ export function registerAutonomousRoutes(app: Express): void {
         const existing = await storage.getAutoResponsePolicy(policyId);
 
         if (!existing || existing.orgId !== orgId) {
-          return res.status(404).json({ error: "Policy not found" });
+          return replyNotFound(res, "Policy not found");
         }
 
         await storage.deleteAutoResponsePolicy(policyId);
 
         log.info("Deleted autonomous policy", { orgId, policyId });
 
-        return res.json({ message: "Policy deleted successfully" });
+        return reply(res, { deleted: true });
       } catch (error: any) {
         log.error("Failed to delete autonomous policy", { error: error.message });
-        return res.status(500).json({ error: "Failed to delete autonomous policy" });
+        return replyInternal(res, "Failed to delete autonomous policy");
       }
     },
   );
@@ -330,13 +346,10 @@ export function registerAutonomousRoutes(app: Express): void {
 
         const actions = await storage.getResponseActions(orgId, incidentId);
 
-        return res.json({
-          actions: actions || [],
-          count: actions?.length || 0,
-        });
+        return reply(res, actions || [], { total: actions?.length || 0 });
       } catch (error: any) {
         log.error("Failed to fetch response actions", { error: error.message });
-        return res.status(500).json({ error: "Failed to fetch response actions" });
+        return replyInternal(res, "Failed to fetch response actions");
       }
     },
   );

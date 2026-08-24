@@ -17,16 +17,19 @@ export const SENSOR_LIFECYCLE_STATES = [
   "degraded",
   "offline",
   "revoked",
+  "superseded",
 ] as const;
 
 export type SensorLifecycleState = (typeof SENSOR_LIFECYCLE_STATES)[number];
 
 export function getSensorLifecycleState(sensor: {
   revokedAt: Date | null;
+  status?: string | null;
   lastHeartbeat: Date | null;
   lastTelemetryAt: Date | null;
   createdAt: Date | null;
 }): SensorLifecycleState {
+  if (sensor.status === "superseded") return "superseded";
   if (sensor.revokedAt) return "revoked";
   if (!sensor.lastHeartbeat) return "enrolled-but-never-heartbeated";
 
@@ -48,6 +51,7 @@ async function sweepNativeSensorLifecycle(): Promise<void> {
     .where(
       and(
         isNull(nativeSensors.revokedAt),
+        sql`${nativeSensors.status} <> 'superseded'`,
         lt(nativeSensors.lastHeartbeat, offlineCutoff),
         sql`${nativeSensors.lastHeartbeat} IS NOT NULL`,
       ),
@@ -59,6 +63,7 @@ async function sweepNativeSensorLifecycle(): Promise<void> {
     .where(
       and(
         isNull(nativeSensors.revokedAt),
+        sql`${nativeSensors.status} <> 'superseded'`,
         lt(nativeSensors.lastHeartbeat, degradedCutoff),
         sql`${nativeSensors.lastHeartbeat} IS NOT NULL`,
         sql`${nativeSensors.lastHeartbeat} >= ${offlineCutoff}`,
