@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, NextFunction, Request, Response } from "express";
 import { dispatchWebhookEvent, getOrgId, logger, p, publishOutboxEvent, sendEnvelope, storage } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireOrgId, requirePermission, resolveOrgContext, requireMinRole } from "../rbac";
@@ -1381,7 +1381,7 @@ export function registerIncidentsRoutes(app: Express): void {
     requireOrgId,
     requireMinRole("analyst"),
     validatePathId("id"),
-    async (req, res) => {
+    async (req, res, next: NextFunction) => {
       try {
         const userId = (req as any).user?.id;
         const userName = (req as any).user?.firstName
@@ -1394,7 +1394,7 @@ export function registerIncidentsRoutes(app: Express): void {
         }
 
         const approval = await storage.getIncidentResponseApproval(p(req.params.id));
-        if (!approval) return res.status(404).json({ message: "Approval not found" });
+        if (!approval) return next();
         if (approval.status !== "pending") {
           return res.status(400).json({ message: `Approval already ${approval.status}` });
         }
