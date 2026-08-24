@@ -460,6 +460,7 @@ export class DatabaseStorage implements IStorage {
   getResponseAction = responseActionsFns.getResponseAction;
   createResponseAction = responseActionsFns.createResponseAction;
   updateResponseAction = responseActionsFns.updateResponseAction;
+  countRecentPolicyActions = responseActionsFns.countRecentPolicyActions;
   getAutoResponsePolicies = responseActionsFns.getAutoResponsePolicies;
   getAutoResponsePolicy = responseActionsFns.getAutoResponsePolicy;
   createAutoResponsePolicy = responseActionsFns.createAutoResponsePolicy;

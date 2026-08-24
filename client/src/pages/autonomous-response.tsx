@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient, fetchPaginated, type PaginatedResponse } from "@/lib/queryClient";
 import { formatDateTime as formatTimestamp } from "@/lib/i18n";
@@ -45,6 +46,7 @@ function runStatusBadge(status: string) {
     running: "bg-blue-500/10 text-blue-500 border-blue-500/20",
     completed: "bg-green-500/10 text-green-500 border-green-500/20",
     failed: "bg-red-500/10 text-red-500 border-red-500/20",
+    pending_approval: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
     withheld: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   };
   return styles[status] || "bg-muted text-muted-foreground border-muted";
@@ -80,6 +82,7 @@ function PoliciesTab() {
   const [policyCategory, setPolicyCategory] = useState("");
   const [policySource, setPolicySource] = useState("");
   const [policyAction, setPolicyAction] = useState("notify");
+  const [policyRequiresApproval, setPolicyRequiresApproval] = useState(false);
 
   const {
     data: policies,
@@ -140,10 +143,11 @@ function PoliciesTab() {
           categories: policyCategory ? [policyCategory] : [],
           sources: policySource ? [policySource] : [],
         },
-        actions: [{ actionType: policyAction, config: {}, requireApproval: false }],
+        actions: [{ actionType: policyAction, config: {}, requireApproval: policyRequiresApproval }],
         cooldownMinutes: 30,
         maxActionsPerHour: 10,
         status: "active",
+        requiresApproval: policyRequiresApproval,
       }),
     onSuccess: () => {
       setPolicyName("");
@@ -243,7 +247,7 @@ function PoliciesTab() {
             alerts do not require a confidence score.
           </p>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-5">
+        <CardContent className="grid gap-3 md:grid-cols-6">
           <Input placeholder="Policy name" value={policyName} onChange={(event) => setPolicyName(event.target.value)} />
           <Select value={policySeverity} onValueChange={setPolicySeverity}>
             <SelectTrigger>
@@ -267,6 +271,13 @@ function PoliciesTab() {
             value={policySource}
             onChange={(event) => setPolicySource(event.target.value)}
           />
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Checkbox
+              checked={policyRequiresApproval}
+              onCheckedChange={(checked) => setPolicyRequiresApproval(checked === true)}
+            />
+            Require human approval
+          </label>
           <div className="flex gap-2">
             <Input
               placeholder="Action"
@@ -353,6 +364,11 @@ function PoliciesTab() {
                         {policy.triggerType === "alert_created" && (
                           <span data-testid={`text-confidence-inapplicable-${policy.id || idx}`}>
                             Confidence: <span className="font-medium text-foreground">Not applicable for alerts</span>
+                          </span>
+                        )}
+                        {policy.requiresApproval && (
+                          <span data-testid={`text-approval-required-${policy.id || idx}`}>
+                            Action gate: <span className="font-medium text-foreground">Awaiting human approval</span>
                           </span>
                         )}
                         {_conditions.categories?.length > 0 && (
@@ -475,7 +491,11 @@ function ActionTimelineTab() {
                     <span
                       className={`inline-flex px-2 py-0.5 rounded border text-[10px] uppercase tracking-wider ${runStatusBadge(action.status || "queued")}`}
                     >
-                      {action.status || "queued"}
+                      {action.status === "withheld"
+                        ? "Observe-only withheld"
+                        : action.status === "pending_approval"
+                          ? "Awaiting human approval"
+                          : action.status || "queued"}
                     </span>
                     <span className="text-sm font-medium">{formatType(action.actionType || "unknown")}</span>
                   </div>

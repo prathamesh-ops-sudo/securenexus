@@ -20,6 +20,22 @@ function buildJobFingerprint(type: string, orgId: string, payload: unknown): str
 }
 
 const JOB_HANDLERS: Record<string, (job: any) => Promise<any>> = {
+  alert_policy_dispatch: async (job) => {
+    try {
+      const orgId = job.orgId || job.payload?.orgId;
+      const alertId = job.payload?.alertId;
+      if (!orgId || !alertId) return { dispatched: false, error: "Missing orgId or alertId" };
+      const alert = await storage.getAlert(alertId);
+      if (!alert || alert.orgId !== orgId || alert.suppressed || alert.status === "deduped") {
+        return { dispatched: false, alertId, skipped: true };
+      }
+      const { evaluateAndDispatchAlertPolicies } = await import("./policy-engine");
+      const results = await evaluateAndDispatchAlertPolicies(alert);
+      return { dispatched: true, alertId, resultCount: results.length };
+    } catch (err: any) {
+      return { dispatched: false, error: err.message || String(err), alertId: job.payload?.alertId };
+    }
+  },
   ai_triage: async (job) => {
     try {
       const { getAiTriageHandler } = await import("./routes/ai/triage");

@@ -18,7 +18,7 @@ export async function evaluatePolicies(context: PolicyEvalContext): Promise<Poli
   const policies = await storage.getAutoResponsePolicies(context.orgId);
   const matches: PolicyMatch[] = [];
   for (const policy of policies.filter((candidate) => candidate.status === "active")) {
-    const match = evaluatePolicy(policy, context);
+    const match = await evaluatePolicy(policy, context);
     if (!match) continue;
     storage
       .updateAutoResponsePolicy(policy.id, {
@@ -36,7 +36,7 @@ export async function evaluatePolicies(context: PolicyEvalContext): Promise<Poli
   return matches;
 }
 
-function evaluatePolicy(policy: AutoResponsePolicy, context: PolicyEvalContext): PolicyMatch | null {
+async function evaluatePolicy(policy: AutoResponsePolicy, context: PolicyEvalContext): Promise<PolicyMatch | null> {
   const matchedConditions: string[] = [];
   const conditions = (policy.conditions || {}) as Record<string, unknown>;
   if (
@@ -66,7 +66,7 @@ function evaluatePolicy(policy: AutoResponsePolicy, context: PolicyEvalContext):
       return null;
     }
     if (categories.length) matchedConditions.push("category match");
-    if (isCoolingDown(policy) || isRateLimited(policy)) return null;
+    if (isCoolingDown(policy) || (await isRateLimited(policy, context.orgId))) return null;
   } else if (context.kind === "alert" && policy.triggerType === "alert_created") {
     matchedConditions.push("alert_created");
     if (policy.severityFilter?.length && !policy.severityFilter.includes(context.alert.severity)) return null;
@@ -77,7 +77,7 @@ function evaluatePolicy(policy: AutoResponsePolicy, context: PolicyEvalContext):
     const sources = stringArray(conditions.sources);
     if (sources.length && !sources.includes(context.alert.source)) return null;
     if (sources.length) matchedConditions.push(`source: ${context.alert.source}`);
-    if (isCoolingDown(policy) || isRateLimited(policy)) return null;
+    if (isCoolingDown(policy) || (await isRateLimited(policy, context.orgId))) return null;
   }
   if (!matchedConditions.length) return null;
   return {
@@ -97,8 +97,11 @@ function isCoolingDown(policy: AutoResponsePolicy): boolean {
   return (Date.now() - new Date(policy.lastTriggeredAt).getTime()) / 60000 < policy.cooldownMinutes;
 }
 
-function isRateLimited(policy: AutoResponsePolicy): boolean {
-  return Boolean(policy.maxActionsPerHour && (policy.executionCount || 0) >= policy.maxActionsPerHour);
+async function isRateLimited(policy: AutoResponsePolicy, orgId: string): Promise<boolean> {
+  if (!policy.maxActionsPerHour) return false;
+  const since = new Date(Date.now() - 60 * 60 * 1000);
+  const recentActions = await storage.countRecentPolicyActions(orgId, policy.id, since);
+  return recentActions >= policy.maxActionsPerHour;
 }
 
 export async function dispatchPolicyMatches(
@@ -118,6 +121,8 @@ export async function dispatchPolicyMatches(
           orgId: context.orgId,
           incidentId: context.kind === "incident" ? context.incident.id : undefined,
           alertId: context.kind === "alert" ? context.alert.id : undefined,
+          policyId: match.policy.id,
+          requiresApproval: match.requiresApproval || action.requireApproval === true,
           storage,
         }),
       );

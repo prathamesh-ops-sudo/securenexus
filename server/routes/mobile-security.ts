@@ -4,14 +4,13 @@ import { logger, getOrgId } from "./shared";
 import { isAuthenticated } from "../auth";
 import { requireMinRole, resolveOrgContext, requireOrgId } from "../rbac";
 import { db } from "../db";
-import { publishAlertCreated } from "../alert-events";
+import { createAlertAndPublish } from "../alert-events";
 import {
   mobileDevices,
   devicePostureChecks,
   mobileThreats,
   ztnaPolicies,
   remoteWorkerSessions,
-  alerts,
   MOBILE_PLATFORMS,
   DEVICE_COMPLIANCE_STATUSES,
   MDM_PROVIDERS,
@@ -768,23 +767,20 @@ export function registerMobileSecurityRoutes(app: Express): void {
 
         // Auto-create alert for critical/high threats
         if (effectiveSeverity === "critical" || effectiveSeverity === "high") {
-          const [alert] = await db
-            .insert(alerts)
-            .values({
-              orgId,
-              source: "mobile_mtd",
-              category: "intrusion",
-              severity: effectiveSeverity,
-              title: `[Mobile] ${title}`,
-              description: description || `Mobile threat detected: ${threatType} on device ${device.deviceName}`,
-              sourceIp: sourceIp || null,
-              status: "new",
-              mitreTactic: mitreTactic || null,
-              mitreTechnique: mitreTechnique || null,
-              rawData: { mobileThreatId: threat.id, threatType, deviceId } as Record<string, unknown>,
-              detectedAt: new Date(),
-            })
-            .returning();
+          const alert = await createAlertAndPublish({
+            orgId,
+            source: "mobile_mtd",
+            category: "intrusion",
+            severity: effectiveSeverity,
+            title: `[Mobile] ${title}`,
+            description: description || `Mobile threat detected: ${threatType} on device ${device.deviceName}`,
+            sourceIp: sourceIp || null,
+            status: "new",
+            mitreTactic: mitreTactic || null,
+            mitreTechnique: mitreTechnique || null,
+            rawData: { mobileThreatId: threat.id, threatType, deviceId } as Record<string, unknown>,
+            detectedAt: new Date(),
+          });
 
           await db.update(mobileThreats).set({ alertId: alert.id }).where(eq(mobileThreats.id, threat.id));
         }
@@ -1211,25 +1207,21 @@ export function registerMobileSecurityRoutes(app: Express): void {
 
         // Create alert for high-risk sessions
         if (riskData.score >= 50) {
-          const [createdAlert] = await db
-            .insert(alerts)
-            .values({
-              orgId,
-              source: "mobile_mtd",
-              category: "anomaly",
-              severity: riskData.score >= 75 ? "high" : "medium",
-              title: `[Remote Worker] High-risk session detected`,
-              description: `Risk factors: ${riskData.factors.join(", ")}. User: ${userId}, IP: ${ipAddress || "unknown"}, Country: ${country || "unknown"}`,
-              sourceIp: ipAddress || null,
-              status: "new",
-              rawData: { sessionId: session.id, riskScore: riskData.score, riskFactors: riskData.factors } as Record<
-                string,
-                unknown
-              >,
-              detectedAt: new Date(),
-            })
-            .returning();
-          if (createdAlert) await publishAlertCreated(createdAlert);
+          await createAlertAndPublish({
+            orgId,
+            source: "mobile_mtd",
+            category: "anomaly",
+            severity: riskData.score >= 75 ? "high" : "medium",
+            title: `[Remote Worker] High-risk session detected`,
+            description: `Risk factors: ${riskData.factors.join(", ")}. User: ${userId}, IP: ${ipAddress || "unknown"}, Country: ${country || "unknown"}`,
+            sourceIp: ipAddress || null,
+            status: "new",
+            rawData: { sessionId: session.id, riskScore: riskData.score, riskFactors: riskData.factors } as Record<
+              string,
+              unknown
+            >,
+            detectedAt: new Date(),
+          });
         }
 
         res.status(201).json(session);

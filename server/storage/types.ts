@@ -550,6 +550,14 @@ export interface IStorage {
   getResponseAction(id: string): Promise<ResponseAction | undefined>;
   createResponseAction(action: InsertResponseAction): Promise<ResponseAction>;
   updateResponseAction(id: string, data: Partial<ResponseAction>): Promise<ResponseAction | undefined>;
+  countRecentPolicyActions(orgId: string, policyId: string, since: Date): Promise<number>;
+  getResponseActionApprovals(orgId?: string, status?: string): Promise<ResponseActionApproval[]>;
+  getResponseActionApproval(id: string): Promise<ResponseActionApproval | undefined>;
+  createResponseActionApproval(approval: InsertResponseActionApproval): Promise<ResponseActionApproval>;
+  updateResponseActionApproval(
+    id: string,
+    data: Partial<ResponseActionApproval>,
+  ): Promise<ResponseActionApproval | undefined>;
 
   // Predictive Defense
   getPredictiveAnomalies(orgId?: string): Promise<PredictiveAnomaly[]>;

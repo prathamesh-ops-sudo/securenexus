@@ -1187,6 +1187,8 @@ interface ResponseApproval {
   targetType: string | null;
   targetValue: string | null;
   incidentId: string | null;
+  alertId: string | null;
+  policyId: string | null;
   requestPayload: any;
   dryRunResult: any;
   status: string;
@@ -1614,6 +1616,9 @@ function ResponseApprovalsTab() {
                         <div className="text-sm">
                           {a.targetValue || "N/A"}
                           {a.targetType && <span className="text-xs text-muted-foreground ml-1">({a.targetType})</span>}
+                          {a.alertId && (
+                            <div className="text-[10px] text-muted-foreground mt-1">Alert: {a.alertId}</div>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>

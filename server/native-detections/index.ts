@@ -11,14 +11,13 @@ import {
   detectionRules,
   detectionAlerts,
   sensorEvents,
-  alerts,
   type DetectionRule,
   type SensorEvent,
 } from "../../shared/schema";
 import { evaluateCondition, collectMatchedFields, type ConditionNode } from "./evaluator";
 import { BUILTIN_RULES } from "./builtin-rules";
 import { logger } from "../routes/shared";
-import { publishAlertCreated } from "../alert-events";
+import { createAlertAndPublish } from "../alert-events";
 
 const log = logger.child("native-detection-engine");
 
@@ -183,24 +182,20 @@ export async function processEventBatch(
           .returning();
 
         // Also create a platform alert for the AI correlation engine
-        const [platformAlert] = await db
-          .insert(alerts)
-          .values({
-            orgId,
-            source: "native-sensor",
-            sourceEventId: detAlert.id,
-            category: "threat",
-            severity: match.severity,
-            title: `[Detection] ${match.title}`,
-            description: match.description,
-            hostname: undefined,
-            mitreTactic: match.mitreTactic ?? undefined,
-            mitreTechnique: match.mitreTechnique ?? undefined,
-            rawData: match.matchedFields,
-            status: "new",
-          })
-          .returning();
-        if (platformAlert) await publishAlertCreated(platformAlert);
+        await createAlertAndPublish({
+          orgId,
+          source: "native-sensor",
+          sourceEventId: detAlert.id,
+          category: "threat",
+          severity: match.severity,
+          title: `[Detection] ${match.title}`,
+          description: match.description,
+          hostname: undefined,
+          mitreTactic: match.mitreTactic ?? undefined,
+          mitreTechnique: match.mitreTechnique ?? undefined,
+          rawData: match.matchedFields,
+          status: "new",
+        });
 
         alertsCreated++;
         ruleMatchCounts[match.ruleId] = (ruleMatchCounts[match.ruleId] ?? 0) + 1;

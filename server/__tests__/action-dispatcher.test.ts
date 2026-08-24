@@ -201,6 +201,41 @@ describe("Dry-Run Mode (RESP-01)", () => {
   });
 });
 
+describe("Policy approval gating", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("records generic policy approval without dispatching the action", async () => {
+    const result = await dispatchAction(
+      "notify",
+      { message: "Review this alert" },
+      makeContext({
+        alertId: "alert-1",
+        incidentId: undefined,
+        policyId: "policy-1",
+        requiresApproval: true,
+      }),
+    );
+
+    expect(result.status).toBe("pending_approval");
+    expect(storage.createResponseActionApproval).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        alertId: "alert-1",
+        policyId: "policy-1",
+      }),
+    );
+    expect(storage.createResponseAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "pending_approval",
+        alertId: "alert-1",
+        policyId: "policy-1",
+      }),
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
 // RESP-04: Audit Logging
 // ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 import { storage, logger, getOrgId, sendEnvelope } from "./shared";
 import { db } from "../db";
-import { publishAlertCreated } from "../alert-events";
+import { createAlertAndPublish } from "../alert-events";
 import { sql, eq, desc, and, ilike, or, count } from "drizzle-orm";
 import { assetReferencesMatch } from "../asset-linkage";
 import { z } from "zod";
@@ -1927,19 +1927,15 @@ export function registerStandalonePlatformRoutes(app: Express): void {
         // Auto-create an alert from the threat report if severity is high or critical
         if (body.severity === "critical" || body.severity === "high") {
           try {
-            const [alert] = await db
-              .insert(alerts)
-              .values({
-                orgId,
-                source: "Employee Report",
-                category: body.category === "phishing" ? "phishing" : body.category === "malware" ? "malware" : "other",
-                severity: body.severity,
-                title: `[Threat Report] ${body.title}`,
-                description: body.description,
-                status: "new",
-              })
-              .returning();
-            await publishAlertCreated(alert);
+            const alert = await createAlertAndPublish({
+              orgId,
+              source: "Employee Report",
+              category: body.category === "phishing" ? "phishing" : body.category === "malware" ? "malware" : "other",
+              severity: body.severity,
+              title: `[Threat Report] ${body.title}`,
+              description: body.description,
+              status: "new",
+            });
 
             // Link the alert back to the threat report
             await db.update(threatReports).set({ linkedAlertId: alert.id }).where(eq(threatReports.id, report.id));

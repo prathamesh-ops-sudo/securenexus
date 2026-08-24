@@ -41,6 +41,7 @@ const policySchema = z.object({
   maxActionsPerHour: z.number().min(1).max(1000).default(10),
   status: z.enum(["active", "inactive", "testing"]).default("active"),
   confidenceThreshold: z.number().min(0).max(1).optional(),
+  requiresApproval: z.boolean().default(false),
 });
 
 const rollbackSchema = z.object({

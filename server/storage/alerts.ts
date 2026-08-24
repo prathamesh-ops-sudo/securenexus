@@ -15,7 +15,7 @@ import {
   tags,
 } from "@shared/schema";
 import { db } from "../db";
-import { publishAlertCreated } from "../alert-events";
+import { createAlertAndPublish } from "../alert-events";
 import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 
 export async function getAlerts(orgId?: string): Promise<Alert[]> {
@@ -31,9 +31,7 @@ export async function getAlert(id: string): Promise<Alert | undefined> {
 }
 
 export async function createAlert(alert: InsertAlert): Promise<Alert> {
-  const [created] = await db.insert(alerts).values(alert).returning();
-  if (created && !created.suppressed) await publishAlertCreated(created);
-  return created;
+  return createAlertAndPublish(alert);
 }
 
 export async function updateAlertStatus(id: string, status: string, incidentId?: string): Promise<Alert | undefined> {

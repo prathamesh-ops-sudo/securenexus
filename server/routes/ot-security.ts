@@ -5,13 +5,12 @@ import { isAuthenticated } from "../auth";
 import { resolveOrgContext, requireOrgId, requireMinRole } from "../rbac";
 
 import { db } from "../db";
-import { publishAlertCreated } from "../alert-events";
+import { createAlertAndPublish } from "../alert-events";
 import {
   otAssets,
   otConnections,
   otAnomalies,
   industrialProtocolEvents,
-  alerts,
   OT_ASSET_TYPES,
   OT_PROTOCOLS,
   PURDUE_LEVELS,
@@ -456,24 +455,20 @@ export function registerOtSecurityRoutes(app: Express): void {
 
         // Auto-create an alert for critical/high anomalies
         if (anomaly.severity === "critical" || anomaly.severity === "high") {
-          const [alert] = await db
-            .insert(alerts)
-            .values({
-              orgId,
-              source: "ot_ics",
-              category: "intrusion",
-              severity: anomaly.severity,
-              title: `[OT/ICS] ${anomaly.title}`,
-              description: anomaly.description || `OT anomaly detected: ${anomaly.anomalyType}`,
-              sourceIp: anomaly.sourceIp,
-              status: "new",
-              mitreTactic: anomaly.mitreTactic,
-              mitreTechnique: anomaly.mitreTechnique,
-              rawData: { otAnomalyId: anomaly.id, anomalyType: anomaly.anomalyType } as Record<string, unknown>,
-              detectedAt: new Date(),
-            })
-            .returning();
-          await publishAlertCreated(alert);
+          const alert = await createAlertAndPublish({
+            orgId,
+            source: "ot_ics",
+            category: "intrusion",
+            severity: anomaly.severity,
+            title: `[OT/ICS] ${anomaly.title}`,
+            description: anomaly.description || `OT anomaly detected: ${anomaly.anomalyType}`,
+            sourceIp: anomaly.sourceIp,
+            status: "new",
+            mitreTactic: anomaly.mitreTactic,
+            mitreTechnique: anomaly.mitreTechnique,
+            rawData: { otAnomalyId: anomaly.id, anomalyType: anomaly.anomalyType } as Record<string, unknown>,
+            detectedAt: new Date(),
+          });
 
           // Link alert back to anomaly
           await db.update(otAnomalies).set({ alertId: alert.id }).where(eq(otAnomalies.id, anomaly.id));

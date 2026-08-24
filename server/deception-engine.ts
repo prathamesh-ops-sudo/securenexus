@@ -1,11 +1,11 @@
 import crypto from "crypto";
 import { db } from "./db";
 import { logger } from "./logger";
-import { publishAlertCreated } from "./alert-events";
+import { createAlertAndPublish } from "./alert-events";
 
 const log = logger.child("deception-engine");
 import { eq, and, sql } from "drizzle-orm";
-import { canaryTokens, deceptionHits, honeypotAssets, alerts, playbooks, playbookExecutions } from "@shared/schema";
+import { canaryTokens, deceptionHits, honeypotAssets, playbooks, playbookExecutions } from "@shared/schema";
 
 // =========================================================================
 // CANARY TOKEN GENERATION
@@ -275,30 +275,26 @@ export async function processDeceptionHit(
     }
   }
 
-  const [alert] = await db
-    .insert(alerts)
-    .values({
-      orgId,
-      source: "deception",
-      category: "deception",
-      severity: severity === "critical" ? "critical" : "high",
-      title: alertTitle,
-      description: alertDescription,
-      sourceIp: context.sourceIp || null,
-      hostname: context.sourceHostname || null,
-      status: "new",
-      mitreTactic: internal ? "Lateral Movement" : "Initial Access",
-      mitreTechnique: internal ? "T1021 - Remote Services" : "T1078 - Valid Accounts",
-      rawData: {
-        deceptionHitId: hit.id,
-        canaryTokenId,
-        honeypotAssetId,
-        context,
-      },
-      detectedAt: new Date(),
-    })
-    .returning();
-  await publishAlertCreated(alert);
+  const alert = await createAlertAndPublish({
+    orgId,
+    source: "deception",
+    category: "deception",
+    severity: severity === "critical" ? "critical" : "high",
+    title: alertTitle,
+    description: alertDescription,
+    sourceIp: context.sourceIp || null,
+    hostname: context.sourceHostname || null,
+    status: "new",
+    mitreTactic: internal ? "Lateral Movement" : "Initial Access",
+    mitreTechnique: internal ? "T1021 - Remote Services" : "T1078 - Valid Accounts",
+    rawData: {
+      deceptionHitId: hit.id,
+      canaryTokenId,
+      honeypotAssetId,
+      context,
+    },
+    detectedAt: new Date(),
+  });
 
   // 4. Link the alert back to the hit
   await db.update(deceptionHits).set({ alertId: alert.id }).where(eq(deceptionHits.id, hit.id));

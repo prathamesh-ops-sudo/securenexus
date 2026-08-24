@@ -19,7 +19,7 @@ import {
   responseActions,
 } from "@shared/schema";
 import { db } from "../db";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray } from "drizzle-orm";
 
 export async function getResponseActions(orgId?: string, incidentId?: string): Promise<ResponseAction[]> {
   const conditions = [];
@@ -39,9 +39,27 @@ export async function createResponseAction(action: InsertResponseAction): Promis
   return created;
 }
 
-export async function updateResponseAction(id: string, data: Partial<ResponseAction>): Promise<ResponseAction | undefined> {
+export async function updateResponseAction(
+  id: string,
+  data: Partial<ResponseAction>,
+): Promise<ResponseAction | undefined> {
   const [updated] = await db.update(responseActions).set(data).where(eq(responseActions.id, id)).returning();
   return updated;
+}
+
+export async function countRecentPolicyActions(orgId: string, policyId: string, since: Date): Promise<number> {
+  const [result] = await db
+    .select({ count: count() })
+    .from(responseActions)
+    .where(
+      and(
+        eq(responseActions.orgId, orgId),
+        eq(responseActions.policyId, policyId),
+        gte(responseActions.createdAt, since),
+        inArray(responseActions.status, ["completed", "failed", "approved", "unavailable"]),
+      ),
+    );
+  return Number(result?.count ?? 0);
 }
 
 export async function getAutoResponsePolicies(orgId?: string): Promise<AutoResponsePolicy[]> {
@@ -65,7 +83,10 @@ export async function createAutoResponsePolicy(policy: InsertAutoResponsePolicy)
   return created;
 }
 
-export async function updateAutoResponsePolicy(id: string, updates: Partial<AutoResponsePolicy>): Promise<AutoResponsePolicy | null> {
+export async function updateAutoResponsePolicy(
+  id: string,
+  updates: Partial<AutoResponsePolicy>,
+): Promise<AutoResponsePolicy | null> {
   const [updated] = await db
     .update(autoResponsePolicies)
     .set({ ...updates, updatedAt: new Date() })
@@ -100,7 +121,10 @@ export async function createInvestigationRun(run: InsertInvestigationRun): Promi
   return created;
 }
 
-export async function updateInvestigationRun(id: string, updates: Partial<InvestigationRun>): Promise<InvestigationRun | null> {
+export async function updateInvestigationRun(
+  id: string,
+  updates: Partial<InvestigationRun>,
+): Promise<InvestigationRun | null> {
   const [updated] = await db.update(investigationRuns).set(updates).where(eq(investigationRuns.id, id)).returning();
   return updated || null;
 }
@@ -118,7 +142,10 @@ export async function createInvestigationStep(step: InsertInvestigationStep): Pr
   return created;
 }
 
-export async function updateInvestigationStep(id: string, updates: Partial<InvestigationStep>): Promise<InvestigationStep | null> {
+export async function updateInvestigationStep(
+  id: string,
+  updates: Partial<InvestigationStep>,
+): Promise<InvestigationStep | null> {
   const [updated] = await db.update(investigationSteps).set(updates).where(eq(investigationSteps.id, id)).returning();
   return updated || null;
 }
@@ -139,7 +166,9 @@ export async function getResponseActionRollback(id: string): Promise<ResponseAct
   return rollback || null;
 }
 
-export async function createResponseActionRollback(rollback: InsertResponseActionRollback): Promise<ResponseActionRollback> {
+export async function createResponseActionRollback(
+  rollback: InsertResponseActionRollback,
+): Promise<ResponseActionRollback> {
   const [created] = await db.insert(responseActionRollbacks).values(rollback).returning();
   return created;
 }
@@ -172,7 +201,9 @@ export async function getResponseActionApproval(id: string): Promise<ResponseAct
   return approval;
 }
 
-export async function createResponseActionApproval(approval: InsertResponseActionApproval): Promise<ResponseActionApproval> {
+export async function createResponseActionApproval(
+  approval: InsertResponseActionApproval,
+): Promise<ResponseActionApproval> {
   const [created] = await db.insert(responseActionApprovals).values(approval).returning();
   return created;
 }

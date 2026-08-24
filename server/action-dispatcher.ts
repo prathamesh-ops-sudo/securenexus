@@ -108,6 +108,8 @@ export interface ActionContext {
   callerRole?: string;
   decisionId?: string;
   autonomyMode?: AutonomyMode;
+  policyId?: string;
+  requiresApproval?: boolean;
 }
 
 export interface ActionResult {
@@ -208,7 +210,7 @@ export async function dispatchAction(
         tier: "observe_only",
         alertId: context.alertId,
         incidentId: context.incidentId,
-        details: { actionType, parameters: config, reason: "observe_only" },
+        details: { actionType, parameters: config, reason: "observe_only", policyId: context.policyId ?? null },
         success: true,
         triggeredBy: context.userId || "ai_analyst",
       });
@@ -217,6 +219,7 @@ export async function dispatchAction(
         actionType,
         alertId: context.alertId,
         incidentId: context.incidentId,
+        policyId: context.policyId,
         status: "withheld",
         requestPayload: config,
         responsePayload: withheldResult,
@@ -226,6 +229,10 @@ export async function dispatchAction(
     }
     await safeCreateAuditLog(context, actionType, config, withheldResult, 0, false, "response_action_withheld");
     return withheldResult;
+  }
+
+  if (context.requiresApproval && !isNativeResponseAction(actionType)) {
+    return requestPolicyApproval(actionType, config, context, executedAt);
   }
 
   // If dry-run, return simulated result without executing (per RESP-01)
@@ -244,6 +251,19 @@ export async function dispatchAction(
   // Step 3: Execute action (existing switch statement)
   const result = await executeActionSwitch(actionType, config, context, executedAt);
   const durationMs = Date.now() - startMs;
+  if (context.policyId && !isPersistedByActionHandler(actionType)) {
+    await context.storage.createResponseAction({
+      orgId: context.orgId,
+      actionType,
+      incidentId: context.incidentId,
+      alertId: context.alertId,
+      policyId: context.policyId,
+      status: result.status,
+      requestPayload: config,
+      responsePayload: result,
+      executedBy: context.userId,
+    });
+  }
 
   // Step 4: Audit log every execution (per RESP-04)
   // Only log for actions that actually executed (not pending_approval — those get audited when approved)
@@ -252,6 +272,25 @@ export async function dispatchAction(
   }
 
   return result;
+}
+
+function isPersistedByActionHandler(actionType: string): boolean {
+  return (
+    isNativeResponseAction(actionType) ||
+    actionType === "create_jira_ticket" ||
+    actionType === "create_servicenow_ticket"
+  );
+}
+
+function isNativeResponseAction(actionType: string): boolean {
+  return (
+    actionType === "isolate_host" ||
+    actionType === "block_ip" ||
+    actionType === "block_domain" ||
+    actionType === "quarantine_file" ||
+    actionType === "disable_user" ||
+    actionType === "kill_process"
+  );
 }
 
 /**
@@ -290,6 +329,90 @@ async function safeCreateAuditLog(
       actionType,
       error: String(err),
     });
+  }
+}
+
+async function requestPolicyApproval(
+  actionType: string,
+  config: Record<string, unknown>,
+  context: ActionContext,
+  executedAt: string,
+): Promise<ActionResult> {
+  const targetType = actionType.split("_")[0] || "response";
+  const targetValue =
+    typeof config.target === "string"
+      ? config.target
+      : typeof config.hostname === "string"
+        ? config.hostname
+        : typeof config.ip === "string"
+          ? config.ip
+          : typeof config.targetIp === "string"
+            ? config.targetIp
+            : null;
+  try {
+    const approval = await context.storage.createResponseActionApproval({
+      orgId: context.orgId,
+      actionType,
+      targetType,
+      targetValue,
+      incidentId: context.incidentId,
+      alertId: context.alertId,
+      policyId: context.policyId,
+      requestPayload: config,
+      dryRunResult: {
+        simulatedAt: executedAt,
+        actionType,
+        targetType,
+        targetValue,
+        policyId: context.policyId ?? null,
+        estimatedImpact: "Policy action requires human approval before dispatch.",
+      },
+      requestedBy: context.userId,
+      requestedByName: context.userName || "Policy Engine",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+    await context.storage.createResponseAction({
+      orgId: context.orgId,
+      actionType,
+      incidentId: context.incidentId,
+      alertId: context.alertId,
+      policyId: context.policyId,
+      targetType,
+      targetValue,
+      status: "pending_approval",
+      requestPayload: config,
+      responsePayload: { approvalId: approval.id, needsApproval: true },
+      executedBy: context.userId,
+    });
+    const result: ActionResult = {
+      actionType,
+      status: "pending_approval",
+      message: `Policy action ${actionType} is awaiting human approval.`,
+      details: {
+        approvalId: approval.id,
+        policyId: context.policyId ?? null,
+        alertId: context.alertId ?? null,
+        incidentId: context.incidentId ?? null,
+        needsApproval: true,
+      },
+      executedAt,
+    };
+    await safeCreateAuditLog(context, actionType, config, result, 0, false, "response_action_pending_approval");
+    return result;
+  } catch (error) {
+    log.error("Failed to record policy approval request", {
+      actionType,
+      policyId: context.policyId,
+      alertId: context.alertId,
+      error: String(error),
+    });
+    return {
+      actionType,
+      status: "failed",
+      message: "Approval request could not be persisted; action was not dispatched.",
+      details: { reason: "approval_persistence_failed" },
+      executedAt,
+    };
   }
 }
 
@@ -366,12 +489,13 @@ async function executeTicketing(
       details: { platform, summary, priority, project, notConfigured: true },
       executedAt,
     };
-    if (context.incidentId && context.storage) {
+    if ((context.incidentId || context.alertId) && context.storage) {
       await context.storage.createResponseAction({
         orgId: context.orgId,
         actionType: `create_${platform}_ticket`,
         incidentId: context.incidentId,
         alertId: context.alertId,
+        policyId: context.policyId,
         targetType: "ticket",
         targetValue: null,
         status: "unavailable",
@@ -428,12 +552,13 @@ async function executeTicketing(
     }
   }
 
-  if (context.incidentId && context.storage) {
+  if ((context.incidentId || context.alertId) && context.storage) {
     await context.storage.createResponseAction({
       orgId: context.orgId,
       actionType: `create_${platform}_ticket`,
       incidentId: context.incidentId,
       alertId: context.alertId,
+      policyId: context.policyId,
       targetType: "ticket",
       targetValue: ticketId,
       status,
@@ -534,8 +659,8 @@ function determineRiskLevel(actionType: string): string {
   return "low";
 }
 
-function determineInitialStatus(riskLevel: string): string {
-  if (riskLevel === "high" || riskLevel === "medium") return "pending_approval";
+function determineInitialStatus(riskLevel: string, requiresApproval = false): string {
+  if (requiresApproval || riskLevel === "high" || riskLevel === "medium") return "pending_approval";
   return "approved";
 }
 
@@ -646,7 +771,7 @@ async function executeAgentResponseAction(
 
   // Determine risk level and initial status
   const riskLevel = determineRiskLevel(actionType);
-  const initialStatus = determineInitialStatus(riskLevel);
+  const initialStatus = determineInitialStatus(riskLevel, context.requiresApproval);
   const timeoutResult = validateResponseActionTimeout(config?.timeoutSeconds);
   if (!timeoutResult.valid) {
     log.warn("Native response action timeout is below the sensor dispatch cadence", {
@@ -696,10 +821,11 @@ async function executeAgentResponseAction(
         actionType,
         incidentId: context.incidentId,
         alertId: context.alertId,
+        policyId: context.policyId,
         targetType: actionType.split("_")[0],
         targetValue: target,
         status: initialStatus,
-        requestPayload: { actionType, target, sensorId, riskLevel },
+        requestPayload: { actionType, target, sensorId, riskLevel, policyId: context.policyId ?? null },
         responsePayload: { actionId: action.id, needsApproval: initialStatus === "pending_approval" },
         executedBy: context.userId,
       });

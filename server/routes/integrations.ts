@@ -619,7 +619,16 @@ export function registerIntegrationsRoutes(app: Express): void {
       try {
         const orgId = (req as any).orgId;
         const user = (req as any).user;
-        const { actionType, targetType, targetValue, incidentId, requestPayload, requiredApprovers } = req.body;
+        const {
+          actionType,
+          targetType,
+          targetValue,
+          incidentId,
+          alertId,
+          policyId,
+          requestPayload,
+          requiredApprovers,
+        } = req.body;
         if (!actionType) return res.status(400).json({ message: "actionType is required" });
 
         let dryRunResult = null;
@@ -656,6 +665,8 @@ export function registerIntegrationsRoutes(app: Express): void {
           targetType,
           targetValue,
           incidentId,
+          alertId,
+          policyId,
           requestPayload: requestPayload || {},
           dryRunResult,
           requiredApprovers: requiredApprovers || 1,
@@ -694,6 +705,7 @@ export function registerIntegrationsRoutes(app: Express): void {
         const { decision, note } = (req as any).validatedBody;
         const approval = await storage.getResponseActionApproval(p(req.params.id));
         if (!approval) return res.status(404).json({ message: "Approval not found" });
+        if (approval.orgId !== orgId) return res.status(404).json({ message: "Approval not found" });
         if (approval.status !== "pending") {
           return res.status(400).json({ message: `Approval already ${approval.status}` });
         }
@@ -730,6 +742,8 @@ export function registerIntegrationsRoutes(app: Express): void {
             const context: ActionContext = {
               orgId,
               incidentId: approval.incidentId || undefined,
+              alertId: approval.alertId || undefined,
+              policyId: approval.policyId || undefined,
               userId: user?.id,
               userName,
               storage,
