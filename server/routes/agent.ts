@@ -491,6 +491,7 @@ async function handleSensorPackages(req: Request, res: Response): Promise<void> 
             references: cve?.references ?? null,
             matchedCpe: match.matchedCpe,
             matchedVersionRange: match.matchedVersionRange,
+            advisoryEcosystem: match.advisoryEcosystem,
             matchSource: match.source,
             advisoryId: match.advisoryId,
             findingConfidence: match.confidence,

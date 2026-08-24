@@ -7006,6 +7006,7 @@ export const vulnFindings = pgTable(
     kevDateAdded: timestamp("kev_date_added"),
     matchedCpe: text("matched_cpe"),
     matchedVersionRange: jsonb("matched_version_range"),
+    advisoryEcosystem: text("advisory_ecosystem"),
     matchSource: text("match_source"),
     advisoryId: text("advisory_id"),
     findingConfidence: text("finding_confidence"),

@@ -208,6 +208,8 @@ export function registerVulnScannerRoutes(app: Express): void {
             COUNT(*) FILTER (WHERE evaluation_status = 'evaluated' AND is_vulnerable = false) AS clean_count,
             COUNT(*) FILTER (WHERE evaluation_status = 'unevaluated') AS unevaluated_count,
             COUNT(*) FILTER (WHERE evaluation_status = 'unsupported') AS unsupported_count,
+            COUNT(*) FILTER (WHERE evaluation_status = 'anomaly') AS anomaly_count,
+            COUNT(*) FILTER (WHERE evaluation_status = 'failed') AS failed_count,
             COUNT(*) FILTER (WHERE evaluation_status = 'evaluated') AS evaluated_count,
             COUNT(DISTINCT sensor_id) AS host_count
           FROM vuln_packages
@@ -224,6 +226,8 @@ export function registerVulnScannerRoutes(app: Express): void {
             cleanCount: parseInt(s.clean_count || "0"),
             unevaluatedCount: parseInt(s.unevaluated_count || "0"),
             unsupportedCount: parseInt(s.unsupported_count || "0"),
+            anomalyCount: parseInt(s.anomaly_count || "0"),
+            failedCount: parseInt(s.failed_count || "0"),
             evaluatedCount: parseInt(s.evaluated_count || "0"),
             hostCount: parseInt(s.host_count || "0"),
             catalogueSynced: syncStates.some((state) => state.lastStatus !== "never"),

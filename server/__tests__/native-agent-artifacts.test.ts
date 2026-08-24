@@ -18,6 +18,9 @@ describe("native agent artifacts", () => {
     expect(installer).toContain('authResult:"failure"');
     expect(installer).toContain("(Failed\\ password|Invalid\\ user).*from");
     expect(installer).toContain('dd if="$auth_log"');
+    expect(installer).toContain("journalctl -u sshd");
+    expect(installer).toContain("journal_sshd.cursor");
+    expect(installer).toContain("journal_sshd.pending");
     expect(installer).not.toContain("tail -n 20");
     expect(installer).not.toContain("cpuUsage:0");
     expect(installer).not.toContain('agent:"ats-sensor"');
@@ -39,6 +42,9 @@ describe("native agent artifacts", () => {
     expect(script).toContain('authResult:"failure"');
     expect(script).toContain("(Failed password|Invalid user).*from");
     expect(script).toContain('dd if="$auth_log"');
+    expect(script).toContain("journalctl -u sshd");
+    expect(script).toContain("journal_sshd.cursor");
+    expect(script).toContain("journal_sshd.pending");
     expect(script).not.toContain("tail -n 20");
     expect(script).not.toContain('ipAddress:"127.0.0.1"');
     expect(script).not.toContain('arch:"unknown"');

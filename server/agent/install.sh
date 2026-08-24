@@ -246,6 +246,38 @@ collect_auth_events() {
   done
 }
 
+collect_journal_auth_events() {
+  command -v journalctl >/dev/null 2>&1 || return 0
+  local cursor_file pending_file saved_cursor output cursor line user ip method
+  cursor_file="$AUTH_STATE_DIR/journal_sshd.cursor"
+  pending_file="$AUTH_STATE_DIR/journal_sshd.pending"
+  saved_cursor=""
+  if [[ -r "$cursor_file" ]]; then read -r saved_cursor <"$cursor_file"; fi
+  if [[ -n "$saved_cursor" ]]; then
+    output="$(journalctl -u sshd --no-pager -o short-iso --show-cursor --after-cursor "$saved_cursor" 2>/dev/null)" || return 0
+  else
+    output="$(journalctl -u sshd --no-pager -o short-iso --show-cursor 2>/dev/null)" || return 0
+  fi
+  cursor="$(sed -n 's/^-- cursor: //p' <<<"$output" | tail -n 1)"
+  while IFS= read -r line; do
+    [[ -n "$line" && "$line" != --\ cursor:* ]] || continue
+    user=""; ip=""; method="ssh"
+    if [[ "$line" =~ (Failed[[:space:]]+password|Invalid[[:space:]]+user).*from[[:space:]]+[0-9a-fA-F:.]+ ]]; then
+      [[ "$line" =~ for[[:space:]]+invalid[[:space:]]+user[[:space:]]+([^[:space:]]+) ]] && user="${BASH_REMATCH[1]}"
+      [[ -z "$user" && "$line" =~ for[[:space:]]+([^[:space:]]+) ]] && user="${BASH_REMATCH[1]}"
+      [[ -z "$user" && "$line" =~ Invalid[[:space:]]+user[[:space:]]+([^[:space:]]+) ]] && user="${BASH_REMATCH[1]}"
+      [[ "$line" =~ from[[:space:]]+([0-9a-fA-F:.]+) ]] && ip="${BASH_REMATCH[1]}"
+      add_event "$(jq -n --arg user "$user" --arg ip "$ip" --arg method "$method" --arg line "$line" --arg source "journald:sshd" --arg timestamp "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        '{eventType:"auth",authAction:"login",authResult:"failure",authMethod:$method,userName:$user,srcIp:$ip,logSource:$source,logMessage:$line,rawData:{line:$line},timestamp:$timestamp}')"
+    elif [[ "$line" =~ Accepted[[:space:]]+([^[:space:]]+)[[:space:]]+for[[:space:]]+([^[:space:]]+)[[:space:]]+from[[:space:]]+([0-9a-fA-F:.]+) ]]; then
+      method="${BASH_REMATCH[1]}"; user="${BASH_REMATCH[2]}"; ip="${BASH_REMATCH[3]}"
+      add_event "$(jq -n --arg user "$user" --arg ip "$ip" --arg method "$method" --arg line "$line" --arg source "journald:sshd" --arg timestamp "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        '{eventType:"auth",authAction:"login",authResult:"success",authMethod:$method,userName:$user,srcIp:$ip,logSource:$source,logMessage:$line,rawData:{line:$line},timestamp:$timestamp}')"
+    fi
+  done <<<"$output"
+  [[ -n "$cursor" ]] && printf '%s\n' "$cursor" >"$pending_file"
+}
+
 collect_file_events() {
   local file_path file_hash file_size
   for file_path in /etc/passwd /etc/shadow /etc/sudoers /etc/ssh/sshd_config /etc/crontab /root/.ssh/authorized_keys /etc/hosts; do
@@ -278,14 +310,28 @@ send_events() {
   local count payload batch_id
   count="$(jq 'length' <<<"$EVENTS")"
   if [[ "$count" -eq 0 ]]; then
-    for pending in "$AUTH_STATE_DIR"/*.pending; do [[ -e "$pending" ]] || continue; mv "$pending" "${pending%.pending}.offset"; done
+    for pending in "$AUTH_STATE_DIR"/*.pending; do
+      [[ -e "$pending" ]] || continue
+      if [[ "$pending" == "$AUTH_STATE_DIR/journal_sshd.pending" ]]; then
+        mv "$pending" "$AUTH_STATE_DIR/journal_sshd.cursor"
+      else
+        mv "$pending" "${pending%.pending}.offset"
+      fi
+    done
     return 0
   fi
   batch_id="sensor-$(date +%s)-$$"
   payload="$(jq -n --arg batchId "$batch_id" --argjson events "$EVENTS" '{batchId:$batchId,events:$events}')"
   api_post "/api/agent/v1/sensors/$SENSOR_ID/events" "$payload" >/dev/null
   EVENTS="[]"
-  for pending in "$AUTH_STATE_DIR"/*.pending; do [[ -e "$pending" ]] || continue; mv "$pending" "${pending%.pending}.offset"; done
+    for pending in "$AUTH_STATE_DIR"/*.pending; do
+      [[ -e "$pending" ]] || continue
+      if [[ "$pending" == "$AUTH_STATE_DIR/journal_sshd.pending" ]]; then
+        mv "$pending" "$AUTH_STATE_DIR/journal_sshd.cursor"
+      else
+        mv "$pending" "${pending%.pending}.offset"
+      fi
+    done
   log "INFO" "Sent $count observed events"
 }
 
@@ -339,6 +385,7 @@ while :; do
   collect_process_events
   collect_network_events
   collect_auth_events
+  collect_journal_auth_events
   collect_file_events
   send_events
   send_package_inventory
