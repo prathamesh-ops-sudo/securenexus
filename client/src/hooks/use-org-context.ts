@@ -63,6 +63,15 @@ export function useOrgContext() {
   return useContext(OrgContext);
 }
 
+export function getInitialPlatformAdminOrgId(
+  activeOrgId: string | null,
+  isPlatformAdmin: boolean,
+  availableOrganizations: Array<Pick<PlatformOrganization, "id">>,
+): string | null {
+  if (activeOrgId || !isPlatformAdmin) return activeOrgId;
+  return availableOrganizations[0]?.id ?? null;
+}
+
 export function useOrgContextProvider(): OrgContextValue {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -141,6 +150,20 @@ export function useOrgContextProvider(): OrgContextValue {
       }
       return;
     }
+    const initialPlatformAdminOrgId = getInitialPlatformAdminOrgId(
+      activeOrgId,
+      isPlatformAdmin,
+      availableOrganizations,
+    );
+    if (initialPlatformAdminOrgId && initialPlatformAdminOrgId !== activeOrgId) {
+      setActiveOrgId(initialPlatformAdminOrgId);
+      try {
+        localStorage.setItem(ORG_STORAGE_KEY, initialPlatformAdminOrgId);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     if (!isPlatformAdmin && resolvedMembership && resolvedMembership.orgId !== activeOrgId) {
       setActiveOrgId(resolvedMembership.orgId);
       try {
@@ -154,6 +177,7 @@ export function useOrgContextProvider(): OrgContextValue {
     isPlatformAdmin,
     platformOrganizationsQuery.isError,
     platformOrganizationsQuery.isLoading,
+    availableOrganizations,
     resolvedMembership,
     selectedPlatformOrganization,
   ]);

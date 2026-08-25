@@ -1,6 +1,31 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { AuthenticatedUser } from "@shared/models/auth";
-import { extractApiError, clearCsrfTokenCache, fetchCsrfToken } from "../lib/queryClient";
+import { extractApiError, clearCsrfTokenCache, fetchCsrfToken, fetchPaginated } from "../lib/queryClient";
+
+const ORG_STORAGE_KEY = "securenexus.activeOrgId";
+
+async function establishInitialPlatformAdminOrganization(user: AuthenticatedUser): Promise<void> {
+  if (!user.isSuperAdmin) return;
+
+  try {
+    if (localStorage.getItem(ORG_STORAGE_KEY)) return;
+  } catch {
+    return;
+  }
+
+  try {
+    const organizations = await fetchPaginated<{ id: string }>("/api/platform-admin/organizations", {
+      limit: 200,
+      offset: 0,
+    });
+    const initialOrgId = organizations.items[0]?.id;
+    if (initialOrgId) {
+      localStorage.setItem(ORG_STORAGE_KEY, initialOrgId);
+    }
+  } catch {
+    /* The org context hook will surface tenant selection if loading fails. */
+  }
+}
 
 async function fetchUser(): Promise<AuthenticatedUser | null> {
   const response = await fetch("/api/auth/user", {
@@ -84,7 +109,8 @@ export function useAuth() {
 
   const loginMutation = useMutation({
     mutationFn: loginFn,
-    onSuccess: (user) => {
+    onSuccess: async (user) => {
+      await establishInitialPlatformAdminOrganization(user);
       queryClient.setQueryData(["/api/auth/user"], user);
     },
   });
