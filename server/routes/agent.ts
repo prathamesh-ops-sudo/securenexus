@@ -1002,6 +1002,25 @@ async function handleEnrollment(req: Request, res: Response): Promise<void> {
       const supersessionBases = new Set(supersessionMatches.map(({ basis }) => basis));
       const supersessionMatchBasis =
         supersessionBases.size === 0 ? null : supersessionBases.size === 1 ? supersessionMatches[0].basis : "multiple";
+      for (const { candidate, basis } of supersessionMatches) {
+        await tx
+          .update(nativeSensors)
+          .set({
+            status: "superseded",
+            supersededAt: now,
+            supersededBySensorId: sensorId,
+            supersessionMatchBasis: basis,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(nativeSensors.id, candidate.id),
+              eq(nativeSensors.orgId, claimed.orgId),
+              isNull(nativeSensors.revokedAt),
+              sql`${nativeSensors.status} <> 'superseded'`,
+            ),
+          );
+      }
       const [sensor] = await tx
         .insert(nativeSensors)
         .values({
@@ -1019,25 +1038,6 @@ async function handleEnrollment(req: Request, res: Response): Promise<void> {
         })
         .returning({ id: nativeSensors.id, orgId: nativeSensors.orgId, hostname: nativeSensors.hostname });
       if (!sensor) throw new EnrollmentError("Failed to create sensor.", "ENROLLMENT_FAILED");
-      for (const { candidate, basis } of supersessionMatches) {
-        await tx
-          .update(nativeSensors)
-          .set({
-            status: "superseded",
-            supersededAt: now,
-            supersededBySensorId: sensor.id,
-            supersessionMatchBasis: basis,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(nativeSensors.id, candidate.id),
-              eq(nativeSensors.orgId, claimed.orgId),
-              isNull(nativeSensors.revokedAt),
-              sql`${nativeSensors.status} <> 'superseded'`,
-            ),
-          );
-      }
       return { sensor, key, orgId: claimed.orgId, createdBy: claimed.createdBy };
     });
 
