@@ -195,6 +195,7 @@ export class DatabaseStorage implements IStorage {
   deprecateApiKey = authFns.deprecateApiKey;
   updateApiKeyLastUsed = authFns.updateApiKeyLastUsed;
   createPasswordResetToken = authFns.createPasswordResetToken;
+  replacePasswordResetToken = authFns.replacePasswordResetToken;
   getPasswordResetToken = authFns.getPasswordResetToken;
   markPasswordResetTokenAsUsed = authFns.markPasswordResetTokenAsUsed;
   consumePasswordResetToken = authFns.consumePasswordResetToken;

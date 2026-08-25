@@ -57,7 +57,7 @@ export function registerPasswordResetRoutes(app: Express): void {
         const token = randomBytes(32).toString("hex");
         const expiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRY_MS);
 
-        await storage.createPasswordResetToken({
+        await storage.replacePasswordResetToken({
           userId: user.id,
           token,
           expiresAt,

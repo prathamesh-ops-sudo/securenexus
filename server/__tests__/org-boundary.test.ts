@@ -102,7 +102,7 @@ describe("Cross-tenant boundary enforcement", () => {
       expect((req as any).orgId).toBe(orgId);
     });
 
-    it("uses first active membership when no x-org-id header", async () => {
+    it("rejects multiple active memberships when no x-org-id header", async () => {
       const orgId = "org-aaa-111";
 
       (storage.getUserMemberships as any).mockResolvedValue([
@@ -118,8 +118,13 @@ describe("Cross-tenant boundary enforcement", () => {
 
       await resolveOrgContext(req, res, next);
 
-      expect(next).toHaveBeenCalled();
-      expect((req as any).orgId).toBe(orgId);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errors: [expect.objectContaining({ code: "ORG_MEMBERSHIP_REQUIRED" })],
+        }),
+      );
     });
 
     it("sets null orgId when user has no active memberships", async () => {

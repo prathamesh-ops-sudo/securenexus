@@ -1186,6 +1186,7 @@ export interface IStorage {
 
   // Password Reset Tokens (Phase 4)
   createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken>;
+  replacePasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken>;
   getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
   markPasswordResetTokenAsUsed(token: string): Promise<void>;
   consumePasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;

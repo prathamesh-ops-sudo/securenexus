@@ -15,7 +15,6 @@ import {
   connectors,
   organizationMemberships,
   passwordResetTokens,
-  impersonationSessions,
   featureFlags,
   notificationDeliveryLog,
 } from "@shared/schema";
@@ -39,7 +38,8 @@ import {
 
 const log = logger.child("platform-admin");
 
-const IMPERSONATION_TTL_MS = 60 * 60 * 1000;
+const PLATFORM_ADMIN_RESET_TOKEN_EXPIRY_MS = 15 * 60 * 1000;
+const PLATFORM_ADMIN_RESET_TOKEN_EXPIRY_MINUTES = 15;
 
 /** Extract the authenticated user from a request (passport attaches it as req.user). */
 function getReqUser(req: Request): SessionUser {
@@ -659,6 +659,73 @@ export function registerPlatformAdminRoutes(app: Express): void {
     },
   );
 
+  app.post(
+    "/api/platform-admin/users/:id/password-reset-link",
+    isAuthenticated,
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const userId = req.params.id;
+        if (!userId || typeof userId !== "string" || userId.length > 64) {
+          return sendEnvelope(res, null, {
+            status: 400,
+            errors: [{ code: "INVALID_ID", message: "Invalid user ID" }],
+          });
+        }
+
+        const [target] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+        if (!target) {
+          return sendEnvelope(res, null, {
+            status: 404,
+            errors: [{ code: "NOT_FOUND", message: "User not found" }],
+          });
+        }
+        if (target.isSuperAdmin) {
+          return sendEnvelope(res, null, {
+            status: 403,
+            errors: [{ code: "CANNOT_RESET_ADMIN", message: "Cannot issue a reset link for a super-admin" }],
+          });
+        }
+
+        const baseUrl = getRequiredAppBaseUrl();
+        const adminUser = getReqUser(req);
+        const token = randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + PLATFORM_ADMIN_RESET_TOKEN_EXPIRY_MS);
+        await storage.replacePasswordResetToken({
+          userId: target.id,
+          token,
+          expiresAt,
+        });
+
+        const issuedAt = new Date();
+        await storage.createAuditLog({
+          userId: adminUser.id,
+          userName: adminUser.email,
+          action: "platform_admin_password_reset_link_issued",
+          resourceType: "user",
+          resourceId: target.id,
+          details: {
+            targetEmail: target.email,
+            issuedAt: issuedAt.toISOString(),
+            expiresAt: expiresAt.toISOString(),
+            expiresInMinutes: PLATFORM_ADMIN_RESET_TOKEN_EXPIRY_MINUTES,
+          },
+        });
+
+        return sendEnvelope(res, {
+          resetUrl: `${baseUrl}/reset-password?token=${token}`,
+          expiresAt: expiresAt.toISOString(),
+          expiresInMinutes: PLATFORM_ADMIN_RESET_TOKEN_EXPIRY_MINUTES,
+        });
+      } catch (error: unknown) {
+        return sendEnvelope(res, null, {
+          status: 500,
+          errors: [{ code: "PASSWORD_RESET_LINK_FAILED", message: "Failed to issue password reset link" }],
+        });
+      }
+    },
+  );
+
   app.get(
     "/api/platform-admin/subscriptions",
     isAuthenticated,
@@ -837,187 +904,6 @@ export function registerPlatformAdminRoutes(app: Express): void {
       });
     }
   });
-
-  app.post(
-    "/api/platform-admin/impersonate/end",
-    isAuthenticated,
-    requireSuperAdmin,
-    async (req: Request, res: Response) => {
-      try {
-        const { impersonationToken } = req.body;
-        if (!impersonationToken || typeof impersonationToken !== "string") {
-          return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "MISSING_TOKEN", message: "Impersonation token is required" }],
-          });
-        }
-
-        const [session] = await db
-          .update(impersonationSessions)
-          .set({ endedAt: new Date() })
-          .where(and(eq(impersonationSessions.sessionSid, impersonationToken), isNull(impersonationSessions.endedAt)))
-          .returning();
-
-        if (!session) {
-          return sendEnvelope(res, null, {
-            status: 404,
-            errors: [{ code: "NOT_FOUND", message: "Active impersonation session not found" }],
-          });
-        }
-
-        await storage.createAuditLog({
-          userId: session.superAdminId,
-          userName: getReqUser(req).email,
-          action: "impersonation_ended",
-          resourceType: "user",
-          resourceId: session.targetUserId,
-          details: { impersonationSessionId: session.id },
-        });
-
-        return sendEnvelope(res, { message: "Impersonation session ended" });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return sendEnvelope(res, null, {
-          status: 500,
-          errors: [{ code: "END_IMPERSONATE_FAILED", message: "Failed to end impersonation", details: message }],
-        });
-      }
-    },
-  );
-
-  app.get(
-    "/api/platform-admin/impersonate/validate",
-    isAuthenticated,
-    requireSuperAdmin,
-    async (req: Request, res: Response) => {
-      try {
-        const token = typeof req.query.token === "string" ? req.query.token : undefined;
-        if (!token) {
-          return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "MISSING_TOKEN", message: "Token query parameter is required" }],
-          });
-        }
-
-        const [session] = await db
-          .select()
-          .from(impersonationSessions)
-          .where(and(eq(impersonationSessions.sessionSid, token), isNull(impersonationSessions.endedAt)))
-          .limit(1);
-
-        if (!session || new Date(session.expiresAt) < new Date()) {
-          return sendEnvelope(res, { valid: false });
-        }
-
-        const [targetUser] = await db.select().from(users).where(eq(users.id, session.targetUserId)).limit(1);
-
-        return sendEnvelope(res, {
-          valid: true,
-          targetUser: targetUser ? serializeUser(targetUser) : null,
-          expiresAt: session.expiresAt,
-        });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return sendEnvelope(res, null, {
-          status: 500,
-          errors: [{ code: "VALIDATE_FAILED", message: "Failed to validate impersonation", details: message }],
-        });
-      }
-    },
-  );
-
-  app.post(
-    "/api/platform-admin/impersonate/:userId",
-    isAuthenticated,
-    requireSuperAdmin,
-    async (req: Request, res: Response) => {
-      try {
-        const targetUserId = req.params.userId;
-        if (!targetUserId || typeof targetUserId !== "string" || targetUserId.length > 64) {
-          return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "INVALID_ID", message: "Invalid user ID" }],
-          });
-        }
-
-        const adminUser = getReqUser(req);
-
-        if (targetUserId === adminUser.id) {
-          return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "SELF_IMPERSONATE", message: "Cannot impersonate yourself" }],
-          });
-        }
-
-        const [targetUser] = await db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
-        if (!targetUser) {
-          return sendEnvelope(res, null, {
-            status: 404,
-            errors: [{ code: "NOT_FOUND", message: "Target user not found" }],
-          });
-        }
-
-        if (targetUser.isSuperAdmin) {
-          return sendEnvelope(res, null, {
-            status: 403,
-            errors: [{ code: "CANNOT_IMPERSONATE_ADMIN", message: "Cannot impersonate another super-admin" }],
-          });
-        }
-
-        if (targetUser.disabledAt) {
-          return sendEnvelope(res, null, {
-            status: 400,
-            errors: [{ code: "USER_DISABLED", message: "Cannot impersonate a disabled user" }],
-          });
-        }
-
-        const sessionSid = `imp_${randomBytes(32).toString("hex")}`;
-        const expiresAt = new Date(Date.now() + IMPERSONATION_TTL_MS);
-
-        const [impSession] = await db
-          .insert(impersonationSessions)
-          .values({
-            superAdminId: adminUser.id,
-            targetUserId,
-            sessionSid,
-            expiresAt,
-          })
-          .returning();
-
-        await storage.createAuditLog({
-          userId: adminUser.id,
-          userName: adminUser.email,
-          action: "impersonation_started",
-          resourceType: "user",
-          resourceId: targetUserId,
-          details: {
-            targetEmail: targetUser.email,
-            impersonationSessionId: impSession.id,
-            expiresAt: expiresAt.toISOString(),
-          },
-        });
-
-        log.info("Impersonation session created", {
-          adminId: adminUser.id,
-          targetUserId,
-          impersonationId: impSession.id,
-          expiresAt: expiresAt.toISOString(),
-        });
-
-        return sendEnvelope(res, {
-          impersonationToken: sessionSid,
-          targetUser: serializeUser(targetUser),
-          expiresAt: expiresAt.toISOString(),
-        });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return sendEnvelope(res, null, {
-          status: 500,
-          errors: [{ code: "IMPERSONATE_FAILED", message: "Failed to create impersonation session", details: message }],
-        });
-      }
-    },
-  );
 
   app.get("/api/platform-admin/me", isAuthenticated, requireSuperAdmin, async (req: Request, res: Response) => {
     try {

@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
+  select: vi.fn(),
   createAuditLog: vi.fn().mockResolvedValue({}),
+  replacePasswordResetToken: vi.fn().mockResolvedValue({}),
   sendEmailWithStatus: vi.fn().mockResolvedValue({ accepted: true, status: "accepted" }),
 }));
 
 vi.mock("../db", () => ({
-  db: { transaction: mocks.transaction },
+  db: { transaction: mocks.transaction, select: mocks.select },
   pool: {},
   getPoolHealth: vi.fn(),
   checkPoolConnectivity: vi.fn(),
@@ -22,7 +24,10 @@ vi.mock("../routes/shared", () => ({
       res.status(options?.status ?? 200).json({ data, errors: options?.errors ?? [] });
     },
   ),
-  storage: { createAuditLog: mocks.createAuditLog },
+  storage: {
+    createAuditLog: mocks.createAuditLog,
+    replacePasswordResetToken: mocks.replacePasswordResetToken,
+  },
   logger: { child: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }) },
 }));
 vi.mock("../auth", () => ({ isAuthenticated: (_req: unknown, _res: unknown, next: () => void) => next() }));
@@ -49,6 +54,7 @@ import { getRequiredAppBaseUrl, registerPlatformAdminRoutes } from "../routes/pl
 interface TestRequest {
   user?: { id: string; email: string };
   body: Record<string, unknown>;
+  params?: Record<string, string>;
 }
 
 interface TestResponse {
@@ -140,6 +146,8 @@ describe("platform tenant provisioning", () => {
     vi.clearAllMocks();
     process.env.APP_BASE_URL = "https://local.example.test";
     process.env.NODE_ENV = "development";
+    mocks.select.mockReset();
+    mocks.replacePasswordResetToken.mockClear();
   });
 
   it("requires APP_BASE_URL before beginning provisioning", () => {
@@ -209,5 +217,61 @@ describe("platform tenant provisioning", () => {
       }),
     );
     expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("issues an audited, short-lived one-time reset link and invalidates prior links", async () => {
+    const target = {
+      id: "user-2",
+      email: "owner@tenant.example",
+      isSuperAdmin: false,
+      passwordHash: "existing-hash",
+    };
+    const limit = vi.fn().mockResolvedValue([target]);
+    mocks.select.mockReturnValue({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({ limit })),
+      })),
+    });
+    const handlers = captureRoute("/api/platform-admin/users/:id/password-reset-link");
+    const res = response();
+
+    await handlers[2](
+      {
+        user: { id: "admin-1", email: "admin@example.com" },
+        body: {},
+        params: { id: target.id },
+      },
+      res,
+    );
+
+    expect(mocks.replacePasswordResetToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: target.id,
+        token: expect.stringMatching(/^[a-f0-9]{64}$/),
+        expiresAt: expect.any(Date),
+      }),
+    );
+    expect(mocks.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "admin-1",
+        action: "platform_admin_password_reset_link_issued",
+        resourceId: target.id,
+        details: expect.objectContaining({
+          targetEmail: target.email,
+          issuedAt: expect.any(String),
+          expiresAt: expect.any(String),
+          expiresInMinutes: 15,
+        }),
+      }),
+    );
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          resetUrl: expect.stringMatching(/^https:\/\/local\.example\.test\/reset-password\?token=/),
+          expiresAt: expect.any(String),
+          expiresInMinutes: 15,
+        }),
+      }),
+    );
   });
 });

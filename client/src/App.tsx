@@ -19,7 +19,6 @@ import NotFound from "@/pages/not-found";
 import { CommandPalette } from "@/components/command-palette";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { PlanLimitBanner } from "@/components/plan-limit-banner";
-import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { PlatformTenantPicker } from "@/components/platform-tenant-picker";
 import { PlatformReadOnlyBanner } from "@/components/platform-read-only-banner";
 import { NotificationBell } from "@/components/notification-bell";
@@ -341,7 +340,6 @@ function AuthenticatedApp() {
               Skip to main content
             </a>
             <div className="flex flex-col flex-1 min-w-0 relative z-10">
-              <ImpersonationBanner />
               <PlatformReadOnlyBanner />
               <PlanLimitBanner />
               <header className="flex items-center justify-between gap-4 px-3 py-2 border-b border-border/60 sticky top-0 z-40 bg-background/80 backdrop-blur-md">

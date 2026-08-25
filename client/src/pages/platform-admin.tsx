@@ -21,8 +21,8 @@ import {
   Search,
   UserX,
   UserCheck,
-  Eye,
   KeyRound,
+  Link,
   ChevronLeft,
   ChevronRight,
   TrendingUp,
@@ -774,20 +774,21 @@ function UsersTab() {
     onError: () => toast({ title: "Failed to force password reset", variant: "destructive" }),
   });
 
-  const impersonateMutation = useMutation({
+  const [resetLink, setResetLink] = useState<{ email: string; url: string; expiresAt: string } | null>(null);
+
+  const issueResetLinkMutation = useMutation({
     mutationFn: async (userId: string) => {
-      const res = await apiRequest("POST", `/api/platform-admin/impersonate/${userId}`);
-      const body = await res.json();
-      return body as { impersonationToken: string; targetUser: { email: string }; expiresAt: string };
+      const res = await apiRequest("POST", `/api/platform-admin/users/${userId}/password-reset-link`);
+      return res.json() as Promise<{ resetUrl: string; expiresAt: string }>;
     },
-    onSuccess: (data: { impersonationToken: string; targetUser: { email: string }; expiresAt: string }) => {
-      sessionStorage.setItem("impersonationToken", data.impersonationToken);
-      sessionStorage.setItem("impersonatingAs", data.targetUser.email);
-      sessionStorage.setItem("impersonationExpires", data.expiresAt);
-      toast({ title: `Impersonating ${data.targetUser.email}` });
-      window.location.reload();
+    onSuccess: (result, userId) => {
+      const user = data?.items.find((item) => item.id === userId);
+      if (user?.email) {
+        setResetLink({ email: user.email, url: result.resetUrl, expiresAt: result.expiresAt });
+      }
+      toast({ title: "Password reset link issued", description: "Share it with the user through a trusted channel." });
     },
-    onError: () => toast({ title: "Failed to start impersonation", variant: "destructive" }),
+    onError: () => toast({ title: "Failed to issue password reset link", variant: "destructive" }),
   });
 
   const grantAdminMutation = useMutation({
@@ -814,6 +815,35 @@ function UsersTab() {
 
   return (
     <div className="space-y-4">
+      {resetLink && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Password reset link issued</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p>
+              Share this one-time link with <strong>{resetLink.email}</strong> through a trusted channel. It expires{" "}
+              {new Date(resetLink.expiresAt).toLocaleString()}.
+            </p>
+            <div className="flex gap-2 items-center">
+              <Input readOnly value={resetLink.url} aria-label="Password reset link" />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(resetLink.url);
+                  toast({ title: "Reset link copied" });
+                }}
+              >
+                Copy
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Issuing another link invalidates this one. The link can be used once to choose a new password.
+            </p>
+          </CardContent>
+        </Card>
+      )}
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -899,19 +929,6 @@ function UsersTab() {
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {!user.isSuperAdmin && (
-                          <Button
-                            data-testid="platform-admin-btn-ghost-4"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => impersonateMutation.mutate(user.id)}
-                            disabled={!!user.disabledAt || impersonateMutation.isPending}
-                            title="Impersonate"
-                          >
-                            <Eye className="h-3 w-3" />
-                          </Button>
-                        )}
                         {user.disabledAt ? (
                           <Button
                             variant="ghost"
@@ -935,6 +952,19 @@ function UsersTab() {
                             <UserX className="h-3 w-3" />
                           </Button>
                         ) : null}
+                        {!user.isSuperAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-primary"
+                            onClick={() => issueResetLinkMutation.mutate(user.id)}
+                            disabled={issueResetLinkMutation.isPending || !user.email}
+                            title="Issue Password Reset Link"
+                            aria-label={`Issue password reset link for ${user.email ?? "user"}`}
+                          >
+                            <Link className="h-3 w-3" />
+                          </Button>
+                        )}
                         {!user.isSuperAdmin && (
                           <Button
                             variant="ghost"

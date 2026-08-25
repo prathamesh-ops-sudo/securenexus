@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getUserByEmail: vi.fn(),
-  createPasswordResetToken: vi.fn(),
+  replacePasswordResetToken: vi.fn(),
   sendEmailWithStatus: vi.fn(),
   passwordResetEmail: vi.fn(() => ({
     subject: "Reset password",
@@ -15,7 +15,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../routes/shared", () => ({
   logger: { child: () => ({ info: mocks.info, error: mocks.error }) },
-  storage: { createPasswordResetToken: mocks.createPasswordResetToken },
+  storage: {
+    replacePasswordResetToken: mocks.replacePasswordResetToken,
+  },
 }));
 vi.mock("../auth/storage", () => ({
   authStorage: { getUserByEmail: mocks.getUserByEmail },
@@ -88,7 +90,7 @@ describe("forgot-password observability", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getUserByEmail.mockResolvedValue(user);
-    mocks.createPasswordResetToken.mockResolvedValue({});
+    mocks.replacePasswordResetToken.mockResolvedValue({});
     mocks.sendEmailWithStatus.mockResolvedValue({ accepted: true, status: "accepted" });
   });
 
@@ -106,6 +108,7 @@ describe("forgot-password observability", () => {
       expect(mocks.info).toHaveBeenCalledWith("Forgot-password email delivery started", expect.any(Object));
       expect(mocks.info).toHaveBeenCalledWith("Password reset email accepted", expect.any(Object));
     });
+    expect(mocks.replacePasswordResetToken).toHaveBeenCalledWith(expect.objectContaining({ userId: user.id }));
   });
 
   it("logs skipped delivery as a failure", async () => {
@@ -135,7 +138,7 @@ describe("forgot-password observability", () => {
   });
 
   it("logs token persistence errors and does not attempt delivery", async () => {
-    mocks.createPasswordResetToken.mockRejectedValue(new Error("database unavailable"));
+    mocks.replacePasswordResetToken.mockRejectedValue(new Error("database unavailable"));
 
     await captureForgotPasswordHandler()({ body: { email: user.email } }, response());
 
@@ -159,7 +162,7 @@ describe("forgot-password observability", () => {
         expect.objectContaining({ reason: "no_local_password" }),
       );
     });
-    expect(mocks.createPasswordResetToken).not.toHaveBeenCalled();
+    expect(mocks.replacePasswordResetToken).not.toHaveBeenCalled();
     expect(mocks.sendEmailWithStatus).not.toHaveBeenCalled();
   });
 });

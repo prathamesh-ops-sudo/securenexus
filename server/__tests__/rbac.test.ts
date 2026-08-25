@@ -160,6 +160,70 @@ describe("RBAC", () => {
       expect((req as any).membership).toBeNull();
     });
 
+    it("keeps the unambiguous fallback for a single active membership", async () => {
+      (storage.getUserMemberships as any).mockResolvedValue([{ orgId: "org-member", role: "owner", status: "active" }]);
+      const req = mockReq();
+      const res = mockRes();
+      const next = vi.fn();
+
+      await resolveOrgContext(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect((req as any).orgId).toBe("org-member");
+      expect((req as any).orgRole).toBe("owner");
+    });
+
+    it("requires an explicit organization for users with multiple active memberships", async () => {
+      (storage.getUserMemberships as any).mockResolvedValue([
+        { orgId: "org-one", role: "owner", status: "active" },
+        { orgId: "org-two", role: "admin", status: "active" },
+      ]);
+      const req = mockReq();
+      const res = mockRes();
+      const next = vi.fn();
+
+      await resolveOrgContext(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errors: [expect.objectContaining({ code: "ORG_MEMBERSHIP_REQUIRED" })],
+        }),
+      );
+      expect(storage.createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "org_access_denied",
+          details: expect.objectContaining({ reason: "multiple_active_memberships" }),
+        }),
+      );
+    });
+
+    it("requires an explicit organization for platform admins", async () => {
+      (storage.getUserMemberships as any).mockResolvedValue([{ orgId: "org-admin", role: "owner", status: "active" }]);
+      const req = mockReq({
+        user: { id: "super-admin", email: "admin@example.com", isSuperAdmin: true },
+      });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await resolveOrgContext(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errors: [expect.objectContaining({ code: "ORG_MEMBERSHIP_REQUIRED" })],
+        }),
+      );
+      expect(storage.createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "org_access_denied",
+          details: expect.objectContaining({ reason: "platform_admin_requires_explicit_org" }),
+        }),
+      );
+    });
+
     it("rejects malformed organization selectors instead of falling back to another organization", async () => {
       (storage.getUserMemberships as any).mockResolvedValue([{ orgId: "org-member", role: "owner", status: "active" }]);
       const req = mockReq({
@@ -397,7 +461,7 @@ describe("RBAC", () => {
       }
     });
 
-    it("uses first active membership when no x-org-id header", async () => {
+    it("rejects multiple active memberships when no x-org-id header", async () => {
       (storage.getUserMemberships as any).mockResolvedValue([
         { orgId: "org-1", role: "admin", status: "active" },
         { orgId: "org-2", role: "analyst", status: "active" },
@@ -408,9 +472,13 @@ describe("RBAC", () => {
 
       await resolveOrgContext(req, res, next);
 
-      expect(next).toHaveBeenCalled();
-      expect((req as any).orgId).toBe("org-1");
-      expect((req as any).orgRole).toBe("admin");
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errors: [expect.objectContaining({ code: "ORG_MEMBERSHIP_REQUIRED" })],
+        }),
+      );
     });
 
     it("selects org from x-org-id header when present", async () => {

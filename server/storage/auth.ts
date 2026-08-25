@@ -25,10 +25,7 @@ export async function getApiKeys(orgId?: string): Promise<ApiKey[]> {
 }
 
 export async function getApiKeyByHash(hash: string): Promise<ApiKey | undefined> {
-  const [key] = await db
-    .select()
-    .from(apiKeys)
-    .where(eq(apiKeys.keyHash, hash));
+  const [key] = await db.select().from(apiKeys).where(eq(apiKeys.keyHash, hash));
   return key;
 }
 
@@ -69,6 +66,17 @@ export async function createPasswordResetToken(token: InsertPasswordResetToken):
   return created;
 }
 
+export async function replacePasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken> {
+  return db.transaction(async (tx) => {
+    await tx
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(and(eq(passwordResetTokens.userId, token.userId), isNull(passwordResetTokens.usedAt)));
+    const [created] = await tx.insert(passwordResetTokens).values(token).returning();
+    return created;
+  });
+}
+
 export async function getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined> {
   const [row] = await db.select().from(passwordResetTokens).where(eq(passwordResetTokens.token, token));
   return row;
@@ -107,7 +115,11 @@ export async function deleteExpiredPasswordResetTokens(): Promise<number> {
 
 // Phase 7: MSSP / Parent-Child Organizations
 
-export async function getIdempotencyKey(orgId: string, key: string, endpoint: string): Promise<IdempotencyKey | undefined> {
+export async function getIdempotencyKey(
+  orgId: string,
+  key: string,
+  endpoint: string,
+): Promise<IdempotencyKey | undefined> {
   const [found] = await db
     .select()
     .from(idempotencyKeys)

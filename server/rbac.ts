@@ -158,6 +158,32 @@ export async function resolveOrgContext(req: Request, res: Response, next: NextF
     return replyForbidden(res, "Invalid organization selector", ERROR_CODES.ORG_ACCESS_DENIED);
   }
 
+  if (!requestedOrgId && ((req as any).user?.isSuperAdmin || activeMemberships.length > 1)) {
+    const reason = (req as any).user?.isSuperAdmin
+      ? "platform_admin_requires_explicit_org"
+      : "multiple_active_memberships";
+    log.warn("Org access denied: explicit organization selector required", {
+      userId,
+      route: req.path,
+      method: req.method,
+      reason,
+    });
+    storage
+      .createAuditLog({
+        userId,
+        userName: user.email || "unknown",
+        action: "org_access_denied",
+        resourceType: "organization",
+        details: { route: req.path, method: req.method, reason },
+      })
+      .catch((err) => log.warn("Failed to audit missing organization selector", { error: String(err) }));
+    return replyForbidden(
+      res,
+      "An explicit organization selection is required for this request.",
+      ERROR_CODES.ORG_MEMBERSHIP_REQUIRED,
+    );
+  }
+
   if (!requestedOrgId && activeMemberships.length === 0) {
     (req as any).orgId = null;
     (req as any).orgRole = null;
